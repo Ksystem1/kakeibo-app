@@ -1,0 +1,17 @@
+# SAM CLI 用。RDS と同じリージョン。
+version = 0.1
+
+[default.global.parameters]
+region = "ap-northeast-1"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+region = "ap-northeast-1"
+# RdsHost / RdsUser / RdsDatabase は template.yaml のデフォルト値を使用。
+# 初回は VpcId, PrivateSubnetIds, LambdaSecurityGroupId, RdsPassword を指定:
+# sam deploy --parameter-overrides VpcId=vpc-xxx PrivateSubnetIds=subnet-a,subnet-b LambdaSecurityGroupId=sg-xxx RdsPassword=YOUR_PASSWORD

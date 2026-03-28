@@ -1,0 +1,68 @@
+:root {
+  --bg-deep: #0f1419;
+  --bg-card: #161d26;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #e8edf2;
+  --text-muted: #8b98a6;
+  --accent: #3dd6b4;
+  --accent-dim: rgba(61, 214, 180, 0.15);
+  --accent-hover: #52e0c4;
+  --danger: #f87171;
+  --radius: 14px;
+  --shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  font-family: "DM Sans", "Noto Sans JP", system-ui, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--text);
+  background-color: var(--bg-deep);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.appNav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.appNav button {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.45rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.appNav button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.appNav button[data-active="true"] {
+  color: var(--accent);
+  border-color: rgba(61, 214, 180, 0.35);
+  background: var(--accent-dim);
+}

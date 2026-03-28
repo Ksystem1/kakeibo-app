@@ -1,0 +1,20 @@
+{
+  "name": "kakeibo-api",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "db:schema": "node scripts/run-schema.mjs",
+    "db:dev-user": "node scripts/ensure-dev-user.mjs",
+    "dev:api": "node scripts/local-server.mjs"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.5"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.7"
+  }
+}

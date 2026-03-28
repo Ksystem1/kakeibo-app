@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Kakeibo API — Lambda (VPC) + HTTP API → RDS MySQL
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 28
+    MemorySize: 256
+    Architectures:
+      - arm64
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets (NAT 経由でインターネットに出る場合は Secrets / STS 利用可)
+  LambdaSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Lambda に付与する SG（RDS の SG から 3306 をこの SG に開放）
+  CorsOrigin:
+    Type: String
+    Default: "*"
+    Description: Vite dev は http://localhost:5173 などにするとよい
+  RdsHost:
+    Type: String
+    Default: database-1.ch2yqsmikcdn.ap-northeast-1.rds.amazonaws.com
+    Description: RDS エンドポイント（Proxy 利用時は Proxy の DNS）
+  RdsPort:
+    Type: String
+    Default: "3306"
+  RdsUser:
+    Type: String
+    Default: admin
+  RdsDatabase:
+    Type: String
+    Default: database-1
+  RdsPassword:
+    Type: String
+    NoEcho: true
+    Description: 本番は Secrets Manager + KMS で注入することを推奨
+
+Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+          - PUT
+          - PATCH
+          - DELETE
+        AllowHeaders:
+          - content-type
+          - authorization
+          - x-user-id
+        AllowOrigins:
+          - !Ref CorsOrigin
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.handler
+      CodeUri: .
+      Events:
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+        Root:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /
+            Method: ANY
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupId
+        SubnetIds: !Ref PrivateSubnetIds
+      Environment:
+        Variables:
+          RDS_HOST: !Ref RdsHost
+          RDS_PORT: !Ref RdsPort
+          RDS_USER: !Ref RdsUser
+          RDS_DATABASE: !Ref RdsDatabase
+          RDS_PASSWORD: !Ref RdsPassword
+          CORS_ORIGIN: !Ref CorsOrigin
+          RDS_SSL: "false"
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/handler.mjs
+        Format: esm
+        Minify: true
+        Target: node20
+        Sourcemap: false
+
+Outputs:
+  ApiUrl:
+    Description: HTTP API のベース URL（末尾にパスを付けて呼び出す）
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  HttpApiId:
+    Value: !Ref HttpApi
