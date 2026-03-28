@@ -26,7 +26,15 @@ if (Test-Path -LiteralPath $from) {
 & $git add .
 $status = & $git status --porcelain
 if ($status) {
-  & $git commit -m "Rename folder from バックエンド to backend for App Runner"
+  $msgFile = Join-Path $env:TEMP "kakeibo-rename-msg.txt"
+  $enc = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText(
+    $msgFile,
+    "Rename folder from バックエンド to backend for App Runner",
+    $enc
+  )
+  & $git commit -F $msgFile
+  Remove-Item -Force $msgFile -ErrorAction SilentlyContinue
 } else {
   Write-Host "Skip commit: nothing to stage."
 }
