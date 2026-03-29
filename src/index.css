@@ -1,4 +1,5 @@
 :root {
+  --app-font-scale: 1;
   --bg-deep: #0f1419;
   --bg-card: #161d26;
   --border: rgba(255, 255, 255, 0.08);
@@ -11,6 +12,7 @@
   --radius: 14px;
   --shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
   font-family: "DM Sans", "Noto Sans JP", system-ui, sans-serif;
+  font-size: calc(100% * var(--app-font-scale, 1));
   line-height: 1.5;
   font-weight: 400;
   color: var(--text);
@@ -65,4 +67,16 @@ body {
   color: var(--accent);
   border-color: rgba(61, 214, 180, 0.35);
   background: var(--accent-dim);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

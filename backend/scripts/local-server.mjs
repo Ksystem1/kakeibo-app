@@ -14,7 +14,7 @@ const port = Number(process.env.API_PORT || process.env.PORT || "3456");
 const app = express();
 
 app.use(cors(expressCorsOptions()));
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "15mb" }));
 
 async function dispatch(req, res) {
   let body = null;

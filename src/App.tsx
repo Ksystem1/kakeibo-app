@@ -1,33 +1,36 @@
-import { useState } from "react";
-import { LoginScreen } from "./components/LoginScreen";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { AppLayout } from "./components/AppLayout";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 import { DevApiTest } from "./components/DevApiTest";
+import { KakeiboDashboard } from "./components/KakeiboDashboard";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ImportCsvPage } from "./pages/ImportCsvPage";
+import { LoginPage } from "./pages/LoginPage";
+import { MembersPage } from "./pages/MembersPage";
+import { ReceiptPage } from "./pages/ReceiptPage";
+import { RegisterPage } from "./pages/RegisterPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
-type Screen = "login" | "api";
-
-function App() {
-  const [screen, setScreen] = useState<Screen>("login");
-
+export default function App() {
   return (
-    <>
-      <nav className="appNav" aria-label="開発メニュー">
-        <button
-          type="button"
-          data-active={screen === "login"}
-          onClick={() => setScreen("login")}
-        >
-          ログイン
-        </button>
-        <button
-          type="button"
-          data-active={screen === "api"}
-          onClick={() => setScreen("api")}
-        >
-          API・DBテスト
-        </button>
-      </nav>
-      {screen === "login" ? <LoginScreen /> : <DevApiTest />}
-    </>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route element={<AppLayout />}>
+        <Route path="/" element={<Navigate to="/kakeibo" replace />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/kakeibo" element={<KakeiboDashboard />} />
+          <Route path="/import" element={<ImportCsvPage />} />
+          <Route path="/receipt" element={<ReceiptPage />} />
+          <Route path="/members" element={<MembersPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
+        <Route path="/dev-api" element={<DevApiTest />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/kakeibo" replace />} />
+    </Routes>
   );
 }
-
-export default App;

@@ -1,0 +1,77 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+
+const STORAGE_KEY = "kakeibo_token";
+
+type User = {
+  id: number;
+  email: string;
+  familyId?: number | null;
+};
+
+type AuthState = {
+  token: string | null;
+  user: User | null;
+  setSession: (token: string, user: User) => void;
+  logout: () => void;
+};
+
+const AuthContext = createContext<AuthState | null>(null);
+
+function readStoredToken() {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [token, setToken] = useState<string | null>(() => readStoredToken());
+  const [user, setUser] = useState<User | null>(null);
+
+  const setSession = useCallback((t: string, u: User) => {
+    setToken(t);
+    setUser(u);
+    try {
+      localStorage.setItem(STORAGE_KEY, t);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const logout = useCallback(() => {
+    setToken(null);
+    setUser(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const value = useMemo(
+    () => ({ token, user, setSession, logout }),
+    [token, user, setSession, logout],
+  );
+
+  return (
+    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth outside AuthProvider");
+  return ctx;
+}
+
+export function getStoredToken(): string | null {
+  return readStoredToken();
+}

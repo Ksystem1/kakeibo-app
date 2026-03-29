@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { getStoredToken } from "../context/AuthContext";
 import {
   createTransaction,
   getApiBaseUrl,
@@ -91,9 +92,11 @@ export function DevApiTest() {
       <h1 className={styles.title}>API・DB 接続テスト</h1>
       <p className={styles.lead}>
         バックエンドで <code>npm run dev:api</code> を起動した状態で操作してください。
-        開発ユーザーが未作成なら <code>backend</code> で{" "}
-        <code>npm run db:dev-user</code> を実行し、表示された{" "}
-        <code>VITE_DEV_USER_ID</code> をフロントの <code>.env</code> に合わせます。
+        本番相当の認証では、まずログイン画面でサインインし JWT を保存します（このページの API
+        呼び出しは <code>localStorage</code> のトークンを自動付与します）。
+        ローカルだけで <code>x-user-id</code> を使う場合は、バックエンドに{" "}
+        <code>ALLOW_X_USER_ID=true</code> を設定し、フロントの{" "}
+        <code>VITE_DEV_USER_ID</code> を合わせてください。
       </p>
 
       <div className={styles.config}>
@@ -103,6 +106,12 @@ export function DevApiTest() {
         </div>
         <div>
           <strong>VITE_DEV_USER_ID</strong> {devUser || "（未設定）"}
+        </div>
+        <div>
+          <strong>保存済み JWT</strong>{" "}
+          {typeof window !== "undefined" && getStoredToken()
+            ? "あり（ログイン済み）"
+            : "なし"}
         </div>
       </div>
 
