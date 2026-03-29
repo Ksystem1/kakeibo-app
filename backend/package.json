@@ -9,15 +9,13 @@
   "scripts": {
     "db:schema": "node scripts/run-schema.mjs",
     "db:dev-user": "node scripts/ensure-dev-user.mjs",
-    "dev:api": "node scripts/local-server.mjs",
-    "start": "node scripts/local-server.mjs"
+    "dev:api": "node src/index.js",
+    "start": "node src/index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "mysql2": "^3.11.5"
-  },
-  "devDependencies": {
-    "dotenv": "^16.4.7"
   }
 }
