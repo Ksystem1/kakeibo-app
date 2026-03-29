@@ -2,7 +2,7 @@
  * Lambda / ローカル HTTP 共通のルーティング本体。
  */
 import { buildCorsHeaders } from "./cors-config.mjs";
-import { getPool } from "./db.mjs";
+import { getPool, pingDatabase } from "./db.mjs";
 
 function json(statusCode, body, reqHeaders, skipCors) {
   const cors = skipCors ? {} : buildCorsHeaders(reqHeaders);
@@ -76,12 +76,16 @@ export async function handleApiRequest(req, options = {}) {
 
     if (routeKey(method, path) === "GET /health") {
       try {
-        const pool = getPool();
-        await pool.query("SELECT 1 AS ok");
+        await pingDatabase();
         return json(200, { ok: true, database: "up" }, hdrs, skipCors);
       } catch (e) {
         console.error("GET /health DB:", e);
-        const code = e && typeof e === "object" && "code" in e ? e.code : "UNKNOWN";
+        const o = e && typeof e === "object" ? e : {};
+        const code =
+          o.code ??
+          (o.errno != null ? `errno_${o.errno}` : "UNKNOWN");
+        const sqlMessage =
+          typeof o.sqlMessage === "string" ? o.sqlMessage : undefined;
         const verbose =
           process.env.NODE_ENV === "development" ||
           process.env.HEALTH_VERBOSE === "true";
@@ -91,8 +95,9 @@ export async function handleApiRequest(req, options = {}) {
             ok: false,
             error: "DatabaseUnavailable",
             code: String(code),
+            ...(sqlMessage ? { sqlMessage } : {}),
             hint:
-              "RDS の環境変数・VPC/セキュリティグループ・TLS を確認してください。ホストが *.rds.amazonaws.com なら TLS を自動有効化しています。",
+              "RDS の環境変数・VPC コネクタ・セキュリティグループ・TLS を確認してください。code が EBUSY のときはプールではなく直接接続に切り替え済みです。",
             ...(verbose && e instanceof Error ? { message: e.message } : {}),
           },
           hdrs,

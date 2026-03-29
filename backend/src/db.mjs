@@ -23,25 +23,47 @@ function resolveSsl() {
   return undefined;
 }
 
+function baseConnectionOptions() {
+  return {
+    host: process.env.RDS_HOST,
+    port: Number(process.env.RDS_PORT || "3306"),
+    user: process.env.RDS_USER,
+    password: process.env.RDS_PASSWORD,
+    database: process.env.RDS_DATABASE,
+    ssl: resolveSsl(),
+  };
+}
+
 /** CLI スクリプト用（run-schema / ensure-dev-user など） */
 export function getMysqlSslConfig() {
   return resolveSsl();
 }
 
+/**
+ * ヘルスチェック専用: プールを使わず 1 接続だけ張って閉じる。
+ * App Runner 等でプール＋maxIdle/keepAlive まわりが EBUSY になる事例を避ける。
+ */
+export async function pingDatabase() {
+  const conn = await mysql.createConnection({
+    ...baseConnectionOptions(),
+    connectTimeout: Number(process.env.RDS_CONNECT_TIMEOUT_MS || "10000"),
+  });
+  try {
+    await conn.query("SELECT 1 AS ok");
+  } finally {
+    await conn.end();
+  }
+}
+
 export function getPool() {
   if (!pool) {
     pool = mysql.createPool({
-      host: process.env.RDS_HOST,
-      port: Number(process.env.RDS_PORT || "3306"),
-      user: process.env.RDS_USER,
-      password: process.env.RDS_PASSWORD,
-      database: process.env.RDS_DATABASE,
+      ...baseConnectionOptions(),
       waitForConnections: true,
-      connectionLimit: Number(process.env.RDS_CONNECTION_LIMIT || "2"),
-      maxIdle: Number(process.env.RDS_MAX_IDLE || "2"),
-      idleTimeout: 60000,
-      enableKeepAlive: true,
-      ssl: resolveSsl(),
+      connectionLimit: Number(process.env.RDS_CONNECTION_LIMIT || "3"),
+      queueLimit: 0,
+      // maxIdle / idleTimeout は指定しない（コンテナで EBUSY が出る環境があるため）
+      enableKeepAlive: false,
     });
   }
   return pool;
