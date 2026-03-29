@@ -55,6 +55,25 @@ export async function handleApiRequest(req, options = {}) {
   }
 
   try {
+    // ブラウザでドメイン直下を開いたとき用（認証・DB 不要）
+    if (routeKey(method, path) === "GET /") {
+      return json(
+        200,
+        {
+          service: "kakeibo-api",
+          message:
+            "API は動作しています。疎通は GET /health 。取引などは X-User-Id ヘッダーが必要です。",
+          endpoints: {
+            health: "/health",
+            categories: "/categories",
+            transactions: "/transactions",
+          },
+        },
+        hdrs,
+        skipCors,
+      );
+    }
+
     if (routeKey(method, path) === "GET /health") {
       const pool = getPool();
       await pool.query("SELECT 1 AS ok");
@@ -65,7 +84,10 @@ export async function handleApiRequest(req, options = {}) {
     if (!userId) {
       return json(
         401,
-        { error: "Unauthorized", detail: "X-User-Id required" },
+        {
+          error: "認証されていません",
+          detail: "X-User-Id が必要です",
+        },
         hdrs,
         skipCors,
       );
