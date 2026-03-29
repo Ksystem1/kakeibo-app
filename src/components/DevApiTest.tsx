@@ -26,7 +26,10 @@ function todayUtcDate() {
 
 export function DevApiTest() {
   const base = getApiBaseUrl();
-  const devUser = import.meta.env.VITE_DEV_USER_ID ?? "";
+  const devUser =
+    import.meta.env.VITE_DEV_USER_ID ??
+    import.meta.env.VITE_DEFAULT_USER_ID ??
+    "1";
   const [log, setLog] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,7 +134,7 @@ export function DevApiTest() {
         <button
           type="button"
           className={`${styles.btn} ${styles.btnPrimary}`}
-          disabled={busy || missingBase || !devUser}
+          disabled={busy || missingBase}
           onClick={onSeedTx}
         >
           テスト取引を1件追加

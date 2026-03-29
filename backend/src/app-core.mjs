@@ -1,20 +1,16 @@
 /**
  * Lambda / ローカル HTTP 共通のルーティング本体。
  */
+import { buildCorsHeaders } from "./cors-config.mjs";
 import { getPool } from "./db.mjs";
 
-const CORS = {
-  "access-control-allow-origin": process.env.CORS_ORIGIN || "*",
-  "access-control-allow-headers": "content-type,authorization,x-user-id",
-  "access-control-allow-methods": "OPTIONS,GET,POST,PUT,PATCH,DELETE",
-};
-
-function json(statusCode, body) {
+function json(statusCode, body, reqHeaders, skipCors) {
+  const cors = skipCors ? {} : buildCorsHeaders(reqHeaders);
   return {
     statusCode,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      ...CORS,
+      ...cors,
     },
     body: JSON.stringify(body),
   };
@@ -45,25 +41,34 @@ function routeKey(method, path) {
 
 /**
  * @param {{ method: string, path: string, queryStringParameters?: Record<string,string>|null, body?: string|null, headers?: Record<string, string> }} req
+ * @param {{ skipCors?: boolean }} [options] Express で cors ミドルウェアを使うとき true（ヘッダー二重付与防止）
  */
-export async function handleApiRequest(req) {
+export async function handleApiRequest(req, options = {}) {
+  const { skipCors = false } = options;
   const method = req.method.toUpperCase();
   const path = req.path.split("?")[0] || "/";
+  const hdrs = req.headers;
 
   if (method === "OPTIONS") {
-    return { statusCode: 204, headers: { ...CORS }, body: "" };
+    const cors = skipCors ? {} : buildCorsHeaders(hdrs);
+    return { statusCode: 204, headers: { ...cors }, body: "" };
   }
 
   try {
     if (routeKey(method, path) === "GET /health") {
       const pool = getPool();
       await pool.query("SELECT 1 AS ok");
-      return json(200, { ok: true });
+      return json(200, { ok: true }, hdrs, skipCors);
     }
 
-    const userId = resolveUserId(req.headers);
+    const userId = resolveUserId(hdrs);
     if (!userId) {
-      return json(401, { error: "Unauthorized", detail: "X-User-Id required" });
+      return json(
+        401,
+        { error: "Unauthorized", detail: "X-User-Id required" },
+        hdrs,
+        skipCors,
+      );
     }
 
     const pool = getPool();
@@ -78,7 +83,7 @@ export async function handleApiRequest(req) {
            ORDER BY kind, sort_order, id`,
           [userId],
         );
-        return json(200, { items: rows });
+        return json(200, { items: rows }, hdrs, skipCors);
       }
 
       case "POST /categories": {
@@ -95,7 +100,7 @@ export async function handleApiRequest(req) {
             b.sort_order ?? 0,
           ],
         );
-        return json(201, { id: r.insertId });
+        return json(201, { id: r.insertId }, hdrs, skipCors);
       }
 
       case "GET /transactions": {
@@ -114,7 +119,7 @@ export async function handleApiRequest(req) {
         }
         sql += ` ORDER BY transaction_date DESC, id DESC LIMIT 500`;
         const [rows] = await pool.query(sql, params);
-        return json(200, { items: rows });
+        return json(200, { items: rows }, hdrs, skipCors);
       }
 
       case "POST /transactions": {
@@ -134,20 +139,25 @@ export async function handleApiRequest(req) {
             b.external_id ?? null,
           ],
         );
-        return json(201, { id: r.insertId });
+        return json(201, { id: r.insertId }, hdrs, skipCors);
       }
 
       default:
-        return json(404, { error: "Not Found", path, method });
+        return json(404, { error: "Not Found", path, method }, hdrs, skipCors);
     }
   } catch (e) {
     console.error(e);
-    return json(500, {
-      error: "InternalError",
-      message:
-        process.env.NODE_ENV === "development"
-          ? String(e.message)
-          : undefined,
-    });
+    return json(
+      500,
+      {
+        error: "InternalError",
+        message:
+          process.env.NODE_ENV === "development"
+            ? String(e.message)
+            : undefined,
+      },
+      hdrs,
+      skipCors,
+    );
   }
 }

@@ -1,6 +1,6 @@
 /**
- * API Gateway HTTP API のベース URL（.env の VITE_API_URL に設定）
- * 暫定で X-User-Id を付与。Cognito 連携後は Authorization: Bearer <idToken> に切り替える。
+ * API のベース URL（.env の VITE_API_URL）。App Runner / ローカル dev:api など。
+ * 認証が必要なルート用に X-User-Id を付与（VITE_DEV_USER_ID）。Cognito 連携後は Authorization に切り替え可。
  */
 const BASE = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
 
@@ -8,20 +8,24 @@ export function getApiBaseUrl() {
   return BASE;
 }
 
+/**
+ * 全 API 呼び出しで共通。バックエンドは X-User-Id 必須のため常に付与する。
+ * ビルド時に VITE_DEV_USER_ID を上書き可能（未設定時は "1"）。
+ */
 function headers(extra?: Record<string, string>) {
-  const h: Record<string, string> = {
+  const uid =
+    import.meta.env.VITE_DEV_USER_ID ??
+    import.meta.env.VITE_DEFAULT_USER_ID ??
+    "1";
+  return {
     "content-type": "application/json",
+    "x-user-id": String(uid),
     ...extra,
   };
-  const uid = import.meta.env.VITE_DEV_USER_ID;
-  if (uid) h["x-user-id"] = String(uid);
-  return h;
 }
 
 export async function getHealth() {
-  const res = await fetch(`${BASE}/health`, {
-    headers: { "content-type": "application/json" },
-  });
+  const res = await fetch(`${BASE}/health`, { headers: headers() });
   return parse<{ ok: boolean }>(res);
 }
 

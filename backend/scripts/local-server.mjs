@@ -1,74 +1,65 @@
 /**
- * ローカル開発用 API サーバー（Lambda 相当のルートを HTTP で提供）。
+ * ローカル / App Runner 用 HTTP サーバー（Express + cors）。
  *
- * 起動: cd backend && npm run dev:api
- * 既定: http://localhost:3456  （.env の API_PORT で変更可）
+ * 起動: cd backend && npm run dev:api  （または npm start）
+ * 既定ポート: API_PORT / PORT / 3456
  */
 import "dotenv/config";
-import http from "node:http";
+import cors from "cors";
+import express from "express";
+import { expressCorsOptions } from "../src/cors-config.mjs";
 import { handleApiRequest } from "../src/app-core.mjs";
 
 const port = Number(process.env.API_PORT || process.env.PORT || "3456");
-const cors = process.env.CORS_ORIGIN || "http://localhost:5173";
+const app = express();
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on("data", (c) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
-}
+app.use(cors(expressCorsOptions()));
+app.use(express.json({ limit: "1mb" }));
 
-const server = http.createServer(async (req, res) => {
-  const host = req.headers.host || "localhost";
-  const url = new URL(req.url || "/", `http://${host}`);
-  const method = (req.method || "GET").toUpperCase();
-
-  if (method === "OPTIONS") {
-    const out = await handleApiRequest({
-      method: "OPTIONS",
-      path: url.pathname,
-      headers: req.headers,
-    });
-    res.writeHead(out.statusCode, out.headers);
-    res.end(out.body || "");
-    return;
-  }
-
-  let body = "";
-  if (method === "POST" || method === "PUT" || method === "PATCH") {
-    try {
-      body = await readBody(req);
-    } catch (e) {
-      res.writeHead(400, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "BadRequest", message: String(e.message) }));
-      return;
+async function dispatch(req, res) {
+  let body = null;
+  const m = req.method.toUpperCase();
+  if (m !== "GET" && m !== "HEAD" && m !== "OPTIONS") {
+    if (req.body !== undefined && req.body !== null) {
+      body =
+        typeof req.body === "string"
+          ? req.body
+          : JSON.stringify(req.body);
     }
   }
 
-  const queryStringParameters = {};
-  url.searchParams.forEach((v, k) => {
-    queryStringParameters[k] = v;
-  });
+  const out = await handleApiRequest(
+    {
+      method: req.method,
+      path: req.path || "/",
+      queryStringParameters:
+        Object.keys(req.query ?? {}).length > 0 ? req.query : undefined,
+      body,
+      headers: req.headers,
+    },
+    { skipCors: true },
+  );
 
-  const out = await handleApiRequest({
-    method,
-    path: url.pathname,
-    queryStringParameters:
-      Object.keys(queryStringParameters).length > 0
-        ? queryStringParameters
-        : undefined,
-    body: body || null,
-    headers: req.headers,
-  });
+  if (out.headers) {
+    for (const [k, v] of Object.entries(out.headers)) {
+      if (v !== undefined) res.setHeader(k, String(v));
+    }
+  }
+  res.status(out.statusCode).send(out.body ?? "");
+}
 
-  res.writeHead(out.statusCode, out.headers);
-  res.end(out.body ?? "");
+app.use((req, res, next) => {
+  dispatch(req, res).catch(next);
 });
 
-server.listen(port, () => {
-  console.log(`Kakeibo API (local)  http://localhost:${port}`);
-  console.log(`CORS allow origin     ${cors}`);
-  console.log(`Health                GET http://localhost:${port}/health`);
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  res.status(500).json({ error: "InternalError" });
+});
+
+app.listen(port, "0.0.0.0", () => {
+  const co = (process.env.CORS_ORIGIN ?? "*").trim() || "*";
+  console.log(`Kakeibo API  http://0.0.0.0:${port}`);
+  console.log(`CORS_ORIGIN  ${co}`);
+  console.log(`Health       GET http://localhost:${port}/health`);
 });
