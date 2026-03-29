@@ -75,9 +75,30 @@ export async function handleApiRequest(req, options = {}) {
     }
 
     if (routeKey(method, path) === "GET /health") {
-      const pool = getPool();
-      await pool.query("SELECT 1 AS ok");
-      return json(200, { ok: true }, hdrs, skipCors);
+      try {
+        const pool = getPool();
+        await pool.query("SELECT 1 AS ok");
+        return json(200, { ok: true, database: "up" }, hdrs, skipCors);
+      } catch (e) {
+        console.error("GET /health DB:", e);
+        const code = e && typeof e === "object" && "code" in e ? e.code : "UNKNOWN";
+        const verbose =
+          process.env.NODE_ENV === "development" ||
+          process.env.HEALTH_VERBOSE === "true";
+        return json(
+          503,
+          {
+            ok: false,
+            error: "DatabaseUnavailable",
+            code: String(code),
+            hint:
+              "RDS の環境変数・VPC/セキュリティグループ・TLS を確認してください。ホストが *.rds.amazonaws.com なら TLS を自動有効化しています。",
+            ...(verbose && e instanceof Error ? { message: e.message } : {}),
+          },
+          hdrs,
+          skipCors,
+        );
+      }
     }
 
     const userId = resolveUserId(hdrs);

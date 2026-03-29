@@ -6,6 +6,7 @@
  */
 import "dotenv/config";
 import mysql from "mysql2/promise";
+import { getMysqlSslConfig } from "../src/db.mjs";
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -24,7 +25,7 @@ const conn = await mysql.createConnection({
   user: requireEnv("RDS_USER"),
   password: requireEnv("RDS_PASSWORD"),
   database: requireEnv("RDS_DATABASE"),
-  ssl: process.env.RDS_SSL === "true" ? {} : undefined,
+  ssl: getMysqlSslConfig(),
 });
 
 try {

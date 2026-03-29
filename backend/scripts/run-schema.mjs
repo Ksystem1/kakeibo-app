@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import mysql from "mysql2/promise";
+import { getMysqlSslConfig } from "../src/db.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,7 +41,7 @@ const conn = await mysql.createConnection({
   password,
   database,
   multipleStatements: true,
-  ssl: process.env.RDS_SSL === "true" ? {} : undefined,
+  ssl: getMysqlSslConfig(),
 });
 
 try {
