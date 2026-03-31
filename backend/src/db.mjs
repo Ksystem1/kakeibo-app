@@ -24,8 +24,9 @@ function resolveSsl() {
 }
 
 function baseConnectionOptions() {
+  const host = String(process.env.RDS_HOST || "").trim();
   return {
-    host: process.env.RDS_HOST,
+    host,
     port: Number(process.env.RDS_PORT || "3306"),
     user: process.env.RDS_USER,
     password: process.env.RDS_PASSWORD,
@@ -62,8 +63,10 @@ export function getPool() {
       waitForConnections: true,
       connectionLimit: Number(process.env.RDS_CONNECTION_LIMIT || "3"),
       queueLimit: 0,
-      // maxIdle / idleTimeout は指定しない（コンテナで EBUSY が出る環境があるため）
-      enableKeepAlive: false,
+      // DNS/接続揺らぎ時にコネクション再作成を減らす
+      enableKeepAlive: true,
+      keepAliveInitialDelay: Number(process.env.RDS_KEEPALIVE_INITIAL_DELAY_MS || "10000"),
+      connectTimeout: Number(process.env.RDS_CONNECT_TIMEOUT_MS || "10000"),
     });
   }
   return pool;

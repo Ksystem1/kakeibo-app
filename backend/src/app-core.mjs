@@ -6,6 +6,22 @@ import { resolveUserId } from "./auth-logic.mjs";
 import { buildCorsHeaders } from "./cors-config.mjs";
 import { getPool, pingDatabase } from "./db.mjs";
 
+function logError(event, e, extra = {}) {
+  console.error(
+    JSON.stringify({
+      level: "error",
+      event,
+      code: e?.code,
+      errno: e?.errno,
+      syscall: e?.syscall,
+      hostname: e?.hostname,
+      sqlState: e?.sqlState,
+      message: e?.message,
+      ...extra,
+    }),
+  );
+}
+
 function json(statusCode, body, reqHeaders, skipCors) {
   const cors = skipCors ? {} : buildCorsHeaders(reqHeaders);
   return {
@@ -84,7 +100,7 @@ export async function handleApiRequest(req, options = {}) {
         await pingDatabase();
         return json(200, { ok: true, database: "up" }, hdrs, skipCors);
       } catch (e) {
-        console.error("GET /health DB:", e);
+        logError("health.db", e, { method, path });
         const o = e && typeof e === "object" ? e : {};
         const code =
           o.code ?? (o.errno != null ? `errno_${o.errno}` : "UNKNOWN");
@@ -330,7 +346,7 @@ export async function handleApiRequest(req, options = {}) {
         return json(404, { error: "Not Found", path, method }, hdrs, skipCors);
     }
   } catch (e) {
-    console.error(e);
+    logError("api.unhandled", e, { method, path });
     return json(
       500,
       {

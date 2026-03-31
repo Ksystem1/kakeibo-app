@@ -7,6 +7,69 @@ import {
   verifyPassword,
 } from "./auth-logic.mjs";
 
+const RETRYABLE_DB_CODES = new Set([
+  "EBUSY",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "PROTOCOL_CONNECTION_LOST",
+]);
+
+function isRetryableDbError(e) {
+  if (!e || typeof e !== "object") return false;
+  const code = e.code ? String(e.code) : "";
+  const syscall = e.syscall ? String(e.syscall) : "";
+  return RETRYABLE_DB_CODES.has(code) || syscall.includes("getaddrinfo");
+}
+
+function logError(event, e, extra = {}) {
+  const payload = {
+    level: "error",
+    event,
+    code: e?.code,
+    errno: e?.errno,
+    syscall: e?.syscall,
+    hostname: e?.hostname,
+    message: e?.message,
+    ...extra,
+  };
+  console.error(JSON.stringify(payload));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withDbRetry(label, fn, attempts = 3) {
+  let lastErr;
+  for (let i = 1; i <= attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (!isRetryableDbError(e) || i === attempts) throw e;
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          event: "db.retry",
+          label,
+          attempt: i,
+          code: e?.code,
+          syscall: e?.syscall,
+          message: e?.message,
+        }),
+      );
+      const base = Number(process.env.DB_RETRY_BASE_MS || "500");
+      const max = Number(process.env.DB_RETRY_MAX_MS || "5000");
+      const backoff = Math.min(base * 2 ** (i - 1), max);
+      const jitter = Math.floor(Math.random() * 200);
+      await sleep(backoff + jitter);
+    }
+  }
+  throw lastErr;
+}
+
 function routeKey(method, path) {
   const p = path.replace(/\/$/, "") || "/";
   return `${method} ${p}`;
@@ -46,6 +109,9 @@ export async function tryAuthRoutes(req, ctx) {
       const displayName = b.display_name
         ? String(b.display_name).trim()
         : null;
+      const inviteToken = b.invite_token
+        ? String(b.invite_token).trim()
+        : "";
 
       if (!email || !email.includes("@")) {
         return json(400, { error: "メールアドレスが不正です" }, hdrs, skipCors);
@@ -57,7 +123,11 @@ export async function tryAuthRoutes(req, ctx) {
       }
 
       const ph = await hashPassword(password);
-      const conn = await pool.getConnection();
+      const conn = await withDbRetry(
+        "auth.register.getConnection",
+        () => pool.getConnection(),
+        Number(process.env.DB_RETRY_ATTEMPTS || "6"),
+      );
       try {
         await conn.beginTransaction();
         const dupSql = loginName
@@ -76,20 +146,50 @@ export async function tryAuthRoutes(req, ctx) {
           [email, loginName || null, ph, displayName],
         );
         const userId = ur.insertId;
+        let familyId = null;
+        let role = "owner";
 
-        const [fr] = await conn.query(
-          "INSERT INTO families (name) VALUES (?)",
-          [b.family_name?.trim() || "マイ家族"],
-        );
-        const familyId = fr.insertId;
+        if (inviteToken) {
+          const inviteHash = crypto.createHash("sha256").update(inviteToken).digest("hex");
+          const [invRows] = await conn.query(
+            `SELECT id, family_id, email
+             FROM family_invites
+             WHERE token_hash = ? AND expires_at > NOW()
+             LIMIT 1`,
+            [inviteHash],
+          );
+          if (invRows.length === 0) {
+            await conn.rollback();
+            return json(400, { error: "招待リンクが無効または期限切れです" }, hdrs, skipCors);
+          }
+          const inv = invRows[0];
+          if (inv.email && String(inv.email).toLowerCase() !== email) {
+            await conn.rollback();
+            return json(
+              400,
+              { error: "招待されたメールアドレスと登録メールアドレスが一致しません" },
+              hdrs,
+              skipCors,
+            );
+          }
+          familyId = inv.family_id;
+          role = "member";
+          await conn.query("DELETE FROM family_invites WHERE id = ?", [inv.id]);
+        } else {
+          const [fr] = await conn.query(
+            "INSERT INTO families (name) VALUES (?)",
+            [b.family_name?.trim() || "マイ家族"],
+          );
+          familyId = fr.insertId;
+        }
 
         await conn.query("UPDATE users SET default_family_id = ? WHERE id = ?", [
           familyId,
           userId,
         ]);
         await conn.query(
-          `INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, 'owner')`,
-          [familyId, userId],
+          `INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, ?)`,
+          [familyId, userId, role],
         );
 
         await conn.commit();
@@ -119,10 +219,15 @@ export async function tryAuthRoutes(req, ctx) {
         return json(400, { error: "ログインIDとパスワードを入力してください" }, hdrs, skipCors);
       }
 
-      const [rows] = await pool.query(
-        `SELECT id, email, password_hash FROM users
-         WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`,
-        [login, login],
+      const [rows] = await withDbRetry(
+        "auth.login.queryUser",
+        () =>
+          pool.query(
+          `SELECT id, email, password_hash FROM users
+           WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`,
+          [login, login],
+        ),
+        Number(process.env.DB_RETRY_ATTEMPTS || "6"),
       );
       if (rows.length === 0) {
         return json(401, { error: "ログインに失敗しました" }, hdrs, skipCors);
@@ -171,12 +276,14 @@ export async function tryAuthRoutes(req, ctx) {
       const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
       const expires = new Date(Date.now() + 60 * 60 * 1000);
 
-      await pool.query("DELETE FROM password_reset_tokens WHERE user_id = ?", [
-        userId,
-      ]);
-      await pool.query(
-        `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)`,
-        [userId, tokenHash, expires],
+      await withDbRetry("auth.forgotPassword.deleteOld", () =>
+        pool.query("DELETE FROM password_reset_tokens WHERE user_id = ?", [userId]),
+      );
+      await withDbRetry("auth.forgotPassword.insertToken", () =>
+        pool.query(
+          `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)`,
+          [userId, tokenHash, expires],
+        ),
       );
 
       const out = { ...genericOk };
@@ -210,13 +317,12 @@ export async function tryAuthRoutes(req, ctx) {
 
       const userId = trows[0].user_id;
       const ph = await hashPassword(password);
-      await pool.query("UPDATE users SET password_hash = ? WHERE id = ?", [
-        ph,
-        userId,
-      ]);
-      await pool.query("DELETE FROM password_reset_tokens WHERE user_id = ?", [
-        userId,
-      ]);
+      await withDbRetry("auth.resetPassword.updateUser", () =>
+        pool.query("UPDATE users SET password_hash = ? WHERE id = ?", [ph, userId]),
+      );
+      await withDbRetry("auth.resetPassword.deleteToken", () =>
+        pool.query("DELETE FROM password_reset_tokens WHERE user_id = ?", [userId]),
+      );
 
       return json(200, { ok: true, message: "パスワードを更新しました" }, hdrs, skipCors);
     }
@@ -293,24 +399,40 @@ export async function tryAuthRoutes(req, ctx) {
       const raw = crypto.randomBytes(24).toString("hex");
       const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
       const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      await pool.query(
-        `INSERT INTO family_invites (family_id, email, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
-        [fid, inviteEmail, tokenHash, expires],
+      await withDbRetry("auth.invite.insert", () =>
+        pool.query(
+          `INSERT INTO family_invites (family_id, email, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
+          [fid, inviteEmail, tokenHash, expires],
+        ),
       );
 
+      const appOrigin = (process.env.APP_ORIGIN || "https://ksystemapp.com").replace(/\/$/, "");
+      const inviteUrl = `${appOrigin}/kakeibo/register?invite=${encodeURIComponent(raw)}`;
       const res = {
         ok: true,
-        message: "招待を登録しました。相手がアカウント作成後に承認フローを拡張できます。",
+        message: "招待リンクを作成しました。メール・QR・LINEで共有できます。",
+        invite_url: inviteUrl,
+        line_share_url: `https://line.me/R/msg/text/?${encodeURIComponent(inviteUrl)}`,
       };
-      if (process.env.AUTH_DEBUG_TOKEN === "true") {
-        res.debug_invite_token = raw;
-      }
+      if (process.env.AUTH_DEBUG_TOKEN === "true") res.debug_invite_token = raw;
       return json(201, res, hdrs, skipCors);
     }
 
     return null;
   } catch (e) {
-    console.error("auth route", e);
+    logError("auth.route", e, { method, path });
+    if (isRetryableDbError(e)) {
+      return ctx.json(
+        503,
+        {
+          error: "DatabaseUnavailable",
+          message: "一時的にデータベースへ接続できません。少し待って再試行してください。",
+          code: e?.code,
+        },
+        hdrs,
+        skipCors,
+      );
+    }
     return ctx.json(
       500,
       {
