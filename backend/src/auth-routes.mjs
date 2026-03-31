@@ -126,7 +126,7 @@ export async function tryAuthRoutes(req, ctx) {
       const conn = await withDbRetry(
         "auth.register.getConnection",
         () => pool.getConnection(),
-        Number(process.env.DB_RETRY_ATTEMPTS || "6"),
+        Number(process.env.DB_RETRY_ATTEMPTS || "10"),
       );
       try {
         await conn.beginTransaction();
@@ -227,7 +227,7 @@ export async function tryAuthRoutes(req, ctx) {
            WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`,
           [login, login],
         ),
-        Number(process.env.DB_RETRY_ATTEMPTS || "6"),
+        Number(process.env.DB_RETRY_ATTEMPTS || "10"),
       );
       if (rows.length === 0) {
         return json(401, { error: "ログインに失敗しました" }, hdrs, skipCors);
