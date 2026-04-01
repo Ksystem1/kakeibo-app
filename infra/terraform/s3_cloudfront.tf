@@ -52,6 +52,10 @@ function handler(event) {
 EOT
 }
 
+data "aws_cloudfront_cache_policy" "managed_caching_optimized" {
+  name = "Managed-CachingOptimized"
+}
+
 resource "aws_cloudfront_distribution" "site" {
   enabled             = true
   comment             = "Kakeibo SPA /${var.app_path_prefix}/"
@@ -75,7 +79,7 @@ resource "aws_cloudfront_distribution" "site" {
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]
     compress               = true
-    cache_policy_id        = "658327ea-f89d-4fab-81fd-88689e58219f"
+    cache_policy_id        = data.aws_cloudfront_cache_policy.managed_caching_optimized.id
 
     function_association {
       event_type   = "viewer-request"
@@ -90,7 +94,7 @@ resource "aws_cloudfront_distribution" "site" {
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]
     compress               = true
-    cache_policy_id        = "658327ea-f89d-4fab-81fd-88689e58219f"
+    cache_policy_id        = data.aws_cloudfront_cache_policy.managed_caching_optimized.id
   }
 
   custom_error_response {

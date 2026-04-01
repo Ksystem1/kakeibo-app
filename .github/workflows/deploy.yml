@@ -19,29 +19,29 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TF_IN_AUTOMATION: "true"
-      AWS_REGION: ap-northeast-1
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ROLE_TO_ASSUME_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
       ECR_REPOSITORY: kakeibo-api
       TF_WORKING_DIR: infra/terraform-ecs-express
+      TF_VAR_vpc_id: ${{ secrets.TF_VAR_VPC_ID }}
+      TF_VAR_public_subnet_ids: ${{ secrets.TF_VAR_PUBLIC_SUBNET_IDS }}
+      TF_VAR_private_subnet_ids: ${{ secrets.TF_VAR_PRIVATE_SUBNET_IDS }}
+      TF_VAR_github_repository: Ksystem1/kakeibo-app
+      TF_VAR_github_branch: main
+      TF_VAR_github_oidc_provider_arn: ${{ secrets.GITHUB_OIDC_PROVIDER_ARN }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Validate required secrets
-        run: |
-          test -n "${{ secrets.TF_STATE_BUCKET }}" || (echo "::error::Missing secret TF_STATE_BUCKET" && exit 1)
-          test -n "${{ secrets.TF_STATE_KEY }}" || (echo "::error::Missing secret TF_STATE_KEY" && exit 1)
-          test -n "${{ secrets.TF_VAR_VPC_ID }}" || (echo "::error::Missing secret TF_VAR_VPC_ID" && exit 1)
-          test -n "${{ secrets.TF_VAR_PUBLIC_SUBNET_IDS }}" || (echo "::error::Missing secret TF_VAR_PUBLIC_SUBNET_IDS" && exit 1)
-          test -n "${{ secrets.TF_VAR_PRIVATE_SUBNET_IDS }}" || (echo "::error::Missing secret TF_VAR_PRIVATE_SUBNET_IDS" && exit 1)
-          test -n "${{ secrets.GITHUB_OIDC_PROVIDER_ARN }}" || (echo "::error::Missing secret GITHUB_OIDC_PROVIDER_ARN" && exit 1)
-
       - name: Verify S3 backend bucket exists
-        run: aws s3api head-bucket --bucket "${{ secrets.TF_STATE_BUCKET }}" --region "${{ env.AWS_REGION }}"
+        run: aws s3api head-bucket --bucket "${{ env.TF_STATE_BUCKET }}" --region "${{ env.AWS_REGION }}"
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -67,8 +67,8 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform init -input=false -no-color -reconfigure \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ env.TF_STATE_KEY }}" \
             -backend-config="region=${{ env.AWS_REGION }}" \
             -backend-config="encrypt=true"
 
@@ -76,12 +76,12 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
           TF_VAR_aws_region: ${{ env.AWS_REGION }}
-          TF_VAR_vpc_id: ${{ secrets.TF_VAR_VPC_ID }}
-          TF_VAR_public_subnet_ids: ${{ secrets.TF_VAR_PUBLIC_SUBNET_IDS }}
-          TF_VAR_private_subnet_ids: ${{ secrets.TF_VAR_PRIVATE_SUBNET_IDS }}
-          TF_VAR_github_repository: Ksystem1/kakeibo-app
-          TF_VAR_github_branch: main
-          TF_VAR_github_oidc_provider_arn: ${{ secrets.GITHUB_OIDC_PROVIDER_ARN }}
+          TF_VAR_vpc_id: ${{ env.TF_VAR_vpc_id }}
+          TF_VAR_public_subnet_ids: ${{ env.TF_VAR_public_subnet_ids }}
+          TF_VAR_private_subnet_ids: ${{ env.TF_VAR_private_subnet_ids }}
+          TF_VAR_github_repository: ${{ env.TF_VAR_github_repository }}
+          TF_VAR_github_branch: ${{ env.TF_VAR_github_branch }}
+          TF_VAR_github_oidc_provider_arn: ${{ env.TF_VAR_github_oidc_provider_arn }}
         run: |
           terraform plan -input=false -no-color \
             -var="container_image=${{ steps.image.outputs.image_uri }}" \
@@ -91,10 +91,10 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
           TF_VAR_aws_region: ${{ env.AWS_REGION }}
-          TF_VAR_vpc_id: ${{ secrets.TF_VAR_VPC_ID }}
-          TF_VAR_public_subnet_ids: ${{ secrets.TF_VAR_PUBLIC_SUBNET_IDS }}
-          TF_VAR_private_subnet_ids: ${{ secrets.TF_VAR_PRIVATE_SUBNET_IDS }}
-          TF_VAR_github_repository: Ksystem1/kakeibo-app
-          TF_VAR_github_branch: main
-          TF_VAR_github_oidc_provider_arn: ${{ secrets.GITHUB_OIDC_PROVIDER_ARN }}
+          TF_VAR_vpc_id: ${{ env.TF_VAR_vpc_id }}
+          TF_VAR_public_subnet_ids: ${{ env.TF_VAR_public_subnet_ids }}
+          TF_VAR_private_subnet_ids: ${{ env.TF_VAR_private_subnet_ids }}
+          TF_VAR_github_repository: ${{ env.TF_VAR_github_repository }}
+          TF_VAR_github_branch: ${{ env.TF_VAR_github_branch }}
+          TF_VAR_github_oidc_provider_arn: ${{ env.TF_VAR_github_oidc_provider_arn }}
         run: terraform apply -input=false -no-color -auto-approve tfplan

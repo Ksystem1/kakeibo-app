@@ -1,5 +1,6 @@
 # Ksystem ドメイン向け: ビルドした静的ファイルを S3 に配置し CloudFront を無効化する。
-# Secrets: AWS_ROLE_TO_ASSUME, S3_BUCKET, CLOUDFRONT_DISTRIBUTION_ID, VITE_API_URL, VERIFY_LOGIN_ID, VERIFY_LOGIN_PASSWORD, APP_RUNNER_SERVICE_ARN
+# Secrets: AWS_ROLE_TO_ASSUME, AWS_REGION, S3_BUCKET, CLOUDFRONT_DISTRIBUTION_ID, VITE_API_URL, VERIFY_LOGIN_ID, VERIFY_LOGIN_PASSWORD
+# Optional: APP_RUNNER_SERVICE_ARN (set only when App Runner backend deploy is needed)
 name: Deploy frontend (S3 + CloudFront)
 
 on:
@@ -10,6 +11,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
     permissions:
       id-token: write
       contents: read
@@ -28,7 +31,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ap-northeast-1
+          aws-region: ${{ env.AWS_REGION }}
 
       # 本番 URL: https://<ドメイン>/kakeibo/ （Vite base: /kakeibo/）
       - name: Deploy and verify login
@@ -40,13 +43,7 @@ jobs:
           VERIFY_API_URL: ${{ secrets.VITE_API_URL }}
           VERIFY_LOGIN_ID: ${{ secrets.VERIFY_LOGIN_ID }}
           VERIFY_LOGIN_PASSWORD: ${{ secrets.VERIFY_LOGIN_PASSWORD }}
+          # Optional: deploy-backend-apprunner.mjs will skip backend step when empty
           APP_RUNNER_SERVICE_ARN: ${{ secrets.APP_RUNNER_SERVICE_ARN }}
-          AWS_REGION: ap-northeast-1
-        run: |
-          if [ -z "$VITE_API_URL" ]; then echo "::error::GitHub Secret VITE_API_URL が未設定です"; exit 1; fi
-          if [ -z "$S3_BUCKET" ]; then echo "::error::GitHub Secret S3_BUCKET が未設定です"; exit 1; fi
-          if [ -z "$CLOUDFRONT_DISTRIBUTION_ID" ]; then echo "::error::GitHub Secret CLOUDFRONT_DISTRIBUTION_ID が未設定です"; exit 1; fi
-          if [ -z "$APP_RUNNER_SERVICE_ARN" ]; then echo "::error::GitHub Secret APP_RUNNER_SERVICE_ARN が未設定です"; exit 1; fi
-          if [ -z "$VERIFY_LOGIN_ID" ]; then echo "::error::GitHub Secret VERIFY_LOGIN_ID が未設定です"; exit 1; fi
-          if [ -z "$VERIFY_LOGIN_PASSWORD" ]; then echo "::error::GitHub Secret VERIFY_LOGIN_PASSWORD が未設定です"; exit 1; fi
-          npm run deploy:auto
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: npm run deploy:auto
