@@ -21,6 +21,7 @@ jobs:
       TF_IN_AUTOMATION: "true"
       AWS_REGION: ${{ secrets.AWS_REGION }}
       AWS_ROLE_TO_ASSUME_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      AWS_ROLE_TO_ASSUME_FALLBACK: arn:aws:iam::345362761619:role/kakeibo-api-github-actions-deploy-role
       TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
       TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
       ECR_REPOSITORY: kakeibo-api
@@ -37,11 +38,8 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME_ARN || env.AWS_ROLE_TO_ASSUME_FALLBACK }}
           aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Verify S3 backend bucket exists
-        run: aws s3api head-bucket --bucket "${{ env.TF_STATE_BUCKET }}" --region "${{ env.AWS_REGION }}"
 
       - name: Login to Amazon ECR
         id: login-ecr

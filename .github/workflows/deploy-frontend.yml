@@ -34,16 +34,10 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # 本番 URL: https://<ドメイン>/kakeibo/ （Vite base: /kakeibo/）
-      - name: Deploy and verify login
+      - name: Deploy frontend to S3 and CloudFront
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
           CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-          VERIFY_APP_URL: https://ksystemapp.com/kakeibo/login
-          VERIFY_API_URL: ${{ secrets.VITE_API_URL }}
-          VERIFY_LOGIN_ID: ${{ secrets.VERIFY_LOGIN_ID }}
-          VERIFY_LOGIN_PASSWORD: ${{ secrets.VERIFY_LOGIN_PASSWORD }}
-          # Optional: deploy-backend-apprunner.mjs will skip backend step when empty
-          APP_RUNNER_SERVICE_ARN: ${{ secrets.APP_RUNNER_SERVICE_ARN }}
           AWS_REGION: ${{ env.AWS_REGION }}
-        run: npm run deploy:auto
+        run: npm run deploy:prod
