@@ -9,9 +9,11 @@ import cors from "cors";
 import express from "express";
 import { expressCorsOptions } from "../src/cors-config.mjs";
 import { handleApiRequest } from "../src/app-core.mjs";
+import { createLogger } from "../src/logger.mjs";
 
 const port = Number(process.env.API_PORT || process.env.PORT || "3456");
 const app = express();
+const logger = createLogger("local-server");
 
 app.use(cors(expressCorsOptions()));
 app.use(express.json({ limit: "15mb" }));
@@ -62,13 +64,15 @@ app.use((req, res, next) => {
 });
 
 app.use((err, _req, res, _next) => {
-  console.error(err);
+  logger.error("unhandled", err);
   res.status(500).json({ error: "InternalError" });
 });
 
 app.listen(port, "0.0.0.0", () => {
   const co = (process.env.CORS_ORIGIN ?? "*").trim() || "*";
-  console.log(`Kakeibo API  http://0.0.0.0:${port}`);
-  console.log(`CORS_ORIGIN  ${co}`);
-  console.log(`Health       GET http://localhost:${port}/health`);
+  logger.info("started", {
+    bind: `0.0.0.0:${port}`,
+    corsOrigin: co,
+    health: `http://localhost:${port}/health`,
+  });
 });

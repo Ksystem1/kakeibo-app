@@ -6,25 +6,16 @@ import { tryAuthRoutes, getDefaultFamilyId } from "./auth-routes.mjs";
 import { resolveUserId } from "./auth-logic.mjs";
 import { buildCorsHeaders } from "./cors-config.mjs";
 import { getPool, pingDatabase } from "./db.mjs";
+import { createLogger } from "./logger.mjs";
 import {
   analyzeReceiptImageBytes,
   decodeImageBuffer,
 } from "./textract-receipt.mjs";
 
+const logger = createLogger("api");
+
 function logError(event, e, extra = {}) {
-  console.error(
-    JSON.stringify({
-      level: "error",
-      event,
-      code: e?.code,
-      errno: e?.errno,
-      syscall: e?.syscall,
-      hostname: e?.hostname,
-      sqlState: e?.sqlState,
-      message: e?.message,
-      ...extra,
-    }),
-  );
+  logger.error(event, e, extra);
 }
 
 function json(statusCode, body, reqHeaders, skipCors) {
