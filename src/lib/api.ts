@@ -63,6 +63,7 @@ export async function registerRequest(body: {
   login_name?: string;
   display_name?: string;
   family_name?: string;
+  invite_token?: string;
 }) {
   const res = await fetch(`${BASE}/auth/register`, {
     method: "POST",
@@ -121,6 +122,27 @@ export async function createTransaction(body: Record<string, unknown>) {
     body: JSON.stringify(body),
   });
   return parse<{ id: number }>(res);
+}
+
+export async function updateTransaction(
+  id: number,
+  body: Record<string, unknown>,
+) {
+  const res = await fetch(`${BASE}/transactions/${id}`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean }>(res);
+}
+
+export async function deleteTransaction(id: number) {
+  const res = await fetch(`${BASE}/transactions/delete`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({ id: Number(id) }),
+  });
+  return parse<{ ok: boolean }>(res);
 }
 
 export async function getMonthSummary(yearMonth: string) {
@@ -189,7 +211,12 @@ export async function inviteFamilyMember(email: string) {
     headers: buildHeaders(),
     body: JSON.stringify({ email }),
   });
-  return parse<{ ok: boolean; message?: string; debug_invite_token?: string }>(
-    res,
-  );
+  return parse<{
+    ok: boolean;
+    message?: string;
+    debug_invite_token?: string;
+    invite_url?: string;
+    line_share_url?: string;
+    line_message_share_url?: string;
+  }>(res);
 }

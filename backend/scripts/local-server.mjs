@@ -16,6 +16,15 @@ const app = express();
 app.use(cors(expressCorsOptions()));
 app.use(express.json({ limit: "15mb" }));
 
+/** App Runner 等で req.path が期待とずれるとき originalUrl で復元 */
+function pathnameOnly(req) {
+  const u = req.originalUrl ?? req.url ?? "/";
+  const q = u.indexOf("?");
+  let p = (q >= 0 ? u.slice(0, q) : u) || "/";
+  if (!p.startsWith("/")) p = `/${p}`;
+  return p;
+}
+
 async function dispatch(req, res) {
   let body = null;
   const m = req.method.toUpperCase();
@@ -31,7 +40,7 @@ async function dispatch(req, res) {
   const out = await handleApiRequest(
     {
       method: req.method,
-      path: req.path || "/",
+      path: pathnameOnly(req),
       queryStringParameters:
         Object.keys(req.query ?? {}).length > 0 ? req.query : undefined,
       body,

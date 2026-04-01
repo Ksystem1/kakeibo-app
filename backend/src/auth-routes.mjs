@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { stripApiPathPrefix } from "./api-path.mjs";
 import {
   hashPassword,
   resolveUserId,
@@ -93,7 +94,7 @@ export async function getDefaultFamilyId(pool, userId) {
 export async function tryAuthRoutes(req, ctx) {
   const { pool, json, hdrs, skipCors } = ctx;
   const method = req.method.toUpperCase();
-  const path = req.path.split("?")[0] || "/";
+  const path = stripApiPathPrefix(req.path.split("?")[0] || "/");
   const key = routeKey(method, path);
 
   try {
@@ -235,7 +236,12 @@ export async function tryAuthRoutes(req, ctx) {
       const u = rows[0];
       const ok = await verifyPassword(password, u.password_hash);
       if (!ok) {
-        return json(401, { error: "ログインに失敗しました" }, hdrs, skipCors);
+        return json(
+          401,
+          { error: "パスワード誤りです。再度入力して下さい。" },
+          hdrs,
+          skipCors,
+        );
       }
 
       const token = signUserToken(u.id, u.email);
@@ -408,11 +414,19 @@ export async function tryAuthRoutes(req, ctx) {
 
       const appOrigin = (process.env.APP_ORIGIN || "https://ksystemapp.com").replace(/\/$/, "");
       const inviteUrl = `${appOrigin}/kakeibo/register?invite=${encodeURIComponent(raw)}`;
+      const lineLinkShare = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(inviteUrl)}`;
+      const lineMessage = [
+        "【家計簿 Kakeibo】家族への招待です。",
+        `登録時はこのメールアドレスを使ってください: ${inviteEmail}`,
+        inviteUrl,
+      ].join("\n");
+      const lineMessageShare = `https://line.me/R/msg/text/?${encodeURIComponent(lineMessage)}`;
       const res = {
         ok: true,
         message: "招待リンクを作成しました。メール・QR・LINEで共有できます。",
         invite_url: inviteUrl,
-        line_share_url: `https://line.me/R/msg/text/?${encodeURIComponent(inviteUrl)}`,
+        line_share_url: lineLinkShare,
+        line_message_share_url: lineMessageShare,
       };
       if (process.env.AUTH_DEBUG_TOKEN === "true") res.debug_invite_token = raw;
       return json(201, res, hdrs, skipCors);

@@ -1,6 +1,7 @@
 /**
  * Lambda / Express 共通ルータ
  */
+import { stripApiPathPrefix } from "./api-path.mjs";
 import { tryAuthRoutes, getDefaultFamilyId } from "./auth-routes.mjs";
 import { resolveUserId } from "./auth-logic.mjs";
 import { buildCorsHeaders } from "./cors-config.mjs";
@@ -39,6 +40,7 @@ function routeKey(method, path) {
   return `${method} ${p}`;
 }
 
+
 function ymBounds(yearMonth) {
   const m = /^(\d{4})-(\d{2})$/.exec(yearMonth || "");
   if (!m) return null;
@@ -57,7 +59,7 @@ function ymBounds(yearMonth) {
 export async function handleApiRequest(req, options = {}) {
   const { skipCors = false } = options;
   const method = req.method.toUpperCase();
-  const path = req.path.split("?")[0] || "/";
+  const path = stripApiPathPrefix(req.path.split("?")[0] || "/");
   const hdrs = req.headers;
 
   if (method === "OPTIONS") {
@@ -145,6 +147,75 @@ export async function handleApiRequest(req, options = {}) {
     const catWhere = `(c.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (c.family_id IS NULL AND c.user_id = ?))`;
     const txWhere = `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (t.family_id IS NULL AND t.user_id = ?))`;
 
+    const normPath = path.replace(/\/$/, "") || "/";
+    const txOneMatch = /^\/transactions\/(\d+)$/.exec(normPath);
+
+    if (txOneMatch && method === "PATCH") {
+      const txId = Number(txOneMatch[1], 10);
+      const b = JSON.parse(req.body || "{}");
+      const [[existing]] = await pool.query(
+        `SELECT id FROM transactions t WHERE t.id = ? AND (${txWhere})`,
+        [txId, userId, userId],
+      );
+      if (!existing) {
+        return json(404, { error: "見つかりません" }, hdrs, skipCors);
+      }
+      const fields = [];
+      const params = [];
+      if (b.kind === "income" || b.kind === "expense") {
+        fields.push("kind = ?");
+        params.push(b.kind);
+      }
+      if (b.amount != null && b.amount !== "") {
+        const amt = Number(b.amount);
+        if (!Number.isFinite(amt) || amt <= 0) {
+          return json(400, { error: "金額は正の数である必要があります" }, hdrs, skipCors);
+        }
+        fields.push("amount = ?");
+        params.push(amt);
+      }
+      if (b.transaction_date != null && b.transaction_date !== "") {
+        fields.push("transaction_date = ?");
+        params.push(String(b.transaction_date).slice(0, 10));
+      }
+      if (Object.prototype.hasOwnProperty.call(b, "memo")) {
+        fields.push("memo = ?");
+        params.push(b.memo == null || b.memo === "" ? null : String(b.memo));
+      }
+      if (Object.prototype.hasOwnProperty.call(b, "category_id")) {
+        let cid = null;
+        if (b.category_id != null && b.category_id !== "") {
+          cid = Number(b.category_id);
+          if (!Number.isFinite(cid)) {
+            return json(400, { error: "category_id が不正です" }, hdrs, skipCors);
+          }
+        }
+        fields.push("category_id = ?");
+        params.push(cid);
+      }
+      if (fields.length === 0) {
+        return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
+      }
+      params.push(txId);
+      await pool.query(
+        `UPDATE transactions t SET ${fields.join(", ")} WHERE t.id = ? AND (${txWhere})`,
+        [...params, userId, userId],
+      );
+      return json(200, { ok: true }, hdrs, skipCors);
+    }
+
+    if (txOneMatch && method === "DELETE") {
+      const txId = Number(txOneMatch[1], 10);
+      const [delRes] = await pool.query(
+        `DELETE t FROM transactions t WHERE t.id = ? AND (${txWhere})`,
+        [txId, userId, userId],
+      );
+      if (!delRes.affectedRows) {
+        return json(404, { error: "見つかりません" }, hdrs, skipCors);
+      }
+      return json(200, { ok: true }, hdrs, skipCors);
+    }
+
     switch (routeKey(method, path)) {
       case "GET /categories": {
         const [rows] = await pool.query(
@@ -214,6 +285,22 @@ export async function handleApiRequest(req, options = {}) {
           ],
         );
         return json(201, { id: r.insertId }, hdrs, skipCors);
+      }
+
+      case "POST /transactions/delete": {
+        const b = JSON.parse(req.body || "{}");
+        const txId = Number(b.id);
+        if (!Number.isFinite(txId) || txId <= 0) {
+          return json(400, { error: "id が不正です" }, hdrs, skipCors);
+        }
+        const [delRes] = await pool.query(
+          `DELETE t FROM transactions t WHERE t.id = ? AND (${txWhere})`,
+          [txId, userId, userId],
+        );
+        if (!delRes.affectedRows) {
+          return json(404, { error: "見つかりません" }, hdrs, skipCors);
+        }
+        return json(200, { ok: true }, hdrs, skipCors);
       }
 
       case "GET /summary/month": {
