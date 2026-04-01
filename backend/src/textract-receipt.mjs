@@ -5,7 +5,6 @@
  */
 import { AnalyzeExpenseCommand, TextractClient } from "@aws-sdk/client-textract";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
-import dns from "node:dns";
 import { Agent as HttpsAgent } from "node:https";
 
 const DEFAULT_REGION = "ap-northeast-1";
@@ -24,10 +23,6 @@ function getDefaultAwsConfig() {
   const httpsAgent = new HttpsAgent({
     keepAlive: true,
     maxSockets: 50,
-    lookup(hostname, options, callback) {
-      // App Runner 環境での一時 DNS 失敗を減らすため IPv4 を優先
-      return dns.lookup(hostname, { ...options, family: 4 }, callback);
-    },
   });
   return {
     region:
