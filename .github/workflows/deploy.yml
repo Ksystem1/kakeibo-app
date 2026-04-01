@@ -22,7 +22,7 @@ jobs:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       AWS_ROLE_TO_ASSUME_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
       AWS_ROLE_TO_ASSUME_FALLBACK: arn:aws:iam::345362761619:role/kakeibo-api-github-actions-deploy-role
-      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      TF_STATE_BUCKET: ksystemapp-web-production
       TF_STATE_KEY: kakeibo/terraform/ecs-express.tfstate
       ECR_REPOSITORY: kakeibo-api
       TF_WORKING_DIR: infra/terraform-ecs-express
