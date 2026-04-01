@@ -6,18 +6,12 @@
 import { AnalyzeExpenseCommand, TextractClient } from "@aws-sdk/client-textract";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import dns from "node:dns";
-import { Resolver } from "node:dns/promises";
 import { Agent as HttpsAgent } from "node:https";
 
 const DEFAULT_REGION = "ap-northeast-1";
 const DEFAULT_TIMEOUT_MS = 25_000;
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 const DEFAULT_SEND_RETRIES = 4;
-const DNS_CACHE_TTL_MS = 60_000;
-
-const dnsResolver = new Resolver();
-const dnsIpCache = new Map();
-const dnsInFlight = new Map();
 
 function envInt(name, fallback) {
   const v = process.env[name];
@@ -36,46 +30,25 @@ function getDefaultAwsConfig() {
     keepAlive: true,
     maxSockets: 50,
     lookup(hostname, options, callback) {
-      const familyOpt =
-        options && typeof options === "object" && "family" in options
-          ? Number(options.family) || 0
-          : 0;
-      const family = familyOpt === 0 ? 4 : familyOpt;
-      const now = Date.now();
-      const key = `${hostname}|${family}`;
-      const cached = dnsIpCache.get(key);
-      if (cached && cached.expiresAt > now) {
-        callback(null, cached.address, family);
+      if (hostname !== textractHost) {
+        dns.lookup(hostname, options, callback);
         return;
       }
+      const family =
+        options && typeof options === "object" && Number(options.family) > 0
+          ? Number(options.family)
+          : 4;
       const run = async () => {
         let lastErr;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
           try {
-            // Textract だけ明示解決して短期キャッシュ。その他は通常 lookup。
-            if (hostname === textractHost) {
-              const answers = await dnsResolver.resolve4(hostname, { ttl: true });
-              const first = answers?.[0];
-              if (first && typeof first.address === "string") {
-                const ttlMs = Math.max(
-                  5_000,
-                  Math.min(DNS_CACHE_TTL_MS, Number(first.ttl || 60) * 1000),
-                );
-                dnsIpCache.set(key, {
-                  address: first.address,
-                  expiresAt: Date.now() + ttlMs,
-                });
-                return { address: first.address, family: 4 };
-              }
-              throw new Error(`No A record: ${hostname}`);
-            }
-            const lookedUp = await new Promise((resolve, reject) => {
+            const r = await new Promise((resolve, reject) => {
               dns.lookup(hostname, { ...options, family }, (e, address, f) => {
                 if (e) reject(e);
                 else resolve({ address, family: f || family });
               });
             });
-            return lookedUp;
+            return r;
           } catch (e) {
             lastErr = e;
             if (!isTransientNetworkError(e) || attempt >= 3) break;
@@ -84,12 +57,7 @@ function getDefaultAwsConfig() {
         }
         throw lastErr;
       };
-      let inflight = dnsInFlight.get(key);
-      if (!inflight) {
-        inflight = run().finally(() => dnsInFlight.delete(key));
-        dnsInFlight.set(key, inflight);
-      }
-      inflight
+      run()
         .then((r) => callback(null, r.address, r.family))
         .catch((e) => callback(e));
     },
