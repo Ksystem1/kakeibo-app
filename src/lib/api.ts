@@ -1,6 +1,16 @@
 import { getStoredToken } from "../context/AuthContext";
 
-const BASE = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
+/** 本番は .env.production の VITE_API_URL。開発で未設定のときは Vite プロキシ /api を使う。 */
+function resolveApiBase(): string {
+  const raw = import.meta.env.VITE_API_URL;
+  if (raw != null && String(raw).trim() !== "") {
+    return String(raw).replace(/\/$/, "");
+  }
+  if (import.meta.env.DEV) return "/api";
+  return "";
+}
+
+const BASE = resolveApiBase();
 
 const FETCH_TIMEOUT_MS = 25_000;
 
@@ -18,6 +28,12 @@ async function apiFetch(input: string | URL, init: RequestInit = {}): Promise<Re
     if (aborted) {
       throw new Error(
         "通信がタイムアウトしました。VITE_API_URL（スマホから届くアドレスか）、ネットワーク、CORS を確認してください。",
+      );
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg === "Failed to fetch" || msg.includes("NetworkError")) {
+      throw new Error(
+        "APIに接続できません。ローカルではプロジェクトルートで `npm run dev`（フロントと API を同時起動）を実行してください。API だけなら `cd backend && npm run dev:api`。VITE_API_URL は未設定または `/api` を推奨。本番では api.ksystemapp.com の DNS・App Runner・CORS を確認してください。",
       );
     }
     throw e;
