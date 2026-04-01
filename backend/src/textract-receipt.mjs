@@ -4,11 +4,14 @@
  * - 一時的な DNS/ネットワーク異常（例: getaddrinfo EBUSY）は限定リトライ
  */
 import { AnalyzeExpenseCommand, TextractClient } from "@aws-sdk/client-textract";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
+import dns from "node:dns";
+import { Agent as HttpsAgent } from "node:https";
 
 const DEFAULT_REGION = "ap-northeast-1";
 const DEFAULT_TIMEOUT_MS = 25_000;
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
-const DEFAULT_SEND_RETRIES = 2;
+const DEFAULT_SEND_RETRIES = 4;
 
 function envInt(name, fallback) {
   const v = process.env[name];
@@ -18,12 +21,25 @@ function envInt(name, fallback) {
 }
 
 function getDefaultAwsConfig() {
+  const httpsAgent = new HttpsAgent({
+    keepAlive: true,
+    maxSockets: 50,
+    lookup(hostname, options, callback) {
+      // App Runner 環境での一時 DNS 失敗を減らすため IPv4 を優先
+      return dns.lookup(hostname, { ...options, family: 4 }, callback);
+    },
+  });
   return {
     region:
       process.env.AWS_REGION ||
       process.env.AWS_DEFAULT_REGION ||
       DEFAULT_REGION,
     maxAttempts: Math.max(1, envInt("TEXTRACT_MAX_ATTEMPTS", 2)),
+    requestHandler: new NodeHttpHandler({
+      httpsAgent,
+      connectionTimeout: Math.max(1, envInt("TEXTRACT_CONNECT_TIMEOUT_MS", 5_000)),
+      socketTimeout: Math.max(1, envInt("TEXTRACT_SOCKET_TIMEOUT_MS", 30_000)),
+    }),
   };
 }
 
@@ -192,6 +208,7 @@ export function createReceiptAnalyzer(ctx = {}) {
   const makeClient =
     ctx.makeClient ??
     ((config) => new TextractClient(config));
+  const client = makeClient(awsConfig);
   const logError = ctx.logError ?? (() => {});
   const timeoutMs = Math.max(1, ctx.timeoutMs ?? envInt("TEXTRACT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS));
   const maxBytes = Math.max(1, ctx.maxBytes ?? envInt("TEXTRACT_MAX_IMAGE_BYTES", DEFAULT_MAX_BYTES));
@@ -214,7 +231,6 @@ export function createReceiptAnalyzer(ctx = {}) {
       throw err;
     }
 
-    const client = makeClient(awsConfig);
     const command = new AnalyzeExpenseCommand({
       Document: { Bytes: new Uint8Array(imageBytes) },
     });
