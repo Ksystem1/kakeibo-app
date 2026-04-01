@@ -53,6 +53,16 @@ resource "aws_security_group" "alb" {
     cidr_blocks = var.allowed_cidr_blocks
   }
 
+  dynamic "ingress" {
+    for_each = trimspace(var.alb_certificate_arn) != "" ? [443] : []
+    content {
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = var.allowed_cidr_blocks
+    }
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -83,16 +93,6 @@ resource "aws_security_group" "ecs_service" {
   }
 
   tags = local.tags
-}
-
-resource "aws_security_group_rule" "alb_https" {
-  count             = trimspace(var.alb_certificate_arn) != "" ? 1 : 0
-  type              = "ingress"
-  from_port         = 443
-  to_port           = 443
-  protocol          = "tcp"
-  cidr_blocks       = var.allowed_cidr_blocks
-  security_group_id = aws_security_group.alb.id
 }
 
 resource "aws_lb" "this" {
@@ -128,21 +128,13 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
-  # 証明書未設定時は 80 でそのまま TG へ（移行・検証用）
-  dynamic "default_action" {
-    for_each = trimspace(var.alb_certificate_arn) == "" ? [1] : []
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.this.arn
-    }
-  }
+  default_action {
+    type             = trimspace(var.alb_certificate_arn) != "" ? "redirect" : "forward"
+    target_group_arn = trimspace(var.alb_certificate_arn) == "" ? aws_lb_target_group.this.arn : null
 
-  # 証明書あり時は HTTP を HTTPS へ 301（API は https://api.<domain> でアクセス）
-  dynamic "default_action" {
-    for_each = trimspace(var.alb_certificate_arn) != "" ? [1] : []
-    content {
-      type = "redirect"
-      redirect {
+    dynamic "redirect" {
+      for_each = trimspace(var.alb_certificate_arn) != "" ? [1] : []
+      content {
         port        = "443"
         protocol    = "HTTPS"
         status_code = "HTTP_301"

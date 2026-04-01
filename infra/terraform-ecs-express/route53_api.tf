@@ -26,10 +26,11 @@ locals {
 }
 
 resource "aws_route53_record" "api_alias" {
-  count   = trimspace(local.api_route53_zone_effective) != "" ? 1 : 0
-  zone_id = local.api_route53_zone_effective
-  name    = local.api_rr_label
-  type    = "A"
+  count             = trimspace(local.api_route53_zone_effective) != "" ? 1 : 0
+  zone_id           = local.api_route53_zone_effective
+  name              = local.api_rr_label
+  type              = "A"
+  allow_overwrite   = true
 
   alias {
     name                   = aws_lb.this.dns_name

@@ -1,3 +1,4 @@
+# API（ECS+Fargate+ALB+HTTPS+api.ksystemapp.com DNS）は infra/terraform-ecs-express/terraform.tfvars で管理。
 # ローカル用（.gitignore 対象）。ksystemapp.com の既存ホストゾーンに CloudFront / S3 / ACM を作成
 root_domain        = "ksystemapp.com"
 app_path_prefix    = "kakeibo"
