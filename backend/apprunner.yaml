@@ -1,5 +1,15 @@
 # App Runner: ソースディレクトリを backend にしたとき、このファイルが使われます。
 # https://docs.aws.amazon.com/apprunner/latest/dg/service-source-code-nodejs.html
+#
+# --- カスタムドメイン（この YAML では設定不可）---
+# App Runner に api.ksystem.com 等を紐付ける設定は apprunner.yaml の項目にありません。
+# AWS コンソール「App Runner → サービス → カスタムドメイン」または
+#   aws apprunner associate-custom-domain --service-arn <ARN> --domain-name api.ksystem.com
+# を使用してください。ACM 証明書は東京リージョン（ap-northeast-1）向け。
+# フロントは https://ksystem.com/kakeibo/ （CloudFront+S3）。API URL は VITE_API_URL で指定。
+# 手順全文: ../infra/ROUTE53-APPRUNNER-PATH-GUIDE.md
+# api.ksystemapp.com の手順: ../infra/APPRUNNER-CUSTOM-DOMAIN-KSYSTEMAPP.md
+#
 version: 1.0
 runtime: nodejs20
 build:

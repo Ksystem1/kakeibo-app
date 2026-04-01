@@ -6,6 +6,10 @@ import { tryAuthRoutes, getDefaultFamilyId } from "./auth-routes.mjs";
 import { resolveUserId } from "./auth-logic.mjs";
 import { buildCorsHeaders } from "./cors-config.mjs";
 import { getPool, pingDatabase } from "./db.mjs";
+import {
+  analyzeReceiptImageBytes,
+  decodeImageBuffer,
+} from "./textract-receipt.mjs";
 
 function logError(event, e, extra = {}) {
   console.error(
@@ -401,32 +405,62 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /receipts/parse": {
         const b = JSON.parse(req.body || "{}");
-        const hasImage = Boolean(b.imageBase64);
-        return json(
-          200,
-          {
-            ok: true,
-            demo: !hasImage,
-            items: hasImage
-              ? [
-                  { name: "サンプル品目", amount: 498, confidence: 0.42 },
-                  { name: "（デモ）実装は AWS Textract AnalyzeExpense 推奨", amount: null, confidence: 0 },
-                ]
-              : [],
-            apis: {
-              aws:
-                "Textract AnalyzeExpense / AnalyzeID — レシート行・合計の抽出",
-              google: "Document AI Expense Parser",
-              openai: "Vision API で画像→JSON（プロンプト設計が必要）",
+        if (b.imageBase64 == null || typeof b.imageBase64 !== "string") {
+          return json(
+            400,
+            {
+              error: "InvalidRequest",
+              detail:
+                "imageBase64（JPEG/PNG 等の base64、または data URL）が必要です。",
             },
-            notice:
-              hasImage
-                ? "現在はスタブ応答です。本番では画像を Textract に送り line_items をマッピングしてください。"
-                : "imageBase64 にレシート画像を送るとデモ行を返します。",
-          },
-          hdrs,
-          skipCors,
-        );
+            hdrs,
+            skipCors,
+          );
+        }
+        try {
+          const buf = decodeImageBuffer(b.imageBase64);
+          const result = await analyzeReceiptImageBytes(buf, { logError });
+          return json(
+            200,
+            {
+              ok: true,
+              demo: false,
+              summary: result.summary,
+              items: result.items,
+              notice: result.notice,
+              expenseIndex: result.expenseIndex,
+            },
+            hdrs,
+            skipCors,
+          );
+        } catch (e) {
+          const status =
+            e &&
+            typeof e === "object" &&
+            "statusCode" in e &&
+            Number.isFinite(Number(e.statusCode))
+              ? Number(e.statusCode)
+              : 500;
+          const code =
+            e && typeof e === "object" && "code" in e && e.code
+              ? String(e.code)
+              : "ReceiptParseError";
+          logError("receipts.parse", e, { code, status });
+          return json(
+            status,
+            {
+              error: code,
+              detail:
+                e instanceof Error
+                  ? e.message
+                  : typeof e === "string"
+                    ? e
+                    : "レシート解析に失敗しました。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
       }
 
       default:
