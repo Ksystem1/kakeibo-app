@@ -36,6 +36,12 @@ variable "container_image" {
   type        = string
 }
 
+variable "ecr_repository_name" {
+  description = "ECR repository name used by GitHub Actions"
+  type        = string
+  default     = "kakeibo-api"
+}
+
 variable "container_port" {
   description = "Container listening port"
   type        = number
