@@ -9,7 +9,7 @@ container_image = "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/kakeibo-api
 
 desired_count = 1
 
-# HTTPS リスナー（ACM は ap-northeast-1。フロントが HTTPS のとき VITE_API_URL も https:// 必須）
+# HTTPS リスナー（ACM は ap-northeast-1）。設定時は 443 で TG に転送、80 は https へ 301
 # alb_certificate_arn = "arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 create_github_oidc_provider = false

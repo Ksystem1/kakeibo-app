@@ -128,9 +128,26 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.this.arn
+  # 証明書未設定時は 80 でそのまま TG へ（移行・検証用）
+  dynamic "default_action" {
+    for_each = trimspace(var.alb_certificate_arn) == "" ? [1] : []
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.this.arn
+    }
+  }
+
+  # 証明書あり時は HTTP を HTTPS へ 301（API は https://api.<domain> でアクセス）
+  dynamic "default_action" {
+    for_each = trimspace(var.alb_certificate_arn) != "" ? [1] : []
+    content {
+      type = "redirect"
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
   }
 }
 

@@ -34,8 +34,9 @@ variable "allowed_cidr_blocks" {
 variable "alb_certificate_arn" {
   description = <<-EOT
     ap-northeast-1 の ACM 証明書 ARN（HTTPS リスナー用）。
-    HTTPS で配信するフロント（例: CloudFront）から API を呼ぶとき、VITE_API_URL は https:// 必須（http:// だと Mixed Content でブロック）。
-    ACM は *.elb.amazonaws.com を発行できないため、api.example.com 等の所有ドメイン向けに発行し、Route53 で A/ALIAS をこの ALB に向け、GitHub Secret の VITE_API_URL を https://api.example.com にしてください。
+    非空のとき: ALB に 443 を追加し、80 は 301 で https にリダイレクト（同一ホスト・パス・クエリを維持）。
+    空のとき: 80 のみで TG にフォワード（移行・検証用）。
+    フロントが HTTPS のときは VITE_API_URL も https://（例: https://api.ksystemapp.com）必須。
   EOT
   type        = string
   default     = ""
