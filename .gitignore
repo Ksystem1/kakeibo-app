@@ -4,3 +4,11 @@ dist
 .DS_Store
 .env
 backend/.env
+# ドメイン・ARN メモ（infra/env.deploy.example をコピーしたもの）
+infra/env.deploy.local
+deploy-secrets.env
+# Terraform（状態ファイルはコミットしない）
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/terraform.tfvars

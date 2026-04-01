@@ -6,11 +6,19 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:s3-rebuild": "node infra/scripts/rebuild-s3-cloudfront.mjs",
+    "deploy:s3-sync": "node infra/scripts/sync-dist-to-s3.mjs",
+    "deploy:cloudfront-spa": "node infra/scripts/cloudfront-spa-errors.mjs",
+    "deploy:backend": "node infra/scripts/deploy-backend-apprunner.mjs",
+    "deploy:prod": "node infra/scripts/deploy-production.mjs",
+    "deploy:auto": "node infra/scripts/deploy-and-verify.mjs",
+    "verify:login": "node infra/scripts/verify-login.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-qr-code": "^2.0.18",
     "react-router-dom": "^7.13.2"
   },
   "devDependencies": {

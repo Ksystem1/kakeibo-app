@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createTransaction,
+  deleteTransaction,
   getApiBaseUrl,
   getCategories,
   getMonthSummary,
   getTransactions,
+  updateTransaction,
 } from "../lib/api";
 import styles from "./KakeiboDashboard.module.css";
 
@@ -50,6 +52,20 @@ const yen = new Intl.NumberFormat("ja-JP", {
 function numAmount(v: string | number) {
   const n = typeof v === "number" ? v : Number.parseFloat(String(v));
   return Number.isFinite(n) ? n : 0;
+}
+
+/** 取引一覧の日付を YYYY-MM-DD のみ表示 */
+function formatTxDateYmd(raw: string | Date | null | undefined) {
+  if (raw == null) return "";
+  const s = typeof raw === "string" ? raw : raw.toISOString?.() ?? String(raw);
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+  if (m) return m[1];
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s.slice(0, 10);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${day}`;
 }
 
 export function KakeiboDashboard() {
@@ -131,6 +147,16 @@ export function KakeiboDashboard() {
   const [formCategoryId, setFormCategoryId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
+  const [edit, setEdit] = useState<{
+    id: number;
+    kind: "expense" | "income";
+    amount: string;
+    transaction_date: string;
+    memo: string;
+    category_id: string;
+  } | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     const amount = Number.parseFloat(formAmount);
@@ -161,16 +187,70 @@ export function KakeiboDashboard() {
   }
 
   const filteredCategories = categories.filter((c) => c.kind === formKind);
+  const editCategories = categories.filter(
+    (c) => c.kind === (edit?.kind ?? "expense"),
+  );
+
+  function beginEdit(t: Transaction) {
+    setEdit({
+      id: t.id,
+      kind: t.kind === "income" ? "income" : "expense",
+      amount: String(numAmount(t.amount)),
+      transaction_date: formatTxDateYmd(t.transaction_date),
+      memo: t.memo ?? "",
+      category_id: t.category_id != null ? String(t.category_id) : "",
+    });
+  }
+
+  function cancelEdit() {
+    setEdit(null);
+  }
+
+  async function saveEdit() {
+    if (!edit) return;
+    const amount = Number.parseFloat(edit.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("金額は正の数で入力してください。");
+      return;
+    }
+    setEditSaving(true);
+    setError(null);
+    try {
+      await updateTransaction(edit.id, {
+        kind: edit.kind,
+        amount,
+        transaction_date: edit.transaction_date,
+        memo: edit.memo.trim() || null,
+        category_id: edit.category_id
+          ? Number.parseInt(edit.category_id, 10)
+          : null,
+      });
+      cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function removeTransaction(id: number) {
+    if (!window.confirm("この取引を削除しますか？")) return;
+    setError(null);
+    try {
+      await deleteTransaction(id);
+      if (edit?.id === id) cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   return (
     <div className={styles.wrap}>
       <header className={styles.header}>
         <div>
           <h1 className={styles.title}>家計簿</h1>
-          <p className={styles.sub}>
-            API から取引を表示します（ユーザーは{" "}
-            <code>VITE_DEV_USER_ID</code>）。
-          </p>
         </div>
         <div className={styles.actions}>
           <label htmlFor="kb-month" className={styles.monthRow}>
@@ -391,35 +471,161 @@ export function KakeiboDashboard() {
                 </td>
               </tr>
             ) : (
-              transactions.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.transaction_date}</td>
-                  <td>
-                    <span
-                      className={`${styles.kind} ${
-                        t.kind === "income"
-                          ? styles.kindIncome
-                          : t.kind === "expense"
-                            ? styles.kindExpense
-                            : styles.kindOther
-                      }`}
-                    >
-                      {t.kind === "income"
-                        ? "収入"
-                        : t.kind === "expense"
-                          ? "支出"
-                          : t.kind}
-                    </span>
-                  </td>
-                  <td>
-                    {t.category_id != null
-                      ? (categoryById.get(t.category_id) ?? `ID:${t.category_id}`)
-                      : "—"}
-                  </td>
-                  <td>{yen.format(numAmount(t.amount))}</td>
-                  <td>{t.memo ?? ""}</td>
-                </tr>
-              ))
+              transactions.map((t) => {
+                const isEditing = edit?.id === t.id;
+                return (
+                  <tr key={t.id}>
+                    <td>
+                      {isEditing ? (
+                        <input
+                          className={styles.cellInput}
+                          type="date"
+                          value={edit.transaction_date}
+                          onChange={(ev) =>
+                            setEdit({ ...edit, transaction_date: ev.target.value })
+                          }
+                          aria-label="取引日"
+                        />
+                      ) : (
+                        formatTxDateYmd(t.transaction_date)
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <select
+                          className={styles.cellInput}
+                          value={edit.kind}
+                          onChange={(ev) =>
+                            setEdit({
+                              ...edit,
+                              kind: ev.target.value as "expense" | "income",
+                              category_id: "",
+                            })
+                          }
+                          aria-label="種別"
+                        >
+                          <option value="expense">支出</option>
+                          <option value="income">収入</option>
+                        </select>
+                      ) : (
+                        <span
+                          className={`${styles.kind} ${
+                            t.kind === "income"
+                              ? styles.kindIncome
+                              : t.kind === "expense"
+                                ? styles.kindExpense
+                                : styles.kindOther
+                          }`}
+                        >
+                          {t.kind === "income"
+                            ? "収入"
+                            : t.kind === "expense"
+                              ? "支出"
+                              : t.kind}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <select
+                          className={styles.cellInput}
+                          value={edit.category_id}
+                          onChange={(ev) =>
+                            setEdit({ ...edit, category_id: ev.target.value })
+                          }
+                          aria-label="カテゴリ"
+                        >
+                          <option value="">なし</option>
+                          {editCategories.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : t.category_id != null ? (
+                        categoryById.get(t.category_id) ?? `ID:${t.category_id}`
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <input
+                          className={styles.cellInput}
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={edit.amount}
+                          onChange={(ev) =>
+                            setEdit({ ...edit, amount: ev.target.value })
+                          }
+                          aria-label="金額"
+                        />
+                      ) : (
+                        yen.format(numAmount(t.amount))
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <div className={styles.memoCell}>
+                          <input
+                            className={styles.cellInput}
+                            type="text"
+                            value={edit.memo}
+                            onChange={(ev) =>
+                              setEdit({ ...edit, memo: ev.target.value })
+                            }
+                            placeholder="メモ"
+                            aria-label="メモ"
+                          />
+                          <div className={styles.rowActions}>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnSm} ${styles.btnPrimary}`}
+                              disabled={editSaving || !base}
+                              onClick={() => void saveEdit()}
+                            >
+                              {editSaving ? "保存中…" : "保存"}
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnSm}`}
+                              disabled={editSaving}
+                              onClick={cancelEdit}
+                            >
+                              キャンセル
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={styles.memoCell}>
+                          <span className={styles.memoText}>
+                            {t.memo ?? ""}
+                          </span>
+                          <div className={styles.rowActions}>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnSm}`}
+                              disabled={!base}
+                              onClick={() => beginEdit(t)}
+                            >
+                              変更
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnSm} ${styles.btnDanger}`}
+                              disabled={!base}
+                              onClick={() => void removeTransaction(t.id)}
+                            >
+                              削除
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

@@ -1,0 +1,150 @@
+# Kakeibo フロント（Vite SPA）を Ksystem ドメインで外部公開するための雛形。
+# CloudFront はグローバル、S3 バケットはスタックと同じリージョンに作成されます。
+#
+# 事前準備（必須）:
+# - us-east-1 で ACM 証明書を発行し、DNS 検証を完了する（CloudFront 用は必ずバージニア北部）。
+# - 例: kakeibo.ksystem.example 用の証明書、または *.ksystem.example のワイルドカード。
+#
+# デプロイ例（東京）:
+#   aws cloudformation deploy \
+#     --stack-name kakeibo-web-ksystem \
+#     --template-file infra/cloudformation/spa-s3-cloudfront.yaml \
+#     --parameter-overrides SiteDomainName=kakeibo.ksystem.example AcmCertificateArn=arn:aws:acm:us-east-1:ACCOUNT:certificate/UUID \
+#     --capabilities CAPABILITY_IAM \
+#     --region ap-northeast-1
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Kakeibo SPA — S3 + CloudFront + optional Route53 (Ksystem ドメイン向け)
+
+Parameters:
+  SiteDomainName:
+    Type: String
+    Description: 公開用 FQDN（例 kakeibo.ksystem.co.jp）。ACM の SAN と一致させる。
+  AcmCertificateArn:
+    Type: String
+    Description: us-east-1 の ACM 証明書 ARN（CloudFront 用）
+  HostedZoneId:
+    Type: String
+    Default: ""
+    Description: Route53 ホストゾーン ID（空なら DNS レコードは作らない。別 DNS の場合は手動で CNAME/ALIAS）
+  PriceClass:
+    Type: String
+    Default: PriceClass_200
+    AllowedValues:
+      - PriceClass_All
+      - PriceClass_200
+      - PriceClass_100
+
+Conditions:
+  CreateDns: !Not [!Equals [!Ref HostedZoneId, ""]]
+
+Resources:
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Description: OAC for Kakeibo SPA bucket
+        Name: !Sub "${AWS::StackName}-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    DependsOn: CloudFrontOAC
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "Kakeibo SPA ${SiteDomainName}"
+        HttpVersion: http2and3
+        PriceClass: !Ref PriceClass
+        DefaultRootObject: index.html
+        Aliases:
+          - !Ref SiteDomainName
+        Origins:
+          - Id: s3-spa
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: s3-spa
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-81fd-88689e58219f
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${SiteBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+  DnsAlias:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateDns
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref SiteDomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+Outputs:
+  BucketName:
+    Description: ビルド成果物を sync する S3 バケット名
+    Value: !Ref SiteBucket
+  DistributionId:
+    Description: キャッシュ無効化に使う CloudFront の ID
+    Value: !Ref CloudFrontDistribution
+  DistributionDomainName:
+    Description: CloudFront のドメイン（DNS 未設定時の疎通確認用）
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  SiteUrl:
+    Description: 公開 URL
+    Value: !Sub "https://${SiteDomainName}"

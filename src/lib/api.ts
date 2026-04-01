@@ -2,6 +2,30 @@ import { getStoredToken } from "../context/AuthContext";
 
 const BASE = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
 
+const FETCH_TIMEOUT_MS = 25_000;
+
+async function apiFetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = globalThis.setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } catch (e) {
+    const aborted =
+      (e instanceof Error && e.name === "AbortError") ||
+      (typeof DOMException !== "undefined" &&
+        e instanceof DOMException &&
+        e.name === "AbortError");
+    if (aborted) {
+      throw new Error(
+        "通信がタイムアウトしました。VITE_API_URL（スマホから届くアドレスか）、ネットワーク、CORS を確認してください。",
+      );
+    }
+    throw e;
+  } finally {
+    globalThis.clearTimeout(t);
+  }
+}
+
 export function getApiBaseUrl() {
   return BASE;
 }
@@ -39,14 +63,14 @@ async function parse<T>(res: Response): Promise<T> {
 }
 
 export async function getHealth() {
-  const res = await fetch(`${BASE}/health`, {
+  const res = await apiFetch(`${BASE}/health`, {
     headers: buildHeaders(),
   });
   return parse<{ ok: boolean }>(res);
 }
 
 export async function loginRequest(login: string, password: string) {
-  const res = await fetch(`${BASE}/auth/login`, {
+  const res = await apiFetch(`${BASE}/auth/login`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify({ login, password }),
@@ -65,7 +89,7 @@ export async function registerRequest(body: {
   family_name?: string;
   invite_token?: string;
 }) {
-  const res = await fetch(`${BASE}/auth/register`, {
+  const res = await apiFetch(`${BASE}/auth/register`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify(body),
@@ -77,7 +101,7 @@ export async function registerRequest(body: {
 }
 
 export async function forgotPasswordRequest(email: string) {
-  const res = await fetch(`${BASE}/auth/forgot-password`, {
+  const res = await apiFetch(`${BASE}/auth/forgot-password`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify({ email }),
@@ -91,7 +115,7 @@ export async function forgotPasswordRequest(email: string) {
 }
 
 export async function resetPasswordRequest(token: string, password: string) {
-  const res = await fetch(`${BASE}/auth/reset-password`, {
+  const res = await apiFetch(`${BASE}/auth/reset-password`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify({ token, password }),
@@ -100,7 +124,7 @@ export async function resetPasswordRequest(token: string, password: string) {
 }
 
 export async function getCategories() {
-  const res = await fetch(`${BASE}/categories`, { headers: buildHeaders() });
+  const res = await apiFetch(`${BASE}/categories`, { headers: buildHeaders() });
   return parse<{ items: unknown[] }>(res);
 }
 
@@ -109,14 +133,14 @@ export async function getTransactions(from?: string, to?: string) {
   if (from) q.set("from", from);
   if (to) q.set("to", to);
   const qs = q.toString();
-  const res = await fetch(`${BASE}/transactions${qs ? `?${qs}` : ""}`, {
+  const res = await apiFetch(`${BASE}/transactions${qs ? `?${qs}` : ""}`, {
     headers: buildHeaders(),
   });
   return parse<{ items: unknown[] }>(res);
 }
 
 export async function createTransaction(body: Record<string, unknown>) {
-  const res = await fetch(`${BASE}/transactions`, {
+  const res = await apiFetch(`${BASE}/transactions`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify(body),
@@ -128,7 +152,7 @@ export async function updateTransaction(
   id: number,
   body: Record<string, unknown>,
 ) {
-  const res = await fetch(`${BASE}/transactions/${id}`, {
+  const res = await apiFetch(`${BASE}/transactions/${id}`, {
     method: "PATCH",
     headers: buildHeaders(),
     body: JSON.stringify(body),
@@ -137,7 +161,7 @@ export async function updateTransaction(
 }
 
 export async function deleteTransaction(id: number) {
-  const res = await fetch(`${BASE}/transactions/delete`, {
+  const res = await apiFetch(`${BASE}/transactions/delete`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify({ id: Number(id) }),
@@ -147,7 +171,7 @@ export async function deleteTransaction(id: number) {
 
 export async function getMonthSummary(yearMonth: string) {
   const q = new URLSearchParams({ year_month: yearMonth });
-  const res = await fetch(`${BASE}/summary/month?${q}`, {
+  const res = await apiFetch(`${BASE}/summary/month?${q}`, {
     headers: buildHeaders(),
   });
   return parse<{
@@ -168,7 +192,7 @@ export async function getMonthSummary(yearMonth: string) {
 }
 
 export async function importCsvText(csvText: string) {
-  const res = await fetch(`${BASE}/import/csv`, {
+  const res = await apiFetch(`${BASE}/import/csv`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify({ csvText }),
@@ -177,21 +201,28 @@ export async function importCsvText(csvText: string) {
 }
 
 export async function parseReceiptImage(imageBase64: string) {
-  const res = await fetch(`${BASE}/receipts/parse`, {
+  const res = await apiFetch(`${BASE}/receipts/parse`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify({ imageBase64 }),
   });
   return parse<{
     ok: boolean;
+    demo?: boolean;
+    summary?: {
+      vendorName: string | null;
+      totalAmount: number | null;
+      date: string | null;
+      fieldConfidence?: Record<string, number | null | undefined>;
+    };
     items: Array<{ name: string; amount: number | null; confidence?: number }>;
-    apis?: Record<string, string>;
-    notice?: string;
+    notice?: string | null;
+    expenseIndex?: number | null;
   }>(res);
 }
 
 export async function getFamilyMembers() {
-  const res = await fetch(`${BASE}/families/members`, {
+  const res = await apiFetch(`${BASE}/families/members`, {
     headers: buildHeaders(),
   });
   return parse<{
@@ -206,7 +237,7 @@ export async function getFamilyMembers() {
 }
 
 export async function inviteFamilyMember(email: string) {
-  const res = await fetch(`${BASE}/families/invite`, {
+  const res = await apiFetch(`${BASE}/families/invite`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify({ email }),

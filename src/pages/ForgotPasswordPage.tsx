@@ -40,8 +40,8 @@ export function ForgotPasswordPage() {
           <header className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>パスワード再設定</h2>
             <p className={styles.cardSub}>
-              登録メールに再設定用リンクを送る構成にします。本番では SES
-              等が必要です。開発時は AUTH_DEBUG_TOKEN でトークンを返せます。
+              登録メールに再設定用リンクを送る構成です。SES
+              等でのメール送信が必要です。開発時は AUTH_DEBUG_TOKEN でトークンを返せます。
             </p>
           </header>
           <form className={styles.form} onSubmit={handleSubmit}>

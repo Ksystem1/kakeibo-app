@@ -1,7 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "./components/AppLayout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
-import { DevApiTest } from "./components/DevApiTest";
 import { KakeiboDashboard } from "./components/KakeiboDashboard";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ImportCsvPage } from "./pages/ImportCsvPage";
@@ -20,17 +19,15 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route element={<AppLayout />}>
-        <Route path="/" element={<Navigate to="/kakeibo" replace />} />
         <Route element={<ProtectedRoute />}>
-          <Route path="/kakeibo" element={<KakeiboDashboard />} />
+          <Route path="/" element={<KakeiboDashboard />} />
           <Route path="/import" element={<ImportCsvPage />} />
           <Route path="/receipt" element={<ReceiptPage />} />
           <Route path="/members" element={<MembersPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
-        <Route path="/dev-api" element={<DevApiTest />} />
       </Route>
-      <Route path="*" element={<Navigate to="/kakeibo" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

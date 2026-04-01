@@ -1,0 +1,70 @@
+{
+  "family": "kakeibo-api-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::123456789012:role/kakeibo-api-execution-role",
+  "taskRoleArn": "arn:aws:iam::123456789012:role/kakeibo-api-task-role",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/kakeibo-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3456,
+          "hostPort": 3456,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "API_PORT", "value": "3456" },
+        { "name": "CORS_ORIGIN", "value": "https://ksystemapp.com" },
+        { "name": "JWT_EXPIRES_IN", "value": "7d" },
+        { "name": "ALLOW_X_USER_ID", "value": "false" },
+        { "name": "AUTH_DEBUG_TOKEN", "value": "false" },
+        { "name": "TEXTRACT_ENABLED", "value": "true" },
+        { "name": "TEXTRACT_TIMEOUT_MS", "value": "25000" },
+        { "name": "TEXTRACT_MAX_IMAGE_BYTES", "value": "5242880" },
+        { "name": "TEXTRACT_MAX_ATTEMPTS", "value": "2" },
+        { "name": "TEXTRACT_SEND_RETRIES", "value": "2" }
+      ],
+      "secrets": [
+        {
+          "name": "RDS_HOST",
+          "valueFrom": "arn:aws:ssm:ap-northeast-1:123456789012:parameter/kakeibo/prod/rds_host"
+        },
+        {
+          "name": "RDS_PORT",
+          "valueFrom": "arn:aws:ssm:ap-northeast-1:123456789012:parameter/kakeibo/prod/rds_port"
+        },
+        {
+          "name": "RDS_USER",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:kakeibo/prod/rds_user"
+        },
+        {
+          "name": "RDS_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:kakeibo/prod/rds_password"
+        },
+        {
+          "name": "RDS_DATABASE",
+          "valueFrom": "arn:aws:ssm:ap-northeast-1:123456789012:parameter/kakeibo/prod/rds_database"
+        },
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:kakeibo/prod/jwt_secret"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/kakeibo-api",
+          "awslogs-region": "ap-northeast-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

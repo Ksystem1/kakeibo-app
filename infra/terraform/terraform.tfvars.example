@@ -1,0 +1,20 @@
+# 使い方: コピーして terraform.tfvars にリネームし、値を編集
+#   copy terraform.tfvars.example terraform.tfvars   （PowerShell）
+#
+# ▼ コンソールでホストゾーン済み（ksystemapp.com）— existing_zone_id は空でよい（名前で自動検索）
+root_domain          = "ksystemapp.com"
+app_path_prefix      = "kakeibo"
+api_subdomain        = "api"
+aws_region           = "ap-northeast-1"
+create_hosted_zone   = false
+existing_zone_id     = ""
+include_www_alias    = false
+#
+# ゾーン ID を明示したい場合のみ:
+# existing_zone_id = "Zxxxxxxxxxxxx"
+#
+# ▼ ゾーンを Terraform で新規作成する場合（既存ゾーンと二重に作らないこと）
+# create_hosted_zone = true
+
+# App Runner を Terraform で紐付けする場合のみ（空なら手順書の CLI / コンソール）
+# apprunner_service_arn = "arn:aws:apprunner:ap-northeast-1:123456789012:service/kakeibo-api/xxx"

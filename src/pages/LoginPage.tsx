@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { loginRequest } from "../lib/api";
 import styles from "../components/LoginScreen.module.css";
+import { MobileAccessQr } from "../components/MobileAccessQr";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -14,7 +15,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (token) navigate("/kakeibo", { replace: true });
+    if (token) navigate("/", { replace: true });
   }, [token, navigate]);
 
   async function handleSubmit(e: FormEvent) {
@@ -36,7 +37,7 @@ export function LoginPage() {
       if (!remember) {
         /* 将来: セッションのみ */
       }
-      navigate("/kakeibo", { replace: true });
+      navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "ログインに失敗しました");
     } finally {
@@ -49,9 +50,11 @@ export function LoginPage() {
       <aside className={styles.hero}>
         <div className={styles.heroInner}>
           <span className={styles.badge}>Kakeibo</span>
-          <h1 className={styles.heroTitle}>家計を静かに、確かに。</h1>
+          <h1 className={styles.heroTitle}>夫婦で共有。みんなの家計簿</h1>
           <p className={styles.heroDesc}>
-            メールアドレスまたはログインIDでサインイン。家族と同じ家計簿を共有できます。
+            メールアドレスまたはログインIDでサインイン。
+            <br />
+            家計簿を共有できます。
           </p>
         </div>
       </aside>
@@ -126,6 +129,9 @@ export function LoginPage() {
               新規登録
             </Link>
           </p>
+          <aside className={styles.qrUnderFooter} aria-label="スマートフォンアクセス">
+            <MobileAccessQr fixedPath={`${import.meta.env.BASE_URL}login`} />
+          </aside>
         </div>
       </main>
     </div>

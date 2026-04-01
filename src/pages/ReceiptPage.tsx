@@ -1,20 +1,65 @@
-import { useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { parseReceiptImage } from "../lib/api";
+import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
 
+/** 日付入力（type=date）に載せられる形へ寄せる。無理ならテキストとして扱う */
+function dateFieldMode(raw: string): { kind: "iso"; value: string } | { kind: "text"; value: string } {
+  const s = raw.trim();
+  if (!s) return { kind: "iso", value: "" };
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return { kind: "iso", value: s };
+  const m = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.exec(s);
+  if (m) {
+    return {
+      kind: "iso",
+      value: `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`,
+    };
+  }
+  const jp = /^(\d{4})年(\d{1,2})月(\d{1,2})日?$/.exec(s);
+  if (jp) {
+    return {
+      kind: "iso",
+      value: `${jp[1]}-${jp[2].padStart(2, "0")}-${jp[3].padStart(2, "0")}`,
+    };
+  }
+  return { kind: "text", value: s };
+}
+
 export function ReceiptPage() {
+  const touchUi = useReceiptTouchUi();
+  const cameraInputId = useId();
+  const galleryInputId = useId();
+  const vendorFieldId = useId();
+  const totalFieldId = useId();
+  const dateFieldId = useId();
+
   const [notice, setNotice] = useState<string | null>(null);
+  /** 解析結果を反映したうえでユーザーが修正可能 */
+  const [draftVendor, setDraftVendor] = useState("");
+  const [draftTotal, setDraftTotal] = useState("");
+  const [draftDate, setDraftDate] = useState("");
   const [items, setItems] = useState<
     Array<{ name: string; amount: number | null; confidence?: number }>
   >([]);
-  const [apis, setApis] = useState<Record<string, string> | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!touchUi || !loading) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [touchUi, loading]);
 
   async function onFile(f: File | null) {
     if (!f) return;
     setLoading(true);
     setNotice(null);
-    setApis(null);
+    setDraftVendor("");
+    setDraftTotal("");
+    setDraftDate("");
+    setItems([]);
     try {
       const buf = await f.arrayBuffer();
       const b64 = btoa(
@@ -22,7 +67,18 @@ export function ReceiptPage() {
       );
       const r = await parseReceiptImage(b64);
       setItems(r.items ?? []);
-      setApis(r.apis ?? null);
+      const s = r.summary;
+      setDraftVendor(s?.vendorName?.trim() ?? "");
+      setDraftTotal(
+        s?.totalAmount != null && Number.isFinite(Number(s.totalAmount))
+          ? String(s.totalAmount)
+          : "",
+      );
+      {
+        const raw = s?.date?.trim() ?? "";
+        const dm = dateFieldMode(raw);
+        setDraftDate(dm.kind === "iso" ? dm.value : raw);
+      }
       setNotice(r.notice ?? null);
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
@@ -32,42 +88,157 @@ export function ReceiptPage() {
     }
   }
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    void onFile(e.target.files?.[0] ?? null);
+    e.target.value = "";
+  }
+
+  const pickDisabled = loading ? styles.receiptPickBtnDisabled : "";
+
+  const dateField = useMemo(() => dateFieldMode(draftDate), [draftDate]);
+
+  const loadingUi = (
+    <>
+      {touchUi ? (
+        <div
+          className={styles.receiptLoadingOverlay}
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className={styles.receiptLoadingOverlayInner}>
+            <span className={styles.receiptSpinner} aria-hidden />
+            <p className={styles.receiptLoadingOverlayText}>解析中...</p>
+          </div>
+        </div>
+      ) : (
+        <div
+          className={styles.receiptLoadingPanel}
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span className={styles.receiptSpinner} aria-hidden />
+          <span>解析中...</span>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className={styles.wrap}>
+      {loading ? loadingUi : null}
       <h1 className={styles.title}>レシート読取（カメラ / 画像）</h1>
       <p className={styles.sub}>
-        スマホではカメラで撮影して選択。本番では{" "}
-        <strong>AWS Textract AnalyzeExpense</strong> 等で行単位を抽出します。
+        {touchUi
+          ? "「カメラで撮る」か「写真・ファイルを選ぶ」のどちらかで画像を指定できます。"
+          : "レシート画像を選択すると、行ごとの読取候補を表示します。"}{" "}
+        AWS Textract AnalyzeExpense 等での行単位抽出を想定しています。
       </p>
-      <input
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={(e) => void onFile(e.target.files?.[0] ?? null)}
-        style={{ marginBottom: "1rem" }}
-      />
-      {loading ? <p>解析中…</p> : null}
+      {touchUi ? (
+        <div className={styles.receiptPickRow}>
+          <input
+            id={cameraInputId}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="visually-hidden"
+            disabled={loading}
+            onChange={handleFileChange}
+          />
+          <label
+            htmlFor={cameraInputId}
+            className={`${styles.receiptPickBtn} ${pickDisabled}`}
+          >
+            カメラで撮る
+          </label>
+          <input
+            id={galleryInputId}
+            type="file"
+            accept="image/*"
+            className="visually-hidden"
+            disabled={loading}
+            onChange={handleFileChange}
+          />
+          <label
+            htmlFor={galleryInputId}
+            className={`${styles.receiptPickBtn} ${pickDisabled}`}
+          >
+            写真・ファイルを選ぶ
+          </label>
+        </div>
+      ) : (
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          disabled={loading}
+          style={{ marginBottom: "1rem" }}
+        />
+      )}
+
+      <form
+        className={styles.receiptSummaryForm}
+        onSubmit={(e) => e.preventDefault()}
+      >
+        <p className={styles.receiptSummaryHint}>
+          解析後、店舗名・合計・日付が下記に自動入力されます。内容はいつでも手で修正できます。
+        </p>
+        <div className={styles.field}>
+          <label htmlFor={vendorFieldId}>店舗名</label>
+          <input
+            id={vendorFieldId}
+            type="text"
+            autoComplete="organization"
+            placeholder="例: 〇〇ストア"
+            value={draftVendor}
+            onChange={(e) => setDraftVendor(e.target.value)}
+            disabled={loading}
+          />
+        </div>
+        <div className={styles.field}>
+          <label htmlFor={totalFieldId}>合計金額（円）</label>
+          <input
+            id={totalFieldId}
+            type="text"
+            inputMode="decimal"
+            placeholder="例: 1234"
+            value={draftTotal}
+            onChange={(e) => setDraftTotal(e.target.value)}
+            disabled={loading}
+          />
+        </div>
+        <div className={styles.field}>
+          <label htmlFor={dateFieldId}>日付</label>
+          {dateField.kind === "iso" ? (
+            <input
+              id={dateFieldId}
+              type="date"
+              value={dateField.value}
+              onChange={(e) => setDraftDate(e.target.value)}
+              disabled={loading}
+            />
+          ) : (
+            <input
+              id={dateFieldId}
+              type="text"
+              inputMode="numeric"
+              placeholder="YYYY-MM-DD など"
+              value={dateField.value}
+              onChange={(e) => setDraftDate(e.target.value)}
+              disabled={loading}
+            />
+          )}
+        </div>
+      </form>
+
       {notice ? (
         <p style={{ color: "var(--text-muted)", marginBottom: "1rem" }}>
           {notice}
         </p>
       ) : null}
-      {apis ? (
-        <ul
-          style={{
-            fontSize: "0.8rem",
-            color: "var(--text-muted)",
-            marginBottom: "1rem",
-          }}
-        >
-          {Object.entries(apis).map(([k, v]) => (
-            <li key={k}>
-              <strong>{k}</strong>: {v}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <h2 className={styles.sectionTitle}>読取結果（デモ）</h2>
+
+      <h2 className={styles.sectionTitle}>読取結果（行）</h2>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>

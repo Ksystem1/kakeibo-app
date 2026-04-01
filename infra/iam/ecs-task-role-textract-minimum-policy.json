@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TextractAnalyzeExpense",
+      "Effect": "Allow",
+      "Action": [
+        "textract:AnalyzeExpense"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+# Route 53 パブリックホストゾーンのみ作成（ドメインは別途 Route 53 ドメイン登録で取得済み想定）
+# 第一希望 ksystem.com、取得済みなら Parameter で ksystemX01.com に変更
+#
+# aws cloudformation deploy \
+#   --stack-name ksystem-hosted-zone \
+#   --template-file infra/cloudformation/route53-hosted-zone.yaml \
+#   --parameter-overrides DomainName=ksystem.com \
+#   --region ap-northeast-1
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Route 53 public hosted zone for Ksystem root domain
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: ksystem.com
+    Description: ルートドメイン（末尾ドット不要）
+
+Resources:
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref DomainName
+
+Outputs:
+  HostedZoneId:
+    Description: Terraform の existing_zone_id や ACM DNS 検証に使用
+    Value: !Ref HostedZone
+  NameServer0:
+    Value: !Select [0, !GetAtt HostedZone.NameServers]
+  NameServer1:
+    Value: !Select [1, !GetAtt HostedZone.NameServers]
+  NameServer2:
+    Value: !Select [2, !GetAtt HostedZone.NameServers]
+  NameServer3:
+    Value: !Select [3, !GetAtt HostedZone.NameServers]

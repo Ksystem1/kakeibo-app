@@ -2,16 +2,24 @@ import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { AdSlot } from "./AdSlot";
+import { MobileAccessQr } from "./MobileAccessQr";
 
-const linkStyle = ({ isActive }: { isActive: boolean }) => ({
-  fontWeight: isActive ? 700 : 500,
-  color: isActive ? "var(--accent)" : "var(--text-muted)",
-  textDecoration: "none",
-  padding: "0.35rem 0.65rem",
-  borderRadius: 8,
-  border: isActive ? "1px solid rgba(61,214,180,0.35)" : "1px solid transparent",
-  background: isActive ? "var(--accent-dim)" : "transparent",
-});
+function linkStyle(
+  mobile: boolean,
+  { isActive }: { isActive: boolean },
+) {
+  return {
+    fontWeight: isActive ? 700 : 500,
+    color: isActive ? "var(--accent)" : "var(--text-muted)",
+    textDecoration: "none",
+    padding: mobile ? "0.28rem 0.45rem" : "0.35rem 0.65rem",
+    fontSize: mobile ? "0.8rem" : undefined,
+    borderRadius: 8,
+    border: isActive ? "1px solid rgba(61,214,180,0.35)" : "1px solid transparent",
+    background: isActive ? "var(--accent-dim)" : "transparent",
+    whiteSpace: "nowrap" as const,
+  };
+}
 
 export function AppLayout() {
   const { token, logout } = useAuth();
@@ -29,67 +37,120 @@ export function AppLayout() {
       <header
         style={{
           borderBottom: "1px solid var(--border)",
-          padding: "0.5rem 1rem",
+          padding: mobile ? "0.45rem 0.65rem 0.5rem" : "0.5rem 1rem 0.55rem",
           display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: "0.5rem",
+          flexDirection: "column",
+          gap: "0.45rem",
           background: "rgba(0,0,0,0.2)",
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
+          boxSizing: "border-box",
         }}
       >
-        <strong style={{ marginRight: "0.5rem" }}>Kakeibo</strong>
-        <NavLink to="/dev-api" style={linkStyle}>
-          APIテスト
-        </NavLink>
-        {token ? (
-          <>
-            <NavLink to="/kakeibo" style={linkStyle} end>
-              家計簿
-            </NavLink>
-            {!mobile ? (
-              <NavLink to="/import" style={linkStyle}>
-                CSV取込（PC）
-              </NavLink>
+        {/* 1段目: ブランド + ユーティリティ（横スクロール防止のため flex:1 スペーサーは使わない） */}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.45rem",
+            width: "100%",
+            minWidth: 0,
+          }}
+        >
+          <strong
+            style={{
+              letterSpacing: "-0.02em",
+              flexShrink: 0,
+              lineHeight: 1.2,
+            }}
+          >
+            Kakeibo
+          </strong>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: "0.45rem",
+              minWidth: 0,
+              flex: "1 1 auto",
+            }}
+          >
+            {!mobile ? <MobileAccessQr /> : null}
+            {token ? (
+              <button
+                type="button"
+                onClick={() => {
+                  logout();
+                  navigate("/login", { replace: true });
+                }}
+                style={{
+                  font: "inherit",
+                  fontSize: mobile ? "0.8rem" : undefined,
+                  cursor: "pointer",
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-muted)",
+                  borderRadius: 8,
+                  padding: mobile ? "0.3rem 0.55rem" : "0.35rem 0.75rem",
+                  flexShrink: 0,
+                  maxWidth: "100%",
+                }}
+              >
+                ログアウト
+              </button>
             ) : null}
-            <NavLink to="/receipt" style={linkStyle}>
-              レシート
-            </NavLink>
-            <NavLink to="/members" style={linkStyle}>
-              家族
-            </NavLink>
-            <NavLink to="/settings" style={linkStyle}>
-              設定
-            </NavLink>
-            <span style={{ flex: 1 }} />
-            <button
-              type="button"
-              onClick={() => {
-                logout();
-                navigate("/login", { replace: true });
-              }}
-              style={{
-                font: "inherit",
-                cursor: "pointer",
-                background: "transparent",
-                border: "1px solid var(--border)",
-                color: "var(--text-muted)",
-                borderRadius: 8,
-                padding: "0.35rem 0.75rem",
-              }}
-            >
-              ログアウト
-            </button>
-          </>
-        ) : (
-          <>
-            <NavLink to="/login" style={linkStyle}>
-              ログイン
-            </NavLink>
-            <NavLink to="/register" style={linkStyle}>
-              新規登録
-            </NavLink>
-          </>
-        )}
+          </div>
+        </div>
+        {/* 2段目: ナビゲーション */}
+        <nav
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: mobile ? "0.28rem" : "0.35rem",
+            width: "100%",
+            minWidth: 0,
+            paddingTop: "0.4rem",
+            borderTop: "1px solid var(--border)",
+          }}
+          aria-label="メインメニュー"
+        >
+          {token ? (
+            <>
+              <NavLink to="/" style={(p) => linkStyle(mobile, p)} end>
+                家計簿
+              </NavLink>
+              {!mobile ? (
+                <NavLink to="/import" style={(p) => linkStyle(mobile, p)}>
+                  CSV取込（PC）
+                </NavLink>
+              ) : null}
+              <NavLink to="/receipt" style={(p) => linkStyle(mobile, p)}>
+                レシート
+              </NavLink>
+              <NavLink to="/members" style={(p) => linkStyle(mobile, p)}>
+                家族
+              </NavLink>
+              <NavLink to="/settings" style={(p) => linkStyle(mobile, p)}>
+                設定
+              </NavLink>
+            </>
+          ) : (
+            <>
+              <NavLink to="/login" style={(p) => linkStyle(mobile, p)}>
+                ログイン
+              </NavLink>
+              <NavLink to="/register" style={(p) => linkStyle(mobile, p)}>
+                新規登録
+              </NavLink>
+            </>
+          )}
+        </nav>
       </header>
       <main style={{ flex: 1 }}>
         <Outlet />
