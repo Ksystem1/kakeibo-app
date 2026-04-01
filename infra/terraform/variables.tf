@@ -18,8 +18,14 @@ variable "app_path_prefix" {
 
 variable "api_subdomain" {
   type        = string
-  description = "App Runner カスタムドメイン用（例 api → api.ksystemapp.com）"
+  description = "API 用サブドメイン（例 api → api.ksystemapp.com）"
   default     = "api"
+}
+
+variable "enable_legacy_spa_stack" {
+  type        = bool
+  description = "true のときのみ legacy SPA (S3/CloudFront/Route53/ACM) を作成"
+  default     = false
 }
 
 variable "create_hosted_zone" {
@@ -38,10 +44,4 @@ variable "include_www_alias" {
   type        = bool
   description = "CloudFront / ACM に www.<root> を含め、A/AAAA レコードを作成する"
   default     = false
-}
-
-variable "apprunner_service_arn" {
-  type        = string
-  description = "設定時のみ api 用カスタムドメインを Terraform で紐付け（空ならスキップ）"
-  default     = ""
 }

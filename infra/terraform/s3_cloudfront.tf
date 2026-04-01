@@ -1,13 +1,16 @@
 resource "random_id" "bucket_suffix" {
+  count       = var.enable_legacy_spa_stack ? 1 : 0
   byte_length = 4
 }
 
 resource "aws_s3_bucket" "spa" {
-  bucket = "ksystem-kakeibo-${replace(var.root_domain, ".", "-")}-${random_id.bucket_suffix.hex}"
+  count  = var.enable_legacy_spa_stack ? 1 : 0
+  bucket = "ksystem-kakeibo-${replace(var.root_domain, ".", "-")}-${random_id.bucket_suffix[0].hex}"
 }
 
 resource "aws_s3_bucket_public_access_block" "spa" {
-  bucket = aws_s3_bucket.spa.id
+  count  = var.enable_legacy_spa_stack ? 1 : 0
+  bucket = aws_s3_bucket.spa[0].id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -16,7 +19,8 @@ resource "aws_s3_bucket_public_access_block" "spa" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "spa" {
-  bucket = aws_s3_bucket.spa.id
+  count  = var.enable_legacy_spa_stack ? 1 : 0
+  bucket = aws_s3_bucket.spa[0].id
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
@@ -25,14 +29,16 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "spa" {
 }
 
 resource "aws_cloudfront_origin_access_control" "spa" {
-  name                              = "kakeibo-spa-oac-${random_id.bucket_suffix.hex}"
+  count                             = var.enable_legacy_spa_stack ? 1 : 0
+  name                              = "kakeibo-spa-oac-${random_id.bucket_suffix[0].hex}"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
 }
 
 resource "aws_cloudfront_function" "redirect_root" {
-  name    = "kakeibo-redirect-root-${random_id.bucket_suffix.hex}"
+  count   = var.enable_legacy_spa_stack ? 1 : 0
+  name    = "kakeibo-redirect-root-${random_id.bucket_suffix[0].hex}"
   runtime = "cloudfront-js-2.0"
   publish = true
   code    = <<-EOT
@@ -53,10 +59,12 @@ EOT
 }
 
 data "aws_cloudfront_cache_policy" "managed_caching_optimized" {
+  count = var.enable_legacy_spa_stack ? 1 : 0
   name = "Managed-CachingOptimized"
 }
 
 resource "aws_cloudfront_distribution" "site" {
+  count               = var.enable_legacy_spa_stack ? 1 : 0
   enabled             = true
   comment             = "Kakeibo SPA /${var.app_path_prefix}/"
   default_root_object = "index.html"
@@ -65,9 +73,9 @@ resource "aws_cloudfront_distribution" "site" {
   aliases             = var.include_www_alias ? [var.root_domain, "www.${var.root_domain}"] : [var.root_domain]
 
   origin {
-    domain_name              = aws_s3_bucket.spa.bucket_regional_domain_name
+    domain_name              = aws_s3_bucket.spa[0].bucket_regional_domain_name
     origin_id                = "s3-spa"
-    origin_access_control_id = aws_cloudfront_origin_access_control.spa.id
+    origin_access_control_id = aws_cloudfront_origin_access_control.spa[0].id
     s3_origin_config {
       origin_access_identity = ""
     }
@@ -79,11 +87,11 @@ resource "aws_cloudfront_distribution" "site" {
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]
     compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.managed_caching_optimized.id
+    cache_policy_id        = data.aws_cloudfront_cache_policy.managed_caching_optimized[0].id
 
     function_association {
       event_type   = "viewer-request"
-      function_arn = aws_cloudfront_function.redirect_root.arn
+      function_arn = aws_cloudfront_function.redirect_root[0].arn
     }
   }
 
@@ -94,7 +102,7 @@ resource "aws_cloudfront_distribution" "site" {
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]
     compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.managed_caching_optimized.id
+    cache_policy_id        = data.aws_cloudfront_cache_policy.managed_caching_optimized[0].id
   }
 
   custom_error_response {
@@ -116,7 +124,7 @@ resource "aws_cloudfront_distribution" "site" {
   }
 
   viewer_certificate {
-    acm_certificate_arn      = aws_acm_certificate_validation.cloudfront.certificate_arn
+    acm_certificate_arn      = aws_acm_certificate_validation.cloudfront[0].certificate_arn
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
   }
@@ -125,7 +133,8 @@ resource "aws_cloudfront_distribution" "site" {
 }
 
 resource "aws_s3_bucket_policy" "spa" {
-  bucket = aws_s3_bucket.spa.id
+  count  = var.enable_legacy_spa_stack ? 1 : 0
+  bucket = aws_s3_bucket.spa[0].id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -136,10 +145,10 @@ resource "aws_s3_bucket_policy" "spa" {
           Service = "cloudfront.amazonaws.com"
         }
         Action   = "s3:GetObject"
-        Resource = "${aws_s3_bucket.spa.arn}/*"
+        Resource = "${aws_s3_bucket.spa[0].arn}/*"
         Condition = {
           StringEquals = {
-            "AWS:SourceArn" = aws_cloudfront_distribution.site.arn
+            "AWS:SourceArn" = aws_cloudfront_distribution.site[0].arn
           }
         }
       }
