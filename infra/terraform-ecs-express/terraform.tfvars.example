@@ -9,6 +9,9 @@ container_image = "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/kakeibo-api
 
 desired_count = 1
 
+# HTTPS リスナー（ACM は ap-northeast-1。フロントが HTTPS のとき VITE_API_URL も https:// 必須）
+# alb_certificate_arn = "arn:aws:acm:ap-northeast-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
 create_github_oidc_provider = false
 github_oidc_provider_arn    = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
 github_repository           = "your-org/your-repo"
@@ -17,7 +20,7 @@ github_branch               = "main"
 app_env_vars = {
   NODE_ENV                 = "production"
   API_PORT                 = "3456"
-  CORS_ORIGIN              = "https://ksystemapp.com"
+  CORS_ORIGIN              = "https://ksystemapp.com,https://www.ksystemapp.com"
   JWT_EXPIRES_IN           = "7d"
   ALLOW_X_USER_ID          = "false"
   AUTH_DEBUG_TOKEN         = "false"

@@ -60,7 +60,32 @@ function resolveDistributionId() {
 
 try {
   sh("aws sts get-caller-identity");
+
+  const viteApi = (process.env.VITE_API_URL || "").trim();
+  if (process.env.GITHUB_ACTIONS === "true") {
+    if (!viteApi) {
+      console.error(
+        "[deploy] GitHub Actions 上では Secrets に VITE_API_URL を設定してください（ビルド時に Vite が埋め込みます）。",
+      );
+      process.exit(1);
+    }
+    if (/^http:\/\//i.test(viteApi)) {
+      console.error(
+        "[deploy] HTTPS で配信しているフロントから http:// の API は Mixed Content でブロックされます。\n" +
+          "対処: (1) ACM（ap-northeast-1）で api.<ドメイン> を発行し Terraform の alb_certificate_arn に指定して ALB に 443 を付ける\n" +
+          "(2) Route53 で api.<ドメイン> を ALB にエイリアス\n" +
+          "(3) GitHub Secret VITE_API_URL を https://api.<ドメイン> に変更\n" +
+          "詳細: terraform output vite_api_url_mixed_content_note（ECS スタック）",
+      );
+      process.exit(1);
+    }
+  }
+
   sh("npm run build");
+
+  if (viteApi && process.env.SKIP_VERIFY_VITE_EMBED !== "1") {
+    sh("node infra/scripts/verify-vite-api-embed.mjs");
+  }
 
   const distDir = path.join(repoRoot, "dist").replace(/\\/g, "/");
   const distPath = path.join(repoRoot, "dist");

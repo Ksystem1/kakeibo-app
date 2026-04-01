@@ -31,6 +31,16 @@ variable "allowed_cidr_blocks" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "alb_certificate_arn" {
+  description = <<-EOT
+    ap-northeast-1 の ACM 証明書 ARN（HTTPS リスナー用）。
+    HTTPS で配信するフロント（例: CloudFront）から API を呼ぶとき、VITE_API_URL は https:// 必須（http:// だと Mixed Content でブロック）。
+    ACM は *.elb.amazonaws.com を発行できないため、api.example.com 等の所有ドメイン向けに発行し、Route53 で A/ALIAS をこの ALB に向け、GitHub Secret の VITE_API_URL を https://api.example.com にしてください。
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "container_image" {
   description = "Container image URI (ECR recommended)"
   type        = string
@@ -78,7 +88,7 @@ variable "app_env_vars" {
   default = {
     NODE_ENV               = "production"
     API_PORT               = "3456"
-    CORS_ORIGIN            = "https://ksystemapp.com"
+    CORS_ORIGIN            = "https://ksystemapp.com,https://www.ksystemapp.com"
     JWT_EXPIRES_IN         = "7d"
     ALLOW_X_USER_ID        = "false"
     AUTH_DEBUG_TOKEN       = "false"

@@ -85,6 +85,16 @@ resource "aws_security_group" "ecs_service" {
   tags = local.tags
 }
 
+resource "aws_security_group_rule" "alb_https" {
+  count             = trimspace(var.alb_certificate_arn) != "" ? 1 : 0
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = var.allowed_cidr_blocks
+  security_group_id = aws_security_group.alb.id
+}
+
 resource "aws_lb" "this" {
   name               = "${local.app_name}-alb"
   load_balancer_type = "application"
@@ -117,6 +127,20 @@ resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.this.arn
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  count             = trimspace(var.alb_certificate_arn) != "" ? 1 : 0
+  load_balancer_arn = aws_lb.this.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.alb_certificate_arn
 
   default_action {
     type             = "forward"
