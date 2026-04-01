@@ -251,7 +251,12 @@ data "aws_iam_policy_document" "github_actions_deploy" {
       "iam:DeleteOpenIDConnectProvider",
       "ssm:GetParameter",
       "ssm:GetParameters",
-      "secretsmanager:GetSecretValue"
+      "secretsmanager:GetSecretValue",
+      "route53:GetChange",
+      "route53:ListHostedZones",
+      "route53:GetHostedZone",
+      "route53:ListResourceRecordSets",
+      "route53:ChangeResourceRecordSets"
     ]
     resources = ["*"]
   }

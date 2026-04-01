@@ -24,6 +24,16 @@ output "vite_api_url_mixed_content_note" {
   description = "フロント/ALB 間のプロトコル整合の注意"
 }
 
+output "github_secret_vite_api_url" {
+  value       = "https://${trimsuffix(var.api_public_fqdn, ".")}"
+  description = "Step 3: GitHub → Settings → Secrets and variables → Actions → VITE_API_URL にこの値（末尾スラッシュなし）"
+}
+
+output "api_route53_alias_managed" {
+  value       = length(aws_route53_record.api_alias) > 0
+  description = "true のとき Terraform が api の A エイリアスを管理している"
+}
+
 output "github_actions_deploy_role_arn" {
   value = aws_iam_role.github_actions_deploy.arn
 }

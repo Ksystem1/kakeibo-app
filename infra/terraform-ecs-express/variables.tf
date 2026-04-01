@@ -137,3 +137,26 @@ variable "github_branch" {
   type        = string
   default     = "main"
 }
+
+variable "api_route53_zone_id" {
+  description = <<-EOT
+    api 用レコードを置くパブリックホストゾーン ID（Z で始まる）。空なら api_route53_lookup_domain で名前検索。
+    Step 3: Route 53 で api.ksystemapp.com を ALB に向ける A エイリアスを Terraform で作るときに指定。
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "api_route53_lookup_domain" {
+  description = <<-EOT
+    api_route53_zone_id が空のとき、ここで親ゾーン名を指定すると data ソースで zone_id を解決する。例: ksystemapp.com（末尾の . は不要）
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "api_public_fqdn" {
+  description = "API の公開 FQDN（A エイリアスレコード名）。GitHub Secret VITE_API_URL は https://<この値>（スラッシュなし）"
+  type        = string
+  default     = "api.ksystemapp.com"
+}

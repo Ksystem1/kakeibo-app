@@ -17,6 +17,11 @@ github_oidc_provider_arn    = "arn:aws:iam::123456789012:oidc-provider/token.act
 github_repository           = "your-org/your-repo"
 github_branch               = "main"
 
+# Step 3: api を ALB に向ける A エイリアス（任意）
+# api_route53_lookup_domain = "example.com"
+# api_route53_zone_id       = "Z..." # lookup と併用不要
+# api_public_fqdn           = "api.example.com"
+
 app_env_vars = {
   NODE_ENV                 = "production"
   API_PORT                 = "3456"

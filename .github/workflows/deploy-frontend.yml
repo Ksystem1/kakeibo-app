@@ -1,5 +1,8 @@
 # Ksystem ドメイン向け: ビルドした静的ファイルを S3 に配置し CloudFront を無効化する。
 # Secrets: AWS_ROLE_TO_ASSUME, AWS_REGION, S3_BUCKET, CLOUDFRONT_DISTRIBUTION_ID, VITE_API_URL, VERIFY_LOGIN_ID, VERIFY_LOGIN_PASSWORD
+#
+# Step 3（HTTPS API）: Repository → Settings → Secrets and variables → Actions
+#   VITE_API_URL = https://api.ksystemapp.com  （末尾スラッシュなし。ECS+ALB+ACM+Route53 後に http:// から差し替え）
 name: Deploy frontend (S3 + CloudFront)
 
 on:

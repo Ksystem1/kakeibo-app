@@ -18,3 +18,11 @@ app_secret_arns = {}
 # api.ksystemapp.com 用 ACM（ap-northeast-1）が「発行済み」になったら ARN を貼り付け
 # 例: alb_certificate_arn = "arn:aws:acm:ap-northeast-1:345362761619:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 alb_certificate_arn = ""
+
+# --- Step 3: Route 53（どちらか一方を設定すると apply で A エイリアス作成）---
+# 親ゾーン名で自動解決（例: ksystemapp.com）
+# api_route53_lookup_domain = "ksystemapp.com"
+# またはホストゾーン ID を直接
+# api_route53_zone_id = "Zxxxxxxxxxxxxxxxxxxxx"
+# 別サブドメインにする場合のみ変更
+# api_public_fqdn = "api.ksystemapp.com"
