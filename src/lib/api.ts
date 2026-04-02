@@ -13,10 +13,15 @@ function resolveApiBase(): string {
 const BASE = resolveApiBase();
 
 const FETCH_TIMEOUT_MS = 25_000;
+const RECEIPT_PARSE_TIMEOUT_MS = 45_000;
 
-async function apiFetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
+async function apiFetch(
+  input: string | URL,
+  init: RequestInit = {},
+  timeoutMs: number = FETCH_TIMEOUT_MS,
+): Promise<Response> {
   const ctrl = new AbortController();
-  const t = globalThis.setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  const t = globalThis.setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     return await fetch(input, { ...init, signal: ctrl.signal });
   } catch (e) {
@@ -232,11 +237,15 @@ export async function importCsvText(csvText: string) {
 }
 
 export async function parseReceiptImage(imageBase64: string) {
-  const res = await apiFetch(`${BASE}/receipts/parse`, {
-    method: "POST",
-    headers: buildHeaders(),
-    body: JSON.stringify({ imageBase64 }),
-  });
+  const res = await apiFetch(
+    `${BASE}/receipts/parse`,
+    {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify({ imageBase64 }),
+    },
+    RECEIPT_PARSE_TIMEOUT_MS,
+  );
   return parse<{
     ok: boolean;
     demo?: boolean;

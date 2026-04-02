@@ -850,7 +850,13 @@ export async function handleApiRequest(req, options = {}) {
               : "ReceiptParseError";
           logError("receipts.parse", e, { code, status });
           // Textract の一時障害時は手入力フローを継続できるよう 200 で返す。
-          if (code === "TextractTimeout" || code === "TextractNetworkBusy") {
+          if (
+            code === "TextractTimeout" ||
+            code === "TextractNetworkBusy" ||
+            code === "TextractThrottled" ||
+            code === "ServiceUnavailableException" ||
+            code === "InternalServerError"
+          ) {
             return json(
               200,
               {
@@ -859,7 +865,7 @@ export async function handleApiRequest(req, options = {}) {
                 summary: { vendorName: null, totalAmount: null, date: null, fieldConfidence: {} },
                 items: [],
                 notice:
-                  "自動解析は混雑中です。店舗名・金額・日付を手入力してそのまま登録できます。",
+                  "自動解析を一時的に利用できませんでした。店舗名・金額・日付を手入力して登録できます。",
                 expenseIndex: null,
               },
               hdrs,

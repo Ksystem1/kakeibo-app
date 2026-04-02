@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createTransaction, getCategories, parseReceiptImage } from "../lib/api";
+import { prepareReceiptImageForApi } from "../lib/receiptImage";
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
 
@@ -351,10 +352,7 @@ export function ReceiptPage() {
     setCategorySuggestSource(null);
     setItems([]);
     try {
-      const buf = await f.arrayBuffer();
-      const b64 = btoa(
-        new Uint8Array(buf).reduce((s, x) => s + String.fromCharCode(x), ""),
-      );
+      const b64 = await prepareReceiptImageForApi(f);
       const r = await parseReceiptImage(b64);
       setItems(r.items ?? []);
       const s = r.summary;

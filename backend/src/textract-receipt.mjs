@@ -34,40 +34,7 @@ function getDefaultAwsConfig() {
         dns.lookup(hostname, options, callback);
         return;
       }
-      const family =
-        options && typeof options === "object" && Number(options.family) > 0
-          ? Number(options.family)
-          : 4;
-      const run = async () => {
-        let lastErr;
-        for (let attempt = 1; attempt <= 3; attempt += 1) {
-          try {
-            const r = await new Promise((resolve, reject) => {
-              dns.lookup(hostname, { ...options, family }, (e, address, f) => {
-                if (e) reject(e);
-                else resolve({ address, family: f || family });
-              });
-            });
-            return r;
-          } catch (e) {
-            lastErr = e;
-            // ENOTFOUND（UDP/53 や名前解決が塞がれている可能性）だけ DoH へ切り替える
-            const codeStr = String(e?.code ?? "");
-            const msgStr = String(e?.message ?? "");
-            if (codeStr === "ENOTFOUND" || /ENOTFOUND/i.test(msgStr)) {
-              try {
-                const ip = await resolveARecordViaCloudflareDoH(hostname);
-                return { address: ip, family: 4 };
-              } catch {
-                // DoH 失敗時は通常のリトライへフォールバック
-              }
-            }
-            if (!isTransientNetworkError(e) || attempt >= 3) break;
-            await sleep(80 * attempt);
-          }
-        }
-        throw lastErr;
-      };
+      const run = async () => resolveTextractAddress(hostname);
       run()
         .then((r) => callback(null, r.address, r.family))
         .catch((e) => callback(e));
@@ -97,22 +64,40 @@ function sleep(ms) {
  * 呼び出し先は固定 IP（1.1.1.1）なので、この処理自体には DNS が不要。
  */
 function resolveARecordViaCloudflareDoH(name) {
+  return resolveARecordViaDoH({
+    ipAddress: "1.1.1.1",
+    serverName: "cloudflare-dns.com",
+    hostHeader: "cloudflare-dns.com",
+    name,
+  });
+}
+
+function resolveARecordViaGoogleDoH(name) {
+  return resolveARecordViaDoH({
+    ipAddress: "8.8.8.8",
+    serverName: "dns.google",
+    hostHeader: "dns.google",
+    name,
+  });
+}
+
+function resolveARecordViaDoH({ ipAddress, serverName, hostHeader, name }) {
   const urlPath = `/dns-query?name=${encodeURIComponent(name)}&type=A`;
   const headers = {
     Accept: "application/dns-json",
     // Host/SNI を合わせて証明書エラーを避ける
-    host: "cloudflare-dns.com",
+    host: hostHeader,
   };
 
   return new Promise((resolve, reject) => {
     const req = httpsRequest(
       {
-        hostname: "1.1.1.1",
+        hostname: ipAddress,
         port: 443,
         method: "GET",
         path: urlPath,
         headers,
-        servername: "cloudflare-dns.com",
+        servername: serverName,
         timeout: 10_000,
       },
       (res) => {
@@ -150,6 +135,39 @@ function resolveARecordViaCloudflareDoH(name) {
   });
 }
 
+async function resolveTextractAddress(hostname) {
+  let lastErr;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const addresses = await dns.promises.resolve4(hostname);
+      if (Array.isArray(addresses) && addresses.length > 0) {
+        return { address: addresses[0], family: 4 };
+      }
+    } catch (e) {
+      lastErr = e;
+      const codeStr = String(e?.code ?? "");
+      const msgStr = String(e?.message ?? "");
+      if (codeStr === "ENOTFOUND" || /ENOTFOUND/i.test(msgStr)) {
+        try {
+          const ip = await resolveARecordViaCloudflareDoH(hostname);
+          return { address: ip, family: 4 };
+        } catch (doh1Err) {
+          lastErr = doh1Err;
+          try {
+            const ip = await resolveARecordViaGoogleDoH(hostname);
+            return { address: ip, family: 4 };
+          } catch (doh2Err) {
+            lastErr = doh2Err;
+          }
+        }
+      }
+      if (!isTransientNetworkError(e) || attempt >= 3) break;
+      await sleep(80 * attempt);
+    }
+  }
+  throw lastErr ?? new Error("Textract endpoint lookup failed");
+}
+
 function backoffMs(attempt) {
   const base = 250 * 2 ** Math.max(0, attempt - 1);
   return base + Math.floor(Math.random() * 150);
@@ -177,6 +195,31 @@ function fieldType(f) {
 function fieldText(f) {
   return String(f?.ValueDetection?.Text ?? "").trim();
 }
+function fieldLabel(f) {
+  return String(f?.LabelDetection?.Text ?? "").trim();
+}
+function looksLikeTotalLabel(label) {
+  const raw = String(label || "").trim();
+  if (!raw) return false;
+  const c = raw.replace(/\s/g, "").replace(/[　]/g, "");
+  if (/(お釣|つり|おつり|変更)/i.test(c)) return false;
+  return /合計|税込(?:額)?|御購入|お買上|支払(?:い)?(?:金額)?|ご利用|お支払|総額|^Total$|^TOTAL$/i.test(
+    c,
+  );
+}
+
+const TOTAL_FIELD_TYPES = new Set([
+  "TOTAL",
+  "TOTAL_AMOUNT",
+  "AMOUNT_PAID",
+  "TOTAL_AMOUNT_PAID",
+  "AMOUNT_DUE",
+  "BALANCE",
+  "GRAND_TOTAL",
+  "INVOICE_TOTAL",
+  "TOTAL_PRICE",
+  "NET_AMOUNT",
+]);
 function fieldConfidence01(f) {
   const c = f?.ValueDetection?.Confidence;
   if (typeof c !== "number" || Number.isNaN(c)) return null;
@@ -201,8 +244,7 @@ function normalizeDateText(raw) {
 function summaryFromFields(summaryFields) {
   const out = { vendorName: null, totalAmount: null, date: null, fieldConfidence: {} };
   if (!Array.isArray(summaryFields)) return out;
-  let totalPrimary = null;
-  let totalPrimaryConf = null;
+  const totalCandidates = [];
   let subtotal = null;
   let subtotalConf = null;
   for (const f of summaryFields) {
@@ -210,18 +252,19 @@ function summaryFromFields(summaryFields) {
     const text = fieldText(f);
     const conf = fieldConfidence01(f);
     if (!t) continue;
-    if (["VENDOR_NAME", "RECEIVER_NAME", "NAME", "MERCHANT_NAME"].includes(t)) {
+    if (["VENDOR_NAME", "RECEIVER_NAME", "NAME", "MERCHANT_NAME", "VENDOR"].includes(t)) {
       if (text && !out.vendorName) {
         out.vendorName = text;
         out.fieldConfidence.vendorName = conf;
       }
     }
-    if (["TOTAL", "AMOUNT_PAID", "TOTAL_AMOUNT"].includes(t)) {
+    if (TOTAL_FIELD_TYPES.has(t)) {
       const amt = parseMoney(text);
-      if (amt != null) {
-        totalPrimary = amt;
-        totalPrimaryConf = conf;
-      }
+      if (amt != null) totalCandidates.push({ amt, conf });
+    }
+    if (t === "OTHER" && looksLikeTotalLabel(fieldLabel(f))) {
+      const amt = parseMoney(text);
+      if (amt != null) totalCandidates.push({ amt, conf });
     }
     if (t === "SUBTOTAL") {
       const amt = parseMoney(text);
@@ -230,7 +273,9 @@ function summaryFromFields(summaryFields) {
         subtotalConf = conf;
       }
     }
-    if (["INVOICE_RECEIPT_DATE", "DATE", "TRANSACTION_DATE", "ORDER_DATE"].includes(t)) {
+    if (
+      ["INVOICE_RECEIPT_DATE", "DATE", "TRANSACTION_DATE", "ORDER_DATE", "RECEIPT_DATE"].includes(t)
+    ) {
       const d = normalizeDateText(text);
       if (d && !out.date) {
         out.date = d;
@@ -238,14 +283,30 @@ function summaryFromFields(summaryFields) {
       }
     }
   }
-  if (totalPrimary != null) {
-    out.totalAmount = totalPrimary;
-    out.fieldConfidence.totalAmount = totalPrimaryConf;
+  if (totalCandidates.length > 0) {
+    totalCandidates.sort((a, b) => b.amt - a.amt);
+    out.totalAmount = totalCandidates[0].amt;
+    out.fieldConfidence.totalAmount = totalCandidates[0].conf;
   } else if (subtotal != null) {
     out.totalAmount = subtotal;
     out.fieldConfidence.totalAmount = subtotalConf;
   }
   return out;
+}
+
+function fallbackTotalFromLineItems(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  let sum = 0;
+  let n = 0;
+  for (const row of rows) {
+    const a = row?.amount;
+    if (typeof a === "number" && Number.isFinite(a) && a > 0) {
+      sum += a;
+      n += 1;
+    }
+  }
+  if (n === 0) return null;
+  return Math.round(sum * 100) / 100;
 }
 
 function lineItemsFromExpenseDoc(doc) {
@@ -365,15 +426,27 @@ export function createReceiptAnalyzer(ctx = {}) {
     const doc = docs[0];
     const summary = summaryFromFields(doc.SummaryFields);
     const items = lineItemsFromExpenseDoc(doc);
+    let notice = null;
+    let totalAmount = summary.totalAmount;
+    let fieldConfidence = { ...summary.fieldConfidence };
+    if (totalAmount == null) {
+      const fb = fallbackTotalFromLineItems(items);
+      if (fb != null) {
+        totalAmount = fb;
+        fieldConfidence = { ...fieldConfidence, totalAmount: null };
+        notice =
+          "合計欄を自動検出できなかったため、明細行の金額を合算して推定しました。必要に応じて修正してください。";
+      }
+    }
     return {
       summary: {
         vendorName: summary.vendorName,
-        totalAmount: summary.totalAmount,
+        totalAmount,
         date: summary.date,
-        fieldConfidence: summary.fieldConfidence,
+        fieldConfidence,
       },
       items,
-      notice: null,
+      notice,
       expenseIndex: doc.ExpenseIndex ?? null,
     };
   };
