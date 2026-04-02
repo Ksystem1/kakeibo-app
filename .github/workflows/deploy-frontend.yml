@@ -2,7 +2,7 @@
 # Secrets: AWS_ROLE_TO_ASSUME, AWS_REGION, S3_BUCKET, CLOUDFRONT_DISTRIBUTION_ID, VITE_API_URL, VERIFY_LOGIN_ID, VERIFY_LOGIN_PASSWORD
 #
 # Step 3（HTTPS API）: Repository → Settings → Secrets and variables → Actions
-#   VITE_API_URL = https://api.ksystemapp.com  （末尾スラッシュなし。ECS+ALB+ACM+Route53 後に http:// から差し替え）
+#   VITE_API_URL = https://api.ksystemapp.com  （末尾スラッシュなし。API の URL のみ。ACM 証明書 ARN はここに入れない）
 name: Deploy frontend (S3 + CloudFront)
 
 on:

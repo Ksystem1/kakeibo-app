@@ -15,6 +15,7 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertProductionViteApiUrl } from "./vite-api-url-validate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
@@ -61,6 +62,22 @@ function resolveDistributionId() {
 try {
   sh("aws sts get-caller-identity");
 
+  const viteApi = (process.env.VITE_API_URL || "").trim();
+  try {
+    assertProductionViteApiUrl(process.env.VITE_API_URL, {
+      githubActions: process.env.GITHUB_ACTIONS === "true",
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[deploy] ${msg}`);
+    if (process.env.GITHUB_ACTIONS === "true") {
+      console.error(
+        "参考: GitHub Secret VITE_API_URL は API の URL（https://api.ksystemapp.com）です。ACM 証明書の ARN は alb_certificate_arn 等にのみ設定します。",
+      );
+    }
+    process.exit(1);
+  }
+
   try {
     sh(`aws s3api head-bucket --bucket ${bucket} --region ${region}`);
   } catch {
@@ -72,26 +89,6 @@ try {
         `  ・OIDC ロールの AWS アカウントがバケットと同じか確認\n`,
     );
     throw new Error("S3 head-bucket failed");
-  }
-
-  const viteApi = (process.env.VITE_API_URL || "").trim();
-  if (process.env.GITHUB_ACTIONS === "true") {
-    if (!viteApi) {
-      console.error(
-        "[deploy] GitHub Actions 上では Secrets に VITE_API_URL を設定してください（ビルド時に Vite が埋め込みます）。",
-      );
-      process.exit(1);
-    }
-    if (/^http:\/\//i.test(viteApi)) {
-      console.error(
-        "[deploy] HTTPS で配信しているフロントから http:// の API は Mixed Content でブロックされます。\n" +
-          "対処: (1) ACM（ap-northeast-1）で api.<ドメイン> を発行し Terraform の alb_certificate_arn に指定して ALB に 443 を付ける\n" +
-          "(2) Route53 で api.<ドメイン> を ALB にエイリアス\n" +
-          "(3) GitHub Secret VITE_API_URL を https://api.<ドメイン> に変更\n" +
-          "詳細: terraform output vite_api_url_mixed_content_note（ECS スタック）",
-      );
-      process.exit(1);
-    }
   }
 
   sh("npm run build");

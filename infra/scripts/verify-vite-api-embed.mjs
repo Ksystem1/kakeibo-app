@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertProductionViteApiUrl } from "./vite-api-url-validate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
@@ -15,6 +16,16 @@ const expect = (process.env.VITE_API_URL || "").trim().replace(/\/$/, "");
 if (!expect) {
   console.error("verify-vite-api-embed: VITE_API_URL 未設定のためスキップ");
   process.exit(0);
+}
+
+try {
+  assertProductionViteApiUrl(expect, {
+    githubActions: process.env.GITHUB_ACTIONS === "true",
+  });
+} catch (e) {
+  const msg = e instanceof Error ? e.message : String(e);
+  console.error(`verify-vite-api-embed: ${msg}`);
+  process.exit(1);
 }
 
 const assetsDir = path.join(repoRoot, "dist", "assets");
