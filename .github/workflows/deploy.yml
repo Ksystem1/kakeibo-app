@@ -19,7 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TF_IN_AUTOMATION: "true"
-      AWS_REGION: ${{ secrets.AWS_REGION }}
+      # 未設定時に terraform init の backend region が空にならないよう既定値を持たせる
+      AWS_REGION: ${{ secrets.AWS_REGION != '' && secrets.AWS_REGION || 'ap-northeast-1' }}
       AWS_ROLE_TO_ASSUME_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
       AWS_ROLE_TO_ASSUME_FALLBACK: arn:aws:iam::345362761619:role/kakeibo-api-github-actions-deploy-role
       TF_STATE_BUCKET: ksystemapp-web-production
@@ -33,7 +34,13 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME_ARN || env.AWS_ROLE_TO_ASSUME_FALLBACK }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Preflight env for Terraform backend
+        run: |
+          echo "AWS_REGION=${AWS_REGION}"
+          echo "TF_STATE_BUCKET=${TF_STATE_BUCKET}"
+          echo "TF_STATE_KEY=${TF_STATE_KEY}"
 
       - name: Login to Amazon ECR
         id: login-ecr
