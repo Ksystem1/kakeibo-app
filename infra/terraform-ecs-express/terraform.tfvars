@@ -31,9 +31,9 @@ app_secret_arns = {
   # RDS_DATABASE = "arn:aws:ssm:ap-northeast-1:345362761619:parameter/kakeibo/prod/rds_database"
 }
 
-# RDS のセキュリティグループ ID（例: RDS コンソールの SG）。設定すると ECS タスク SG から 3306 を許可するルールを追加
-# rds_security_group_id = "sg-xxxxxxxx"
-# rds_port              = 3306
+# RDS database-1 の VPC SG（ECS プライベートサブネットから 3306 へ到達させる）
+rds_security_group_id = "sg-00a70c69b9ef44e4d"
+rds_port              = 3306
 
 # api.ksystemapp.com 用 ACM（ap-northeast-1・発行済み）
 alb_certificate_arn = "arn:aws:acm:ap-northeast-1:345362761619:certificate/3a41ceda-705e-4914-8e6e-e3b97303216e"

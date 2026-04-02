@@ -24,9 +24,10 @@ locals {
   effective_app_secret_arns = merge(var.app_secret_arns, local.managed_rds_secret_value_arns)
   app_secret_arn_values     = values(local.effective_app_secret_arns)
 
-  # ECS の valueFrom が :key:: 付きのとき、GetSecretValue のリソースはベース ARN のみ有効
+  # ECS の valueFrom が :key:: 付きのとき、GetSecretValue のリソースはベース ARN のみ有効（regexreplace 非搭載の CLI 互換）
   execution_secretsmgr_arns = distinct([
-    for a in local.app_secret_arn_values : regexreplace(a, ":[a-zA-Z0-9_]+::$", "")
+    for a in local.app_secret_arn_values :
+    length(regexall(":[a-zA-Z0-9_]+::$", a)) > 0 ? replace(a, regexall(":[a-zA-Z0-9_]+::$", a)[0], "") : a
     if startswith(a, "arn:aws:secretsmanager:")
   ])
   execution_ssm_param_arns = [for a in local.app_secret_arn_values : a if startswith(a, "arn:aws:ssm:")]
