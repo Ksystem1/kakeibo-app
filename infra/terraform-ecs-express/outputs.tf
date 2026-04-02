@@ -42,6 +42,11 @@ output "ecr_repository_url" {
   value = aws_ecr_repository.api.repository_url
 }
 
+output "rds_credentials_secret_arn" {
+  value       = try(aws_secretsmanager_secret.rds_credentials[0].arn, null)
+  description = "manage_rds_credentials_secret=true のとき、作成した RDS 接続用シークレットの ARN"
+}
+
 output "vpc_endpoint_ecr_api_id" {
   value       = aws_vpc_endpoint.ecr_api.id
   description = "プライベートサブネットからの ECR API 用 Interface エンドポイント"

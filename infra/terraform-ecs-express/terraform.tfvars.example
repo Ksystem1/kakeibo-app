@@ -37,11 +37,16 @@ app_env_vars = {
   TEXTRACT_SEND_RETRIES    = "2"
 }
 
-# 各値は arn:aws:secretsmanager:... または arn:aws:ssm:... のフル ARN。RDS は SSM + Secrets Manager の組み合わせ可。
+# 各値は arn:aws:secretsmanager:... または arn:aws:ssm:... のフル ARN。
+#
+# RDS 接続の二通り:
+# (1) Terraform で JSON シークレットを作成: rds-credentials.auto.tfvars.example をコピーし、
+#     manage_rds_credentials_secret = true と rds_credentials = { ... } を設定（ファイルは .gitignore 推奨）
+# (2) 手動で Secrets Manager / SSM に登録した ARN を下記に列挙
 app_secret_arns = {
   JWT_SECRET = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:kakeibo/prod/jwt_secret-XXXXXX"
 
-  # RDS 接続時はコメント解除して実 ARN に差し替え（SSM 利用時は VPC エンドポイント ssm が必要）
+  # --- 手動 ARN のみ（(1) を使う場合は RDS_* は不要）---
   # RDS_HOST     = "arn:aws:ssm:ap-northeast-1:123456789012:parameter/kakeibo/prod/rds_host"
   # RDS_PORT     = "arn:aws:ssm:ap-northeast-1:123456789012:parameter/kakeibo/prod/rds_port"
   # RDS_USER     = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:kakeibo/prod/rds_user-XXXXXX"

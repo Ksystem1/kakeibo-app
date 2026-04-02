@@ -16,13 +16,14 @@ github_branch            = "main"
 # -----------------------------------------------------------------------------
 # ECS コンテナへ注入するシークレット（タスク起動時に実行ロールが取得）
 # ・ARN は必ず arn:aws:secretsmanager:... または arn:aws:ssm:... で始める（プレーン文字列は不可）
-# ・RDS 接続時は下記コメントを外し、実 ARN に差し替えてから apply
+# ・RDS: (A) rds-credentials.auto.tfvars.example をコピーして manage_rds_credentials_secret=true で一括登録
+#        (B) 手動で Secrets/SSM を作ったら下記 app_secret_arns に RDS_* を追加
 # ・RDS を SSM に置く場合は VPC エンドポイント ssm（本モジュールで作成済み）が必要
 # -----------------------------------------------------------------------------
 app_secret_arns = {
   JWT_SECRET = "arn:aws:secretsmanager:ap-northeast-1:345362761619:secret:kakeibo/prod/jwt_secret-uoM336"
 
-  # --- RDS 接続用（準備できたらコメント解除して ARN を置き換え）---
+  # --- 手動 ARN 運用時のみ（Terraform 一括管理なら不要）---
   # RDS_HOST     = "arn:aws:ssm:ap-northeast-1:345362761619:parameter/kakeibo/prod/rds_host"
   # RDS_PORT     = "arn:aws:ssm:ap-northeast-1:345362761619:parameter/kakeibo/prod/rds_port"
   # RDS_USER     = "arn:aws:secretsmanager:ap-northeast-1:345362761619:secret:kakeibo/prod/rds_user-XXXXXX"

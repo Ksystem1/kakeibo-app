@@ -9,10 +9,27 @@ locals {
     ManagedBy   = "terraform"
   }
 
-  # ECS タスク定義の secrets の valueFrom を ARN 種別ごとに分け、実行ロールの IAM を出し分ける
-  app_secret_arn_values     = values(var.app_secret_arns)
-  execution_secretsmgr_arns = [for a in local.app_secret_arn_values : a if startswith(a, "arn:aws:secretsmanager:")]
-  execution_ssm_param_arns  = [for a in local.app_secret_arn_values : a if startswith(a, "arn:aws:ssm:")]
+  manage_rds_credentials = var.manage_rds_credentials_secret && var.rds_credentials != null
+
+  # Terraform が作る JSON シークレット → ECS は :<json_key>:: 形式で各環境変数に注入
+  managed_rds_secret_value_arns = local.manage_rds_credentials ? {
+    RDS_HOST     = "${aws_secretsmanager_secret.rds_credentials[0].arn}:host::"
+    RDS_PORT     = "${aws_secretsmanager_secret.rds_credentials[0].arn}:port::"
+    RDS_USER     = "${aws_secretsmanager_secret.rds_credentials[0].arn}:user::"
+    RDS_PASSWORD = "${aws_secretsmanager_secret.rds_credentials[0].arn}:password::"
+    RDS_DATABASE = "${aws_secretsmanager_secret.rds_credentials[0].arn}:database::"
+  } : {}
+
+  # 手動 ARN（app_secret_arns）と Terraform 管理シークレットをマージ（後者が RDS_* を上書き）
+  effective_app_secret_arns = merge(var.app_secret_arns, local.managed_rds_secret_value_arns)
+  app_secret_arn_values     = values(local.effective_app_secret_arns)
+
+  # ECS の valueFrom が :key:: 付きのとき、GetSecretValue のリソースはベース ARN のみ有効
+  execution_secretsmgr_arns = distinct([
+    for a in local.app_secret_arn_values : regexreplace(a, ":[a-zA-Z0-9_]+::$", "")
+    if startswith(a, "arn:aws:secretsmanager:")
+  ])
+  execution_ssm_param_arns = [for a in local.app_secret_arn_values : a if startswith(a, "arn:aws:ssm:")]
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -199,7 +216,7 @@ resource "aws_iam_role_policy_attachment" "execution_base" {
 }
 
 data "aws_iam_policy_document" "execution_secrets" {
-  count = length(var.app_secret_arns) > 0 ? 1 : 0
+  count = length(local.effective_app_secret_arns) > 0 ? 1 : 0
 
   dynamic "statement" {
     for_each = length(local.execution_secretsmgr_arns) > 0 ? [1] : []
@@ -226,7 +243,7 @@ data "aws_iam_policy_document" "execution_secrets" {
 }
 
 resource "aws_iam_role_policy" "execution_secrets" {
-  count  = length(var.app_secret_arns) > 0 ? 1 : 0
+  count  = length(local.effective_app_secret_arns) > 0 ? 1 : 0
   name   = "${local.app_name}-execution-read-secrets"
   role   = aws_iam_role.execution.id
   policy = data.aws_iam_policy_document.execution_secrets[0].json
@@ -304,6 +321,10 @@ data "aws_iam_policy_document" "github_actions_deploy" {
       "ssm:GetParameter",
       "ssm:GetParameters",
       "secretsmanager:GetSecretValue",
+      "secretsmanager:CreateSecret",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:TagResource",
       "route53:GetChange",
       "route53:ListHostedZones",
       "route53:GetHostedZone",
@@ -364,7 +385,7 @@ resource "aws_ecs_task_definition" "this" {
         }
       ]
       secrets = [
-        for k, arn in var.app_secret_arns : {
+        for k, arn in local.effective_app_secret_arns : {
           name      = k
           valueFrom = arn
         }
