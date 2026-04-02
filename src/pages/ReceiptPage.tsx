@@ -100,8 +100,6 @@ export function ReceiptPage() {
 
   const dateField = useMemo(() => dateFieldMode(draftDate), [draftDate]);
 
-  const activeStep: 1 | 2 | 3 | 4 = registering ? 4 : items.length > 0 ? 3 : 2;
-
   const loadingUi = (
     <>
       {touchUi ? (
@@ -135,45 +133,10 @@ export function ReceiptPage() {
       {loading ? loadingUi : null}
       <h1 className={styles.title}>レシート読取</h1>
 
-      {touchUi ? (
-        <div className={styles.stepsRow} aria-label="手順">
-          <div
-            className={styles.stepPill}
-          >
-            ①ログイン
-          </div>
-          <div
-            className={`${styles.stepPill} ${
-              activeStep === 2 ? styles.stepActive : ""
-            }`}
-          >
-            ②読取
-          </div>
-          <div
-            className={`${styles.stepPill} ${
-              activeStep === 3 ? styles.stepActive : ""
-            }`}
-          >
-            ③確認
-          </div>
-          <div
-            className={`${styles.stepPill} ${
-              activeStep === 4 ? styles.stepActive : ""
-            }`}
-          >
-            ④登録
-          </div>
-        </div>
-      ) : (
-        <p className={styles.sub}>
-          レシート画像を選択すると、店舗名・合計・日付が自動入力されます。
-          内容はいつでも修正できます。
-        </p>
-      )}
-
-      {touchUi ? (
-        <p className={styles.sub}>② 写真を選ぶ → ③ 内容を確認 → ④ 登録</p>
-      ) : null}
+      <p className={styles.sub}>
+        レシート画像を選択すると、店舗名・合計・日付が自動入力されます。
+        内容はいつでも修正できます。
+      </p>
       {touchUi ? (
         <div className={styles.receiptPickRow}>
           <input
@@ -207,7 +170,7 @@ export function ReceiptPage() {
       >
         <p className={styles.receiptSummaryHint}>
           {touchUi
-            ? "③ 内容を確認（必要なら修正）してください。"
+            ? "内容確認"
             : "解析後、店舗名・合計・日付が下記に自動入力されます。内容はいつでも手で修正できます。"}
         </p>
         <div className={styles.field}>
