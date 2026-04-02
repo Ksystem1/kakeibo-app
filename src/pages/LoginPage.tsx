@@ -33,6 +33,7 @@ export function LoginPage() {
         id: r.user.id,
         email: r.user.email,
         familyId: r.user.familyId,
+        isAdmin: r.user.isAdmin,
       });
       if (!remember) {
         /* 将来: セッションのみ */

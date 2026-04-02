@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { getAuthMe } from "../lib/api";
 import { AdSlot } from "./AdSlot";
 import { MobileAccessQr } from "./MobileAccessQr";
 
@@ -22,9 +24,32 @@ function linkStyle(
 }
 
 export function AppLayout() {
-  const { token, user, logout } = useAuth();
+  const { token, user, setUser, logout } = useAuth();
   const navigate = useNavigate();
   const mobile = useIsMobile();
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!token || user) return () => {
+      cancelled = true;
+    };
+    void getAuthMe()
+      .then((res) => {
+        if (cancelled || !res?.user) return;
+        setUser({
+          id: Number(res.user.id),
+          email: String(res.user.email),
+          familyId: res.user.familyId ?? null,
+          isAdmin: Boolean(res.user.isAdmin),
+        });
+      })
+      .catch(() => {
+        /* no-op: admin link is optional UI */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user, setUser]);
 
   return (
     <div
