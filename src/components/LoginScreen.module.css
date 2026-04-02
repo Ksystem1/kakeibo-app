@@ -103,6 +103,7 @@
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 0 18px rgba(61, 214, 180, 0.14);
 }
 
 .cardSub {
@@ -208,6 +209,7 @@
   border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.08s ease;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
 }
 
 .submit:hover:not(:disabled) {
@@ -253,5 +255,15 @@
 
   .qrUnderFooter {
     display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .cardTitle {
+    font-size: 1.7rem;
+  }
+
+  .label {
+    font-size: 0.9rem;
   }
 }

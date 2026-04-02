@@ -140,6 +140,15 @@ export function KakeiboDashboard() {
     return { income, expense, balance: income - expense };
   }, [transactions]);
 
+  const incomeTotalNum = summary
+    ? numAmount(summary.incomeTotal as string | number)
+    : totals.income;
+  const expenseTotalNum = summary
+    ? numAmount(summary.expenseTotal as string | number)
+    : totals.expense;
+  const balanceNum = incomeTotalNum - expenseTotalNum;
+  const hasIncome = incomeTotalNum > 0;
+
   const [formAmount, setFormAmount] = useState("");
   const [formKind, setFormKind] = useState<"expense" | "income">("expense");
   const [formDate, setFormDate] = useState(todayDate);
@@ -284,34 +293,23 @@ export function KakeiboDashboard() {
         <div className={styles.card}>
           <div className={styles.cardLabel}>収入（今月）</div>
           <div className={`${styles.cardValue} ${styles.income}`}>
-            {yen.format(
-              summary
-                ? numAmount(summary.incomeTotal as string | number)
-                : totals.income,
-            )}
+            {yen.format(incomeTotalNum)}
           </div>
         </div>
         <div className={styles.card}>
           <div className={styles.cardLabel}>支出（今月）</div>
           <div className={`${styles.cardValue} ${styles.expense}`}>
-            {yen.format(
-              summary
-                ? numAmount(summary.expenseTotal as string | number)
-                : totals.expense,
-            )}
+            {yen.format(expenseTotalNum)}
           </div>
         </div>
         <div className={styles.card}>
-          <div className={styles.cardLabel}>収支</div>
-          <div className={styles.cardValue}>
-            {yen.format(
-              (summary
-                ? numAmount(summary.incomeTotal as string | number)
-                : totals.income) -
-                (summary
-                  ? numAmount(summary.expenseTotal as string | number)
-                  : totals.expense),
-            )}
+          <div className={styles.cardLabel}>残金（今月あといくら）</div>
+          <div
+            className={`${styles.cardValue} ${
+              !hasIncome ? "" : balanceNum >= 0 ? styles.balancePositive : styles.balanceNegative
+            }`}
+          >
+            {hasIncome ? yen.format(balanceNum) : "収入待ち"}
           </div>
         </div>
       </div>

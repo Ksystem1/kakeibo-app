@@ -87,3 +87,15 @@ body {
   white-space: nowrap;
   border: 0;
 }
+
+@media (max-width: 768px) {
+  :root {
+    --app-font-scale: 1.08;
+  }
+}
+
+@media (max-width: 520px) {
+  :root {
+    --app-font-scale: 1.14;
+  }
+}

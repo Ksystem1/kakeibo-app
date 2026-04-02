@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { parseReceiptImage } from "../lib/api";
+import { useNavigate } from "react-router-dom";
+import { createTransaction, parseReceiptImage } from "../lib/api";
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
 
@@ -27,11 +28,12 @@ function dateFieldMode(raw: string): { kind: "iso"; value: string } | { kind: "t
 
 export function ReceiptPage() {
   const touchUi = useReceiptTouchUi();
-  const cameraInputId = useId();
   const galleryInputId = useId();
   const vendorFieldId = useId();
   const totalFieldId = useId();
   const dateFieldId = useId();
+
+  const navigate = useNavigate();
 
   const [notice, setNotice] = useState<string | null>(null);
   /** 解析結果を反映したうえでユーザーが修正可能 */
@@ -42,6 +44,7 @@ export function ReceiptPage() {
     Array<{ name: string; amount: number | null; confidence?: number }>
   >([]);
   const [loading, setLoading] = useState(false);
+  const [registering, setRegistering] = useState(false);
 
   useEffect(() => {
     if (!touchUi || !loading) return;
@@ -97,6 +100,8 @@ export function ReceiptPage() {
 
   const dateField = useMemo(() => dateFieldMode(draftDate), [draftDate]);
 
+  const activeStep: 1 | 2 | 3 | 4 = registering ? 4 : items.length > 0 ? 3 : 2;
+
   const loadingUi = (
     <>
       {touchUi ? (
@@ -128,30 +133,49 @@ export function ReceiptPage() {
   return (
     <div className={styles.wrap}>
       {loading ? loadingUi : null}
-      <h1 className={styles.title}>レシート読取（カメラ / 画像）</h1>
-      <p className={styles.sub}>
-        {touchUi
-          ? "「カメラで撮る」か「写真・ファイルを選ぶ」のどちらかで画像を指定できます。"
-          : "レシート画像を選択すると、行ごとの読取候補を表示します。"}{" "}
-        AWS Textract AnalyzeExpense 等での行単位抽出を想定しています。
-      </p>
+      <h1 className={styles.title}>レシート読取</h1>
+
+      {touchUi ? (
+        <div className={styles.stepsRow} aria-label="手順">
+          <div
+            className={styles.stepPill}
+          >
+            ①ログイン
+          </div>
+          <div
+            className={`${styles.stepPill} ${
+              activeStep === 2 ? styles.stepActive : ""
+            }`}
+          >
+            ②読取
+          </div>
+          <div
+            className={`${styles.stepPill} ${
+              activeStep === 3 ? styles.stepActive : ""
+            }`}
+          >
+            ③確認
+          </div>
+          <div
+            className={`${styles.stepPill} ${
+              activeStep === 4 ? styles.stepActive : ""
+            }`}
+          >
+            ④登録
+          </div>
+        </div>
+      ) : (
+        <p className={styles.sub}>
+          レシート画像を選択すると、店舗名・合計・日付が自動入力されます。
+          内容はいつでも修正できます。
+        </p>
+      )}
+
+      {touchUi ? (
+        <p className={styles.sub}>② 写真を選ぶ → ③ 内容を確認 → ④ 登録</p>
+      ) : null}
       {touchUi ? (
         <div className={styles.receiptPickRow}>
-          <input
-            id={cameraInputId}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="visually-hidden"
-            disabled={loading}
-            onChange={handleFileChange}
-          />
-          <label
-            htmlFor={cameraInputId}
-            className={`${styles.receiptPickBtn} ${pickDisabled}`}
-          >
-            カメラで撮る
-          </label>
           <input
             id={galleryInputId}
             type="file"
@@ -182,7 +206,9 @@ export function ReceiptPage() {
         onSubmit={(e) => e.preventDefault()}
       >
         <p className={styles.receiptSummaryHint}>
-          解析後、店舗名・合計・日付が下記に自動入力されます。内容はいつでも手で修正できます。
+          {touchUi
+            ? "③ 内容を確認（必要なら修正）してください。"
+            : "解析後、店舗名・合計・日付が下記に自動入力されます。内容はいつでも手で修正できます。"}
         </p>
         <div className={styles.field}>
           <label htmlFor={vendorFieldId}>店舗名</label>
@@ -230,6 +256,50 @@ export function ReceiptPage() {
             />
           )}
         </div>
+
+        <button
+          type="button"
+          className={`${styles.btn} ${styles.btnPrimary}`}
+          disabled={
+            loading ||
+            registering ||
+            items.length === 0 ||
+            !draftTotal.trim() ||
+            dateField.kind !== "iso"
+          }
+          onClick={async () => {
+            if (registering) return;
+            setNotice(null);
+
+            const amount = Number.parseFloat(draftTotal);
+            if (!Number.isFinite(amount) || amount <= 0) {
+              setNotice("金額を正しい数値で入力してください。");
+              return;
+            }
+            if (dateField.kind !== "iso") {
+              setNotice("日付は YYYY-MM-DD 形式にしてください。");
+              return;
+            }
+
+            setRegistering(true);
+            try {
+              await createTransaction({
+                kind: "expense",
+                amount,
+                transaction_date: dateField.value,
+                memo: draftVendor.trim() || null,
+                category_id: null,
+              });
+              navigate("/", { replace: true });
+            } catch (e) {
+              setNotice(e instanceof Error ? e.message : String(e));
+            } finally {
+              setRegistering(false);
+            }
+          }}
+        >
+          {registering ? "登録中…" : "登録"}
+        </button>
       </form>
 
       {notice ? (
@@ -238,35 +308,39 @@ export function ReceiptPage() {
         </p>
       ) : null}
 
-      <h2 className={styles.sectionTitle}>読取結果（行）</h2>
-      <div className={styles.tableWrap}>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>品目</th>
-              <th>金額</th>
-              <th>信頼度</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td colSpan={3}>
-                  <div className={styles.empty}>画像を選択してください</div>
-                </td>
-              </tr>
-            ) : (
-              items.map((it, i) => (
-                <tr key={i}>
-                  <td>{it.name}</td>
-                  <td>{it.amount != null ? `¥${it.amount}` : "—"}</td>
-                  <td>{it.confidence != null ? it.confidence : "—"}</td>
+      {!touchUi ? (
+        <>
+          <h2 className={styles.sectionTitle}>読取結果（行）</h2>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>品目</th>
+                  <th>金額</th>
+                  <th>信頼度</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {items.length === 0 ? (
+                  <tr>
+                    <td colSpan={3}>
+                      <div className={styles.empty}>画像を選択してください</div>
+                    </td>
+                  </tr>
+                ) : (
+                  items.map((it, i) => (
+                    <tr key={i}>
+                      <td>{it.name}</td>
+                      <td>{it.amount != null ? `¥${it.amount}` : "—"}</td>
+                      <td>{it.confidence != null ? it.confidence : "—"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

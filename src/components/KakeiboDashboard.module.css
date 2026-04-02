@@ -19,14 +19,15 @@
 
 .title {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: clamp(1.7rem, 5.2vw, 2.3rem);
   font-weight: 700;
   letter-spacing: -0.02em;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 0 18px rgba(61, 214, 180, 0.14);
 }
 
 .sub {
   margin: 0.25rem 0 0;
-  font-size: 0.85rem;
+  font-size: 1rem;
   color: var(--text-muted);
 }
 
@@ -125,18 +126,58 @@
 }
 
 .cardValue {
-  font-size: clamp(1.05rem, 4.2vw, 1.25rem);
+  font-size: clamp(1.15rem, 5.2vw, 1.65rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   word-break: break-all;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 16px rgba(61, 214, 180, 0.1);
 }
 
 .cardValue.income {
-  color: #7ee0c0;
+  color: #52e0c4;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 20px rgba(82, 224, 196, 0.18);
 }
 
 .cardValue.expense {
-  color: #fca5a5;
+  color: #ff8a8a;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 20px rgba(255, 138, 138, 0.18);
+}
+
+.balancePositive {
+  color: #52e0c4;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 20px rgba(82, 224, 196, 0.18);
+}
+
+.balanceNegative {
+  color: #ff8a8a;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 20px rgba(255, 138, 138, 0.18);
+}
+
+.stepsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.85rem 0 0.85rem;
+}
+
+.stepPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-size: 0.95rem;
+}
+
+.stepActive {
+  color: var(--text);
+  border-color: rgba(61, 214, 180, 0.55);
+  background: rgba(61, 214, 180, 0.12);
+  box-shadow: 0 0 0 3px rgba(61, 214, 180, 0.12) inset;
 }
 
 .sectionTitle {
@@ -438,4 +479,37 @@
   font-weight: 600;
   color: var(--text);
   letter-spacing: 0.02em;
+}
+
+@media (max-width: 520px) {
+  .cardLabel {
+    font-size: 0.9rem;
+  }
+
+  .sectionTitle {
+    font-size: 1rem;
+  }
+
+  .btn {
+    font-size: 1rem;
+    padding: 0.7rem 1.05rem;
+  }
+
+  .receiptPickBtn {
+    font-size: 1rem;
+    padding: 0.7rem 1.05rem;
+  }
+
+  .receiptSummaryHint {
+    font-size: 0.98rem;
+  }
+
+  .field label {
+    font-size: 0.9rem;
+  }
+
+  .field input,
+  .field select {
+    font-size: 1rem;
+  }
 }
