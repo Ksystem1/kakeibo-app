@@ -61,6 +61,19 @@ function resolveDistributionId() {
 try {
   sh("aws sts get-caller-identity");
 
+  try {
+    sh(`aws s3api head-bucket --bucket ${bucket} --region ${region}`);
+  } catch {
+    console.error(
+      `\n[deploy] バケット s3://${bucket}/ に現在の認証情報でアクセスできません（NoSuchBucket または権限不足）。\n` +
+        `  ・GitHub Secret S3_BUCKET が別名・タイポ・削除済みバケットになっていないか確認\n` +
+        `  ・レガシー名 ksystem-kakeibo-* は Terraform の旧 SPA 用です。未使用なら ksystemapp-web-production に合わせる\n` +
+        `  ・AWS_REGION（${region}）がバケットのリージョンと一致しているか確認\n` +
+        `  ・OIDC ロールの AWS アカウントがバケットと同じか確認\n`,
+    );
+    throw new Error("S3 head-bucket failed");
+  }
+
   const viteApi = (process.env.VITE_API_URL || "").trim();
   if (process.env.GITHUB_ACTIONS === "true") {
     if (!viteApi) {

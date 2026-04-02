@@ -14,7 +14,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
+      # 未設定だと空文字になり S3/STS のリージョン解釈がブレるため既定を明示
+      AWS_REGION: ${{ secrets.AWS_REGION != '' && secrets.AWS_REGION || 'ap-northeast-1' }}
     permissions:
       id-token: write
       contents: read
@@ -35,18 +36,30 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # S3_BUCKET シークレット未設定・誤削除時は ksystemapp-web-production（Terraform: frontend_artifacts_bucket）
+      # S3_BUCKET: 未設定は既定。レガシー名（ksystem-kakeibo-*）は削除済みで NoSuchBucket になりやすいので既定へ寄せる
       - name: Resolve S3 bucket for deploy
         id: s3
         shell: bash
         env:
           SECRET_BUCKET: ${{ secrets.S3_BUCKET }}
         run: |
-          if [ -n "${SECRET_BUCKET:-}" ]; then
-            echo "bucket=${SECRET_BUCKET}" >> "$GITHUB_OUTPUT"
+          DEFAULT=ksystemapp-web-production
+          b=$(printf '%s' "${SECRET_BUCKET:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+          if [ -z "$b" ]; then
+            echo "Using default S3 bucket (secret empty): $DEFAULT"
+            echo "bucket=$DEFAULT" >> "$GITHUB_OUTPUT"
+          elif [[ "$b" == ksystem-kakeibo-* ]]; then
+            echo "::warning::S3_BUCKET がレガシー SPA 用バケット名（$b）です。削除済みの場合は NoSuchBucket になります。$DEFAULT に切り替えます。GitHub の S3_BUCKET を空にするか $DEFAULT に更新してください。"
+            echo "bucket=$DEFAULT" >> "$GITHUB_OUTPUT"
           else
-            echo "bucket=ksystemapp-web-production" >> "$GITHUB_OUTPUT"
+            echo "Using S3 bucket from secret: $b"
+            echo "bucket=$b" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Verify S3 bucket exists
+        env:
+          S3_BUCKET: ${{ steps.s3.outputs.bucket }}
+        run: aws s3api head-bucket --bucket "$S3_BUCKET" --region "$AWS_REGION"
 
       # 本番 URL: https://<ドメイン>/kakeibo/ （Vite base: /kakeibo/）
       # VITE_API_URL はこのステップの env 経由で npm run build に渡る（.env.production より優先）。
