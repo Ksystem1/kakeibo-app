@@ -9,9 +9,9 @@ import dns from "node:dns";
 import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
 
 const DEFAULT_REGION = "ap-northeast-1";
-const DEFAULT_TIMEOUT_MS = 25_000;
+const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
-const DEFAULT_SEND_RETRIES = 4;
+const DEFAULT_SEND_RETRIES = 1;
 
 function envInt(name, fallback) {
   const v = process.env[name];
@@ -78,8 +78,8 @@ function getDefaultAwsConfig() {
     maxAttempts: Math.max(1, envInt("TEXTRACT_MAX_ATTEMPTS", 2)),
     requestHandler: new NodeHttpHandler({
       httpsAgent,
-      connectionTimeout: Math.max(1, envInt("TEXTRACT_CONNECT_TIMEOUT_MS", 5_000)),
-      socketTimeout: Math.max(1, envInt("TEXTRACT_SOCKET_TIMEOUT_MS", 30_000)),
+      connectionTimeout: Math.max(1, envInt("TEXTRACT_CONNECT_TIMEOUT_MS", 3_000)),
+      socketTimeout: Math.max(1, envInt("TEXTRACT_SOCKET_TIMEOUT_MS", 12_000)),
     }),
   };
 }
