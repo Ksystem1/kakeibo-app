@@ -179,6 +179,23 @@ resource "aws_iam_role_policy_attachment" "execution_base" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+data "aws_iam_policy_document" "execution_secrets" {
+  count = length(var.app_secret_arns) > 0 ? 1 : 0
+  statement {
+    sid       = "ReadTaskSecretsFromSecretsManager"
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = values(var.app_secret_arns)
+  }
+}
+
+resource "aws_iam_role_policy" "execution_secrets" {
+  count  = length(var.app_secret_arns) > 0 ? 1 : 0
+  name   = "${local.app_name}-execution-read-secrets"
+  role   = aws_iam_role.execution.id
+  policy = data.aws_iam_policy_document.execution_secrets[0].json
+}
+
 resource "aws_iam_role" "task" {
   name               = "${local.app_name}-task-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_task_assume_role.json
@@ -347,6 +364,7 @@ resource "aws_ecs_service" "this" {
     aws_vpc_endpoint.ecr_api,
     aws_vpc_endpoint.ecr_dkr,
     aws_vpc_endpoint.logs,
+    aws_vpc_endpoint.secretsmanager,
     aws_vpc_endpoint.s3,
   ]
   tags = local.tags

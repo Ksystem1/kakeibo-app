@@ -92,47 +92,59 @@ export async function handleApiRequest(req, options = {}) {
       );
     }
 
-    if (routeKey(method, path) === "GET /health") {
-      const rdsHost = String(process.env.RDS_HOST || "").trim();
-      if (!rdsHost) {
-        return json(
-          200,
-          {
+    {
+      const rk = routeKey(method, path);
+      const healthGetOrHead = rk === "GET /health" || rk === "HEAD /health";
+      if (healthGetOrHead) {
+        const rdsHost = String(process.env.RDS_HOST || "").trim();
+        if (!rdsHost) {
+          const payload = {
             ok: true,
             database: "not_configured",
             hint: "RDS_HOST 未設定のため DB チェックをスキップしました。本番では Secrets/SSM で RDS を注入してください。",
-          },
-          hdrs,
-          skipCors,
-        );
-      }
-      try {
-        await pingDatabase();
-        return json(200, { ok: true, database: "up" }, hdrs, skipCors);
-      } catch (e) {
-        logError("health.db", e, { method, path });
-        const o = e && typeof e === "object" ? e : {};
-        const code =
-          o.code ?? (o.errno != null ? `errno_${o.errno}` : "UNKNOWN");
-        const sqlMessage =
-          typeof o.sqlMessage === "string" ? o.sqlMessage : undefined;
-        const verbose =
-          process.env.NODE_ENV === "development" ||
-          process.env.HEALTH_VERBOSE === "true";
-        return json(
-          503,
-          {
-            ok: false,
-            error: "DatabaseUnavailable",
-            code: String(code),
-            ...(sqlMessage ? { sqlMessage } : {}),
-            hint:
-              "RDS の環境変数・VPC コネクタ・セキュリティグループを確認してください。",
-            ...(verbose && e instanceof Error ? { message: e.message } : {}),
-          },
-          hdrs,
-          skipCors,
-        );
+          };
+          if (method === "HEAD") {
+            const cors = skipCors ? {} : buildCorsHeaders(hdrs);
+            return { statusCode: 200, headers: { ...cors }, body: "" };
+          }
+          return json(200, payload, hdrs, skipCors);
+        }
+        try {
+          await pingDatabase();
+          if (method === "HEAD") {
+            const cors = skipCors ? {} : buildCorsHeaders(hdrs);
+            return { statusCode: 200, headers: { ...cors }, body: "" };
+          }
+          return json(200, { ok: true, database: "up" }, hdrs, skipCors);
+        } catch (e) {
+          logError("health.db", e, { method, path });
+          const o = e && typeof e === "object" ? e : {};
+          const code =
+            o.code ?? (o.errno != null ? `errno_${o.errno}` : "UNKNOWN");
+          const sqlMessage =
+            typeof o.sqlMessage === "string" ? o.sqlMessage : undefined;
+          const verbose =
+            process.env.NODE_ENV === "development" ||
+            process.env.HEALTH_VERBOSE === "true";
+          if (method === "HEAD") {
+            const cors = skipCors ? {} : buildCorsHeaders(hdrs);
+            return { statusCode: 503, headers: { ...cors }, body: "" };
+          }
+          return json(
+            503,
+            {
+              ok: false,
+              error: "DatabaseUnavailable",
+              code: String(code),
+              ...(sqlMessage ? { sqlMessage } : {}),
+              hint:
+                "RDS の環境変数・VPC コネクタ・セキュリティグループを確認してください。",
+              ...(verbose && e instanceof Error ? { message: e.message } : {}),
+            },
+            hdrs,
+            skipCors,
+          );
+        }
       }
     }
 

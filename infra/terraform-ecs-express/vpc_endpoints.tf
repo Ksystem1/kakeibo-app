@@ -68,6 +68,18 @@ resource "aws_vpc_endpoint" "logs" {
   tags = merge(local.tags, { Name = "${local.app_name}-vpce-logs" })
 }
 
+# タスク起動時に Secrets Manager から環境シークレット（JWT_SECRET 等）を取得するために必須（NAT なし構成）
+resource "aws_vpc_endpoint" "secretsmanager" {
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.secretsmanager"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.private_subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(local.tags, { Name = "${local.app_name}-vpce-secretsmanager" })
+}
+
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = var.vpc_id
   service_name      = "com.amazonaws.${var.aws_region}.s3"

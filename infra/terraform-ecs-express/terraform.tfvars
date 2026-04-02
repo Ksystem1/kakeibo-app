@@ -13,7 +13,9 @@ github_oidc_provider_arn = "arn:aws:iam::345362761619:oidc-provider/token.action
 github_repository        = "Ksystem1/kakeibo-app"
 github_branch            = "main"
 
-app_secret_arns = {}
+app_secret_arns = {
+  JWT_SECRET = "arn:aws:secretsmanager:ap-northeast-1:345362761619:secret:kakeibo/prod/jwt_secret-uoM336"
+}
 
 # api.ksystemapp.com 用 ACM（ap-northeast-1・発行済み）
 alb_certificate_arn = "arn:aws:acm:ap-northeast-1:345362761619:certificate/3a41ceda-705e-4914-8e6e-e3b97303216e"
