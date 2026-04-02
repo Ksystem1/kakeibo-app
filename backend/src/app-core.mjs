@@ -95,16 +95,20 @@ export async function handleApiRequest(req, options = {}) {
       if (healthGetOrHead) {
         const rdsHost = String(process.env.RDS_HOST || "").trim();
         if (!rdsHost) {
-          const payload = {
-            ok: true,
-            database: "not_configured",
-            hint: "RDS_HOST 未設定のため DB チェックをスキップしました。本番では Secrets/SSM で RDS を注入してください。",
-          };
           if (method === "HEAD") {
             const cors = skipCors ? {} : buildCorsHeaders(hdrs);
-            return { statusCode: 200, headers: { ...cors }, body: "" };
+            return { statusCode: 503, headers: { ...cors }, body: "" };
           }
-          return json(200, payload, hdrs, skipCors);
+          return json(
+            503,
+            {
+              error: "DatabaseNotConfigured",
+              detail:
+                "データベース（RDS）に接続されていません。家計簿 API には MySQL の設定が必要です。",
+            },
+            hdrs,
+            skipCors,
+          );
         }
         try {
           await pingDatabase();

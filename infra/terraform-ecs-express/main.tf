@@ -12,13 +12,13 @@ locals {
   manage_rds_credentials = var.manage_rds_credentials_secret && var.rds_credentials != null
 
   # Terraform が作る JSON シークレット → ECS は :<json_key>:: 形式で各環境変数に注入
-  managed_rds_secret_value_arns = local.manage_rds_credentials ? {
+  managed_rds_secret_value_arns = {
     RDS_HOST     = "${aws_secretsmanager_secret.rds_credentials[0].arn}:host::"
     RDS_PORT     = "${aws_secretsmanager_secret.rds_credentials[0].arn}:port::"
     RDS_USER     = "${aws_secretsmanager_secret.rds_credentials[0].arn}:user::"
     RDS_PASSWORD = "${aws_secretsmanager_secret.rds_credentials[0].arn}:password::"
     RDS_DATABASE = "${aws_secretsmanager_secret.rds_credentials[0].arn}:database::"
-  } : {}
+  }
 
   # 手動 ARN（app_secret_arns）と Terraform 管理シークレットをマージ（後者が RDS_* を上書き）
   effective_app_secret_arns = merge(var.app_secret_arns, local.managed_rds_secret_value_arns)
@@ -380,15 +380,15 @@ resource "aws_ecs_task_definition" "this" {
         }
       ]
       environment = [
-        for k, v in var.app_env_vars : {
+        for k in sort(keys(var.app_env_vars)) : {
           name  = k
-          value = v
+          value = var.app_env_vars[k]
         }
       ]
       secrets = [
-        for k, arn in local.effective_app_secret_arns : {
+        for k in sort(keys(local.effective_app_secret_arns)) : {
           name      = k
-          valueFrom = arn
+          valueFrom = local.effective_app_secret_arns[k]
         }
       ]
       logConfiguration = {
