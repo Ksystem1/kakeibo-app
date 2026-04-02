@@ -316,12 +316,29 @@ export async function getAdminUsers() {
 
 export async function updateAdminUser(
   userId: number,
-  body: { isAdmin: boolean },
+  body: { isAdmin?: boolean; displayName?: string | null },
 ) {
   const res = await apiFetch(`${BASE}/admin/users/${userId}`, {
     method: "PATCH",
     headers: buildHeaders(),
     body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean }>(res);
+}
+
+export async function resetAdminUserPassword(userId: number) {
+  const res = await apiFetch(`${BASE}/admin/users/${userId}/reset-password`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({}),
+  });
+  return parse<{ ok: boolean; temporaryPassword: string; message?: string }>(res);
+}
+
+export async function deleteAdminUser(userId: number) {
+  const res = await apiFetch(`${BASE}/admin/users/${userId}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
   });
   return parse<{ ok: boolean }>(res);
 }

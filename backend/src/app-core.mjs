@@ -1,9 +1,10 @@
 /**
  * Lambda / Express 共通ルータ
  */
+import crypto from "node:crypto";
 import { stripApiPathPrefix } from "./api-path.mjs";
 import { tryAuthRoutes, getDefaultFamilyId } from "./auth-routes.mjs";
-import { resolveUserId } from "./auth-logic.mjs";
+import { hashPassword, resolveUserId } from "./auth-logic.mjs";
 import { buildCorsHeaders } from "./cors-config.mjs";
 import { getPool, isRdsConfigured, pingDatabase } from "./db.mjs";
 import { createLogger } from "./logger.mjs";
@@ -228,6 +229,15 @@ async function ensureAdmin(pool, userId) {
   return { ok: true };
 }
 
+function generateAdminTempPassword() {
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let out = "";
+  for (let i = 0; i < 12; i += 1) {
+    out += chars[crypto.randomInt(chars.length)];
+  }
+  return out;
+}
+
 /**
  * @param {{ method: string, path: string, queryStringParameters?: Record<string,string>|null, body?: string|null, headers?: Record<string, string> }} req
  * @param {{ skipCors?: boolean }} [options]
@@ -367,6 +377,7 @@ export async function handleApiRequest(req, options = {}) {
     const normPath = path.replace(/\/$/, "") || "/";
     const txOneMatch = /^\/transactions\/(\d+)$/.exec(normPath);
     const adminUserOneMatch = /^\/admin\/users\/(\d+)$/.exec(normPath);
+    const adminUserResetPasswordMatch = /^\/admin\/users\/(\d+)\/reset-password$/.exec(normPath);
 
     if (txOneMatch && method === "PATCH") {
       const txId = Number(txOneMatch[1], 10);
@@ -472,14 +483,112 @@ export async function handleApiRequest(req, options = {}) {
         return json(400, { error: "ユーザーIDが不正です" }, hdrs, skipCors);
       }
       const b = JSON.parse(req.body || "{}");
-      if (typeof b.isAdmin !== "boolean") {
-        return json(400, { error: "isAdmin (boolean) が必要です" }, hdrs, skipCors);
+      const updates = [];
+      const params = [];
+
+      if (Object.prototype.hasOwnProperty.call(b, "isAdmin")) {
+        if (typeof b.isAdmin !== "boolean") {
+          return json(400, { error: "isAdmin は boolean で指定してください" }, hdrs, skipCors);
+        }
+        updates.push("is_admin = ?");
+        params.push(b.isAdmin ? 1 : 0);
       }
+      if (Object.prototype.hasOwnProperty.call(b, "displayName")) {
+        const rawName = b.displayName == null ? "" : String(b.displayName).trim();
+        if (rawName.length > 100) {
+          return json(400, { error: "displayName は100文字以内で指定してください" }, hdrs, skipCors);
+        }
+        updates.push("display_name = ?");
+        params.push(rawName === "" ? null : rawName);
+      }
+      if (updates.length === 0) {
+        return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
+      }
+      const [[exists]] = await pool.query(
+        `SELECT id, is_admin FROM users WHERE id = ?`,
+        [targetUserId],
+      );
+      if (!exists) {
+        return json(404, { error: "対象ユーザーが見つかりません" }, hdrs, skipCors);
+      }
+      if (
+        Object.prototype.hasOwnProperty.call(b, "isAdmin") &&
+        b.isAdmin === false &&
+        Number(exists.is_admin) === 1
+      ) {
+        const [[cntRow]] = await pool.query(
+          `SELECT COUNT(*) AS c FROM users WHERE is_admin = 1`,
+        );
+        if (Number(cntRow?.c) <= 1) {
+          return json(400, { error: "最後の管理者の権限は外せません" }, hdrs, skipCors);
+        }
+      }
+      await pool.query(
+        `UPDATE users SET ${updates.join(", ")}, updated_at = NOW() WHERE id = ?`,
+        [...params, targetUserId],
+      );
+      return json(200, { ok: true }, hdrs, skipCors);
+    }
+
+    if (adminUserResetPasswordMatch && method === "POST") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const targetUserId = Number(adminUserResetPasswordMatch[1], 10);
+      if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
+        return json(400, { error: "ユーザーIDが不正です" }, hdrs, skipCors);
+      }
+      const tempPassword = generateAdminTempPassword();
+      const passwordHash = await hashPassword(tempPassword);
       const [upd] = await pool.query(
-        `UPDATE users SET is_admin = ?, updated_at = NOW() WHERE id = ?`,
-        [b.isAdmin ? 1 : 0, targetUserId],
+        `UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?`,
+        [passwordHash, targetUserId],
       );
       if (!upd?.affectedRows) {
+        return json(404, { error: "対象ユーザーが見つかりません" }, hdrs, skipCors);
+      }
+      await pool.query(
+        `DELETE FROM password_reset_tokens WHERE user_id = ?`,
+        [targetUserId],
+      );
+      return json(
+        200,
+        {
+          ok: true,
+          temporaryPassword: tempPassword,
+          message: "一時パスワードを発行しました。ログイン後に変更してください。",
+        },
+        hdrs,
+        skipCors,
+      );
+    }
+
+    if (adminUserOneMatch && method === "DELETE") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const targetUserId = Number(adminUserOneMatch[1], 10);
+      if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
+        return json(400, { error: "ユーザーIDが不正です" }, hdrs, skipCors);
+      }
+      if (targetUserId === userId) {
+        return json(400, { error: "自分自身は削除できません" }, hdrs, skipCors);
+      }
+      const [[target]] = await pool.query(
+        `SELECT id, is_admin FROM users WHERE id = ?`,
+        [targetUserId],
+      );
+      if (!target) {
+        return json(404, { error: "対象ユーザーが見つかりません" }, hdrs, skipCors);
+      }
+      if (Number(target.is_admin) === 1) {
+        const [[cntRow]] = await pool.query(
+          `SELECT COUNT(*) AS c FROM users WHERE is_admin = 1`,
+        );
+        if (Number(cntRow?.c) <= 1) {
+          return json(400, { error: "最後の管理者は削除できません" }, hdrs, skipCors);
+        }
+      }
+      const [del] = await pool.query(`DELETE FROM users WHERE id = ?`, [targetUserId]);
+      if (!del?.affectedRows) {
         return json(404, { error: "対象ユーザーが見つかりません" }, hdrs, skipCors);
       }
       return json(200, { ok: true }, hdrs, skipCors);
