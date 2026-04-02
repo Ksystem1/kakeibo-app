@@ -41,3 +41,13 @@ output "github_actions_deploy_role_arn" {
 output "ecr_repository_url" {
   value = aws_ecr_repository.api.repository_url
 }
+
+output "vpc_endpoint_ecr_api_id" {
+  value       = aws_vpc_endpoint.ecr_api.id
+  description = "プライベートサブネットからの ECR API 用 Interface エンドポイント"
+}
+
+output "vpc_endpoint_s3_gateway_id" {
+  value       = aws_vpc_endpoint.s3.id
+  description = "イメージレイヤ取得用 S3 ゲートウェイエンドポイント"
+}

@@ -93,6 +93,19 @@ export async function handleApiRequest(req, options = {}) {
     }
 
     if (routeKey(method, path) === "GET /health") {
+      const rdsHost = String(process.env.RDS_HOST || "").trim();
+      if (!rdsHost) {
+        return json(
+          200,
+          {
+            ok: true,
+            database: "not_configured",
+            hint: "RDS_HOST 未設定のため DB チェックをスキップしました。本番では Secrets/SSM で RDS を注入してください。",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
       try {
         await pingDatabase();
         return json(200, { ok: true, database: "up" }, hdrs, skipCors);
