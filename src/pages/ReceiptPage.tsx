@@ -226,7 +226,6 @@ export function ReceiptPage() {
           disabled={
             loading ||
             registering ||
-            items.length === 0 ||
             !draftTotal.trim() ||
             dateField.kind !== "iso"
           }
