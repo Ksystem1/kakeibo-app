@@ -478,6 +478,23 @@ export async function handleApiRequest(req, options = {}) {
               ? String(e.code)
               : "ReceiptParseError";
           logError("receipts.parse", e, { code, status });
+          // Textract の一時障害時は手入力フローを継続できるよう 200 で返す。
+          if (code === "TextractTimeout" || code === "TextractNetworkBusy") {
+            return json(
+              200,
+              {
+                ok: true,
+                demo: false,
+                summary: { vendorName: null, totalAmount: null, date: null, fieldConfidence: {} },
+                items: [],
+                notice:
+                  "自動解析は混雑中です。店舗名・金額・日付を手入力してそのまま登録できます。",
+                expenseIndex: null,
+              },
+              hdrs,
+              skipCors,
+            );
+          }
           return json(
             status,
             {
