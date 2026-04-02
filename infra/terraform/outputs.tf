@@ -12,6 +12,11 @@ output "site_bucket_name" {
   value       = var.enable_legacy_spa_stack ? aws_s3_bucket.spa[0].bucket : null
 }
 
+output "frontend_artifacts_bucket_name" {
+  description = "GitHub Secret S3_BUCKET に設定（未設定ならこの名前が deploy スクリプトの既定）"
+  value       = var.manage_frontend_artifacts_bucket ? aws_s3_bucket.frontend_artifacts[0].bucket : null
+}
+
 output "cloudfront_distribution_id" {
   value = var.enable_legacy_spa_stack ? aws_cloudfront_distribution.site[0].id : null
 }

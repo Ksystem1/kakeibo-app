@@ -7,3 +7,7 @@ aws_region         = "ap-northeast-1"
 create_hosted_zone = false
 existing_zone_id   = ""
 include_www_alias  = false
+
+# フロント配信（CloudFront オリジンと GitHub Actions の S3_BUCKET）
+manage_frontend_artifacts_bucket = true
+frontend_artifacts_bucket_name   = "ksystemapp-web-production"

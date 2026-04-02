@@ -45,3 +45,21 @@ variable "include_www_alias" {
   description = "CloudFront / ACM に www.<root> を含め、A/AAAA レコードを作成する"
   default     = false
 }
+
+variable "manage_frontend_artifacts_bucket" {
+  type        = bool
+  description = "true のとき、フロント配信用 S3 バケット（GitHub Actions の S3_BUCKET と一致させる）を管理する"
+  default     = true
+}
+
+variable "frontend_artifacts_bucket_name" {
+  type        = string
+  description = "deploy-frontend / deploy-production.mjs の既定と同じ名前にすること"
+  default     = "ksystemapp-web-production"
+}
+
+variable "frontend_artifacts_bucket_tags" {
+  type        = map(string)
+  description = "frontend_artifacts バケットに追加するタグ"
+  default     = {}
+}

@@ -35,13 +35,26 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # S3_BUCKET シークレット未設定・誤削除時は ksystemapp-web-production（Terraform: frontend_artifacts_bucket）
+      - name: Resolve S3 bucket for deploy
+        id: s3
+        shell: bash
+        env:
+          SECRET_BUCKET: ${{ secrets.S3_BUCKET }}
+        run: |
+          if [ -n "${SECRET_BUCKET:-}" ]; then
+            echo "bucket=${SECRET_BUCKET}" >> "$GITHUB_OUTPUT"
+          else
+            echo "bucket=ksystemapp-web-production" >> "$GITHUB_OUTPUT"
+          fi
+
       # 本番 URL: https://<ドメイン>/kakeibo/ （Vite base: /kakeibo/）
       # VITE_API_URL はこのステップの env 経由で npm run build に渡る（.env.production より優先）。
       # HTTPS フロントから http:// API は Mixed Content のため deploy-production.mjs が GITHUB_ACTIONS 時に失敗させる。
       - name: Deploy frontend to S3 and CloudFront
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_BUCKET: ${{ steps.s3.outputs.bucket }}
           CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
           AWS_REGION: ${{ env.AWS_REGION }}
           GITHUB_ACTIONS: "true"
