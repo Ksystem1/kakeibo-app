@@ -26,7 +26,6 @@ export function RegisterPage() {
   const [loginName, setLoginName] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [familyName, setFamilyName] = useState("夫婦");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -52,10 +51,6 @@ export function RegisterPage() {
       setError("表示名は漢字・カナ・英数字のみ、最大10文字で入力してください。");
       return;
     }
-    if (!familyName || !NAME_RE.test(familyName) || familyName.length > 10) {
-      setError("家族名は漢字・カナ・英数字のみ、最大10文字で入力してください。");
-      return;
-    }
     setSubmitting(true);
     try {
       let r:
@@ -66,7 +61,6 @@ export function RegisterPage() {
         password,
         login_name: loginName.trim() || undefined,
         display_name: displayName.trim() || undefined,
-        family_name: inviteToken ? undefined : familyName.trim() || undefined,
         invite_token: inviteToken || undefined,
       };
       for (let i = 0; i < 3; i += 1) {
@@ -92,6 +86,7 @@ export function RegisterPage() {
         id: r.user.id,
         email: r.user.email,
         familyId: r.user.familyId,
+        isAdmin: r.user.isAdmin,
       });
       navigate("/", { replace: true });
     } catch (err) {
@@ -111,7 +106,7 @@ export function RegisterPage() {
           <p className={styles.heroDesc}>
             家族用の家計簿を作成します。
             <br />
-            初期はご本人のみ。登録後に招待可能となります。
+            初期はご本人のみ。登録後に配偶者などを招待して共有できます。
           </p>
         </div>
       </aside>
@@ -162,20 +157,6 @@ export function RegisterPage() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 disabled={submitting}
-              />
-            </div>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="reg-family">
-                家族名（初期値：夫婦・最大10文字）
-              </label>
-              <input
-                id="reg-family"
-                className={styles.input}
-                type="text"
-                maxLength={10}
-                value={familyName}
-                onChange={(e) => setFamilyName(e.target.value)}
-                disabled={submitting || Boolean(inviteToken)}
               />
             </div>
             <div className={styles.field}>

@@ -194,7 +194,12 @@ export async function tryAuthRoutes(req, ctx) {
             return json(400, { error: "招待リンクが無効または期限切れです" }, hdrs, skipCors);
           }
           const inv = invRows[0];
-          if (inv.email && String(inv.email).toLowerCase() !== email) {
+          const invEmail = inv.email != null ? String(inv.email).trim().toLowerCase() : "";
+          if (!invEmail || !invEmail.includes("@")) {
+            await conn.rollback();
+            return json(400, { error: "招待情報が不正です" }, hdrs, skipCors);
+          }
+          if (invEmail !== email) {
             await conn.rollback();
             return json(
               400,
@@ -205,12 +210,20 @@ export async function tryAuthRoutes(req, ctx) {
           }
           familyId = inv.family_id;
           role = "member";
+          const [[famRow]] = await conn.query(
+            `SELECT COUNT(*) AS c FROM family_members WHERE family_id = ?`,
+            [familyId],
+          );
+          if (!famRow || Number(famRow.c) < 1) {
+            await conn.rollback();
+            return json(400, { error: "招待先の家族が無効です" }, hdrs, skipCors);
+          }
           await conn.query("DELETE FROM family_invites WHERE id = ?", [inv.id]);
         } else {
-          const [fr] = await conn.query(
-            "INSERT INTO families (name) VALUES (?)",
-            [b.family_name?.trim() || "マイ家族"],
-          );
+          const internalFamilyName = "夫婦";
+          const [fr] = await conn.query("INSERT INTO families (name) VALUES (?)", [
+            internalFamilyName,
+          ]);
           familyId = fr.insertId;
         }
 
@@ -232,7 +245,10 @@ export async function tryAuthRoutes(req, ctx) {
         const token = signUserToken(userId, email);
         return json(
           201,
-          { token, user: { id: userId, email, familyId, isAdmin: false } },
+          {
+            token,
+            user: { id: userId, email, familyId, isAdmin: false },
+          },
           hdrs,
           skipCors,
         );

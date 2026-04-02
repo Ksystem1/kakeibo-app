@@ -102,7 +102,6 @@ export async function registerRequest(body: {
   password: string;
   login_name?: string;
   display_name?: string;
-  family_name?: string;
   invite_token?: string;
 }) {
   const res = await apiFetch(`${BASE}/auth/register`, {
@@ -311,6 +310,8 @@ export async function getAdminUsers() {
       updated_at: string | null;
       last_login_at: string | null;
       default_family_id: number | null;
+      family_name: string | null;
+      family_peers: string | null;
     }>;
   }>(res);
 }

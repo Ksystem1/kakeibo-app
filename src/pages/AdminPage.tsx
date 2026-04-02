@@ -16,6 +16,8 @@ type AdminUser = {
   updated_at: string | null;
   last_login_at: string | null;
   default_family_id: number | null;
+  family_name: string | null;
+  family_peers: string | null;
 };
 
 function formatDateTime(value: string | null | undefined): string {
@@ -140,7 +142,7 @@ export function AdminPage() {
   }, []);
 
   return (
-    <section style={{ padding: "1rem", maxWidth: 1080, margin: "0 auto" }}>
+    <section style={{ padding: "1rem", maxWidth: 1400, margin: "0 auto" }}>
       <h1 style={{ margin: 0 }}>管理者ダッシュボード</h1>
       <p style={{ color: "var(--text-muted)" }}>
         管理者数: {adminCount} / 全ユーザー: {items.length}
@@ -157,13 +159,16 @@ export function AdminPage() {
         {loading ? "読み込み中..." : "再読み込み"}
       </button>
       <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1180 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1520 }}>
           <thead>
             <tr style={{ background: "var(--panel-bg)" }}>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>ID</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>メール</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>登録日</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>最終ログイン</th>
+              <th style={{ textAlign: "left", padding: "0.7rem" }}>家族ID</th>
+              <th style={{ textAlign: "left", padding: "0.7rem" }}>家族名</th>
+              <th style={{ textAlign: "left", padding: "0.7rem" }}>家族メンバー</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>表示名</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>ログイン名</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>管理者</th>
@@ -181,6 +186,13 @@ export function AdminPage() {
                 </td>
                 <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
                   {formatDateTime(u.last_login_at)}
+                </td>
+                <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
+                  {u.default_family_id != null ? u.default_family_id : "—"}
+                </td>
+                <td style={{ padding: "0.7rem" }}>{u.family_name ?? "—"}</td>
+                <td style={{ padding: "0.7rem", maxWidth: 280, wordBreak: "break-word" }}>
+                  {u.family_peers ?? "—"}
                 </td>
                 <td style={{ padding: "0.7rem" }}>
                   <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
@@ -250,7 +262,7 @@ export function AdminPage() {
             ))}
             {!loading && items.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                <td colSpan={12} style={{ padding: "1rem", color: "var(--text-muted)" }}>
                   ユーザーが見つかりません
                 </td>
               </tr>

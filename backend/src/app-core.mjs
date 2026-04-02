@@ -458,8 +458,24 @@ export async function handleApiRequest(req, options = {}) {
            u.created_at,
            u.updated_at,
            u.last_login_at,
-           u.default_family_id
+           u.default_family_id,
+           f.name AS family_name,
+           (
+             SELECT GROUP_CONCAT(
+               CONCAT(
+                 COALESCE(NULLIF(TRIM(u2.display_name), ''), u2.email),
+                 ' (', fm2.role, ')'
+               )
+               ORDER BY fm2.id
+               SEPARATOR ' / '
+             )
+             FROM family_members fm2
+             JOIN users u2 ON u2.id = fm2.user_id
+             WHERE u.default_family_id IS NOT NULL
+               AND fm2.family_id = u.default_family_id
+           ) AS family_peers
          FROM users u
+         LEFT JOIN families f ON f.id = u.default_family_id
          ORDER BY u.id ASC
          LIMIT 1000`,
       );
@@ -473,6 +489,8 @@ export async function handleApiRequest(req, options = {}) {
         updated_at: r.updated_at ?? null,
         last_login_at: r.last_login_at ?? null,
         default_family_id: r.default_family_id ?? null,
+        family_name: r.family_name == null ? null : String(r.family_name),
+        family_peers: r.family_peers == null || r.family_peers === "" ? null : String(r.family_peers),
       }));
       return json(200, { items }, hdrs, skipCors);
     }
