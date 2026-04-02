@@ -16,7 +16,6 @@ type AdminUser = {
   updated_at: string | null;
   last_login_at: string | null;
   default_family_id: number | null;
-  family_name: string | null;
   family_peers: string | null;
 };
 
@@ -159,7 +158,7 @@ export function AdminPage() {
         {loading ? "読み込み中..." : "再読み込み"}
       </button>
       <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1520 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1380 }}>
           <thead>
             <tr style={{ background: "var(--panel-bg)" }}>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>ID</th>
@@ -167,7 +166,6 @@ export function AdminPage() {
               <th style={{ textAlign: "left", padding: "0.7rem" }}>登録日</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>最終ログイン</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>家族ID</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>家族名</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>家族メンバー</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>表示名</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>ログイン名</th>
@@ -190,7 +188,6 @@ export function AdminPage() {
                 <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
                   {u.default_family_id != null ? u.default_family_id : "—"}
                 </td>
-                <td style={{ padding: "0.7rem" }}>{u.family_name ?? "—"}</td>
                 <td style={{ padding: "0.7rem", maxWidth: 280, wordBreak: "break-word" }}>
                   {u.family_peers ?? "—"}
                 </td>
@@ -262,7 +259,7 @@ export function AdminPage() {
             ))}
             {!loading && items.length === 0 ? (
               <tr>
-                <td colSpan={12} style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                <td colSpan={11} style={{ padding: "1rem", color: "var(--text-muted)" }}>
                   ユーザーが見つかりません
                 </td>
               </tr>

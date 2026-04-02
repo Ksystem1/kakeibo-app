@@ -459,7 +459,6 @@ export async function handleApiRequest(req, options = {}) {
            u.updated_at,
            u.last_login_at,
            u.default_family_id,
-           f.name AS family_name,
            (
              SELECT GROUP_CONCAT(
                CONCAT(
@@ -489,7 +488,6 @@ export async function handleApiRequest(req, options = {}) {
         updated_at: r.updated_at ?? null,
         last_login_at: r.last_login_at ?? null,
         default_family_id: r.default_family_id ?? null,
-        family_name: r.family_name == null ? null : String(r.family_name),
         family_peers: r.family_peers == null || r.family_peers === "" ? null : String(r.family_peers),
       }));
       return json(200, { items }, hdrs, skipCors);

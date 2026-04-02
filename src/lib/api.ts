@@ -310,7 +310,6 @@ export async function getAdminUsers() {
       updated_at: string | null;
       last_login_at: string | null;
       default_family_id: number | null;
-      family_name: string | null;
       family_peers: string | null;
     }>;
   }>(res);
