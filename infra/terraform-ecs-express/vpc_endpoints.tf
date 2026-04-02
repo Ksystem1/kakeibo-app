@@ -80,6 +80,18 @@ resource "aws_vpc_endpoint" "secretsmanager" {
   tags = merge(local.tags, { Name = "${local.app_name}-vpce-secretsmanager" })
 }
 
+# app_secret_arns に SSM パラメータ（parameter/…）を使うとき、タスク起動時の GetParameters 用（NAT なし構成）
+resource "aws_vpc_endpoint" "ssm" {
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.ssm"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.private_subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+
+  tags = merge(local.tags, { Name = "${local.app_name}-vpce-ssm" })
+}
+
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = var.vpc_id
   service_name      = "com.amazonaws.${var.aws_region}.s3"

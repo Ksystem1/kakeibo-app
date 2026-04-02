@@ -114,6 +114,22 @@ variable "app_secret_arns" {
   }
 }
 
+variable "rds_security_group_id" {
+  description = <<-EOT
+    RDS（または Aurora）がアタッチされているセキュリティグループ ID（sg-…）。
+    設定すると、本モジュールが作る ECS タスク用 SG から var.rds_port（既定 3306）へのインバウンド規則をこの SG に追加する。
+    RDS を別コンソール／別 Terraform で作っているときに指定。空なら SG ルールは追加しない（ECS の egress は既に 0.0.0.0/0）。
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "rds_port" {
+  description = "RDS への接続ポート。rds_security_group_id 指定時のインバウンドに使用。"
+  type        = number
+  default     = 3306
+}
+
 variable "create_github_oidc_provider" {
   description = "Create GitHub Actions OIDC provider in this account"
   type        = bool

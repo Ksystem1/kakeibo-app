@@ -8,6 +8,11 @@ locals {
     Environment = "production"
     ManagedBy   = "terraform"
   }
+
+  # ECS タスク定義の secrets の valueFrom を ARN 種別ごとに分け、実行ロールの IAM を出し分ける
+  app_secret_arn_values     = values(var.app_secret_arns)
+  execution_secretsmgr_arns = [for a in local.app_secret_arn_values : a if startswith(a, "arn:aws:secretsmanager:")]
+  execution_ssm_param_arns  = [for a in local.app_secret_arn_values : a if startswith(a, "arn:aws:ssm:")]
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -85,6 +90,7 @@ resource "aws_security_group" "ecs_service" {
     security_groups = [aws_security_group.alb.id]
   }
 
+  # 既に 0.0.0.0/0 で全 egress 許可のため ECS→RDS は到達可能。RDS 側 SG で 3306 を ECS タスク SG から許可すること（rds_security_group_id）
   egress {
     from_port   = 0
     to_port     = 0
@@ -93,6 +99,19 @@ resource "aws_security_group" "ecs_service" {
   }
 
   tags = local.tags
+}
+
+# RDS のセキュリティグループに、ECS タスクからの MySQL のみインバウンドを追加（RDS を別スタックで作っている場合に指定）
+resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_ecs" {
+  count = trimspace(var.rds_security_group_id) != "" ? 1 : 0
+
+  security_group_id            = var.rds_security_group_id
+  referenced_security_group_id = aws_security_group.ecs_service.id
+  ip_protocol                  = "tcp"
+  from_port                    = var.rds_port
+  to_port                      = var.rds_port
+
+  tags = merge(local.tags, { Name = "${local.app_name}-rds-from-ecs" })
 }
 
 resource "aws_lb" "this" {
@@ -181,11 +200,28 @@ resource "aws_iam_role_policy_attachment" "execution_base" {
 
 data "aws_iam_policy_document" "execution_secrets" {
   count = length(var.app_secret_arns) > 0 ? 1 : 0
-  statement {
-    sid       = "ReadTaskSecretsFromSecretsManager"
-    effect    = "Allow"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = values(var.app_secret_arns)
+
+  dynamic "statement" {
+    for_each = length(local.execution_secretsmgr_arns) > 0 ? [1] : []
+    content {
+      sid       = "ReadTaskSecretsFromSecretsManager"
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = local.execution_secretsmgr_arns
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(local.execution_ssm_param_arns) > 0 ? [1] : []
+    content {
+      sid    = "ReadTaskParametersFromSSM"
+      effect = "Allow"
+      actions = [
+        "ssm:GetParameters",
+        "ssm:GetParameter",
+      ]
+      resources = local.execution_ssm_param_arns
+    }
   }
 }
 
@@ -194,6 +230,13 @@ resource "aws_iam_role_policy" "execution_secrets" {
   name   = "${local.app_name}-execution-read-secrets"
   role   = aws_iam_role.execution.id
   policy = data.aws_iam_policy_document.execution_secrets[0].json
+
+  lifecycle {
+    precondition {
+      condition     = length(local.execution_secretsmgr_arns) > 0 || length(local.execution_ssm_param_arns) > 0
+      error_message = "app_secret_arns の各値は arn:aws:secretsmanager: または arn:aws:ssm: で始まるフル ARN にしてください。"
+    }
+  }
 }
 
 resource "aws_iam_role" "task" {
@@ -365,6 +408,7 @@ resource "aws_ecs_service" "this" {
     aws_vpc_endpoint.ecr_dkr,
     aws_vpc_endpoint.logs,
     aws_vpc_endpoint.secretsmanager,
+    aws_vpc_endpoint.ssm,
     aws_vpc_endpoint.s3,
   ]
   tags = local.tags
