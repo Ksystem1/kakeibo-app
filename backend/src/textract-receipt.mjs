@@ -6,7 +6,7 @@
 import { AnalyzeExpenseCommand, TextractClient } from "@aws-sdk/client-textract";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import dns from "node:dns";
-import { Agent as HttpsAgent } from "node:https";
+import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
 
 const DEFAULT_REGION = "ap-northeast-1";
 const DEFAULT_TIMEOUT_MS = 25_000;
@@ -51,6 +51,17 @@ function getDefaultAwsConfig() {
             return r;
           } catch (e) {
             lastErr = e;
+            // ENOTFOUND（UDP/53 や名前解決が塞がれている可能性）だけ DoH へ切り替える
+            const codeStr = String(e?.code ?? "");
+            const msgStr = String(e?.message ?? "");
+            if (codeStr === "ENOTFOUND" || /ENOTFOUND/i.test(msgStr)) {
+              try {
+                const ip = await resolveARecordViaCloudflareDoH(hostname);
+                return { address: ip, family: 4 };
+              } catch {
+                // DoH 失敗時は通常のリトライへフォールバック
+              }
+            }
             if (!isTransientNetworkError(e) || attempt >= 3) break;
             await sleep(80 * attempt);
           }
@@ -79,6 +90,64 @@ function textractDisabled() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * UDP/53 が塞がっていても DNS 解決できるよう、DoH（DNS over HTTPS）で A レコードを取得する。
+ * 呼び出し先は固定 IP（1.1.1.1）なので、この処理自体には DNS が不要。
+ */
+function resolveARecordViaCloudflareDoH(name) {
+  const urlPath = `/dns-query?name=${encodeURIComponent(name)}&type=A`;
+  const headers = {
+    Accept: "application/dns-json",
+    // Host/SNI を合わせて証明書エラーを避ける
+    host: "cloudflare-dns.com",
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        hostname: "1.1.1.1",
+        port: 443,
+        method: "GET",
+        path: urlPath,
+        headers,
+        servername: "cloudflare-dns.com",
+        timeout: 10_000,
+      },
+      (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => {
+          try {
+            if (res.statusCode !== 200) {
+              reject(new Error(`DoH: unexpected status ${res.statusCode}`));
+              return;
+            }
+            const data = JSON.parse(body);
+            const ans = Array.isArray(data?.Answer) ? data.Answer[0] : null;
+            const ip = ans?.data;
+            if (typeof ip !== "string" || !ip) {
+              reject(new Error("DoH: A record not found"));
+              return;
+            }
+            resolve(ip);
+          } catch (e) {
+            reject(e);
+          }
+        });
+      },
+    );
+
+    req.on("error", reject);
+    req.on("timeout", () => {
+      req.destroy(new Error("DoH: timeout"));
+    });
+    req.end();
+  });
 }
 
 function backoffMs(attempt) {
