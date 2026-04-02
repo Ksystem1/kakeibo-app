@@ -1,16 +1,20 @@
 :root {
-  --app-font-scale: 1;
-  --bg-deep: #0f1419;
-  --bg-card: #161d26;
-  --border: rgba(255, 255, 255, 0.08);
-  --text: #e8edf2;
-  --text-muted: #8b98a6;
-  --accent: #3dd6b4;
-  --accent-dim: rgba(61, 214, 180, 0.15);
-  --accent-hover: #52e0c4;
+  --app-font-scale: 1.18;
+  --bg-deep: #f5f8fc;
+  --bg-card: #ffffff;
+  --panel-bg: #edf3fb;
+  --panel-bg-strong: #e4edf9;
+  --input-bg: #ffffff;
+  --input-border: #9eb9d8;
+  --border: rgba(39, 67, 98, 0.22);
+  --text: #10243c;
+  --text-muted: #445e7c;
+  --accent: #2e9ff5;
+  --accent-dim: rgba(46, 159, 245, 0.12);
+  --accent-hover: #238fdf;
   --danger: #f87171;
   --radius: 14px;
-  --shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  --shadow: 0 14px 30px rgba(27, 58, 95, 0.14);
   font-family: "DM Sans", "Noto Sans JP", system-ui, sans-serif;
   font-size: calc(100% * var(--app-font-scale, 1));
   line-height: 1.5;
@@ -20,6 +24,22 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme="dark"] {
+  --bg-deep: #0f1419;
+  --bg-card: #161d26;
+  --panel-bg: rgba(9, 18, 30, 0.62);
+  --panel-bg-strong: rgba(8, 16, 28, 0.78);
+  --input-bg: rgba(7, 17, 29, 0.85);
+  --input-border: rgba(116, 156, 202, 0.44);
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #e8edf2;
+  --text-muted: #8b98a6;
+  --accent: #3dd6b4;
+  --accent-dim: rgba(61, 214, 180, 0.15);
+  --accent-hover: #52e0c4;
+  --shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
 }
 
 *,
@@ -50,14 +70,14 @@ body {
   gap: 0.35rem;
   padding: 0.65rem 1rem;
   border-bottom: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--panel-bg);
 }
 
 .appNav button {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 600;
-  padding: 0.45rem 0.85rem;
+  padding: 0.55rem 0.95rem;
   border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
@@ -67,7 +87,7 @@ body {
 
 .appNav button:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--accent-dim);
 }
 
 .appNav button[data-active="true"] {
@@ -90,12 +110,12 @@ body {
 
 @media (max-width: 768px) {
   :root {
-    --app-font-scale: 1.08;
+    --app-font-scale: 1.24;
   }
 }
 
 @media (max-width: 520px) {
   :root {
-    --app-font-scale: 1.14;
+    --app-font-scale: 1.3;
   }
 }

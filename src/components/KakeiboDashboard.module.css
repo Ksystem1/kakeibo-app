@@ -5,6 +5,7 @@
   max-width: min(960px, 100%);
   margin: 0 auto;
   box-sizing: border-box;
+  font-size: 1.02rem;
 }
 
 .header {
@@ -22,12 +23,12 @@
   font-size: clamp(1.7rem, 5.2vw, 2.3rem);
   font-weight: 700;
   letter-spacing: -0.02em;
-  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 0 18px rgba(61, 214, 180, 0.14);
+  text-shadow: none;
 }
 
 .sub {
   margin: 0.25rem 0 0;
-  font-size: 1rem;
+  font-size: 1.06rem;
   color: var(--text-muted);
 }
 
@@ -43,31 +44,37 @@
 
 .monthInput {
   font: inherit;
-  font-size: 0.875rem;
-  padding: 0.45rem 0.65rem;
+  font-size: 0.92rem;
+  padding: 0.5rem 0.68rem;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
   color: var(--text);
   min-width: 0;
   max-width: 100%;
   flex: 1 1 auto;
 }
 
+.monthInput:focus {
+  outline: none;
+  border-color: #5eb6ff;
+  box-shadow: 0 0 0 3px rgba(94, 182, 255, 0.22);
+}
+
 .btn {
   font: inherit;
-  font-size: 0.875rem;
+  font-size: 0.96rem;
   font-weight: 600;
-  padding: 0.5rem 1rem;
+  padding: 0.62rem 1.08rem;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--panel-bg);
   color: var(--text);
   cursor: pointer;
 }
 
 .btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--accent-dim);
 }
 
 .btn:disabled {
@@ -117,7 +124,7 @@
 }
 
 .cardLabel {
-  font-size: 0.75rem;
+  font-size: 0.84rem;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -130,27 +137,27 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   word-break: break-all;
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 16px rgba(61, 214, 180, 0.1);
+  text-shadow: none;
 }
 
 .cardValue.income {
   color: #52e0c4;
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 20px rgba(82, 224, 196, 0.18);
+  text-shadow: none;
 }
 
 .cardValue.expense {
   color: #ff8a8a;
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 20px rgba(255, 138, 138, 0.18);
+  text-shadow: none;
 }
 
 .balancePositive {
   color: #52e0c4;
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 20px rgba(82, 224, 196, 0.18);
+  text-shadow: none;
 }
 
 .balanceNegative {
   color: #ff8a8a;
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 20px rgba(255, 138, 138, 0.18);
+  text-shadow: none;
 }
 
 .stepsRow {
@@ -181,10 +188,11 @@
 }
 
 .sectionTitle {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-size: 1.03rem;
+  font-weight: 700;
+  color: var(--text);
   margin: 0 0 0.65rem;
+  letter-spacing: 0.02em;
 }
 
 .form {
@@ -196,40 +204,53 @@
   margin-bottom: 1.25rem;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--panel-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 10%, transparent);
 }
 
 .field label {
   display: block;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.35rem;
+  letter-spacing: 0.02em;
 }
 
 .field input,
 .field select {
   width: 100%;
   font: inherit;
-  font-size: 0.875rem;
-  padding: 0.45rem 0.55rem;
+  font-size: 0.92rem;
+  padding: 0.52rem 0.62rem;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
   color: var(--text);
+}
+
+.field input::placeholder {
+  color: var(--text-muted);
+}
+
+.field input:focus,
+.field select:focus {
+  outline: none;
+  border-color: #5eb6ff;
+  box-shadow: 0 0 0 3px rgba(94, 182, 255, 0.22);
 }
 
 .tableWrap {
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg-card);
+  background: var(--panel-bg-strong);
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: 0.95rem;
 }
 
 .table th,
@@ -240,11 +261,16 @@
 }
 
 .table th {
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.82rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: var(--text-muted);
+  color: var(--text);
+  background: color-mix(in oklab, var(--panel-bg-strong) 90%, var(--accent) 10%);
+}
+
+.table td {
+  color: var(--text);
 }
 
 .table tbody tr:last-child td {
@@ -252,7 +278,7 @@
 }
 
 .table tbody tr:hover td {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(49, 102, 156, 0.16);
 }
 
 .kind {
@@ -283,7 +309,7 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.8rem;
+  font-size: 0.92rem;
   color: var(--text-muted);
   flex: 1 1 auto;
   min-width: 0;
@@ -292,10 +318,10 @@
 .err {
   padding: 0.85rem 1rem;
   border-radius: 10px;
-  background: rgba(248, 113, 113, 0.12);
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  color: #fecaca;
-  font-size: 0.875rem;
+  background: color-mix(in oklab, #ffdcdc 70%, transparent);
+  border: 1px solid rgba(220, 96, 96, 0.5);
+  color: #802020;
+  font-size: 0.9rem;
   margin-bottom: 1rem;
 }
 
@@ -303,7 +329,7 @@
   padding: 2rem 1rem;
   text-align: center;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 1rem;
 }
 
 .memoCell {
@@ -327,8 +353,8 @@
 }
 
 .btnSm {
-  font-size: 0.72rem;
-  padding: 0.3rem 0.55rem;
+  font-size: 0.82rem;
+  padding: 0.38rem 0.64rem;
 }
 
 .btnDanger {
@@ -345,7 +371,7 @@
   min-width: 0;
   max-width: 11rem;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   padding: 0.35rem 0.45rem;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -366,7 +392,7 @@
   align-items: center;
   justify-content: center;
   font: inherit;
-  font-size: 0.875rem;
+  font-size: 0.98rem;
   font-weight: 600;
   padding: 0.55rem 1rem;
   border-radius: 8px;
@@ -394,7 +420,7 @@
   margin-bottom: 1.25rem;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--panel-bg);
 }
 
 @media (min-width: 520px) {
@@ -407,7 +433,7 @@
 .receiptSummaryHint {
   grid-column: 1 / -1;
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.9rem;
   color: var(--text-muted);
   line-height: 1.45;
 }
@@ -421,7 +447,7 @@
   margin-bottom: 1rem;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--panel-bg-strong);
   color: var(--text-muted);
   font-size: 0.9rem;
   font-weight: 500;
@@ -451,7 +477,7 @@
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: rgba(15, 20, 25, 0.82);
+  background: color-mix(in oklab, var(--bg-deep) 80%, black 20%);
   backdrop-filter: blur(4px);
 }
 
@@ -479,6 +505,45 @@
   font-weight: 600;
   color: var(--text);
   letter-spacing: 0.02em;
+}
+
+.settingsPanel {
+  margin-top: 1rem;
+  max-width: 440px;
+  padding: 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--input-border);
+  background: var(--panel-bg);
+}
+
+.settingsLabel {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.settingsRange {
+  width: 100%;
+  accent-color: #5eb6ff;
+}
+
+.modeRow {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.modeRow .btn {
+  min-width: 4.4rem;
+}
+
+.infoText {
+  margin-top: 0.75rem;
+  color: var(--text);
+  font-size: 0.92rem;
 }
 
 @media (max-width: 520px) {

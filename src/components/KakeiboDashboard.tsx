@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   createTransaction,
   deleteTransaction,
@@ -38,6 +39,11 @@ function currentYm() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function parseMonthParam(search: string): string | null {
+  const p = new URLSearchParams(search).get("month");
+  return p && /^\d{4}-\d{2}$/.test(p) ? p : null;
+}
+
 function todayDate() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -69,8 +75,10 @@ function formatTxDateYmd(raw: string | Date | null | undefined) {
 }
 
 export function KakeiboDashboard() {
+  const location = useLocation();
+  const routerNavigate = useNavigate();
   const base = getApiBaseUrl();
-  const [ym, setYm] = useState(currentYm);
+  const [ym, setYm] = useState(() => parseMonthParam(location.search) ?? currentYm());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -128,6 +136,19 @@ export function KakeiboDashboard() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  function handleMonthChange(nextYm: string) {
+    setYm(nextYm);
+    const params = new URLSearchParams(location.search);
+    params.set("month", nextYm);
+    routerNavigate(
+      {
+        pathname: location.pathname,
+        search: `?${params.toString()}`,
+      },
+      { replace: true },
+    );
+  }
 
   const totals = useMemo(() => {
     let income = 0;
@@ -269,7 +290,7 @@ export function KakeiboDashboard() {
               className={styles.monthInput}
               type="month"
               value={ym}
-              onChange={(ev) => setYm(ev.target.value)}
+              onChange={(ev) => handleMonthChange(ev.target.value)}
             />
           </label>
           <button

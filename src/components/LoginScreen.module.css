@@ -17,7 +17,12 @@
   flex-direction: column;
   justify-content: flex-end;
   overflow: hidden;
-  background: linear-gradient(145deg, #121a22 0%, #0c2830 48%, #0a1f28 100%);
+  background: linear-gradient(
+    145deg,
+    color-mix(in oklab, var(--bg-deep) 94%, white 6%) 0%,
+    color-mix(in oklab, var(--bg-deep) 86%, var(--accent) 14%) 48%,
+    color-mix(in oklab, var(--bg-deep) 90%, white 10%) 100%
+  );
 }
 
 .hero::before {
@@ -45,7 +50,7 @@
   gap: 0.45rem;
   padding: 0.35rem 0.75rem;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.83rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -65,7 +70,7 @@
 
 .heroDesc {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.08rem;
   color: var(--text-muted);
   max-width: 28rem;
 }
@@ -103,12 +108,12 @@
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 0 18px rgba(61, 214, 180, 0.14);
+  text-shadow: none;
 }
 
 .cardSub {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: var(--text-muted);
 }
 
@@ -125,7 +130,7 @@
 }
 
 .label {
-  font-size: 0.8rem;
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--text-muted);
 }
@@ -135,18 +140,18 @@
   padding: 0.72rem 0.9rem;
   font: inherit;
   color: var(--text);
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: 10px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .input::placeholder {
-  color: rgba(139, 152, 166, 0.65);
+  color: var(--text-muted);
 }
 
 .input:hover {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: color-mix(in oklab, var(--input-border) 75%, var(--accent) 25%);
 }
 
 .input:focus {
@@ -167,7 +172,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   color: var(--text-muted);
   cursor: pointer;
   user-select: none;
@@ -181,7 +186,7 @@
 }
 
 .link {
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 500;
   color: var(--accent);
   text-decoration: none;
@@ -227,7 +232,7 @@
 
 .error {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   color: var(--danger);
 }
 
@@ -235,7 +240,7 @@
   margin: 1.35rem 0 0;
   padding-top: 1.25rem;
   border-top: 1px solid var(--border);
-  font-size: 0.8rem;
+  font-size: 0.92rem;
   color: var(--text-muted);
   line-height: 1.55;
 }
@@ -243,7 +248,7 @@
 .footer {
   margin-top: 1.25rem;
   text-align: center;
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: var(--text-muted);
 }
 
