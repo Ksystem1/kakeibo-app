@@ -16,12 +16,12 @@ variable "vpc_id" {
 }
 
 variable "public_subnet_ids" {
-  description = "Public subnet IDs used by ALB"
+  description = "Public subnet IDs for ALB. Must include at least one subnet per AZ where private_subnet_ids place tasks; otherwise targets fail with «AZ not enabled for the load balancer» and /health returns 503."
   type        = list(string)
 }
 
 variable "private_subnet_ids" {
-  description = "Private subnet IDs used by ECS tasks"
+  description = "Private subnet IDs for ECS tasks (Fargate). Each AZ used here must be covered by public_subnet_ids on the ALB."
   type        = list(string)
 }
 

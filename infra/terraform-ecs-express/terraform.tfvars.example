@@ -2,7 +2,8 @@ aws_region   = "ap-northeast-1"
 name_prefix  = "kakeibo-api"
 vpc_id       = "vpc-xxxxxxxx"
 
-public_subnet_ids  = ["subnet-public-a", "subnet-public-c"]
+# ALB のサブネットは、ECS が使うプライベートサブネットと同じ AZ 集合をカバーすること（欠けるとターゲット不健全→503）
+public_subnet_ids  = ["subnet-public-a", "subnet-public-b", "subnet-public-c"]
 private_subnet_ids = ["subnet-private-a", "subnet-private-c"]
 
 container_image = "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/kakeibo-api:latest"
