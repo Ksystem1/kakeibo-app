@@ -7,6 +7,18 @@ import {
   validatePassword,
   verifyPassword,
 } from "./auth-logic.mjs";
+import { getPool } from "./db.mjs";
+
+/** このモジュールが処理するパス（ここに無いリクエストは getPool せず null を返す） */
+const AUTH_ROUTE_KEYS = new Set([
+  "POST /auth/register",
+  "POST /auth/login",
+  "POST /auth/forgot-password",
+  "POST /auth/reset-password",
+  "GET /auth/me",
+  "GET /families/members",
+  "POST /families/invite",
+]);
 
 const RETRYABLE_DB_CODES = new Set([
   "EBUSY",
@@ -92,12 +104,30 @@ export async function getDefaultFamilyId(pool, userId) {
  * @returns {Promise<{ statusCode, headers, body }|null>}
  */
 export async function tryAuthRoutes(req, ctx) {
-  const { pool, json, hdrs, skipCors } = ctx;
+  const { json, hdrs, skipCors } = ctx;
   const method = req.method.toUpperCase();
   const path = stripApiPathPrefix(req.path.split("?")[0] || "/");
   const key = routeKey(method, path);
 
+  if (!AUTH_ROUTE_KEYS.has(key)) {
+    return null;
+  }
+
+  if (!String(process.env.RDS_HOST || "").trim()) {
+    return json(
+      503,
+      {
+        error: "DatabaseNotConfigured",
+        detail:
+          "データベース（RDS）に接続されていません。ログイン・新規登録には MySQL（RDS）の接続設定が必要です。管理者: Terraform の app_secret_arns に RDS_* を追加し ECS を再デプロイしてください。",
+      },
+      hdrs,
+      skipCors,
+    );
+  }
+
   try {
+    const pool = getPool();
     if (key === "POST /auth/register") {
       const b = JSON.parse(req.body || "{}");
       const email = String(b.email || "")

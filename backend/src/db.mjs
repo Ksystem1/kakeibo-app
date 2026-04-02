@@ -56,7 +56,18 @@ export async function pingDatabase() {
   }
 }
 
+export function isRdsConfigured() {
+  return Boolean(String(process.env.RDS_HOST || "").trim());
+}
+
 export function getPool() {
+  if (!isRdsConfigured()) {
+    const err = new Error(
+      "データベース（RDS）が未設定です。ECS タスクに RDS_HOST・RDS_USER 等を Secrets Manager から渡してください（Terraform: app_secret_arns）。",
+    );
+    err.code = "DATABASE_NOT_CONFIGURED";
+    throw err;
+  }
   if (!pool) {
     pool = mysql.createPool({
       ...baseConnectionOptions(),

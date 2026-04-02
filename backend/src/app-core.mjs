@@ -5,7 +5,7 @@ import { stripApiPathPrefix } from "./api-path.mjs";
 import { tryAuthRoutes, getDefaultFamilyId } from "./auth-routes.mjs";
 import { resolveUserId } from "./auth-logic.mjs";
 import { buildCorsHeaders } from "./cors-config.mjs";
-import { getPool, pingDatabase } from "./db.mjs";
+import { getPool, isRdsConfigured, pingDatabase } from "./db.mjs";
 import { createLogger } from "./logger.mjs";
 import {
   analyzeReceiptImageBytes,
@@ -62,11 +62,8 @@ export async function handleApiRequest(req, options = {}) {
     return { statusCode: 204, headers: { ...cors }, body: "" };
   }
 
-  const pool = getPool();
-
   try {
     const authRes = await tryAuthRoutes(req, {
-      pool,
       json,
       hdrs,
       skipCors,
@@ -147,6 +144,21 @@ export async function handleApiRequest(req, options = {}) {
         }
       }
     }
+
+    if (!isRdsConfigured()) {
+      return json(
+        503,
+        {
+          error: "DatabaseNotConfigured",
+          detail:
+            "データベース（RDS）に接続されていません。家計簿 API には MySQL の設定が必要です。",
+        },
+        hdrs,
+        skipCors,
+      );
+    }
+
+    const pool = getPool();
 
     const userId = resolveUserId(hdrs);
     if (!userId) {
@@ -483,6 +495,17 @@ export async function handleApiRequest(req, options = {}) {
         return json(404, { error: "Not Found", path, method }, hdrs, skipCors);
     }
   } catch (e) {
+    if (e && typeof e === "object" && e.code === "DATABASE_NOT_CONFIGURED") {
+      return json(
+        503,
+        {
+          error: "DatabaseNotConfigured",
+          detail: e instanceof Error ? e.message : String(e),
+        },
+        hdrs,
+        skipCors,
+      );
+    }
     logError("api.unhandled", e, { method, path });
     return json(
       500,

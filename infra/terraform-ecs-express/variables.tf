@@ -102,7 +102,7 @@ variable "app_env_vars" {
 }
 
 variable "app_secret_arns" {
-  description = "Map of env var name -> Secrets Manager/SSM ARN"
+  description = "ECS コンテナのシークレット（env 名 → Secrets Manager または SSM の ARN）。JWT_SECRET に加え、ログインには RDS_HOST / RDS_USER / RDS_PASSWORD / RDS_DATABASE（および必要なら RDS_PORT）が必須。"
   type        = map(string)
   default = {
     RDS_HOST     = "arn:aws:ssm:ap-northeast-1:123456789012:parameter/kakeibo/prod/rds_host"
