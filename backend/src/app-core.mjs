@@ -457,6 +457,7 @@ export async function handleApiRequest(req, options = {}) {
            u.is_admin,
            u.created_at,
            u.updated_at,
+           u.last_login_at,
            u.default_family_id
          FROM users u
          ORDER BY u.id ASC
@@ -470,6 +471,7 @@ export async function handleApiRequest(req, options = {}) {
         isAdmin: Number(r.is_admin) === 1,
         created_at: r.created_at ?? null,
         updated_at: r.updated_at ?? null,
+        last_login_at: r.last_login_at ?? null,
         default_family_id: r.default_family_id ?? null,
       }));
       return json(200, { items }, hdrs, skipCors);

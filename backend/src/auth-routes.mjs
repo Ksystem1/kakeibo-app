@@ -225,6 +225,10 @@ export async function tryAuthRoutes(req, ctx) {
 
         await conn.commit();
 
+        await withDbRetry("auth.register.lastLogin", () =>
+          pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = ?`, [userId]),
+        );
+
         const token = signUserToken(userId, email);
         return json(
           201,
@@ -273,6 +277,10 @@ export async function tryAuthRoutes(req, ctx) {
           skipCors,
         );
       }
+
+      await withDbRetry("auth.login.lastLogin", () =>
+        pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = ?`, [u.id]),
+      );
 
       const token = signUserToken(u.id, u.email);
       const familyId = await getDefaultFamilyId(pool, u.id);

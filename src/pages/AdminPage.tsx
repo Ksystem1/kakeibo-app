@@ -14,8 +14,22 @@ type AdminUser = {
   isAdmin: boolean;
   created_at: string | null;
   updated_at: string | null;
+  last_login_at: string | null;
   default_family_id: number | null;
 };
+
+function formatDateTime(value: string | null | undefined): string {
+  if (value == null || value === "") return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return new Intl.DateTimeFormat("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+}
 
 export function AdminPage() {
   const [items, setItems] = useState<AdminUser[]>([]);
@@ -143,11 +157,13 @@ export function AdminPage() {
         {loading ? "読み込み中..." : "再読み込み"}
       </button>
       <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1020 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1180 }}>
           <thead>
             <tr style={{ background: "var(--panel-bg)" }}>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>ID</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>メール</th>
+              <th style={{ textAlign: "left", padding: "0.7rem" }}>登録日</th>
+              <th style={{ textAlign: "left", padding: "0.7rem" }}>最終ログイン</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>表示名</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>ログイン名</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>管理者</th>
@@ -160,6 +176,12 @@ export function AdminPage() {
               <tr key={u.id} style={{ borderTop: "1px solid var(--border)" }}>
                 <td style={{ padding: "0.7rem" }}>{u.id}</td>
                 <td style={{ padding: "0.7rem" }}>{u.email}</td>
+                <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
+                  {formatDateTime(u.created_at)}
+                </td>
+                <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
+                  {formatDateTime(u.last_login_at)}
+                </td>
                 <td style={{ padding: "0.7rem" }}>
                   <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
                     <input
@@ -228,7 +250,7 @@ export function AdminPage() {
             ))}
             {!loading && items.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                <td colSpan={9} style={{ padding: "1rem", color: "var(--text-muted)" }}>
                   ユーザーが見つかりません
                 </td>
               </tr>

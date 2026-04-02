@@ -309,6 +309,7 @@ export async function getAdminUsers() {
       isAdmin: boolean;
       created_at: string | null;
       updated_at: string | null;
+      last_login_at: string | null;
       default_family_id: number | null;
     }>;
   }>(res);

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   timezone        VARCHAR(64) NOT NULL DEFAULT 'Asia/Tokyo',
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  last_login_at   DATETIME NULL COMMENT '最終ログイン（認証成功時）',
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_cognito_sub (cognito_sub),
   UNIQUE KEY uq_users_email (email),
