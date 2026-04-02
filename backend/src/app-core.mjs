@@ -35,6 +35,174 @@ function routeKey(method, path) {
   return `${method} ${p}`;
 }
 
+const RECEIPT_CATEGORY_KEYWORDS = {
+  food: [
+    "りんご",
+    "バナナ",
+    "野菜",
+    "肉",
+    "魚",
+    "牛乳",
+    "卵",
+    "パン",
+    "米",
+    "弁当",
+    "飲料",
+    "ジュース",
+    "スーパー",
+    "コンビニ",
+  ],
+  daily: ["ティッシュ", "洗剤", "シャンプー", "歯ブラシ", "トイレットペーパー", "日用品"],
+  transport: ["電車", "バス", "タクシー", "駐車", "ガソリン", "高速", "ic"],
+  utility: ["電気", "ガス", "水道", "通信", "wifi", "インターネット", "携帯"],
+  medical: ["薬", "病院", "診療", "処方", "クリニック"],
+  leisure: ["映画", "カフェ", "外食", "レジャー", "趣味", "書籍"],
+};
+
+const RECEIPT_CATEGORY_ALIASES = {
+  food: ["食費", "食品", "食料品", "飲食", "スーパー", "グロサリー", "grocery", "food"],
+  daily: ["日用品", "雑貨", "生活用品", "ドラッグ", "ドラッグストア"],
+  transport: ["交通", "交通費", "電車", "バス", "タクシー", "ガソリン", "駐車場"],
+  utility: ["水道", "光熱費", "電気", "ガス", "通信", "ネット", "携帯"],
+  medical: ["医療", "病院", "薬", "薬局", "ドラッグ"],
+  leisure: ["娯楽", "交際", "外食", "趣味", "レジャー"],
+};
+
+function normalizeKeyword(s) {
+  return String(s ?? "").toLowerCase().replace(/\s+/g, "").replace(/[　]/g, "");
+}
+
+function normalizeVendorName(s) {
+  return normalizeKeyword(s)
+    .replace(/株式会社/g, "")
+    .replace(/\(株\)/g, "")
+    .replace(/有限会社/g, "")
+    .replace(/\(有\)/g, "");
+}
+
+function tagFromCategoryName(name) {
+  const n = normalizeKeyword(name);
+  for (const [tag, aliases] of Object.entries(RECEIPT_CATEGORY_ALIASES)) {
+    if (aliases.some((a) => n.includes(normalizeKeyword(a)))) return tag;
+  }
+  return null;
+}
+
+async function suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor) {
+  const memo = String(vendor ?? "").trim();
+  if (!memo) return null;
+  const normMemo = normalizeVendorName(memo);
+  if (!normMemo) return null;
+
+  const normalizedMemoExpr =
+    "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(t.memo), ' ', ''), '　', ''), '株式会社', ''), '(株)', ''))";
+
+  // まずは正規化完全一致で履歴学習カテゴリを選ぶ
+  const [rows] = await pool.query(
+    `SELECT t.category_id, c.name, COUNT(*) AS used_count
+     FROM transactions t
+     JOIN categories c ON c.id = t.category_id
+     WHERE ${txWhere}
+       AND t.kind = 'expense'
+       AND t.category_id IS NOT NULL
+       AND c.kind = 'expense'
+       AND c.is_archived = 0
+       AND ${normalizedMemoExpr} = ?
+     GROUP BY t.category_id, c.name
+     ORDER BY used_count DESC, t.category_id ASC
+     LIMIT 1`,
+    [userId, userId, normMemo],
+  );
+  if (Array.isArray(rows) && rows.length > 0) {
+    const top = rows[0];
+    return {
+      id: Number(top.category_id),
+      name: String(top.name),
+      source: "history",
+    };
+  }
+
+  // 次に包含一致（「イオン」「イオンスタイル」など）で緩く推定
+  const [fuzzyRows] = await pool.query(
+    `SELECT t.category_id, c.name, COUNT(*) AS used_count
+     FROM transactions t
+     JOIN categories c ON c.id = t.category_id
+     WHERE ${txWhere}
+       AND t.kind = 'expense'
+       AND t.category_id IS NOT NULL
+       AND c.kind = 'expense'
+       AND c.is_archived = 0
+       AND (
+         INSTR(${normalizedMemoExpr}, ?) > 0
+         OR INSTR(?, ${normalizedMemoExpr}) > 0
+       )
+     GROUP BY t.category_id, c.name
+     ORDER BY used_count DESC, t.category_id ASC
+     LIMIT 1`,
+    [userId, userId, normMemo, normMemo],
+  );
+  if (!Array.isArray(fuzzyRows) || fuzzyRows.length === 0) return null;
+  const top = fuzzyRows[0];
+  return {
+    id: Number(top.category_id),
+    name: String(top.name),
+    source: "history",
+  };
+}
+
+async function suggestExpenseCategoryForReceipt(pool, userId, catWhere, txWhere, vendor, items) {
+  const fromHistory = await suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor);
+  if (fromHistory?.id) return fromHistory;
+
+  const corpus = normalizeKeyword(`${vendor ?? ""} ${(items ?? []).map((x) => x?.name ?? "").join(" ")}`);
+  if (!corpus) return null;
+  const [rows] = await pool.query(
+    `SELECT c.id, c.name
+     FROM categories c
+     WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense'
+     ORDER BY c.sort_order, c.id`,
+    [userId, userId],
+  );
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+
+  const tagScore = {};
+  for (const [tag, words] of Object.entries(RECEIPT_CATEGORY_KEYWORDS)) {
+    const score = words.reduce((acc, w) => (corpus.includes(normalizeKeyword(w)) ? acc + 1 : acc), 0);
+    if (score > 0) tagScore[tag] = score;
+  }
+
+  let best = null;
+  for (const r of rows) {
+    const tag = tagFromCategoryName(r.name);
+    const score = tag ? (tagScore[tag] ?? 0) : 0;
+    if (!best || score > best.score) {
+      best = { id: Number(r.id), name: String(r.name), score };
+    }
+  }
+  if (!best || best.score <= 0) return null;
+  return { id: best.id, name: best.name, source: "keywords" };
+}
+
+function tokenizeMemo(text) {
+  const s = normalizeKeyword(text);
+  if (!s) return [];
+  const chunks = s
+    .split(/[\/・,，\-_()\[\]【】]/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (chunks.length > 0) return chunks;
+  return [s];
+}
+
+async function suggestExpenseCategoryForMemo(pool, userId, catWhere, txWhere, memo) {
+  const vendor = String(memo ?? "").trim();
+  if (!vendor) return null;
+  const fromHistory = await suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor);
+  if (fromHistory?.id) return fromHistory;
+  const tokens = tokenizeMemo(vendor).map((name) => ({ name, amount: null }));
+  return suggestExpenseCategoryForReceipt(pool, userId, catWhere, txWhere, vendor, tokens);
+}
+
 
 function ymBounds(yearMonth) {
   const m = /^(\d{4})-(\d{2})$/.exec(yearMonth || "");
@@ -45,6 +213,19 @@ function ymBounds(yearMonth) {
   const last = new Date(y, mo, 0).getDate();
   const to = `${y}-${String(mo).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
   return { from, to };
+}
+
+async function ensureAdmin(pool, userId) {
+  const [rows] = await pool.query(
+    `SELECT id, is_admin FROM users WHERE id = ? LIMIT 1`,
+    [userId],
+  );
+  const user = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  if (!user) return { ok: false, status: 401, body: { error: "認証ユーザーが見つかりません" } };
+  if (Number(user.is_admin) !== 1) {
+    return { ok: false, status: 403, body: { error: "管理者権限が必要です" } };
+  }
+  return { ok: true };
 }
 
 /**
@@ -185,6 +366,7 @@ export async function handleApiRequest(req, options = {}) {
 
     const normPath = path.replace(/\/$/, "") || "/";
     const txOneMatch = /^\/transactions\/(\d+)$/.exec(normPath);
+    const adminUserOneMatch = /^\/admin\/users\/(\d+)$/.exec(normPath);
 
     if (txOneMatch && method === "PATCH") {
       const txId = Number(txOneMatch[1], 10);
@@ -248,6 +430,57 @@ export async function handleApiRequest(req, options = {}) {
       );
       if (!delRes.affectedRows) {
         return json(404, { error: "見つかりません" }, hdrs, skipCors);
+      }
+      return json(200, { ok: true }, hdrs, skipCors);
+    }
+
+    if (routeKey(method, path) === "GET /admin/users") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const [rows] = await pool.query(
+        `SELECT
+           u.id,
+           u.email,
+           u.login_name,
+           u.display_name,
+           u.is_admin,
+           u.created_at,
+           u.updated_at,
+           u.default_family_id
+         FROM users u
+         ORDER BY u.id ASC
+         LIMIT 1000`,
+      );
+      const items = (Array.isArray(rows) ? rows : []).map((r) => ({
+        id: Number(r.id),
+        email: String(r.email ?? ""),
+        login_name: r.login_name == null ? null : String(r.login_name),
+        display_name: r.display_name == null ? null : String(r.display_name),
+        isAdmin: Number(r.is_admin) === 1,
+        created_at: r.created_at ?? null,
+        updated_at: r.updated_at ?? null,
+        default_family_id: r.default_family_id ?? null,
+      }));
+      return json(200, { items }, hdrs, skipCors);
+    }
+
+    if (adminUserOneMatch && method === "PATCH") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const targetUserId = Number(adminUserOneMatch[1], 10);
+      if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
+        return json(400, { error: "ユーザーIDが不正です" }, hdrs, skipCors);
+      }
+      const b = JSON.parse(req.body || "{}");
+      if (typeof b.isAdmin !== "boolean") {
+        return json(400, { error: "isAdmin (boolean) が必要です" }, hdrs, skipCors);
+      }
+      const [upd] = await pool.query(
+        `UPDATE users SET is_admin = ?, updated_at = NOW() WHERE id = ?`,
+        [b.isAdmin ? 1 : 0, targetUserId],
+      );
+      if (!upd?.affectedRows) {
+        return json(404, { error: "対象ユーザーが見つかりません" }, hdrs, skipCors);
       }
       return json(200, { ok: true }, hdrs, skipCors);
     }
@@ -452,6 +685,14 @@ export async function handleApiRequest(req, options = {}) {
         try {
           const buf = decodeImageBuffer(b.imageBase64);
           const result = await analyzeReceiptImageBytes(buf, { logError });
+          const suggestedCategory = await suggestExpenseCategoryForReceipt(
+            pool,
+            userId,
+            catWhere,
+            txWhere,
+            result?.summary?.vendorName ?? "",
+            result?.items ?? [],
+          );
           return json(
             200,
             {
@@ -461,6 +702,9 @@ export async function handleApiRequest(req, options = {}) {
               items: result.items,
               notice: result.notice,
               expenseIndex: result.expenseIndex,
+              suggestedCategoryId: suggestedCategory?.id ?? null,
+              suggestedCategoryName: suggestedCategory?.name ?? null,
+              suggestedCategorySource: suggestedCategory?.source ?? null,
             },
             hdrs,
             skipCors,
@@ -510,6 +754,61 @@ export async function handleApiRequest(req, options = {}) {
             skipCors,
           );
         }
+      }
+
+      case "POST /receipts/reclassify-uncategorized": {
+        const b = JSON.parse(req.body || "{}");
+        const limitRaw = Number.parseInt(String(b.limit ?? "100"), 10);
+        const limit = Number.isFinite(limitRaw) && limitRaw > 0
+          ? Math.min(limitRaw, 500)
+          : 100;
+
+        const [rows] = await pool.query(
+          `SELECT t.id, t.memo
+           FROM transactions t
+           WHERE ${txWhere}
+             AND t.kind = 'expense'
+             AND t.category_id IS NULL
+             AND t.memo IS NOT NULL
+             AND TRIM(t.memo) <> ''
+           ORDER BY t.transaction_date DESC, t.id DESC
+           LIMIT ?`,
+          [userId, userId, limit],
+        );
+
+        let updated = 0;
+        for (const r of rows) {
+          const txId = Number(r.id);
+          const memo = String(r.memo ?? "");
+          if (!Number.isFinite(txId) || !memo.trim()) continue;
+          const suggestion = await suggestExpenseCategoryForMemo(
+            pool,
+            userId,
+            catWhere,
+            txWhere,
+            memo,
+          );
+          if (!suggestion?.id) continue;
+          const [upd] = await pool.query(
+            `UPDATE transactions t
+             SET t.category_id = ?
+             WHERE t.id = ? AND (${txWhere}) AND t.category_id IS NULL`,
+            [suggestion.id, txId, userId, userId],
+          );
+          if (upd?.affectedRows) updated += 1;
+        }
+
+        return json(
+          200,
+          {
+            ok: true,
+            scanned: Array.isArray(rows) ? rows.length : 0,
+            updated,
+            limit,
+          },
+          hdrs,
+          skipCors,
+        );
       }
 
       default:

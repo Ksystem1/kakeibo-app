@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "./components/AppLayout";
+import { AdminRoute } from "./components/AdminRoute";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { KakeiboDashboard } from "./components/KakeiboDashboard";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
@@ -9,6 +10,7 @@ import { MembersPage } from "./pages/MembersPage";
 import { ReceiptPage } from "./pages/ReceiptPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { AdminPage } from "./pages/AdminPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 export default function App() {
@@ -25,6 +27,9 @@ export default function App() {
           <Route path="/receipt" element={<ReceiptPage />} />
           <Route path="/members" element={<MembersPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route element={<AdminRoute />}>
+            <Route path="/admin" element={<AdminPage />} />
+          </Route>
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

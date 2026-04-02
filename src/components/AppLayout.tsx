@@ -22,7 +22,7 @@ function linkStyle(
 }
 
 export function AppLayout() {
-  const { token, logout } = useAuth();
+  const { token, user, logout } = useAuth();
   const navigate = useNavigate();
   const mobile = useIsMobile();
 
@@ -139,6 +139,11 @@ export function AppLayout() {
               <NavLink to="/settings" style={(p) => linkStyle(mobile, p)}>
                 設定
               </NavLink>
+              {user?.isAdmin ? (
+                <NavLink to="/admin" style={(p) => linkStyle(mobile, p)}>
+                  管理
+                </NavLink>
+              ) : null}
             </>
           ) : (
             <>

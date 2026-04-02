@@ -13,12 +13,14 @@ type User = {
   id: number;
   email: string;
   familyId?: number | null;
+  isAdmin?: boolean;
 };
 
 type AuthState = {
   token: string | null;
   user: User | null;
   setSession: (token: string, user: User) => void;
+  setUser: (user: User | null) => void;
   logout: () => void;
 };
 
@@ -57,8 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ token, user, setSession, logout }),
-    [token, user, setSession, logout],
+    () => ({ token, user, setSession, setUser, logout }),
+    [token, user, setSession, setUser, logout],
   );
 
   return (

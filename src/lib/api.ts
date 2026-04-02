@@ -93,7 +93,7 @@ export async function loginRequest(login: string, password: string) {
   });
   return parse<{
     token: string;
-    user: { id: number; email: string; familyId?: number };
+    user: { id: number; email: string; familyId?: number; isAdmin?: boolean };
   }>(res);
 }
 
@@ -112,7 +112,23 @@ export async function registerRequest(body: {
   });
   return parse<{
     token: string;
-    user: { id: number; email: string; familyId?: number };
+    user: { id: number; email: string; familyId?: number; isAdmin?: boolean };
+  }>(res);
+}
+
+export async function getAuthMe() {
+  const res = await apiFetch(`${BASE}/auth/me`, {
+    headers: buildHeaders(),
+  });
+  return parse<{
+    user: {
+      id: number;
+      email: string;
+      login_name?: string | null;
+      display_name?: string | null;
+      familyId?: number | null;
+      isAdmin?: boolean;
+    };
   }>(res);
 }
 
@@ -234,7 +250,19 @@ export async function parseReceiptImage(imageBase64: string) {
     items: Array<{ name: string; amount: number | null; confidence?: number }>;
     notice?: string | null;
     expenseIndex?: number | null;
+    suggestedCategoryId?: number | null;
+    suggestedCategoryName?: string | null;
+    suggestedCategorySource?: "history" | "keywords" | null;
   }>(res);
+}
+
+export async function reclassifyUncategorizedReceipts(limit = 100) {
+  const res = await apiFetch(`${BASE}/receipts/reclassify-uncategorized`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({ limit }),
+  });
+  return parse<{ ok: boolean; scanned: number; updated: number; limit: number }>(res);
 }
 
 export async function getFamilyMembers() {
@@ -266,4 +294,34 @@ export async function inviteFamilyMember(email: string) {
     line_share_url?: string;
     line_message_share_url?: string;
   }>(res);
+}
+
+export async function getAdminUsers() {
+  const res = await apiFetch(`${BASE}/admin/users`, {
+    headers: buildHeaders(),
+  });
+  return parse<{
+    items: Array<{
+      id: number;
+      email: string;
+      login_name: string | null;
+      display_name: string | null;
+      isAdmin: boolean;
+      created_at: string | null;
+      updated_at: string | null;
+      default_family_id: number | null;
+    }>;
+  }>(res);
+}
+
+export async function updateAdminUser(
+  userId: number,
+  body: { isAdmin: boolean },
+) {
+  const res = await apiFetch(`${BASE}/admin/users/${userId}`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean }>(res);
 }
