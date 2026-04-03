@@ -132,8 +132,28 @@ export async function getAuthMe() {
       display_name?: string | null;
       familyId?: number | null;
       isAdmin?: boolean;
+      is_admin?: number | boolean;
     };
   }>(res);
+}
+
+/** ログイン・/auth/me 等の user を AuthContext 用に正規化（is_admin 表記ゆれ対策） */
+export function normalizeAuthContextUser(raw: {
+  id: unknown;
+  email: unknown;
+  familyId?: unknown;
+  isAdmin?: unknown;
+  is_admin?: unknown;
+}): { id: number; email: string; familyId: number | null; isAdmin: boolean } {
+  return {
+    id: Number(raw.id),
+    email: String(raw.email ?? ""),
+    familyId: raw.familyId != null && raw.familyId !== "" ? Number(raw.familyId) : null,
+    isAdmin:
+      typeof raw.isAdmin === "boolean"
+        ? raw.isAdmin
+        : Number(raw.is_admin) === 1,
+  };
 }
 
 export async function forgotPasswordRequest(email: string) {

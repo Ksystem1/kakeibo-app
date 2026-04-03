@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { loginRequest } from "../lib/api";
+import { loginRequest, normalizeAuthContextUser } from "../lib/api";
 import styles from "../components/LoginScreen.module.css";
 import { MobileAccessQr } from "../components/MobileAccessQr";
 
@@ -29,12 +29,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       const r = await loginRequest(trimmed, password);
-      setSession(r.token, {
-        id: r.user.id,
-        email: r.user.email,
-        familyId: r.user.familyId,
-        isAdmin: r.user.isAdmin,
-      });
+      setSession(r.token, normalizeAuthContextUser(r.user));
       if (!remember) {
         /* 将来: セッションのみ */
       }

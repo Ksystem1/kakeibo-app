@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { getAuthMe } from "../lib/api";
+import { getAuthMe, normalizeAuthContextUser } from "../lib/api";
 import { AdSlot } from "./AdSlot";
 import { MobileAccessQr } from "./MobileAccessQr";
 
@@ -30,21 +30,24 @@ export function AppLayout() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!token || user) return () => {
-      cancelled = true;
-    };
+    if (!token) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    // user がいても isAdmin が未確定なら /auth/me で補完（「管理」が出ない問題の防止）
+    if (user != null && typeof user.isAdmin === "boolean") {
+      return () => {
+        cancelled = true;
+      };
+    }
     void getAuthMe()
       .then((res) => {
         if (cancelled || !res?.user) return;
-        setUser({
-          id: Number(res.user.id),
-          email: String(res.user.email),
-          familyId: res.user.familyId ?? null,
-          isAdmin: Boolean(res.user.isAdmin),
-        });
+        setUser(normalizeAuthContextUser(res.user));
       })
       .catch(() => {
-        /* no-op: admin link is optional UI */
+        /* no-op: 失敗時は次のナビゲーションで再試行 */
       });
     return () => {
       cancelled = true;
@@ -85,15 +88,41 @@ export function AppLayout() {
             minWidth: 0,
           }}
         >
-          <strong
+          <div
             style={{
-              letterSpacing: "-0.02em",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: "0.4rem",
               flexShrink: 0,
-              lineHeight: 1.2,
+              minWidth: 0,
             }}
           >
-            Kakeibo
-          </strong>
+            <strong
+              style={{
+                letterSpacing: "-0.02em",
+                lineHeight: 1.2,
+              }}
+            >
+              Kakeibo
+            </strong>
+            {token && user?.isAdmin ? (
+              <span
+                style={{
+                  fontSize: mobile ? "0.72rem" : "0.78rem",
+                  fontWeight: 700,
+                  padding: "0.2rem 0.45rem",
+                  borderRadius: 6,
+                  border: "1px solid rgba(61,214,180,0.45)",
+                  color: "var(--accent)",
+                  background: "var(--accent-dim)",
+                  lineHeight: 1.2,
+                }}
+              >
+                管理者
+              </span>
+            ) : null}
+          </div>
           <div
             style={{
               display: "flex",
@@ -164,7 +193,7 @@ export function AppLayout() {
               <NavLink to="/settings" style={(p) => linkStyle(mobile, p)}>
                 設定
               </NavLink>
-              {user?.isAdmin ? (
+              {user?.isAdmin === true ? (
                 <NavLink to="/admin" style={(p) => linkStyle(mobile, p)}>
                   管理
                 </NavLink>

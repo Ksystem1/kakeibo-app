@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { getAuthMe } from "../lib/api";
+import { getAuthMe, normalizeAuthContextUser } from "../lib/api";
 
 export function AdminRoute() {
   const { token, user, setUser, logout } = useAuth();
@@ -25,12 +25,7 @@ export function AdminRoute() {
       .then((res) => {
         if (cancelled) return;
         if (res?.user) {
-          setUser({
-            id: Number(res.user.id),
-            email: String(res.user.email),
-            familyId: res.user.familyId ?? null,
-            isAdmin: Boolean(res.user.isAdmin),
-          });
+          setUser(normalizeAuthContextUser(res.user));
         }
         setChecked(true);
       })

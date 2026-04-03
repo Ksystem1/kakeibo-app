@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { registerRequest } from "../lib/api";
+import { normalizeAuthContextUser, registerRequest } from "../lib/api";
 import styles from "../components/LoginScreen.module.css";
 
 const PW_RE = /^[a-zA-Z0-9]{8,}$/;
@@ -82,12 +82,7 @@ export function RegisterPage() {
       if (!r) {
         throw new Error("登録に失敗しました");
       }
-      setSession(r.token, {
-        id: r.user.id,
-        email: r.user.email,
-        familyId: r.user.familyId,
-        isAdmin: r.user.isAdmin,
-      });
+      setSession(r.token, normalizeAuthContextUser(r.user));
       navigate("/", { replace: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "登録に失敗しました";
