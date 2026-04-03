@@ -1,4 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, VideoHTMLAttributes } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { createTransaction, getCategories, parseReceiptImage } from "../lib/api";
 import { prepareReceiptImageForApi } from "../lib/receiptImage";
@@ -105,11 +107,87 @@ function suggestExpenseCategoryId(
   return ranked[0].id;
 }
 
+function isPermissionDeniedError(e: unknown): boolean {
+  return (
+    e instanceof DOMException &&
+    (e.name === "NotAllowedError" || e.name === "PermissionDeniedError")
+  );
+}
+
+/** getUserMedia 失敗時（特に拒否キャッシュ）向けの案内 */
+function formatGetUserMediaError(e: unknown): string {
+  if (isPermissionDeniedError(e)) {
+    return "カメラの使用がブロックされています。ブラウザまたは端末の設定で、このサイトのカメラを許可してください。以前に「拒否」を選んだ場合は、サイト設定から許可に変更する必要があります。";
+  }
+  if (e instanceof DOMException && e.name === "NotFoundError") {
+    return "カメラが見つかりません。他のアプリがカメラを使用中でないか確認してください。";
+  }
+  if (e instanceof DOMException && e.name === "OverconstrainedError") {
+    return "この端末では背面カメラの指定を満たせませんでした。別の条件で再度お試しください。";
+  }
+  if (e instanceof Error) return e.message;
+  return "カメラを起動できませんでした。";
+}
+
+/**
+ * iOS 18 系は facingMode だけだと複数背面レンズを切り替えたり、プレビューが黒くなる報告がある。
+ * 許可後に付く device label から「広角の背面」を優先して選ぶ。
+ */
+function pickIosBackCameraDeviceId(devices: MediaDeviceInfo[]): string | null {
+  const videoInputs = devices.filter((d) => d.kind === "videoinput" && d.deviceId);
+  if (videoInputs.length === 0) return null;
+
+  const L = (s: string) => s.toLowerCase();
+  const labelIsBack = (label: string) => {
+    const x = L(label);
+    return (
+      x.includes("back") ||
+      x.includes("rear") ||
+      x.includes("環境") ||
+      x.includes("背面") ||
+      x.includes("後方")
+    );
+  };
+  const labelIsFront = (label: string) => {
+    const x = L(label);
+    return (
+      x.includes("front") ||
+      x.includes("selfie") ||
+      x.includes("前面") ||
+      x.includes("フェイス") ||
+      x.includes("インカメ")
+    );
+  };
+  const labelIsUltra = (label: string) => {
+    const x = L(label);
+    return x.includes("ultra") || x.includes("超広角");
+  };
+
+  const labeled = videoInputs.filter((d) => d.label.trim().length > 0);
+  const backs = labeled.filter((d) => labelIsBack(d.label));
+  const pool =
+    backs.length > 0 ? backs : labeled.filter((d) => !labelIsFront(d.label));
+  const usePool = pool.length > 0 ? pool : videoInputs;
+
+  const wide = usePool.find((d) => {
+    const x = L(d.label);
+    return (x.includes("wide") || x.includes("広角")) && !labelIsUltra(d.label);
+  });
+  if (wide) return wide.deviceId;
+
+  const nonUltra = usePool.find((d) => !labelIsUltra(d.label));
+  if (nonUltra) return nonUltra.deviceId;
+
+  return usePool[0]?.deviceId ?? null;
+}
+
 export function ReceiptPage() {
   const touchUi = useReceiptTouchUi();
-  const cameraInputId = useId();
+  const nativeCameraInputId = useId();
   const galleryInputId = useId();
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  /** iOS/Android 向け: OS のカメラアプリを起動（ライブラリは開かない想定） */
+  const nativeCameraInputRef = useRef<HTMLInputElement | null>(null);
+  /** 写真ライブラリ / ファイル選択（capture なし） */
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -118,6 +196,8 @@ export function ReceiptPage() {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraBusy, setCameraBusy] = useState(false);
   const [cameraHint, setCameraHint] = useState<string | null>(null);
+  /** カメラ権限が拒否されている／不足のときの全画面風の案内 */
+  const [cameraPermissionHelpVisible, setCameraPermissionHelpVisible] = useState(false);
   const vendorFieldId = useId();
   const totalFieldId = useId();
   const dateFieldId = useId();
@@ -197,7 +277,7 @@ export function ReceiptPage() {
     if (!isIOS) return;
     if (isStandalone) {
       setNotice(
-        "iPhone のホーム画面アプリではカメラが黒画面になる場合があります。Safari で開くか、写真アプリで撮影後に「ファイルを選ぶ」から選択してください。",
+        "ホーム画面に追加したアプリでは、OS の制限でカメラやアルバムの挙動が Safari と異なることがあります。問題があれば Safari で開くか、「写真を選ぶ」から既存の写真を選んでください。",
       );
     }
   }, [isIOS, isStandalone]);
@@ -211,93 +291,234 @@ export function ReceiptPage() {
     };
   }, []);
 
-  async function attachStreamToVideo(stream: MediaStream): Promise<boolean> {
+  async function attachStreamToVideo(
+    stream: MediaStream,
+    mobilePreview: boolean,
+  ): Promise<boolean> {
     const v = cameraVideoRef.current;
     if (!v) return false;
-    v.srcObject = stream;
-    try {
-      await v.play();
-    } catch {
-      // ignore
+
+    for (const t of stream.getVideoTracks()) {
+      t.enabled = true;
     }
+
+    v.defaultMuted = true;
+    v.muted = true;
+    v.playsInline = true;
+    v.setAttribute("playsinline", "");
+    v.setAttribute("webkit-playsinline", "");
+    v.srcObject = stream;
+
+    const tryPlay = () => {
+      void v
+        .play()
+        .catch((e) => {
+          console.error("camera preview play() failed", e);
+        });
+    };
+
+    // 1回目の play（ユーザー操作直後）
+    tryPlay();
+
+    const timeoutMs = mobilePreview ? 4000 : 2000;
+
     return await new Promise<boolean>((resolve) => {
       let done = false;
-      const finish = (ok: boolean) => {
+      const finish = () => {
         if (done) return;
         done = true;
-        v.onloadeddata = null;
         v.onloadedmetadata = null;
-        resolve(ok);
+        v.onloadeddata = null;
+        resolve(v.videoWidth > 0 && v.videoHeight > 0);
       };
-      const timer = globalThis.setTimeout(() => {
+
+      const timer = globalThis.setTimeout(finish, timeoutMs);
+
+      v.onloadedmetadata = () => {
         globalThis.clearTimeout(timer);
-        finish(v.videoWidth > 0 && v.videoHeight > 0);
-      }, 1800);
-      v.onloadedmetadata = () => finish(v.videoWidth > 0 && v.videoHeight > 0);
-      v.onloadeddata = () => finish(v.videoWidth > 0 && v.videoHeight > 0);
+        // メタデータ読み込み後に改めて play してから完了判定
+        tryPlay();
+        finish();
+      };
     });
+  }
+
+  function openNativeCameraPicker(clearNotice = true) {
+    if (clearNotice) setNotice(null);
+    nativeCameraInputRef.current?.click();
   }
 
   async function openCamera() {
     if (cameraBusy || loading) return;
-    // iOS (iPhone 16 含む) は getUserMedia で黒画面化する事例があるため、
-    // カメラ起動経路は使わずライブラリ選択へ誘導する。
-    if (isIOS) {
-      galleryInputRef.current?.click();
-      return;
-    }
     setCameraBusy(true);
     setNotice(null);
     setCameraHint(null);
+
+    const mobile = touchUi;
+
+    /**
+     * モバイル: 解像度は緩めにし、背面カメラ優先で environment のみ指定。
+     * width/height の exact は使わず、ideal も付けず OS に任せる。
+     */
+    const mobileCandidates: MediaStreamConstraints[] = [
+      { video: { facingMode: "environment" }, audio: false },
+      { video: { facingMode: { ideal: "environment" } }, audio: false },
+      { video: { facingMode: { ideal: "user" } }, audio: false },
+      { video: true, audio: false },
+    ];
+
+    /** PC: 背面・外付けを environment で優先しつつ、インカメラとデフォルトもフォールバックとして残す */
+    const desktopCandidates: MediaStreamConstraints[] = [
+      { video: { facingMode: "environment" }, audio: false },
+      { video: { facingMode: { ideal: "environment" } }, audio: false },
+      { video: { facingMode: "user" }, audio: false },
+      { video: true, audio: false },
+    ];
+
     try {
+      const hasMd = Boolean(navigator.mediaDevices);
+      let videoInputCount = 0;
+      let enumerateFailed = false;
+      if (hasMd) {
+        try {
+          const devs = await navigator.mediaDevices.enumerateDevices();
+          videoInputCount = devs.filter((d) => d.kind === "videoinput").length;
+        } catch {
+          enumerateFailed = true;
+        }
+      }
+
+      let permLine = "Permissions API: 未対応または利用不可";
+      if (navigator.permissions?.query) {
+        try {
+          const q = await navigator.permissions.query({ name: "camera" as PermissionName });
+          permLine = `カメラ権限: ${q.state}`;
+          if (q.state === "denied") {
+            setCameraPermissionHelpVisible(true);
+          }
+        } catch {
+          permLine = "Permissions API: query 失敗";
+        }
+      }
+
+      const countLine = !hasMd
+        ? "videoinput: （mediaDevices なし）"
+        : enumerateFailed
+          ? "videoinput: 列挙失敗"
+          : `videoinput: ${videoInputCount}件`;
+
+      globalThis.alert(`mediaDevices: ${hasMd ? "OK" : "Error"}\n${countLine}\n${permLine}`);
+
       if (!navigator.mediaDevices?.getUserMedia) {
+        if (mobile && isIOS) {
+          setCameraBusy(false);
+          setCameraPermissionHelpVisible(true);
+          openNativeCameraPicker();
+          return;
+        }
         throw new Error("このブラウザはカメラAPIに対応していません。");
       }
-      setCameraOpen(true);
-      const candidates: MediaStreamConstraints[] = [
-        {
-          video: {
-            facingMode: { exact: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        },
-        {
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        },
-        { video: { facingMode: "user" }, audio: false },
-        { video: true, audio: false },
-      ];
+
+      flushSync(() => {
+        setCameraOpen(true);
+      });
+      const candidates = mobile ? mobileCandidates : desktopCandidates;
       let stream: MediaStream | null = null;
+      let lastNonPermissionError: unknown = null;
+
       for (let i = 0; i < candidates.length; i += 1) {
         try {
           stream = await navigator.mediaDevices.getUserMedia(candidates[i]);
-          const ok = await attachStreamToVideo(stream);
-          if (ok) {
-            cameraStreamRef.current = stream;
-            if (i > 0) {
-              setCameraHint("別カメラ設定で起動しました。黒画面時はそのまま撮影をお試しください。");
-            }
-            break;
+        } catch (e) {
+          if (isPermissionDeniedError(e)) throw e;
+          lastNonPermissionError = e;
+          stream = null;
+          continue;
+        }
+        const ok = await attachStreamToVideo(stream, mobile);
+        if (ok) {
+          cameraStreamRef.current = stream;
+          setCameraPermissionHelpVisible(false);
+          if (i > 0) {
+            setCameraHint("別カメラ設定で起動しました。映像が暗い場合はそのまま撮影をお試しください。");
           }
-          stream.getTracks().forEach((t) => t.stop());
-          stream = null;
-        } catch {
-          stream = null;
+          break;
+        }
+        stream.getTracks().forEach((t) => t.stop());
+        stream = null;
+      }
+
+      if (!stream && mobile && isIOS) {
+        try {
+          let devices = await navigator.mediaDevices.enumerateDevices();
+          const noLabels = devices.every(
+            (d) => d.kind !== "videoinput" || !d.label.trim(),
+          );
+          if (noLabels) {
+            const probe = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false,
+            });
+            probe.getTracks().forEach((t) => t.stop());
+            devices = await navigator.mediaDevices.enumerateDevices();
+          }
+          const deviceId = pickIosBackCameraDeviceId(devices);
+          if (deviceId) {
+            try {
+              const s2 = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: deviceId } },
+                audio: false,
+              });
+              const ok2 = await attachStreamToVideo(s2, mobile);
+              if (ok2) {
+                stream = s2;
+                cameraStreamRef.current = s2;
+                setCameraPermissionHelpVisible(false);
+                setCameraHint(
+                  "背面カメラを個別に指定して起動しました。まだ真っ暗な場合は下の案内をご確認ください。",
+                );
+              } else {
+                s2.getTracks().forEach((t) => t.stop());
+              }
+            } catch (e) {
+              if (isPermissionDeniedError(e)) throw e;
+              lastNonPermissionError = e;
+            }
+          }
+        } catch (e) {
+          if (isPermissionDeniedError(e)) throw e;
+          lastNonPermissionError = e;
         }
       }
+
       if (!stream) {
-        throw new Error("カメラ映像を取得できませんでした。ブラウザのカメラ権限をご確認ください。");
+        if (mobile && isIOS) {
+          setCameraOpen(false);
+          setCameraBusy(false);
+          setCameraHint(
+            "端末のカメラアプリに切り替わります。ここでもプレビューが真っ暗な場合は、純正「カメラ」アプリで同様か確認し、再起動や iOS アップデートを試してください。撮影済みなら「写真を選ぶ」から選べます。",
+          );
+          openNativeCameraPicker(false);
+          return;
+        }
+        const extra =
+          lastNonPermissionError instanceof Error
+            ? `（${lastNonPermissionError.message}）`
+            : "";
+        throw new Error(`カメラ映像を取得できませんでした。${extra}`.trim());
       }
     } catch (e) {
       setCameraOpen(false);
-      setNotice(e instanceof Error ? `カメラ起動に失敗: ${e.message}` : "カメラ起動に失敗しました。");
+      if (isPermissionDeniedError(e)) {
+        setCameraPermissionHelpVisible(true);
+      }
+      setNotice(
+        isPermissionDeniedError(e) || e instanceof DOMException
+          ? formatGetUserMediaError(e)
+          : e instanceof Error
+            ? `カメラ起動に失敗: ${e.message}`
+            : "カメラ起動に失敗しました。",
+      );
     } finally {
       setCameraBusy(false);
     }
@@ -312,6 +533,7 @@ export function ReceiptPage() {
     const v = cameraVideoRef.current;
     if (v) v.srcObject = null;
     setCameraOpen(false);
+    setCameraPermissionHelpVisible(false);
   }
 
   async function capturePhoto() {
@@ -386,7 +608,7 @@ export function ReceiptPage() {
     }
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     void onFile(e.target.files?.[0] ?? null);
     e.target.value = "";
   }
@@ -425,6 +647,13 @@ export function ReceiptPage() {
 
   return (
     <div className={styles.wrap}>
+      {cameraPermissionHelpVisible ? (
+        <div className={styles.receiptCameraPermissionBanner} role="alert">
+          カメラへのアクセスを許可してください。Safari ではアドレスバーの「aA」→
+          当サイトの設定 → カメラを「許可」にしてください。ホーム画面アプリの場合は Safari
+          で開き直すか、iOS の「設定」→「Safari」→「カメラ」から確認してください。
+        </div>
+      ) : null}
       {loading ? loadingUi : null}
       <h1 className={styles.title}>レシート読取</h1>
 
@@ -432,65 +661,66 @@ export function ReceiptPage() {
         レシート画像を選択すると、店舗名・合計金額・日付を自動入力します。
         明細ごとの金額表示は行わず、合計金額を優先して読み取ります。
       </p>
-      {touchUi ? (
-        <div className={styles.receiptPickRow}>
-          <input
-            ref={cameraInputRef}
-            id={cameraInputId}
-            type="file"
-            accept="image/*"
-            className="visually-hidden"
-            disabled={loading}
-            onChange={handleFileChange}
-          />
-          <input
-            ref={galleryInputRef}
-            id={galleryInputId}
-            type="file"
-            accept="image/*"
-            className="visually-hidden"
-            disabled={loading}
-            onChange={handleFileChange}
-          />
-          {!isIOS ? (
-            <button
-              type="button"
-              className={`${styles.receiptPickBtn} ${styles.btnPrimary} ${pickDisabled}`}
-              onClick={openCamera}
-              disabled={loading || cameraBusy}
-            >
-              {cameraBusy ? "カメラ起動中…" : "写真を撮る"}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className={`${styles.receiptPickBtn} ${pickDisabled}`}
-            onClick={() => galleryInputRef.current?.click()}
-            disabled={loading}
-          >
-            {isIOS ? "写真を選ぶ" : "ファイルを選ぶ"}
-          </button>
-        </div>
-      ) : (
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
+      {/* file input は flex 行の外に置き、一部モバイル WebView でレイアウトに影響しないようにする */}
+      <input
+        ref={nativeCameraInputRef}
+        id={nativeCameraInputId}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="visually-hidden"
+        disabled={loading}
+        onChange={handleFileChange}
+        tabIndex={-1}
+        aria-hidden
+      />
+      <input
+        ref={galleryInputRef}
+        id={galleryInputId}
+        type="file"
+        accept="image/*"
+        className="visually-hidden"
+        disabled={loading}
+        onChange={handleFileChange}
+        tabIndex={-1}
+        aria-hidden
+      />
+      <div className={styles.receiptPickRow}>
+        <button
+          type="button"
+          className={`${styles.receiptPickBtn} ${styles.receiptPickBtnPrimary} ${pickDisabled}`}
+          onClick={() => {
+            void openCamera();
+          }}
+          disabled={loading || cameraBusy}
+        >
+          {cameraBusy ? "カメラ起動中…" : "写真を撮る"}
+        </button>
+        <button
+          type="button"
+          className={`${styles.receiptPickBtn} ${pickDisabled}`}
+          onClick={() => galleryInputRef.current?.click()}
           disabled={loading}
-          style={{ marginBottom: "1rem" }}
-        />
-      )}
+        >
+          写真を選ぶ
+        </button>
+      </div>
       {cameraOpen ? (
-        <div className={styles.receiptLoadingOverlay}>
-          <div className={styles.receiptLoadingOverlayInner}>
-            <video
-              ref={cameraVideoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ width: "min(92vw, 520px)", borderRadius: 10, background: "#000" }}
-            />
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <div className={styles.receiptCameraStage}>
+          <video
+            ref={cameraVideoRef}
+            autoPlay
+            muted
+            playsInline
+            {...({ playsinline: "" } as VideoHTMLAttributes<HTMLVideoElement>)}
+            controls={false}
+            className={styles.receiptCameraPreviewFullscreen}
+          />
+          <div className={styles.receiptCameraControls}>
+            {cameraHint ? (
+              <p className={styles.receiptCameraHintBar}>{cameraHint}</p>
+            ) : null}
+            <div className={styles.receiptCameraControlRow}>
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnPrimary}`}
@@ -504,11 +734,6 @@ export function ReceiptPage() {
                 キャンセル
               </button>
             </div>
-            {cameraHint ? (
-              <p className={styles.receiptSummaryHint} style={{ margin: 0 }}>
-                {cameraHint}
-              </p>
-            ) : null}
           </div>
         </div>
       ) : null}

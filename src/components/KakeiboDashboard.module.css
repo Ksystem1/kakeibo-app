@@ -379,6 +379,81 @@
   color: var(--text);
 }
 
+/* 権限不足・拒否時の画面上部の大きな案内 */
+.receiptCameraPermissionBanner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10001;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-top, 0px));
+  font-size: clamp(1.02rem, 3.6vw, 1.28rem);
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.45;
+  background: #c2410c;
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.receiptCameraStage {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+}
+
+.receiptCameraStage .receiptCameraControls {
+  pointer-events: auto;
+}
+
+/* デバッグ・黒画面切り分け: video を最前面フルスクリーンに固定（他要素に隠れないようにする） */
+.receiptCameraPreviewFullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  z-index: 9999;
+  background: #000;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+}
+
+.receiptCameraControls {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
+  box-sizing: border-box;
+}
+
+.receiptCameraHintBar {
+  margin: 0;
+  max-width: min(92vw, 520px);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #f8fafc;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+.receiptCameraControlRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
 .receiptPickRow {
   display: flex;
   flex-wrap: wrap;
@@ -410,6 +485,17 @@
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+}
+
+/* .receiptPickBtn が .btnPrimary より後に定義されているため、単に btnPrimary を足すと背景が上書きされ「主ボタン」が消えたように見える。 */
+.receiptPickBtnPrimary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #08201a;
+}
+
+.receiptPickBtnPrimary:hover:not(.receiptPickBtnDisabled) {
+  background: var(--accent-hover);
 }
 
 .receiptSummaryForm {
@@ -560,9 +646,16 @@
     padding: 0.7rem 1.05rem;
   }
 
+  .receiptPickRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .receiptPickBtn {
     font-size: 1rem;
     padding: 0.7rem 1.05rem;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .receiptSummaryHint {
