@@ -1,8 +1,12 @@
 /**
  * App Runner のバックエンドを再デプロイし、完了まで待機する。
  *
+ * 注意:
+ * - 現在の本番は ECS + ALB が正系です。
+ * - ECS は .github/workflows/deploy.yml（Build+Push+Terraform apply）で更新してください。
+ *
  * 実行:
- *   npm run deploy:backend
+ *   npm run deploy:backend:apprunner
  *
  * 必須環境変数:
  *   APP_RUNNER_SERVICE_ARN
@@ -33,7 +37,8 @@ function sleep(ms) {
 }
 
 if (!serviceArn) {
-  console.error("APP_RUNNER_SERVICE_ARN が未設定のため backend デプロイをスキップします。");
+  console.error("APP_RUNNER_SERVICE_ARN が未設定のため App Runner デプロイをスキップします。");
+  console.error("現在の本番運用は ECS + ALB です。GitHub Actions の deploy.yml を使用してください。");
   process.exit(0);
 }
 

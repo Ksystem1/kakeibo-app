@@ -19,6 +19,20 @@ type AdminUser = {
   family_peers: string | null;
 };
 
+function formatAdminApiError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  if (/not found/i.test(msg)) {
+    return "管理者APIが見つかりません。バックエンドが古い可能性があります。deploy.yml（ECS+Terraform）で再デプロイしてください。";
+  }
+  if (/forbidden|管理者権限が必要/i.test(msg)) {
+    return "管理者権限がありません。管理者アカウントで再ログインしてください。";
+  }
+  if (/unauthorized|認証|401/.test(msg)) {
+    return "認証エラーです。ログアウト後に再ログインしてください。";
+  }
+  return msg || "ユーザー一覧の取得に失敗しました";
+}
+
 function formatDateTime(value: string | null | undefined): string {
   if (value == null || value === "") return "—";
   const d = new Date(value);
@@ -53,7 +67,7 @@ export function AdminPage() {
         ),
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "ユーザー一覧の取得に失敗しました");
+      setError(formatAdminApiError(e));
     } finally {
       setLoading(false);
     }
@@ -146,6 +160,30 @@ export function AdminPage() {
       <p style={{ color: "var(--text-muted)" }}>
         管理者数: {adminCount} / 全ユーザー: {items.length}
       </p>
+      <div
+        style={{
+          margin: "0.8rem 0 1rem",
+          padding: "0.75rem 0.9rem",
+          borderRadius: 10,
+          border: "1px solid var(--border)",
+          background: "var(--panel-bg)",
+        }}
+      >
+        <h2 style={{ margin: "0 0 0.5rem", fontSize: "0.98rem" }}>管理者一覧（サマリ）</h2>
+        {adminCount === 0 ? (
+          <p style={{ margin: 0, color: "var(--text-muted)" }}>現在、管理者ユーザーは登録されていません。</p>
+        ) : (
+          <ul style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.9rem" }}>
+            {items
+              .filter((u) => u.isAdmin)
+              .map((u) => (
+                <li key={u.id}>
+                  ID {u.id} — {u.email}（最終ログイン: {formatDateTime(u.last_login_at)})
+                </li>
+              ))}
+          </ul>
+        )}
+      </div>
       {error ? <p style={{ color: "#b42318", fontWeight: 600 }}>{error}</p> : null}
       <button
         type="button"

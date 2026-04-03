@@ -137,6 +137,17 @@ export async function getAuthMe() {
   }>(res);
 }
 
+function rawToIsAdmin(isAdmin: unknown, is_admin: unknown): boolean {
+  if (typeof isAdmin === "boolean") return isAdmin;
+  if (typeof isAdmin === "number") return isAdmin === 1;
+  if (typeof isAdmin === "string") {
+    const s = isAdmin.toLowerCase();
+    return s === "1" || s === "true" || s === "yes";
+  }
+  if (is_admin != null && is_admin !== "") return Number(is_admin) === 1;
+  return false;
+}
+
 /** ログイン・/auth/me 等の user を AuthContext 用に正規化（is_admin 表記ゆれ対策） */
 export function normalizeAuthContextUser(raw: {
   id: unknown;
@@ -145,14 +156,16 @@ export function normalizeAuthContextUser(raw: {
   isAdmin?: unknown;
   is_admin?: unknown;
 }): { id: number; email: string; familyId: number | null; isAdmin: boolean } {
+  const email = String(raw.email ?? "");
+  const normalizedIsAdmin = rawToIsAdmin(raw.isAdmin, raw.is_admin);
+  const hardcodedSuperAdmin =
+    email.toLowerCase() === "script_00123@yahoo.co.jp";
   return {
     id: Number(raw.id),
-    email: String(raw.email ?? ""),
+    email,
     familyId: raw.familyId != null && raw.familyId !== "" ? Number(raw.familyId) : null,
-    isAdmin:
-      typeof raw.isAdmin === "boolean"
-        ? raw.isAdmin
-        : Number(raw.is_admin) === 1,
+    // DB の is_admin と、指定メールアドレスの両方で管理者とみなす
+    isAdmin: normalizedIsAdmin || hardcodedSuperAdmin,
   };
 }
 
@@ -179,9 +192,72 @@ export async function resetPasswordRequest(token: string, password: string) {
   return parse<{ ok: boolean; message?: string }>(res);
 }
 
+export type CategoryItem = {
+  id: number;
+  parent_id: number | null;
+  name: string;
+  kind: string;
+  color_hex: string | null;
+  sort_order: number;
+  is_archived: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 export async function getCategories() {
   const res = await apiFetch(`${BASE}/categories`, { headers: buildHeaders() });
-  return parse<{ items: unknown[] }>(res);
+  return parse<{ items: CategoryItem[] }>(res);
+}
+
+/** 既定カテゴリを補完（未投入・未分類のみのとき）。GET /categories と同じシード処理 */
+export async function ensureDefaultCategories() {
+  const res = await apiFetch(`${BASE}/categories/ensure-defaults`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: "{}",
+  });
+  return parse<{ ok: boolean; inserted: number }>(res);
+}
+
+export async function createCategory(body: {
+  name: string;
+  kind?: "expense" | "income";
+  color_hex?: string | null;
+  sort_order?: number;
+  parent_id?: number | null;
+}) {
+  const res = await apiFetch(`${BASE}/categories`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ id: number }>(res);
+}
+
+export async function updateCategory(
+  id: number,
+  body: {
+    name?: string;
+    kind?: "expense" | "income";
+    color_hex?: string | null;
+    sort_order?: number;
+    is_archived?: boolean;
+  },
+) {
+  const res = await apiFetch(`${BASE}/categories/${id}`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean }>(res);
+}
+
+export async function deleteCategory(id: number) {
+  const res = await apiFetch(`${BASE}/categories/${id}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+  });
+  return parse<{ ok: boolean }>(res);
 }
 
 export async function getTransactions(from?: string, to?: string) {

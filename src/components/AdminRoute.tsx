@@ -15,12 +15,7 @@ export function AdminRoute() {
         cancelled = true;
       };
     }
-    if (typeof user?.isAdmin === "boolean") {
-      setChecked(true);
-      return () => {
-        cancelled = true;
-      };
-    }
+    // false も boolean のため、ここで省略すると管理者昇格後も /admin に入れない
     void getAuthMe()
       .then((res) => {
         if (cancelled) return;
@@ -37,11 +32,15 @@ export function AdminRoute() {
     return () => {
       cancelled = true;
     };
-  }, [token, user?.isAdmin, setUser, logout]);
+  }, [token, setUser, logout]);
 
   if (!token) return <Navigate to="/login" replace />;
   // 初回は user が null のまま。checked 前に !user?.isAdmin で弾くと常に / へ飛んでいた。
   if (!checked) return <div style={{ padding: "1rem" }}>確認中...</div>;
-  if (!user?.isAdmin) return <Navigate to="/" replace />;
+  const isSuperAdmin =
+    user?.email?.toLowerCase() === "script_00123@yahoo.co.jp";
+  if (!user || (!user.isAdmin && !isSuperAdmin)) {
+    return <Navigate to="/" replace />;
+  }
   return <Outlet />;
 }

@@ -129,9 +129,9 @@ function formatGetUserMediaError(e: unknown): string {
   return "カメラを起動できませんでした。";
 }
 
-/** モバイル「写真を選ぶ」: capture なし・HEIC 等を明示してフォトライブラリ寄りのピッカーを誘導 */
+/** モバイル「写真を選ぶ」: フォトライブラリ/ファイル優先（image/* は付けずにライブラリ寄りに絞る） */
 const MOBILE_GALLERY_ACCEPT =
-  "image/jpeg,image/jpg,image/png,image/heic,image/heif,image/webp,.heic,.heif,image/*";
+  "image/jpeg,image/jpg,image/png,image/heic,image/heif,image/webp,.heic,.heif";
 
 async function waitForCameraVideoElement(
   ref: RefObject<HTMLVideoElement | null>,
@@ -695,7 +695,10 @@ export function ReceiptPage() {
         <button
           type="button"
           className={`${styles.receiptPickBtn} ${pickDisabled}`}
-          onClick={() => galleryInputRef.current?.click()}
+          onClick={() => {
+            setNotice("撮影する場合は、水色の「写真を撮る」ボタンを押してください。");
+            galleryInputRef.current?.click();
+          }}
           disabled={loading}
         >
           写真を選ぶ

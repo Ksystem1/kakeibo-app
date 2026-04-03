@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   createTransaction,
   deleteTransaction,
+  ensureDefaultCategories,
   getApiBaseUrl,
   getCategories,
   getMonthSummary,
@@ -103,10 +104,31 @@ export function KakeiboDashboard() {
   const categoryById = useMemo(() => {
     const m = new Map<number, string>();
     for (const c of categories) {
-      m.set(c.id, c.name);
+      const id = typeof c.id === "number" ? c.id : Number(c.id);
+      if (Number.isFinite(id)) m.set(id, c.name);
     }
     return m;
   }, [categories]);
+
+  function normalizeCategoryRows(raw: unknown[]): Category[] {
+    const out: Category[] = [];
+    for (const row of raw) {
+      const c = row as Record<string, unknown>;
+      const idRaw = c.id;
+      const id =
+        typeof idRaw === "number" ? idRaw : Number(idRaw);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      out.push({
+        id,
+        name: String(c.name ?? ""),
+        kind:
+          String(c.kind ?? "").toLowerCase() === "income"
+            ? "income"
+            : "expense",
+      });
+    }
+    return out;
+  }
 
   const load = useCallback(async () => {
     if (!base) {
@@ -116,12 +138,22 @@ export function KakeiboDashboard() {
     setError(null);
     setLoading(true);
     try {
-      const [catRes, txRes, sumRes] = await Promise.all([
-        getCategories(),
+      let catRes = await getCategories();
+      let items = catRes.items ?? [];
+      if (items.length === 0) {
+        try {
+          await ensureDefaultCategories();
+          catRes = await getCategories();
+          items = catRes.items ?? [];
+        } catch {
+          /* 古い API では POST が無い場合がある */
+        }
+      }
+      const [txRes, sumRes] = await Promise.all([
         getTransactions(from, to),
         getMonthSummary(ym),
       ]);
-      setCategories((catRes.items ?? []) as Category[]);
+      setCategories(normalizeCategoryRows(items));
       setTransactions((txRes.items ?? []) as Transaction[]);
       setSummary(sumRes);
     } catch (e) {
@@ -131,7 +163,7 @@ export function KakeiboDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [base, from, to]);
+  }, [base, from, to, ym]);
 
   useEffect(() => {
     void load();
@@ -307,6 +339,14 @@ export function KakeiboDashboard() {
       {error ? (
         <div className={styles.err} role="alert">
           {error}
+        </div>
+      ) : null}
+
+      {!error && categories.length === 0 && !loading && base ? (
+        <div className={styles.empty} role="status" style={{ marginBottom: "1rem" }}>
+          カテゴリがまだありません。再読込しても空の場合は{" "}
+          <Link to="/categories">カテゴリ管理</Link>
+          から追加できます。
         </div>
       ) : null}
 
@@ -561,9 +601,15 @@ export function KakeiboDashboard() {
                             </option>
                           ))}
                         </select>
-                      ) : t.category_id != null ? (
-                        categoryById.get(t.category_id) ?? `ID:${t.category_id}`
-                      ) : (
+                      ) : t.category_id != null ? (() => {
+                        const cid =
+                          typeof t.category_id === "number"
+                            ? t.category_id
+                            : Number(t.category_id);
+                        return Number.isFinite(cid)
+                          ? (categoryById.get(cid) ?? `ID:${cid}`)
+                          : "—";
+                      })() : (
                         "—"
                       )}
                     </td>

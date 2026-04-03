@@ -3,6 +3,9 @@
 #
 # Step 3（HTTPS API）: Repository → Settings → Secrets and variables → Actions
 #   VITE_API_URL = https://api.ksystemapp.com  （末尾スラッシュなし。API の URL のみ。ACM 証明書 ARN はここに入れない）
+#
+# backend（ECS + ALB）の本番デプロイは .github/workflows/deploy.yml を使用すること。
+#
 name: Deploy frontend (S3 + CloudFront)
 
 on:

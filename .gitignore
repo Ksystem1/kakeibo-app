@@ -1,5 +1,6 @@
 node_modules
 dist
+.cursor/
 # Vite 設定は vite.config.ts のみ（.js との二重管理を防ぐ）
 vite.config.js
 *.local

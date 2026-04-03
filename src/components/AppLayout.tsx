@@ -35,24 +35,19 @@ export function AppLayout() {
         cancelled = true;
       };
     }
-    // user がいても isAdmin が未確定なら /auth/me で補完（「管理」が出ない問題の防止）
-    if (user != null && typeof user.isAdmin === "boolean") {
-      return () => {
-        cancelled = true;
-      };
-    }
+    // トークンがある限りサーバの /auth/me で同期（ログイン直後・リロード・DB の is_admin 変更を確実に反映）
     void getAuthMe()
       .then((res) => {
         if (cancelled || !res?.user) return;
         setUser(normalizeAuthContextUser(res.user));
       })
       .catch(() => {
-        /* no-op: 失敗時は次のナビゲーションで再試行 */
+        /* no-op: オフライン時はログイン応答の user のみ */
       });
     return () => {
       cancelled = true;
     };
-  }, [token, user, setUser]);
+  }, [token, setUser]);
 
   return (
     <div
@@ -88,41 +83,15 @@ export function AppLayout() {
             minWidth: 0,
           }}
         >
-          <div
+          <strong
             style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "center",
-              gap: "0.4rem",
+              letterSpacing: "-0.02em",
               flexShrink: 0,
-              minWidth: 0,
+              lineHeight: 1.2,
             }}
           >
-            <strong
-              style={{
-                letterSpacing: "-0.02em",
-                lineHeight: 1.2,
-              }}
-            >
-              Kakeibo
-            </strong>
-            {token && user?.isAdmin ? (
-              <span
-                style={{
-                  fontSize: mobile ? "0.72rem" : "0.78rem",
-                  fontWeight: 700,
-                  padding: "0.2rem 0.45rem",
-                  borderRadius: 6,
-                  border: "1px solid rgba(61,214,180,0.45)",
-                  color: "var(--accent)",
-                  background: "var(--accent-dim)",
-                  lineHeight: 1.2,
-                }}
-              >
-                管理者
-              </span>
-            ) : null}
-          </div>
+            Kakeibo
+          </strong>
           <div
             style={{
               display: "flex",
@@ -190,10 +159,15 @@ export function AppLayout() {
               <NavLink to="/members" style={(p) => linkStyle(mobile, p)}>
                 家族
               </NavLink>
+              <NavLink to="/categories" style={(p) => linkStyle(mobile, p)}>
+                カテゴリ
+              </NavLink>
               <NavLink to="/settings" style={(p) => linkStyle(mobile, p)}>
                 設定
               </NavLink>
-              {user?.isAdmin === true ? (
+              {user &&
+              (user.isAdmin ||
+                user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
                 <NavLink to="/admin" style={(p) => linkStyle(mobile, p)}>
                   管理
                 </NavLink>
