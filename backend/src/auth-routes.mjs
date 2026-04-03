@@ -8,6 +8,7 @@ import {
   verifyPassword,
 } from "./auth-logic.mjs";
 import { getPool } from "./db.mjs";
+import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
 
 /** このモジュールが処理するパス（ここに無いリクエストは getPool せず null を返す） */
 const AUTH_ROUTE_KEYS = new Set([
@@ -237,6 +238,8 @@ export async function tryAuthRoutes(req, ctx) {
         );
 
         await conn.commit();
+
+        await seedDefaultCategoriesIfEmpty(pool, userId, familyId);
 
         await withDbRetry("auth.register.lastLogin", () =>
           pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = ?`, [userId]),
