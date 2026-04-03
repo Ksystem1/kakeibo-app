@@ -14,8 +14,8 @@ resource "aws_secretsmanager_secret" "rds_credentials" {
 resource "aws_secretsmanager_secret_version" "rds_credentials" {
   # managed_rds_credentials_secret=false でも secret を維持し続けるため count を固定しています。
   # manage=true のときだけ secret_string を更新します。manage=false のときは既存の secret_string を参照して書き換えを抑止します。
-  count         = 1
-  secret_id     = aws_secretsmanager_secret.rds_credentials[0].id
+  count     = 1
+  secret_id = aws_secretsmanager_secret.rds_credentials[0].id
 
   secret_string = local.manage_rds_credentials ? jsonencode({
     host     = var.rds_credentials.host

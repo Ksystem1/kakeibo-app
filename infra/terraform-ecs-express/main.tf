@@ -1,7 +1,7 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  app_name = var.name_prefix
+  app_name                 = var.name_prefix
   github_oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : var.github_oidc_provider_arn
   tags = {
     Project     = "kakeibo"
@@ -196,7 +196,7 @@ resource "aws_lb_listener" "https" {
 
 data "aws_iam_policy_document" "ecs_task_assume_role" {
   statement {
-    effect = "Allow"
+    effect  = "Allow"
     actions = ["sts:AssumeRole"]
     principals {
       type        = "Service"

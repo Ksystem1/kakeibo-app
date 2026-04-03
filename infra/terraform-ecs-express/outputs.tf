@@ -56,3 +56,4 @@ output "vpc_endpoint_s3_gateway_id" {
   value       = aws_vpc_endpoint.s3.id
   description = "イメージレイヤ取得用 S3 ゲートウェイエンドポイント"
 }
+

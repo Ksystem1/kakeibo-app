@@ -87,17 +87,17 @@ variable "app_env_vars" {
   description = "Plain environment variables for containerDefinitions"
   type        = map(string)
   default = {
-    NODE_ENV               = "production"
-    API_PORT               = "3456"
-    CORS_ORIGIN            = "https://ksystemapp.com,https://www.ksystemapp.com"
-    JWT_EXPIRES_IN         = "7d"
-    ALLOW_X_USER_ID        = "false"
-    AUTH_DEBUG_TOKEN       = "false"
-    TEXTRACT_ENABLED       = "true"
-    TEXTRACT_TIMEOUT_MS    = "25000"
+    NODE_ENV                 = "production"
+    API_PORT                 = "3456"
+    CORS_ORIGIN              = "https://ksystemapp.com,https://www.ksystemapp.com"
+    JWT_EXPIRES_IN           = "7d"
+    ALLOW_X_USER_ID          = "false"
+    AUTH_DEBUG_TOKEN         = "false"
+    TEXTRACT_ENABLED         = "true"
+    TEXTRACT_TIMEOUT_MS      = "25000"
     TEXTRACT_MAX_IMAGE_BYTES = "5242880"
-    TEXTRACT_MAX_ATTEMPTS  = "2"
-    TEXTRACT_SEND_RETRIES  = "2"
+    TEXTRACT_MAX_ATTEMPTS    = "2"
+    TEXTRACT_SEND_RETRIES    = "2"
   }
 }
 

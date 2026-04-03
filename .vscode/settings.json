@@ -1,5 +1,7 @@
 {
   "terminal.integrated.autoReplies": {
     "Allowlist 'Set-Location' + 1": "Run"
-  }
+  },
+  "terminal.integrated.shellIntegration.enabled": false,
+  "terminal.integrated.enablePersistentSessions": false
 }

@@ -1,5 +1,6 @@
 # プライベートサブネットの Fargate が NAT なしで ECR イメージをプルするための VPC エンドポイント
 # 参考: https://docs.aws.amazon.com/AmazonECR/latest/userguide/vpc-endpoints.html
+# NOTE: Textract は ap-northeast-1 で VPC Endpoint Service 非対応のため、Textract 到達には NAT 等の外向き経路が必要。
 
 data "aws_route_table" "private_subnet_rt" {
   for_each  = toset(var.private_subnet_ids)
