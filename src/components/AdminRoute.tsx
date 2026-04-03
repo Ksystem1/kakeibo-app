@@ -5,26 +5,22 @@ import { getAuthMe } from "../lib/api";
 
 export function AdminRoute() {
   const { token, user, setUser, logout } = useAuth();
-  const [loading, setLoading] = useState(false);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     if (!token) {
       setChecked(true);
-      setLoading(false);
       return () => {
         cancelled = true;
       };
     }
     if (typeof user?.isAdmin === "boolean") {
       setChecked(true);
-      setLoading(false);
       return () => {
         cancelled = true;
       };
     }
-    setLoading(true);
     void getAuthMe()
       .then((res) => {
         if (cancelled) return;
@@ -42,9 +38,6 @@ export function AdminRoute() {
         if (cancelled) return;
         logout();
         setChecked(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -52,7 +45,8 @@ export function AdminRoute() {
   }, [token, user?.isAdmin, setUser, logout]);
 
   if (!token) return <Navigate to="/login" replace />;
-  if (loading && !checked) return <div style={{ padding: "1rem" }}>確認中...</div>;
+  // 初回は user が null のまま。checked 前に !user?.isAdmin で弾くと常に / へ飛んでいた。
+  if (!checked) return <div style={{ padding: "1rem" }}>確認中...</div>;
   if (!user?.isAdmin) return <Navigate to="/" replace />;
   return <Outlet />;
 }
