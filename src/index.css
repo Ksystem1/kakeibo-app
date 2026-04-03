@@ -42,6 +42,40 @@
   --shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
 }
 
+/* 暖色の紙面風（読書向き） */
+:root[data-theme="paper"] {
+  --bg-deep: #f0e9df;
+  --bg-card: #faf7f0;
+  --panel-bg: #e8dfd2;
+  --panel-bg-strong: #ddd2c2;
+  --input-bg: #fffef9;
+  --input-border: #b5a896;
+  --border: rgba(60, 48, 36, 0.2);
+  --text: #2a2318;
+  --text-muted: #5a5248;
+  --accent: #2a7a6e;
+  --accent-dim: rgba(42, 122, 110, 0.14);
+  --accent-hover: #23685e;
+  --shadow: 0 14px 28px rgba(42, 35, 28, 0.12);
+}
+
+/* 涼しめのブルーグレー（ライト寄り） */
+:root[data-theme="ocean"] {
+  --bg-deep: #e5eef6;
+  --bg-card: #f7fbff;
+  --panel-bg: #d8e6f2;
+  --panel-bg-strong: #c8daeb;
+  --input-bg: #ffffff;
+  --input-border: #7fa3c4;
+  --border: rgba(28, 58, 88, 0.22);
+  --text: #0c1f32;
+  --text-muted: #3d5670;
+  --accent: #1a7fd4;
+  --accent-dim: rgba(26, 127, 212, 0.14);
+  --accent-hover: #156bb8;
+  --shadow: 0 14px 30px rgba(20, 50, 80, 0.12);
+}
+
 *,
 *::before,
 *::after {

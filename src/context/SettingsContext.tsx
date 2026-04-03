@@ -12,7 +12,12 @@ const MODE_KEY = "kakeibo_font_mode";
 const THEME_KEY = "kakeibo_theme_mode";
 
 type FontMode = "standard" | "large" | "xlarge";
-type ThemeMode = "light" | "dark";
+const THEME_MODES = ["light", "dark", "paper", "ocean"] as const;
+type ThemeMode = (typeof THEME_MODES)[number];
+
+function parseThemeMode(raw: string | null): ThemeMode {
+  return THEME_MODES.includes(raw as ThemeMode) ? (raw as ThemeMode) : "light";
+}
 const FONT_MODE_SCALE: Record<FontMode, number> = {
   standard: 1.06,
   large: 1.18,
@@ -33,8 +38,7 @@ const SettingsContext = createContext<Settings | null>(null);
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
     try {
-      const raw = localStorage.getItem(THEME_KEY);
-      return raw === "light" || raw === "dark" ? raw : "light";
+      return parseThemeMode(localStorage.getItem(THEME_KEY));
     } catch {
       return "light";
     }

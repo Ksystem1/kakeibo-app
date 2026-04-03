@@ -12,11 +12,11 @@ export function SettingsPage() {
     <div className={styles.wrap}>
       <h1 className={styles.title}>設定</h1>
       <p className={styles.sub}>
-        背景色（ライト/ダーク）と文字サイズを変更します（localStorage に保存）。
+        背景色（4 種）と文字サイズを変更します（localStorage に保存）。
       </p>
       <div className={styles.settingsPanel} style={{ maxWidth: 360 }}>
         <label className={styles.settingsLabel}>表示テーマ</label>
-        <div className={styles.modeRow}>
+        <div className={`${styles.modeRow} ${styles.modeRowTheme}`}>
           <button
             type="button"
             className={`${styles.btn} ${themeMode === "light" ? styles.btnPrimary : ""}`}
@@ -30,6 +30,20 @@ export function SettingsPage() {
             onClick={() => setThemeMode("dark")}
           >
             ダーク
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${themeMode === "paper" ? styles.btnPrimary : ""}`}
+            onClick={() => setThemeMode("paper")}
+          >
+            ペーパー
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${themeMode === "ocean" ? styles.btnPrimary : ""}`}
+            onClick={() => setThemeMode("ocean")}
+          >
+            オーシャン
           </button>
         </div>
         <label className={styles.settingsLabel}>文字サイズモード</label>
@@ -73,7 +87,7 @@ export function SettingsPage() {
 
       <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 420 }}>
         <h2 className={styles.sectionTitle}>レシート自動再分類</h2>
-        <p className={styles.sub} style={{ marginTop: 0, color: "#d9e7ff" }}>
+        <p className={styles.reclassifyHint}>
           全期間の未分類の支出に対して、履歴・キーワードを使ってカテゴリを再推定します（件数が多いと時間がかかります）。
         </p>
         <button
