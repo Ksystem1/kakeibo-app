@@ -520,8 +520,26 @@ export async function handleApiRequest(req, options = {}) {
         if (rawName.length > 100) {
           return json(400, { error: "displayName は100文字以内で指定してください" }, hdrs, skipCors);
         }
+        const normalized = rawName === "" ? null : rawName;
+        if (normalized != null) {
+          const [dupRows] = await pool.query(
+            `SELECT id FROM users WHERE display_name IS NOT NULL AND TRIM(display_name) <> '' AND LOWER(TRIM(display_name)) = LOWER(?) AND id <> ? LIMIT 1`,
+            [normalized, targetUserId],
+          );
+          if (dupRows.length > 0) {
+            return json(
+              409,
+              {
+                error:
+                  "この表示名は既に使われています。別の表示名を入力してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+        }
         updates.push("display_name = ?");
-        params.push(rawName === "" ? null : rawName);
+        params.push(normalized);
       }
       if (updates.length === 0) {
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);

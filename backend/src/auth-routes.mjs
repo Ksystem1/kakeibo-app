@@ -37,6 +37,13 @@ function isRetryableDbError(e) {
   return RETRYABLE_DB_CODES.has(code) || syscall.includes("getaddrinfo");
 }
 
+function isDuplicateKeyError(e) {
+  if (!e || typeof e !== "object") return false;
+  const code = e.code ? String(e.code) : "";
+  const errno = Number(e.errno);
+  return code === "ER_DUP_ENTRY" || errno === 1062;
+}
+
 function logError(event, e, extra = {}) {
   const payload = {
     level: "error",
@@ -134,13 +141,11 @@ export async function tryAuthRoutes(req, ctx) {
       const email = String(b.email || "")
         .trim()
         .toLowerCase();
-      const loginName = b.login_name
-        ? String(b.login_name).trim()
-        : null;
+      const loginRaw = b.login_name != null ? String(b.login_name).trim() : "";
+      const loginName = loginRaw.length > 0 ? loginRaw : null;
       const password = String(b.password || "");
-      const displayName = b.display_name
-        ? String(b.display_name).trim()
-        : null;
+      const displayRaw = b.display_name != null ? String(b.display_name).trim() : "";
+      const displayName = displayRaw.length > 0 ? displayRaw : null;
       const inviteToken = b.invite_token
         ? String(b.invite_token).trim()
         : "";
@@ -162,21 +167,85 @@ export async function tryAuthRoutes(req, ctx) {
       );
       try {
         await conn.beginTransaction();
-        const dupSql = loginName
-          ? "SELECT id FROM users WHERE email = ? OR login_name = ?"
-          : "SELECT id FROM users WHERE email = ?";
-        const dupParams = loginName ? [email, loginName] : [email];
-        const [dup] = await conn.query(dupSql, dupParams);
-        if (dup.length > 0) {
+
+        const [emailDup] = await conn.query(
+          `SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1`,
+          [email],
+        );
+        if (emailDup.length > 0) {
           await conn.rollback();
-          return json(409, { error: "既に登録済みのメールまたはログインIDです" }, hdrs, skipCors);
+          return json(
+            409,
+            {
+              error:
+                "このメールアドレスは既に登録されています。別のメールアドレスを入力してください。",
+            },
+            hdrs,
+            skipCors,
+          );
         }
 
-        const [ur] = await conn.query(
-          `INSERT INTO users (email, login_name, password_hash, display_name)
-           VALUES (?, ?, ?, ?)`,
-          [email, loginName || null, ph, displayName],
-        );
+        if (loginName) {
+          const loginLc = loginName.toLowerCase();
+          const [loginDup] = await conn.query(
+            `SELECT id FROM users WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?) LIMIT 1`,
+            [loginLc, loginLc],
+          );
+          if (loginDup.length > 0) {
+            await conn.rollback();
+            return json(
+              409,
+              {
+                error:
+                  "このログインIDは既に使用されています（他の方のメールアドレスと同じ文字列も使えません）。別のログインIDを入力してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+        }
+
+        if (displayName) {
+          const [dispDup] = await conn.query(
+            `SELECT id FROM users WHERE display_name IS NOT NULL AND TRIM(display_name) <> '' AND LOWER(TRIM(display_name)) = LOWER(?) LIMIT 1`,
+            [displayName],
+          );
+          if (dispDup.length > 0) {
+            await conn.rollback();
+            return json(
+              409,
+              {
+                error:
+                  "この表示名は既に使われています。別の表示名を入力してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+        }
+
+        let ur;
+        try {
+          [ur] = await conn.query(
+            `INSERT INTO users (email, login_name, password_hash, display_name)
+             VALUES (?, ?, ?, ?)`,
+            [email, loginName, ph, displayName],
+          );
+        } catch (insErr) {
+          if (isDuplicateKeyError(insErr)) {
+            await conn.rollback();
+            return json(
+              409,
+              {
+                error:
+                  "入力したメールアドレス、ログインID、または表示名のいずれかが既に使われています。別の内容を入力してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          throw insErr;
+        }
         const userId = ur.insertId;
         let familyId = null;
         let role = "owner";
