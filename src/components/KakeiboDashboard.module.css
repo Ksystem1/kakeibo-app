@@ -223,16 +223,7 @@
   }
 
   .form .field:nth-child(3),
-  .form .field:nth-child(4) {
-    grid-column: 1 / -1;
-  }
-
-  .form .field:nth-child(3) input[type="date"] {
-    padding-left: 0.48rem;
-    padding-right: 0.4rem;
-    font-size: 0.9rem;
-  }
-
+  .form .field:nth-child(4),
   .form > button {
     grid-column: 1 / -1;
   }
