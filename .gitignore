@@ -1,6 +1,9 @@
 node_modules
 dist
-.cursor/
+# Cursor（共有ルールは .cursor/rules をコミット）
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 # Vite 設定は vite.config.ts のみ（.js との二重管理を防ぐ）
 vite.config.js
 *.local

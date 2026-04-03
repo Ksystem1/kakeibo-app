@@ -16,7 +16,8 @@
     "deploy:prod": "node infra/scripts/deploy-production.mjs",
     "deploy:auto": "node infra/scripts/deploy-and-verify.mjs",
     "verify:login": "node infra/scripts/verify-login.mjs",
-    "verify:connectivity": "node infra/scripts/verify-connectivity.mjs"
+    "verify:connectivity": "node infra/scripts/verify-connectivity.mjs",
+    "verify:git-sync": "node infra/scripts/verify-git-sync.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
