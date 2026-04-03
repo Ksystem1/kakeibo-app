@@ -303,6 +303,10 @@
   color: var(--text);
 }
 
+.txDateCell {
+  font-variant-numeric: tabular-nums;
+}
+
 .table tbody tr:last-child td {
   border-bottom: none;
 }

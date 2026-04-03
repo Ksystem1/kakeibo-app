@@ -75,9 +75,34 @@ function formatTxDateYmd(raw: string | Date | null | undefined) {
   return `${y}-${mo}-${day}`;
 }
 
+/** スマホ向け: MM/DD（例: 04/03） */
+function formatTxDateMd(raw: string | Date | null | undefined) {
+  const ymd = formatTxDateYmd(raw);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (m) return `${m[2]}/${m[3]}`;
+  return ymd;
+}
+
+const MOBILE_TX_LIST_BREAKPOINT_PX = 520;
+
+function useCompactTransactionDate() {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(
+      `(max-width: ${MOBILE_TX_LIST_BREAKPOINT_PX}px)`,
+    );
+    const apply = () => setCompact(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+  return compact;
+}
+
 export function KakeiboDashboard() {
   const location = useLocation();
   const routerNavigate = useNavigate();
+  const compactTxDate = useCompactTransactionDate();
   const base = getApiBaseUrl();
   const [ym, setYm] = useState(() => parseMonthParam(location.search) ?? currentYm());
   const [loading, setLoading] = useState(false);
@@ -546,7 +571,14 @@ export function KakeiboDashboard() {
                           aria-label="取引日"
                         />
                       ) : (
-                        formatTxDateYmd(t.transaction_date)
+                        <span
+                          title={formatTxDateYmd(t.transaction_date)}
+                          className={styles.txDateCell}
+                        >
+                          {compactTxDate
+                            ? formatTxDateMd(t.transaction_date)
+                            : formatTxDateYmd(t.transaction_date)}
+                        </span>
                       )}
                     </td>
                     <td>
