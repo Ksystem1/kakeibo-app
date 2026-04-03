@@ -123,6 +123,16 @@
   background: var(--bg-card);
 }
 
+.cardIncome {
+  background: color-mix(in oklab, rgba(82, 224, 196, 0.22) 55%, var(--bg-card));
+  border-color: rgba(61, 214, 180, 0.38);
+}
+
+.cardExpense {
+  background: color-mix(in oklab, rgba(255, 138, 138, 0.2) 50%, var(--bg-card));
+  border-color: rgba(248, 113, 113, 0.32);
+}
+
 .cardLabel {
   font-size: 0.84rem;
   font-weight: 600;
@@ -332,6 +342,72 @@
 
 .table tbody tr:hover td {
   background: rgba(49, 102, 156, 0.16);
+}
+
+.table.txTable tbody tr.trIncome:hover td {
+  background: color-mix(
+    in oklab,
+    rgba(82, 224, 196, 0.28) 45%,
+    rgba(49, 102, 156, 0.12)
+  );
+}
+
+.table.txTable tbody tr.trExpense:hover td {
+  background: color-mix(
+    in oklab,
+    rgba(255, 138, 138, 0.22) 40%,
+    rgba(49, 102, 156, 0.1)
+  );
+}
+
+.trIncome td {
+  background: color-mix(in oklab, rgba(82, 224, 196, 0.14) 65%, var(--panel-bg-strong));
+}
+
+.trExpense td {
+  background: color-mix(in oklab, rgba(255, 138, 138, 0.12) 60%, var(--panel-bg-strong));
+}
+
+.trNeutral td {
+  background: transparent;
+}
+
+/* スマホ: 種別列は非表示（収入/支出は行の背景色で区別）。編集時のみ表示 */
+@media (max-width: 768px) {
+  .txTable .kindCol {
+    display: none;
+  }
+
+  .txTable tr.rowEditing .kindCol {
+    display: table-cell;
+  }
+
+  .memoCell {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+  }
+
+  .memoText {
+    flex: none;
+    width: 100%;
+  }
+
+  .rowActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45rem;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .rowActions .btn {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    justify-self: stretch;
+  }
 }
 
 .kind {

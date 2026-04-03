@@ -359,13 +359,13 @@ export function KakeiboDashboard() {
       ) : null}
 
       <div className={styles.cards}>
-        <div className={styles.card}>
+        <div className={`${styles.card} ${styles.cardIncome}`}>
           <div className={styles.cardLabel}>収入（今月）</div>
           <div className={`${styles.cardValue} ${styles.income}`}>
             {yen.format(incomeTotalNum)}
           </div>
         </div>
-        <div className={styles.card}>
+        <div className={`${styles.card} ${styles.cardExpense}`}>
           <div className={styles.cardLabel}>支出（今月）</div>
           <div className={`${styles.cardValue} ${styles.expense}`}>
             {yen.format(expenseTotalNum)}
@@ -518,11 +518,11 @@ export function KakeiboDashboard() {
         取引一覧（{from} 〜 {to}）
       </h2>
       <div className={styles.tableWrap}>
-        <table className={styles.table}>
+        <table className={`${styles.table} ${styles.txTable}`}>
           <thead>
             <tr>
               <th>日付</th>
-              <th>種別</th>
+              <th className={styles.kindCol}>種別</th>
               <th>カテゴリ</th>
               <th>金額</th>
               <th>メモ</th>
@@ -540,8 +540,17 @@ export function KakeiboDashboard() {
             ) : (
               transactions.map((t) => {
                 const isEditing = edit?.id === t.id;
+                const rowKind =
+                  t.kind === "income"
+                    ? styles.trIncome
+                    : t.kind === "expense"
+                      ? styles.trExpense
+                      : styles.trNeutral;
                 return (
-                  <tr key={t.id}>
+                  <tr
+                    key={t.id}
+                    className={`${rowKind}${isEditing ? ` ${styles.rowEditing}` : ""}`}
+                  >
                     <td>
                       {isEditing ? (
                         <input
@@ -567,7 +576,7 @@ export function KakeiboDashboard() {
                         </span>
                       )}
                     </td>
-                    <td>
+                    <td className={styles.kindCol}>
                       {isEditing ? (
                         <select
                           className={styles.cellInput}
