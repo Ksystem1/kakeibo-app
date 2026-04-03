@@ -14,6 +14,8 @@ const BASE = resolveApiBase();
 
 const FETCH_TIMEOUT_MS = 25_000;
 const RECEIPT_PARSE_TIMEOUT_MS = 45_000;
+/** 全期間の未分類をバッチ処理するため長め */
+const RECEIPT_RECLASSIFY_TIMEOUT_MS = 180_000;
 
 async function apiFetch(
   input: string | URL,
@@ -360,13 +362,23 @@ export async function parseReceiptImage(imageBase64: string) {
   }>(res);
 }
 
-export async function reclassifyUncategorizedReceipts(limit = 100) {
-  const res = await apiFetch(`${BASE}/receipts/reclassify-uncategorized`, {
-    method: "POST",
-    headers: buildHeaders(),
-    body: JSON.stringify({ limit }),
-  });
-  return parse<{ ok: boolean; scanned: number; updated: number; limit: number }>(res);
+export async function reclassifyUncategorizedReceipts() {
+  const res = await apiFetch(
+    `${BASE}/receipts/reclassify-uncategorized`,
+    {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify({}),
+    },
+    RECEIPT_RECLASSIFY_TIMEOUT_MS,
+  );
+  return parse<{
+    ok: boolean;
+    scanned: number;
+    updated: number;
+    batches?: number;
+    batchSize?: number;
+  }>(res);
 }
 
 export async function getFamilyMembers() {

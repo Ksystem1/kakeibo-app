@@ -1011,53 +1011,79 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /receipts/reclassify-uncategorized": {
         const b = JSON.parse(req.body || "{}");
-        const limitRaw = Number.parseInt(String(b.limit ?? "100"), 10);
-        const limit = Number.isFinite(limitRaw) && limitRaw > 0
-          ? Math.min(limitRaw, 500)
-          : 100;
+        const batchSizeRaw = Number.parseInt(String(b.batchSize ?? "100"), 10);
+        const batchSize =
+          Number.isFinite(batchSizeRaw) && batchSizeRaw > 0
+            ? Math.min(batchSizeRaw, 500)
+            : 100;
+        const maxBatchesRaw = Number.parseInt(String(b.maxBatches ?? "2000"), 10);
+        const maxBatches =
+          Number.isFinite(maxBatchesRaw) && maxBatchesRaw > 0
+            ? Math.min(maxBatchesRaw, 5000)
+            : 2000;
 
-        const [rows] = await pool.query(
-          `SELECT t.id, t.memo
-           FROM transactions t
-           WHERE ${txWhere}
-             AND t.kind = 'expense'
-             AND t.category_id IS NULL
-             AND t.memo IS NOT NULL
-             AND TRIM(t.memo) <> ''
-           ORDER BY t.transaction_date DESC, t.id DESC
-           LIMIT ?`,
-          [userId, userId, limit],
-        );
+        let totalScanned = 0;
+        let totalUpdated = 0;
+        let offset = 0;
+        let batches = 0;
 
-        let updated = 0;
-        for (const r of rows) {
-          const txId = Number(r.id);
-          const memo = String(r.memo ?? "");
-          if (!Number.isFinite(txId) || !memo.trim()) continue;
-          const suggestion = await suggestExpenseCategoryForMemo(
-            pool,
-            userId,
-            catWhere,
-            txWhere,
-            memo,
+        while (batches < maxBatches) {
+          const [rows] = await pool.query(
+            `SELECT t.id, t.memo
+             FROM transactions t
+             WHERE ${txWhere}
+               AND t.kind = 'expense'
+               AND t.category_id IS NULL
+               AND t.memo IS NOT NULL
+               AND TRIM(t.memo) <> ''
+             ORDER BY t.transaction_date ASC, t.id ASC
+             LIMIT ? OFFSET ?`,
+            [userId, userId, batchSize, offset],
           );
-          if (!suggestion?.id) continue;
-          const [upd] = await pool.query(
-            `UPDATE transactions t
-             SET t.category_id = ?
-             WHERE t.id = ? AND (${txWhere}) AND t.category_id IS NULL`,
-            [suggestion.id, txId, userId, userId],
-          );
-          if (upd?.affectedRows) updated += 1;
+          const list = Array.isArray(rows) ? rows : [];
+          if (list.length === 0) break;
+
+          batches += 1;
+          let batchUpdated = 0;
+          for (const r of list) {
+            const txId = Number(r.id);
+            const memo = String(r.memo ?? "");
+            if (!Number.isFinite(txId) || !memo.trim()) continue;
+            const suggestion = await suggestExpenseCategoryForMemo(
+              pool,
+              userId,
+              catWhere,
+              txWhere,
+              memo,
+            );
+            if (!suggestion?.id) continue;
+            const [upd] = await pool.query(
+              `UPDATE transactions t
+               SET t.category_id = ?
+               WHERE t.id = ? AND (${txWhere}) AND t.category_id IS NULL`,
+              [suggestion.id, txId, userId, userId],
+            );
+            if (upd?.affectedRows) {
+              batchUpdated += 1;
+              totalUpdated += 1;
+            }
+          }
+          totalScanned += list.length;
+          if (batchUpdated > 0) {
+            offset = 0;
+          } else {
+            offset += list.length;
+          }
         }
 
         return json(
           200,
           {
             ok: true,
-            scanned: Array.isArray(rows) ? rows.length : 0,
-            updated,
-            limit,
+            scanned: totalScanned,
+            updated: totalUpdated,
+            batches,
+            batchSize,
           },
           hdrs,
           skipCors,

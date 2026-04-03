@@ -74,7 +74,7 @@ export function SettingsPage() {
       <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 420 }}>
         <h2 className={styles.sectionTitle}>レシート自動再分類</h2>
         <p className={styles.sub} style={{ marginTop: 0, color: "#d9e7ff" }}>
-          未分類の支出データに対して、履歴・キーワードを使ってカテゴリを再推定します。
+          全期間の未分類の支出に対して、履歴・キーワードを使ってカテゴリを再推定します（件数が多いと時間がかかります）。
         </p>
         <button
           type="button"
@@ -85,9 +85,9 @@ export function SettingsPage() {
             setReclassifyResult(null);
             setReclassifying(true);
             try {
-              const r = await reclassifyUncategorizedReceipts(200);
+              const r = await reclassifyUncategorizedReceipts();
               setReclassifyResult(
-                `再分類完了: 対象 ${r.scanned} 件 / 更新 ${r.updated} 件`,
+                `再分類完了: 走査 ${r.scanned} 件 / 更新 ${r.updated} 件`,
               );
             } catch (e) {
               setReclassifyResult(
