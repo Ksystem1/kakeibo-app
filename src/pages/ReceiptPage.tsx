@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, VideoHTMLAttributes } from "react";
+import type { ChangeEvent, RefObject, VideoHTMLAttributes } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { createTransaction, getCategories, parseReceiptImage } from "../lib/api";
@@ -129,56 +129,21 @@ function formatGetUserMediaError(e: unknown): string {
   return "カメラを起動できませんでした。";
 }
 
-/**
- * iOS 18 系は facingMode だけだと複数背面レンズを切り替えたり、プレビューが黒くなる報告がある。
- * 許可後に付く device label から「広角の背面」を優先して選ぶ。
- */
-function pickIosBackCameraDeviceId(devices: MediaDeviceInfo[]): string | null {
-  const videoInputs = devices.filter((d) => d.kind === "videoinput" && d.deviceId);
-  if (videoInputs.length === 0) return null;
+/** モバイル「写真を選ぶ」: capture なし・HEIC 等を明示してフォトライブラリ寄りのピッカーを誘導 */
+const MOBILE_GALLERY_ACCEPT =
+  "image/jpeg,image/jpg,image/png,image/heic,image/heif,image/webp,.heic,.heif,image/*";
 
-  const L = (s: string) => s.toLowerCase();
-  const labelIsBack = (label: string) => {
-    const x = L(label);
-    return (
-      x.includes("back") ||
-      x.includes("rear") ||
-      x.includes("環境") ||
-      x.includes("背面") ||
-      x.includes("後方")
-    );
-  };
-  const labelIsFront = (label: string) => {
-    const x = L(label);
-    return (
-      x.includes("front") ||
-      x.includes("selfie") ||
-      x.includes("前面") ||
-      x.includes("フェイス") ||
-      x.includes("インカメ")
-    );
-  };
-  const labelIsUltra = (label: string) => {
-    const x = L(label);
-    return x.includes("ultra") || x.includes("超広角");
-  };
-
-  const labeled = videoInputs.filter((d) => d.label.trim().length > 0);
-  const backs = labeled.filter((d) => labelIsBack(d.label));
-  const pool =
-    backs.length > 0 ? backs : labeled.filter((d) => !labelIsFront(d.label));
-  const usePool = pool.length > 0 ? pool : videoInputs;
-
-  const wide = usePool.find((d) => {
-    const x = L(d.label);
-    return (x.includes("wide") || x.includes("広角")) && !labelIsUltra(d.label);
-  });
-  if (wide) return wide.deviceId;
-
-  const nonUltra = usePool.find((d) => !labelIsUltra(d.label));
-  if (nonUltra) return nonUltra.deviceId;
-
-  return usePool[0]?.deviceId ?? null;
+async function waitForCameraVideoElement(
+  ref: RefObject<HTMLVideoElement | null>,
+  maxMs: number,
+): Promise<HTMLVideoElement | null> {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    const el = ref.current;
+    if (el) return el;
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  }
+  return ref.current;
 }
 
 export function ReceiptPage() {
@@ -295,7 +260,9 @@ export function ReceiptPage() {
     stream: MediaStream,
     mobilePreview: boolean,
   ): Promise<boolean> {
-    const v = cameraVideoRef.current;
+    const v =
+      cameraVideoRef.current ??
+      (mobilePreview ? await waitForCameraVideoElement(cameraVideoRef, 2800) : null);
     if (!v) return false;
 
     for (const t of stream.getVideoTracks()) {
@@ -353,6 +320,7 @@ export function ReceiptPage() {
     setCameraBusy(true);
     setNotice(null);
     setCameraHint(null);
+    setCameraPermissionHelpVisible(false);
 
     const mobile = touchUi;
 
@@ -376,136 +344,147 @@ export function ReceiptPage() {
     ];
 
     try {
-      const hasMd = Boolean(navigator.mediaDevices);
-      let videoInputCount = 0;
-      let enumerateFailed = false;
-      if (hasMd) {
-        try {
-          const devs = await navigator.mediaDevices.enumerateDevices();
-          videoInputCount = devs.filter((d) => d.kind === "videoinput").length;
-        } catch {
-          enumerateFailed = true;
-        }
-      }
-
-      let permLine = "Permissions API: 未対応または利用不可";
-      if (navigator.permissions?.query) {
-        try {
-          const q = await navigator.permissions.query({ name: "camera" as PermissionName });
-          permLine = `カメラ権限: ${q.state}`;
-          if (q.state === "denied") {
-            setCameraPermissionHelpVisible(true);
-          }
-        } catch {
-          permLine = "Permissions API: query 失敗";
-        }
-      }
-
-      const countLine = !hasMd
-        ? "videoinput: （mediaDevices なし）"
-        : enumerateFailed
-          ? "videoinput: 列挙失敗"
-          : `videoinput: ${videoInputCount}件`;
-
-      globalThis.alert(`mediaDevices: ${hasMd ? "OK" : "Error"}\n${countLine}\n${permLine}`);
-
       if (!navigator.mediaDevices?.getUserMedia) {
         if (mobile && isIOS) {
           setCameraBusy(false);
-          setCameraPermissionHelpVisible(true);
           openNativeCameraPicker();
           return;
         }
         throw new Error("このブラウザはカメラAPIに対応していません。");
       }
 
-      flushSync(() => {
-        setCameraOpen(true);
-      });
-      const candidates = mobile ? mobileCandidates : desktopCandidates;
-      let stream: MediaStream | null = null;
-      let lastNonPermissionError: unknown = null;
+      /**
+       * モバイル（特に iOS Safari）では、タップ直後の user gesture が
+       * alert / await enumerate / permissions.query の後に失効し getUserMedia が失敗しやすい。
+       * そのためモバイルでは getUserMedia を最優先し、プリチェックは行わない。
+       */
+      if (mobile) {
+        flushSync(() => {
+          setCameraOpen(true);
+        });
+        await new Promise<void>((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => r())),
+        );
 
-      for (let i = 0; i < candidates.length; i += 1) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia(candidates[i]);
-        } catch (e) {
-          if (isPermissionDeniedError(e)) throw e;
-          lastNonPermissionError = e;
-          stream = null;
-          continue;
-        }
-        const ok = await attachStreamToVideo(stream, mobile);
-        if (ok) {
-          cameraStreamRef.current = stream;
-          setCameraPermissionHelpVisible(false);
-          if (i > 0) {
-            setCameraHint("別カメラ設定で起動しました。映像が暗い場合はそのまま撮影をお試しください。");
-          }
-          break;
-        }
-        stream.getTracks().forEach((t) => t.stop());
-        stream = null;
-      }
+        let stream: MediaStream | null = null;
+        let lastNonPermissionError: unknown = null;
 
-      if (!stream && mobile && isIOS) {
-        try {
-          let devices = await navigator.mediaDevices.enumerateDevices();
-          const noLabels = devices.every(
-            (d) => d.kind !== "videoinput" || !d.label.trim(),
-          );
-          if (noLabels) {
-            const probe = await navigator.mediaDevices.getUserMedia({
-              video: true,
-              audio: false,
-            });
-            probe.getTracks().forEach((t) => t.stop());
-            devices = await navigator.mediaDevices.enumerateDevices();
+        for (let i = 0; i < mobileCandidates.length; i += 1) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(mobileCandidates[i]);
+          } catch (e) {
+            if (isPermissionDeniedError(e)) throw e;
+            lastNonPermissionError = e;
+            stream = null;
+            continue;
           }
-          const deviceId = pickIosBackCameraDeviceId(devices);
-          if (deviceId) {
-            try {
-              const s2 = await navigator.mediaDevices.getUserMedia({
-                video: { deviceId: { exact: deviceId } },
-                audio: false,
-              });
-              const ok2 = await attachStreamToVideo(s2, mobile);
-              if (ok2) {
-                stream = s2;
-                cameraStreamRef.current = s2;
-                setCameraPermissionHelpVisible(false);
-                setCameraHint(
-                  "背面カメラを個別に指定して起動しました。まだ真っ暗な場合は下の案内をご確認ください。",
-                );
-              } else {
-                s2.getTracks().forEach((t) => t.stop());
-              }
-            } catch (e) {
-              if (isPermissionDeniedError(e)) throw e;
-              lastNonPermissionError = e;
+          const ok = await attachStreamToVideo(stream, true);
+          if (ok) {
+            cameraStreamRef.current = stream;
+            setCameraPermissionHelpVisible(false);
+            if (i > 0) {
+              setCameraHint("別カメラ設定で起動しました。映像が暗い場合はそのまま撮影をお試しください。");
             }
+            break;
           }
-        } catch (e) {
-          if (isPermissionDeniedError(e)) throw e;
-          lastNonPermissionError = e;
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
         }
-      }
 
-      if (!stream) {
-        if (mobile && isIOS) {
-          setCameraOpen(false);
-          setCameraBusy(false);
-          setCameraHint(
-            "端末のカメラアプリに切り替わります。ここでもプレビューが真っ暗な場合は、純正「カメラ」アプリで同様か確認し、再起動や iOS アップデートを試してください。撮影済みなら「写真を選ぶ」から選べます。",
-          );
-          openNativeCameraPicker(false);
-          return;
+        if (!stream) {
+          if (isIOS) {
+            setCameraOpen(false);
+            setCameraBusy(false);
+            setCameraHint(
+              "アプリ内のプレビューが使えないため、端末のカメラに切り替わります。撮影後に解析が続きます。",
+            );
+            openNativeCameraPicker(false);
+            return;
+          }
+          const extra =
+            lastNonPermissionError instanceof Error
+              ? `（${lastNonPermissionError.message}）`
+              : "";
+          throw new Error(`カメラ映像を取得できませんでした。${extra}`.trim());
         }
-        const extra =
-          lastNonPermissionError instanceof Error
-            ? `（${lastNonPermissionError.message}）`
-            : "";
-        throw new Error(`カメラ映像を取得できませんでした。${extra}`.trim());
+      } else {
+        const hasMd = Boolean(navigator.mediaDevices);
+        let videoInputCount = 0;
+        let enumerateFailed = false;
+        if (hasMd) {
+          try {
+            const devs = await navigator.mediaDevices.enumerateDevices();
+            videoInputCount = devs.filter((d) => d.kind === "videoinput").length;
+          } catch {
+            enumerateFailed = true;
+          }
+        }
+
+        let permLine = "Permissions API: 未対応または利用不可";
+        if (navigator.permissions?.query) {
+          try {
+            const q = await navigator.permissions.query({ name: "camera" as PermissionName });
+            permLine = `カメラ権限: ${q.state}`;
+            if (q.state === "denied") {
+              setCameraPermissionHelpVisible(true);
+            }
+          } catch {
+            permLine = "Permissions API: query 失敗";
+          }
+        }
+
+        const countLine = !hasMd
+          ? "videoinput: （mediaDevices なし）"
+          : enumerateFailed
+            ? "videoinput: 列挙失敗"
+            : `videoinput: ${videoInputCount}件`;
+
+        console.debug("[receipt camera precheck]", {
+          mediaDevices: hasMd ? "OK" : "Error",
+          countLine,
+          permLine,
+        });
+        globalThis.alert(`mediaDevices: ${hasMd ? "OK" : "Error"}\n${countLine}\n${permLine}`);
+
+        flushSync(() => {
+          setCameraOpen(true);
+        });
+        await new Promise<void>((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => r())),
+        );
+
+        let stream: MediaStream | null = null;
+        let lastNonPermissionError: unknown = null;
+
+        for (let i = 0; i < desktopCandidates.length; i += 1) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(desktopCandidates[i]);
+          } catch (e) {
+            if (isPermissionDeniedError(e)) throw e;
+            lastNonPermissionError = e;
+            stream = null;
+            continue;
+          }
+          const ok = await attachStreamToVideo(stream, false);
+          if (ok) {
+            cameraStreamRef.current = stream;
+            setCameraPermissionHelpVisible(false);
+            if (i > 0) {
+              setCameraHint("別カメラ設定で起動しました。映像が暗い場合はそのまま撮影をお試しください。");
+            }
+            break;
+          }
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
+        }
+
+        if (!stream) {
+          const extra =
+            lastNonPermissionError instanceof Error
+              ? `（${lastNonPermissionError.message}）`
+              : "";
+          throw new Error(`カメラ映像を取得できませんでした。${extra}`.trim());
+        }
       }
     } catch (e) {
       setCameraOpen(false);
@@ -674,17 +653,34 @@ export function ReceiptPage() {
         tabIndex={-1}
         aria-hidden
       />
-      <input
-        ref={galleryInputRef}
-        id={galleryInputId}
-        type="file"
-        accept="image/*"
-        className="visually-hidden"
-        disabled={loading}
-        onChange={handleFileChange}
-        tabIndex={-1}
-        aria-hidden
-      />
+      {touchUi ? (
+        <input
+          key="receipt-gallery-mobile"
+          ref={galleryInputRef}
+          id={galleryInputId}
+          type="file"
+          accept={MOBILE_GALLERY_ACCEPT}
+          multiple={false}
+          className="visually-hidden"
+          disabled={loading}
+          onChange={handleFileChange}
+          tabIndex={-1}
+          aria-hidden
+        />
+      ) : (
+        <input
+          key="receipt-gallery-pc"
+          ref={galleryInputRef}
+          id={galleryInputId}
+          type="file"
+          accept="image/*"
+          className="visually-hidden"
+          disabled={loading}
+          onChange={handleFileChange}
+          tabIndex={-1}
+          aria-hidden
+        />
+      )}
       <div className={styles.receiptPickRow}>
         <button
           type="button"
