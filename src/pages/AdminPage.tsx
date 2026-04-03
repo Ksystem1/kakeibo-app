@@ -46,6 +46,17 @@ function formatDateTime(value: string | null | undefined): string {
   }).format(d);
 }
 
+function formatDateOnly(value: string | null | undefined): string {
+  if (value == null || value === "") return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return new Intl.DateTimeFormat("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
 export function AdminPage() {
   const [items, setItems] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -218,7 +229,7 @@ export function AdminPage() {
                 <td style={{ padding: "0.7rem" }}>{u.id}</td>
                 <td style={{ padding: "0.7rem" }}>{u.email}</td>
                 <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
-                  {formatDateTime(u.created_at)}
+                  {formatDateOnly(u.created_at)}
                 </td>
                 <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
                   {formatDateTime(u.last_login_at)}
