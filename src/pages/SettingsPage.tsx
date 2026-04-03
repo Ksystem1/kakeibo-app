@@ -12,7 +12,7 @@ export function SettingsPage() {
     <div className={styles.wrap}>
       <h1 className={styles.title}>設定</h1>
       <p className={styles.sub}>
-        背景色（4 種）と文字サイズを変更します（localStorage に保存）。
+        背景色（4 種）と文字サイズを変更します。
       </p>
       <div className={styles.settingsPanel} style={{ maxWidth: 360 }}>
         <label className={styles.settingsLabel}>表示テーマ</label>
