@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { loginRequest, normalizeAuthContextUser } from "../lib/api";
+import { AuthHeroAside } from "../components/AuthHeroAside";
 import styles from "../components/LoginScreen.module.css";
 import { MobileAccessQr } from "../components/MobileAccessQr";
 
@@ -43,17 +44,15 @@ export function LoginPage() {
 
   return (
     <div className={styles.page}>
-      <aside className={styles.hero}>
-        <div className={styles.heroInner}>
-          <span className={styles.badge}>Kakeibo</span>
-          <h1 className={styles.heroTitle}>夫婦で共有。みんなの家計簿</h1>
-          <p className={styles.heroDesc}>
-            メールアドレスまたはログインIDでサインイン。
-            <br />
-            家計簿を共有できます。
-          </p>
-        </div>
-      </aside>
+      <AuthHeroAside>
+        <span className={styles.badge}>Kakeibo</span>
+        <h1 className={styles.heroTitle}>夫婦で共有。みんなの家計簿</h1>
+        <p className={styles.heroDesc}>
+          メールアドレスまたはログインIDでサインイン。
+          <br />
+          家計簿を共有できます。
+        </p>
+      </AuthHeroAside>
       <main className={styles.panel}>
         <div className={styles.card}>
           <header className={styles.cardHeader}>

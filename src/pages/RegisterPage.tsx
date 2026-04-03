@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { normalizeAuthContextUser, registerRequest } from "../lib/api";
+import { AuthHeroAside } from "../components/AuthHeroAside";
 import styles from "../components/LoginScreen.module.css";
 
 const PW_RE = /^[a-zA-Z0-9]{8,}$/;
@@ -94,17 +95,15 @@ export function RegisterPage() {
 
   return (
     <div className={styles.page}>
-      <aside className={styles.hero}>
-        <div className={styles.heroInner}>
-          <span className={styles.badge}>Kakeibo</span>
-          <h1 className={styles.heroTitle}>はじめまして</h1>
-          <p className={styles.heroDesc}>
-            家族用の家計簿を作成します。
-            <br />
-            初期はご本人のみ。登録後に配偶者などを招待して共有できます。
-          </p>
-        </div>
-      </aside>
+      <AuthHeroAside>
+        <span className={styles.badge}>Kakeibo</span>
+        <h1 className={styles.heroTitle}>はじめまして</h1>
+        <p className={styles.heroDesc}>
+          家族用の家計簿を作成します。
+          <br />
+          初期はご本人のみ。登録後に配偶者などを招待して共有できます。
+        </p>
+      </AuthHeroAside>
       <main className={styles.panel}>
         <div className={styles.card}>
           <header className={styles.cardHeader}>
