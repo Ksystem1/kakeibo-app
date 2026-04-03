@@ -1,5 +1,7 @@
 node_modules
 dist
+# npm prebuild で scripts/generate-sitemap.mjs が生成
+public/sitemap.xml
 # Cursor（共有ルールは .cursor/rules をコミット）
 .cursor/*
 !.cursor/rules/

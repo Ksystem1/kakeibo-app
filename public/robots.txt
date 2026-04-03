@@ -1,0 +1,5 @@
+# Kakeibo SPA — https://ksystemapp.com/kakeibo/
+User-agent: *
+Allow: /kakeibo/
+
+Sitemap: https://ksystemapp.com/kakeibo/sitemap.xml
