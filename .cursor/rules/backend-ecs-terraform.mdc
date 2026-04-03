@@ -1,0 +1,25 @@
+---
+description: 本番 backend は GitHub Actions (deploy.yml) と Terraform 前提で整合を保つ
+globs: backend/**/*,infra/terraform-ecs-express/**/*,.github/workflows/deploy.yml
+alwaysApply: false
+---
+
+# Backend デプロイとインフラ整合
+
+## デプロイの前提
+
+- **本番 backend の反映は GitHub Actions の `.github/workflows/deploy.yml` を正とする**（ECR push + `infra/terraform-ecs-express` の Terraform apply）。
+- ローカルから `npm run deploy:backend` は **App Runner 用**の案内のみ。ECS 本番とは別経路なので、ECS 向け変更の完了条件にしない。
+- バックエンドの修正をマージ・リリースする場合は、**`deploy.yml` が成功する想定でコード・設定を書く**（ビルド失敗・Terraform 差分エラーにならないようにする）。
+
+## Terraform / `terraform.tfvars` との整合
+
+- `infra/terraform-ecs-express/terraform.tfvars` の **`container_image`**、**`app_env_vars`**、**`app_secret_arns`**、VPC/サブネット/RDS 関連の変数は、**変更のたびに意図した差分か確認する**。
+- workflow は `terraform plan` に `-var="container_image=<GitHub SHA タグ>"` を渡すため、**手元の `terraform.tfvars` のタグと本番イメージが一時的にずれてもよいが、手動 `terraform apply` だけで運用するとドリフトしやすい**。本番は **Actions 経由の apply を優先**する。
+- インフラ変数を変えたら、**該当する `variables.tf` / `main.tf` と README（`infra/DEPLOY-BACKEND-ECS.md`）に矛盾がないか**も見直す。
+
+## 修正後のダブルチェック（目安）
+
+1. `backend/` の変更が Docker ビルド（`backend/Dockerfile`）で問題ないか。
+2. `deploy.yml` のトリガーパス（`backend/**`, `infra/terraform-ecs-express/**`）に含まれるか。
+3. 新しい環境変数・シークレットを追加した場合、`terraform.tfvars` の `app_env_vars` / `app_secret_arns` と ECS タスク定義の整合。
