@@ -83,26 +83,9 @@ function formatTxDateMd(raw: string | Date | null | undefined) {
   return ymd;
 }
 
-const MOBILE_TX_LIST_BREAKPOINT_PX = 520;
-
-function useCompactTransactionDate() {
-  const [compact, setCompact] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia(
-      `(max-width: ${MOBILE_TX_LIST_BREAKPOINT_PX}px)`,
-    );
-    const apply = () => setCompact(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
-  return compact;
-}
-
 export function KakeiboDashboard() {
   const location = useLocation();
   const routerNavigate = useNavigate();
-  const compactTxDate = useCompactTransactionDate();
   const base = getApiBaseUrl();
   const [ym, setYm] = useState(() => parseMonthParam(location.search) ?? currentYm());
   const [loading, setLoading] = useState(false);
@@ -575,9 +558,12 @@ export function KakeiboDashboard() {
                           title={formatTxDateYmd(t.transaction_date)}
                           className={styles.txDateCell}
                         >
-                          {compactTxDate
-                            ? formatTxDateMd(t.transaction_date)
-                            : formatTxDateYmd(t.transaction_date)}
+                          <span className={styles.txDateFull}>
+                            {formatTxDateYmd(t.transaction_date)}
+                          </span>
+                          <span className={styles.txDateShort}>
+                            {formatTxDateMd(t.transaction_date)}
+                          </span>
                         </span>
                       )}
                     </td>

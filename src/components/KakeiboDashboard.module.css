@@ -307,6 +307,25 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* JS の matchMedia では初回描画がズレるため、CSS で切替（スマホ幅はフォームと揃えつつタブレット縦も含める） */
+.txDateShort {
+  display: none;
+}
+
+.txDateFull {
+  display: inline;
+}
+
+@media (max-width: 768px) {
+  .txDateShort {
+    display: inline;
+  }
+
+  .txDateFull {
+    display: none;
+  }
+}
+
 .table tbody tr:last-child td {
   border-bottom: none;
 }
