@@ -1,12 +1,11 @@
 /**
  * Amazon Textract AnalyzeExpense — レシート画像の解析とレスポンス整形
  * - ECS / App Runner いずれでも使えるよう、AWS 設定は注入可能にする
- * - 一時的な DNS/ネットワーク異常（例: getaddrinfo EBUSY）は限定リトライ
+ * - 一時的なネットワーク異常は限定リトライ（標準 DNS / Node の lookup を使用）
  */
 import { AnalyzeExpenseCommand, TextractClient } from "@aws-sdk/client-textract";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
-import dns from "node:dns";
-import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
+import { Agent as HttpsAgent } from "node:https";
 
 const DEFAULT_REGION = "ap-northeast-1";
 const DEFAULT_TIMEOUT_MS = 12_000;
@@ -25,20 +24,11 @@ function getDefaultAwsConfig() {
     process.env.AWS_REGION ||
     process.env.AWS_DEFAULT_REGION ||
     DEFAULT_REGION;
-  const textractHost = `textract.${region}.amazonaws.com`;
+  // カスタム lookup（DoH 等）は、一部環境で callback に undefined IP が渡り
+  // 「Invalid IP address: undefined」になるため使わない。標準 DNS + NAT/VPC で解決する。
   const httpsAgent = new HttpsAgent({
     keepAlive: true,
     maxSockets: 50,
-    lookup(hostname, options, callback) {
-      if (hostname !== textractHost) {
-        dns.lookup(hostname, options, callback);
-        return;
-      }
-      const run = async () => resolveTextractAddress(hostname);
-      run()
-        .then((r) => callback(null, r.address, r.family))
-        .catch((e) => callback(e));
-    },
   });
   return {
     region,
@@ -57,115 +47,6 @@ function textractDisabled() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * UDP/53 が塞がっていても DNS 解決できるよう、DoH（DNS over HTTPS）で A レコードを取得する。
- * 呼び出し先は固定 IP（1.1.1.1）なので、この処理自体には DNS が不要。
- */
-function resolveARecordViaCloudflareDoH(name) {
-  return resolveARecordViaDoH({
-    ipAddress: "1.1.1.1",
-    serverName: "cloudflare-dns.com",
-    hostHeader: "cloudflare-dns.com",
-    name,
-  });
-}
-
-function resolveARecordViaGoogleDoH(name) {
-  return resolveARecordViaDoH({
-    ipAddress: "8.8.8.8",
-    serverName: "dns.google",
-    hostHeader: "dns.google",
-    name,
-  });
-}
-
-function resolveARecordViaDoH({ ipAddress, serverName, hostHeader, name }) {
-  const urlPath = `/dns-query?name=${encodeURIComponent(name)}&type=A`;
-  const headers = {
-    Accept: "application/dns-json",
-    // Host/SNI を合わせて証明書エラーを避ける
-    host: hostHeader,
-  };
-
-  return new Promise((resolve, reject) => {
-    const req = httpsRequest(
-      {
-        hostname: ipAddress,
-        port: 443,
-        method: "GET",
-        path: urlPath,
-        headers,
-        servername: serverName,
-        timeout: 10_000,
-      },
-      (res) => {
-        let body = "";
-        res.setEncoding("utf8");
-        res.on("data", (chunk) => {
-          body += chunk;
-        });
-        res.on("end", () => {
-          try {
-            if (res.statusCode !== 200) {
-              reject(new Error(`DoH: unexpected status ${res.statusCode}`));
-              return;
-            }
-            const data = JSON.parse(body);
-            const ans = Array.isArray(data?.Answer) ? data.Answer[0] : null;
-            const ip = ans?.data;
-            if (typeof ip !== "string" || !ip) {
-              reject(new Error("DoH: A record not found"));
-              return;
-            }
-            resolve(ip);
-          } catch (e) {
-            reject(e);
-          }
-        });
-      },
-    );
-
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy(new Error("DoH: timeout"));
-    });
-    req.end();
-  });
-}
-
-async function resolveTextractAddress(hostname) {
-  let lastErr;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      const addresses = await dns.promises.resolve4(hostname);
-      if (Array.isArray(addresses) && addresses.length > 0) {
-        return { address: addresses[0], family: 4 };
-      }
-    } catch (e) {
-      lastErr = e;
-      const codeStr = String(e?.code ?? "");
-      const msgStr = String(e?.message ?? "");
-      if (codeStr === "ENOTFOUND" || /ENOTFOUND/i.test(msgStr)) {
-        try {
-          const ip = await resolveARecordViaCloudflareDoH(hostname);
-          return { address: ip, family: 4 };
-        } catch (doh1Err) {
-          lastErr = doh1Err;
-          try {
-            const ip = await resolveARecordViaGoogleDoH(hostname);
-            return { address: ip, family: 4 };
-          } catch (doh2Err) {
-            lastErr = doh2Err;
-          }
-        }
-      }
-      if (!isTransientNetworkError(e) || attempt >= 3) break;
-      await sleep(80 * attempt);
-    }
-  }
-  throw lastErr ?? new Error("Textract endpoint lookup failed");
 }
 
 function backoffMs(attempt) {
