@@ -1,7 +1,8 @@
 /** レシート用: ブラウザで JPEG に正規化し、長辺を抑えて Textract が扱いやすい base64 を返す */
 
-const MAX_EDGE = 2048;
-const JPEG_QUALITY = 0.88;
+/** Textract 向けに長辺をやや大きめに保ち、店名・細字の読み取りを助ける */
+const MAX_EDGE = 2560;
+const JPEG_QUALITY = 0.9;
 const MAX_INPUT_BYTES = 20 * 1024 * 1024;
 
 function readAsDataUrlBase64(blob: Blob): Promise<string> {

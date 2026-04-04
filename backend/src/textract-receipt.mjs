@@ -122,10 +122,21 @@ function normalizeDateText(raw) {
   return s;
 }
 
+const VENDOR_SUMMARY_TYPES = new Set([
+  "VENDOR_NAME",
+  "RECEIVER_NAME",
+  "NAME",
+  "MERCHANT_NAME",
+  "VENDOR",
+  "SELLER_NAME",
+  "STORE_NAME",
+]);
+
 function summaryFromFields(summaryFields) {
   const out = { vendorName: null, totalAmount: null, date: null, fieldConfidence: {} };
   if (!Array.isArray(summaryFields)) return out;
   const totalCandidates = [];
+  const vendorCandidates = [];
   let subtotal = null;
   let subtotalConf = null;
   for (const f of summaryFields) {
@@ -133,11 +144,8 @@ function summaryFromFields(summaryFields) {
     const text = fieldText(f);
     const conf = fieldConfidence01(f);
     if (!t) continue;
-    if (["VENDOR_NAME", "RECEIVER_NAME", "NAME", "MERCHANT_NAME", "VENDOR"].includes(t)) {
-      if (text && !out.vendorName) {
-        out.vendorName = text;
-        out.fieldConfidence.vendorName = conf;
-      }
+    if (VENDOR_SUMMARY_TYPES.has(t) && text) {
+      vendorCandidates.push({ text, conf: typeof conf === "number" ? conf : 0 });
     }
     if (TOTAL_FIELD_TYPES.has(t)) {
       const amt = parseMoney(text);
@@ -163,6 +171,14 @@ function summaryFromFields(summaryFields) {
         out.fieldConfidence.date = conf;
       }
     }
+  }
+  if (vendorCandidates.length > 0) {
+    vendorCandidates.sort(
+      (a, b) => b.conf - a.conf || b.text.length - a.text.length || a.text.localeCompare(b.text),
+    );
+    const best = vendorCandidates[0];
+    out.vendorName = best.text;
+    out.fieldConfidence.vendorName = best.conf;
   }
   if (totalCandidates.length > 0) {
     totalCandidates.sort((a, b) => b.amt - a.amt);
@@ -209,6 +225,8 @@ function lineItemsFromExpenseDoc(doc) {
         fieldText(map.ITEM) ||
         fieldText(map.EXPENSE_ROW) ||
         fieldText(map.PRODUCT_CODE) ||
+        fieldText(map.DESCRIPTION) ||
+        fieldText(map.PRODUCT_NAME) ||
         "（品目）";
       const amount = parseMoney(
         fieldText(map.PRICE) || fieldText(map.UNIT_PRICE) || fieldText(map.AMOUNT),

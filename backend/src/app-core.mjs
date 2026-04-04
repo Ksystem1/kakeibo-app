@@ -70,6 +70,42 @@ const RECEIPT_CATEGORY_ALIASES = {
   leisure: ["娯楽", "交際", "外食", "趣味", "レジャー"],
 };
 
+/** 店舗名に現れやすい語（履歴の次に、明細キーワードより店舗を強く効かせる） */
+const RECEIPT_VENDOR_TAG_HINTS = {
+  leisure: [
+    "ディズニー",
+    "ディズニーランド",
+    "ディズニーシー",
+    "ユニバーサル",
+    "usj",
+    "映画館",
+    "シネマ",
+    "イオンシネマ",
+  ],
+  food: [
+    "セブンイレブン",
+    "セブン",
+    "ローソン",
+    "ファミリーマート",
+    "ファミマ",
+    "イオン",
+    "まいばすけっと",
+    "マツキヨ",
+    "マツモトキヨシ",
+    "スターバックス",
+    "スタバ",
+    "マクドナルド",
+    "マック",
+    "すき家",
+    "吉野家",
+    "はま寿司",
+    "スシロー",
+    "くら寿司",
+  ],
+  daily: ["ダイソー", "セリア", "キャンドゥ", "無印"],
+  transport: ["jr", "地下鉄", "メトロ", "モバイルsuica", "pasmo"],
+};
+
 function normalizeKeyword(s) {
   return String(s ?? "").toLowerCase().replace(/\s+/g, "").replace(/[　]/g, "");
 }
@@ -156,8 +192,9 @@ async function suggestExpenseCategoryForReceipt(pool, userId, catWhere, txWhere,
   const fromHistory = await suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor);
   if (fromHistory?.id) return fromHistory;
 
-  const corpus = normalizeKeyword(`${vendor ?? ""} ${(items ?? []).map((x) => x?.name ?? "").join(" ")}`);
-  if (!corpus) return null;
+  const vend = normalizeKeyword(vendor ?? "");
+  const itemCorpus = normalizeKeyword((items ?? []).map((x) => x?.name ?? "").join(" "));
+  if (!vend && !itemCorpus) return null;
   const [rows] = await pool.query(
     `SELECT c.id, c.name
      FROM categories c
@@ -169,8 +206,22 @@ async function suggestExpenseCategoryForReceipt(pool, userId, catWhere, txWhere,
 
   const tagScore = {};
   for (const [tag, words] of Object.entries(RECEIPT_CATEGORY_KEYWORDS)) {
-    const score = words.reduce((acc, w) => (corpus.includes(normalizeKeyword(w)) ? acc + 1 : acc), 0);
-    if (score > 0) tagScore[tag] = score;
+    let score = 0;
+    for (const w of words) {
+      const nw = normalizeKeyword(w);
+      if (!nw) continue;
+      if (itemCorpus.includes(nw)) score += 3;
+      if (vend.includes(nw)) score += 1;
+    }
+    if (score > 0) tagScore[tag] = (tagScore[tag] ?? 0) + score;
+  }
+  for (const [tag, words] of Object.entries(RECEIPT_VENDOR_TAG_HINTS)) {
+    for (const w of words) {
+      const nw = normalizeKeyword(w);
+      if (nw && vend.includes(nw)) {
+        tagScore[tag] = (tagScore[tag] ?? 0) + 4;
+      }
+    }
   }
 
   let best = null;

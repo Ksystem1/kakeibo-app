@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import {
   createTransaction,
   deleteTransaction,
@@ -83,10 +84,30 @@ function formatTxDateMd(raw: string | Date | null | undefined) {
   return ymd;
 }
 
+/** 編集用: MM/DD 入力 → YYYY-MM-DD（年は現在の取引日から継承） */
+function parseMdToYmd(md: string, yearSourceYmd: string) {
+  const y = /^(\d{4})/.exec(yearSourceYmd)?.[1];
+  if (!y) return null;
+  const m = /^(\d{1,2})[/.](\d{1,2})$/.exec(md.trim());
+  if (!m) return null;
+  const mo = Number.parseInt(m[1], 10);
+  const d = Number.parseInt(m[2], 10);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function yearOptions() {
+  const cy = new Date().getFullYear();
+  const out: number[] = [];
+  for (let yy = cy - 5; yy <= cy + 2; yy += 1) out.push(yy);
+  return out;
+}
+
 export function KakeiboDashboard() {
   const location = useLocation();
   const routerNavigate = useNavigate();
   const base = getApiBaseUrl();
+  const txMobileNarrow = useMediaQuery("(max-width: 768px)");
   const [ym, setYm] = useState(() => parseMonthParam(location.search) ?? currentYm());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -226,6 +247,8 @@ export function KakeiboDashboard() {
     category_id: string;
   } | null>(null);
   const [editSaving, setEditSaving] = useState(false);
+  /** モバイル編集時の日付（MM/DD）。ネイティブ date の yyyy/mm/dd 表示を避ける */
+  const [mobileEditDateText, setMobileEditDateText] = useState("");
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -262,18 +285,21 @@ export function KakeiboDashboard() {
   );
 
   function beginEdit(t: Transaction) {
+    const ymd = formatTxDateYmd(t.transaction_date);
     setEdit({
       id: t.id,
       kind: t.kind === "income" ? "income" : "expense",
       amount: String(numAmount(t.amount)),
-      transaction_date: formatTxDateYmd(t.transaction_date),
+      transaction_date: ymd,
       memo: t.memo ?? "",
       category_id: t.category_id != null ? String(t.category_id) : "",
     });
+    setMobileEditDateText(formatTxDateMd(t.transaction_date));
   }
 
   function cancelEdit() {
     setEdit(null);
+    setMobileEditDateText("");
   }
 
   async function saveEdit() {
@@ -323,15 +349,54 @@ export function KakeiboDashboard() {
           <h1 className={styles.title}>家計簿</h1>
         </div>
         <div className={styles.actions}>
-          <label htmlFor="kb-month" className={styles.monthRow}>
+          <label htmlFor={txMobileNarrow ? undefined : "kb-month"} className={styles.monthRow}>
             表示月
-            <input
-              id="kb-month"
-              className={styles.monthInput}
-              type="month"
-              value={ym}
-              onChange={(ev) => handleMonthChange(ev.target.value)}
-            />
+            {txMobileNarrow ? (
+              <span className={styles.monthPickerMobile}>
+                <select
+                  className={styles.monthSelect}
+                  aria-label="表示年"
+                  value={ym.split("-")[0]}
+                  onChange={(ev) => {
+                    const mo = ym.split("-")[1] || "01";
+                    handleMonthChange(`${ev.target.value}-${mo}`);
+                  }}
+                >
+                  {yearOptions().map((yy) => (
+                    <option key={yy} value={yy}>
+                      {yy}年
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className={styles.monthSelect}
+                  aria-label="表示月"
+                  value={ym.split("-")[1] || "01"}
+                  onChange={(ev) => {
+                    const y = ym.split("-")[0] || String(new Date().getFullYear());
+                    handleMonthChange(`${y}-${ev.target.value}`);
+                  }}
+                >
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((mo) => (
+                    <option key={mo} value={String(mo).padStart(2, "0")}>
+                      {mo}月
+                    </option>
+                  ))}
+                </select>
+              </span>
+            ) : (
+              <input
+                id="kb-month"
+                className={styles.monthInput}
+                type="month"
+                value={ym}
+                onChange={(ev) => handleMonthChange(ev.target.value)}
+                onInput={(ev) => {
+                  const v = (ev.target as HTMLInputElement).value;
+                  if (/^\d{4}-\d{2}$/.test(v)) handleMonthChange(v);
+                }}
+              />
+            )}
           </label>
           <button
             type="button"
@@ -481,7 +546,7 @@ export function KakeiboDashboard() {
           />
         </div>
         <div className={styles.field}>
-          <label htmlFor="kb-cat">カテゴリ（任意）</label>
+          <label htmlFor="kb-cat">カテゴリ</label>
           <select
             id="kb-cat"
             value={formCategoryId}
@@ -522,8 +587,8 @@ export function KakeiboDashboard() {
           <thead>
             <tr>
               <th>日付</th>
-              <th className={styles.kindCol}>種別</th>
               <th>カテゴリ</th>
+              <th className={styles.kindCol}>種別</th>
               <th>金額</th>
               <th>メモ</th>
             </tr>
@@ -546,13 +611,127 @@ export function KakeiboDashboard() {
                     : t.kind === "expense"
                       ? styles.trExpense
                       : styles.trNeutral;
+
+                if (isEditing && edit && txMobileNarrow) {
+                  return (
+                    <tr
+                      key={t.id}
+                      className={`${rowKind} ${styles.rowEditing} ${styles.mobileTxEditRow}`}
+                    >
+                      <td colSpan={5} className={styles.mobileTxEditCell}>
+                        <div className={styles.mobileTxEdit}>
+                          <div className={styles.mobileTxEditField}>
+                            <span className={styles.mobileTxEditLabel}>日付</span>
+                            <input
+                              className={styles.mobileTxEditInput}
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="MM/DD"
+                              autoComplete="off"
+                              value={mobileEditDateText}
+                              onChange={(ev) => {
+                                const v = ev.target.value;
+                                setMobileEditDateText(v);
+                                const ymd = parseMdToYmd(v, edit.transaction_date);
+                                if (ymd) setEdit({ ...edit, transaction_date: ymd });
+                              }}
+                              aria-label="取引日（月/日）"
+                            />
+                          </div>
+                          <div className={styles.mobileTxEditField}>
+                            <span className={styles.mobileTxEditLabel}>カテゴリ</span>
+                            <select
+                              className={styles.mobileTxEditInput}
+                              value={edit.category_id}
+                              onChange={(ev) =>
+                                setEdit({ ...edit, category_id: ev.target.value })
+                              }
+                              aria-label="カテゴリ"
+                            >
+                              <option value="">なし</option>
+                              {editCategories.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className={styles.mobileTxEditField}>
+                            <span className={styles.mobileTxEditLabel}>種別</span>
+                            <select
+                              className={styles.mobileTxEditInput}
+                              value={edit.kind}
+                              onChange={(ev) =>
+                                setEdit({
+                                  ...edit,
+                                  kind: ev.target.value as "expense" | "income",
+                                  category_id: "",
+                                })
+                              }
+                              aria-label="種別"
+                            >
+                              <option value="expense">支出</option>
+                              <option value="income">収入</option>
+                            </select>
+                          </div>
+                          <div className={styles.mobileTxEditField}>
+                            <span className={styles.mobileTxEditLabel}>金額</span>
+                            <input
+                              className={styles.mobileTxEditInput}
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={edit.amount}
+                              onChange={(ev) =>
+                                setEdit({ ...edit, amount: ev.target.value })
+                              }
+                              aria-label="金額"
+                            />
+                          </div>
+                          <div className={styles.mobileTxEditField}>
+                            <span className={styles.mobileTxEditLabel}>メモ</span>
+                            <input
+                              className={styles.mobileTxEditInput}
+                              type="text"
+                              value={edit.memo}
+                              onChange={(ev) =>
+                                setEdit({ ...edit, memo: ev.target.value })
+                              }
+                              placeholder="メモ"
+                              aria-label="メモ"
+                            />
+                          </div>
+                          <div className={styles.mobileTxEditActions}>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnPrimary}`}
+                              disabled={editSaving || !base}
+                              onClick={() => void saveEdit()}
+                            >
+                              {editSaving ? "保存中…" : "保存"}
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.btn}
+                              disabled={editSaving}
+                              onClick={cancelEdit}
+                            >
+                              キャンセル
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
                 return (
                   <tr
                     key={t.id}
                     className={`${rowKind}${isEditing ? ` ${styles.rowEditing}` : ""}`}
                   >
                     <td>
-                      {isEditing ? (
+                      {isEditing && edit ? (
                         <input
                           className={styles.cellInput}
                           type="date"
@@ -567,17 +746,41 @@ export function KakeiboDashboard() {
                           title={formatTxDateYmd(t.transaction_date)}
                           className={styles.txDateCell}
                         >
-                          <span className={styles.txDateFull}>
-                            {formatTxDateYmd(t.transaction_date)}
-                          </span>
-                          <span className={styles.txDateShort}>
-                            {formatTxDateMd(t.transaction_date)}
-                          </span>
+                          {formatTxDateMd(t.transaction_date)}
                         </span>
                       )}
                     </td>
+                    <td>
+                      {isEditing && edit ? (
+                        <select
+                          className={styles.cellInput}
+                          value={edit.category_id}
+                          onChange={(ev) =>
+                            setEdit({ ...edit, category_id: ev.target.value })
+                          }
+                          aria-label="カテゴリ"
+                        >
+                          <option value="">なし</option>
+                          {editCategories.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : t.category_id != null ? (() => {
+                        const cid =
+                          typeof t.category_id === "number"
+                            ? t.category_id
+                            : Number(t.category_id);
+                        return Number.isFinite(cid)
+                          ? (categoryById.get(cid) ?? `ID:${cid}`)
+                          : "—";
+                      })() : (
+                        "—"
+                      )}
+                    </td>
                     <td className={styles.kindCol}>
-                      {isEditing ? (
+                      {isEditing && edit ? (
                         <select
                           className={styles.cellInput}
                           value={edit.kind}
@@ -612,36 +815,7 @@ export function KakeiboDashboard() {
                       )}
                     </td>
                     <td>
-                      {isEditing ? (
-                        <select
-                          className={styles.cellInput}
-                          value={edit.category_id}
-                          onChange={(ev) =>
-                            setEdit({ ...edit, category_id: ev.target.value })
-                          }
-                          aria-label="カテゴリ"
-                        >
-                          <option value="">なし</option>
-                          {editCategories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : t.category_id != null ? (() => {
-                        const cid =
-                          typeof t.category_id === "number"
-                            ? t.category_id
-                            : Number(t.category_id);
-                        return Number.isFinite(cid)
-                          ? (categoryById.get(cid) ?? `ID:${cid}`)
-                          : "—";
-                      })() : (
-                        "—"
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
+                      {isEditing && edit ? (
                         <input
                           className={styles.cellInput}
                           type="number"
@@ -658,7 +832,7 @@ export function KakeiboDashboard() {
                       )}
                     </td>
                     <td>
-                      {isEditing ? (
+                      {isEditing && edit ? (
                         <div className={styles.memoCell}>
                           <input
                             className={styles.cellInput}

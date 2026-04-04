@@ -317,25 +317,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* JS の matchMedia では初回描画がズレるため、CSS で切替（スマホ幅はフォームと揃えつつタブレット縦も含める） */
-.txDateShort {
-  display: none;
-}
-
-.txDateFull {
-  display: inline;
-}
-
-@media (max-width: 768px) {
-  .txDateShort {
-    display: inline;
-  }
-
-  .txDateFull {
-    display: none;
-  }
-}
-
 .table tbody tr:last-child td {
   border-bottom: none;
 }
@@ -442,6 +423,84 @@
   color: var(--text-muted);
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.monthPickerMobile {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.monthSelect {
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text);
+  max-width: 100%;
+}
+
+/* モバイル取引編集: テーブルセル潰れを避けカード型にする */
+.mobileTxEditRow td.mobileTxEditCell {
+  padding: 0.65rem 0.5rem;
+  vertical-align: top;
+}
+
+.mobileTxEdit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.5rem 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.mobileTxEditField {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.mobileTxEditLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.mobileTxEditInput {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 1rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text);
+  min-width: 0;
+}
+
+.mobileTxEditActions {
+  display: flex;
+  flex-direction: row;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.mobileTxEditActions .btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
 .err {
