@@ -586,8 +586,8 @@ export function KakeiboDashboard() {
         <table className={`${styles.table} ${styles.txTable}`}>
           <thead>
             <tr>
-              <th>日付</th>
-              <th>カテゴリ</th>
+              <th className={styles.txColDate}>日付</th>
+              <th className={styles.txColCategory}>カテゴリ</th>
               <th className={styles.kindCol}>種別</th>
               <th>金額</th>
               <th>メモ</th>
@@ -730,10 +730,10 @@ export function KakeiboDashboard() {
                     key={t.id}
                     className={`${rowKind}${isEditing ? ` ${styles.rowEditing}` : ""}`}
                   >
-                    <td>
+                    <td className={styles.txColDate}>
                       {isEditing && edit ? (
                         <input
-                          className={styles.cellInput}
+                          className={`${styles.cellInput} ${styles.txDateInput}`}
                           type="date"
                           value={edit.transaction_date}
                           onChange={(ev) =>
@@ -750,7 +750,7 @@ export function KakeiboDashboard() {
                         </span>
                       )}
                     </td>
-                    <td>
+                    <td className={styles.txColCategory}>
                       {isEditing && edit ? (
                         <select
                           className={styles.cellInput}
