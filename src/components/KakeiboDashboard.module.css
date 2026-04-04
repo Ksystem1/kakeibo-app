@@ -237,6 +237,17 @@
   .form > button {
     grid-column: 1 / -1;
   }
+
+  /* 日付行は全幅列のまま、中身だけ YYYY/MM/DD 相当に収める */
+  .form > .field:nth-child(3) {
+    max-width: min(100%, calc(11.5ch + 2rem));
+    justify-self: start;
+  }
+
+  .form > .field:nth-child(3) input[type="date"] {
+    width: 11.5ch;
+    max-width: 100%;
+  }
 }
 
 .field label {
@@ -267,6 +278,17 @@
   min-width: 0;
   max-width: 100%;
   width: 100%;
+}
+
+@media (max-width: 768px) {
+  /* YYYY/MM/DD 相当がギリギリ収まる幅（取引追加・レシートの日付） */
+  .form .field input[type="date"] {
+    width: 11.5ch;
+    max-width: min(11.5ch, 100%);
+    min-width: 0;
+    box-sizing: border-box;
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 .field input::placeholder {
@@ -394,10 +416,12 @@
 
   .table.txTable th.txColDate,
   .table.txTable td.txColDate {
-    width: 26%;
-    max-width: none;
-    min-width: 4.75rem;
+    width: 1%;
+    max-width: calc(11.5ch + 0.85rem);
+    min-width: 0;
     box-sizing: border-box;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
   }
 
   .table.txTable th.txColCategory,
@@ -505,7 +529,7 @@
 
 .mobileTxEdit {
   display: grid;
-  grid-template-columns: minmax(6.25rem, 32%) 1fr;
+  grid-template-columns: minmax(0, calc(11.5ch + 1.1rem)) 1fr;
   gap: 0.65rem 0.75rem;
   padding: 0.5rem 0;
   max-width: 100%;
@@ -523,6 +547,10 @@
 
 .mobileTxEditField:nth-child(1) {
   grid-column: 1;
+}
+
+.mobileTxEditField:nth-child(1) .mobileTxEditInput {
+  font-variant-numeric: tabular-nums;
 }
 
 .mobileTxEditField:nth-child(2) {
