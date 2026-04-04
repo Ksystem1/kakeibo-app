@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { createTransaction, getCategories, parseReceiptImage } from "../lib/api";
+import { normalizeReceiptDateToYmd } from "../lib/receiptDate";
 import { prepareReceiptImageForApi } from "../lib/receiptImage";
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
@@ -10,21 +11,8 @@ import styles from "../components/KakeiboDashboard.module.css";
 function dateFieldMode(raw: string): { kind: "iso"; value: string } | { kind: "text"; value: string } {
   const s = raw.trim();
   if (!s) return { kind: "iso", value: "" };
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return { kind: "iso", value: s };
-  const m = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.exec(s);
-  if (m) {
-    return {
-      kind: "iso",
-      value: `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`,
-    };
-  }
-  const jp = /^(\d{4})年(\d{1,2})月(\d{1,2})日?$/.exec(s);
-  if (jp) {
-    return {
-      kind: "iso",
-      value: `${jp[1]}-${jp[2].padStart(2, "0")}-${jp[3].padStart(2, "0")}`,
-    };
-  }
+  const n = normalizeReceiptDateToYmd(s);
+  if (n) return { kind: "iso", value: n };
   return { kind: "text", value: s };
 }
 
@@ -168,12 +156,14 @@ export function ReceiptPage() {
   const vendorFieldId = useId();
   const totalFieldId = useId();
   const dateFieldId = useId();
+  const memoFieldId = useId();
 
   const navigate = useNavigate();
 
   const [notice, setNotice] = useState<string | null>(null);
   /** 解析結果を反映したうえでユーザーが修正可能 */
   const [draftVendor, setDraftVendor] = useState("");
+  const [draftMemo, setDraftMemo] = useState("");
   const [draftTotal, setDraftTotal] = useState("");
   const [draftDate, setDraftDate] = useState("");
   const [items, setItems] = useState<
@@ -254,6 +244,7 @@ export function ReceiptPage() {
     setLoading(true);
     setNotice(null);
     setDraftVendor("");
+    setDraftMemo("");
     setDraftTotal("");
     setDraftDate("");
     setDraftCategoryId(null);
@@ -264,7 +255,9 @@ export function ReceiptPage() {
       const r = await parseReceiptImage(b64);
       setItems(r.items ?? []);
       const s = r.summary;
-      setDraftVendor(s?.vendorName?.trim() ?? "");
+      const vendorTrim = s?.vendorName?.trim() ?? "";
+      setDraftVendor(vendorTrim);
+      setDraftMemo(vendorTrim);
       setDraftTotal(
         s?.totalAmount != null && Number.isFinite(Number(s.totalAmount))
           ? String(s.totalAmount)
@@ -272,8 +265,9 @@ export function ReceiptPage() {
       );
       {
         const raw = s?.date?.trim() ?? "";
-        const dm = dateFieldMode(raw);
-        setDraftDate(dm.kind === "iso" ? dm.value : raw);
+        const ymd = normalizeReceiptDateToYmd(raw) ?? raw;
+        const dm = dateFieldMode(ymd);
+        setDraftDate(dm.kind === "iso" ? dm.value : ymd);
       }
       const localSuggested = suggestExpenseCategoryId(
         categories,
@@ -438,6 +432,18 @@ export function ReceiptPage() {
             />
           )}
         </div>
+        <div className={`${styles.field} ${styles.receiptMemoField}`}>
+          <label htmlFor={memoFieldId}>メモ</label>
+          <input
+            id={memoFieldId}
+            type="text"
+            autoComplete="off"
+            placeholder="店舗名など（解析時に自動入力されます）"
+            value={draftMemo}
+            onChange={(e) => setDraftMemo(e.target.value)}
+            disabled={loading}
+          />
+        </div>
         <div className={styles.field}>
           <label>カテゴリ</label>
           <select
@@ -492,7 +498,7 @@ export function ReceiptPage() {
                 kind: "expense",
                 amount,
                 transaction_date: dateField.value,
-                memo: draftVendor.trim() || null,
+                memo: (draftMemo.trim() || draftVendor.trim()) || null,
                 category_id: draftCategoryId,
               });
               const month = dateField.value.slice(0, 7);

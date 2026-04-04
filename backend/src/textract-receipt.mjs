@@ -114,12 +114,59 @@ function parseMoney(raw) {
 }
 function normalizeDateText(raw) {
   if (raw == null || raw === "") return null;
-  const s = String(raw).trim();
-  const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(s);
-  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
-  const jp = /^(\d{4})年(\d{1,2})月(\d{1,2})日?$/.exec(s);
+  let s = String(raw).trim();
+  if (!s) return null;
+  s = s.replace(/[（(].*[)）]/g, "").trim();
+  s = s.replace(/T.*$/i, "").replace(/\s+.*$/, "").trim();
+
+  const rei = /令和\s*(\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/.exec(s);
+  if (rei) {
+    const y = 2018 + Number.parseInt(rei[1], 10);
+    return `${y}-${rei[2].padStart(2, "0")}-${rei[3].padStart(2, "0")}`;
+  }
+  const hei = /平成\s*(\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/.exec(s);
+  if (hei) {
+    const y = 1988 + Number.parseInt(hei[1], 10);
+    return `${y}-${hei[2].padStart(2, "0")}-${hei[3].padStart(2, "0")}`;
+  }
+  const sho = /昭和\s*(\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/.exec(s);
+  if (sho) {
+    const y = 1925 + Number.parseInt(sho[1], 10);
+    return `${y}-${sho[2].padStart(2, "0")}-${sho[3].padStart(2, "0")}`;
+  }
+
+  const jp = /^(\d{4})年(\d{1,2})月(\d{1,2})日?/.exec(s);
   if (jp) return `${jp[1]}-${jp[2].padStart(2, "0")}-${jp[3].padStart(2, "0")}`;
-  return s;
+
+  const isoLike = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(s);
+  if (isoLike) {
+    return `${isoLike[1]}-${isoLike[2].padStart(2, "0")}-${isoLike[3].padStart(2, "0")}`;
+  }
+
+  const us = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(s);
+  if (us) return `${us[3]}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`;
+
+  const mdY2 = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/.exec(s);
+  if (mdY2) {
+    const n = Number.parseInt(mdY2[3], 10);
+    const y = n >= 70 ? 1900 + n : 2000 + n;
+    return `${y}-${mdY2[1].padStart(2, "0")}-${mdY2[2].padStart(2, "0")}`;
+  }
+
+  return null;
+}
+
+/** SummaryFields 全体から日付らしい文字列を拾う（型付きフィールドに無い場合） */
+function fallbackDateFromSummaryFields(summaryFields) {
+  if (!Array.isArray(summaryFields)) return null;
+  for (const f of summaryFields) {
+    const chunks = [fieldText(f), fieldLabel(f)].filter(Boolean);
+    for (const c of chunks) {
+      const d = normalizeDateText(c);
+      if (d) return d;
+    }
+  }
+  return null;
 }
 
 const VENDOR_SUMMARY_TYPES = new Set([
@@ -172,6 +219,13 @@ function summaryFromFields(summaryFields) {
       }
     }
   }
+  if (!out.date) {
+    const fb = fallbackDateFromSummaryFields(summaryFields);
+    if (fb) {
+      out.date = fb;
+      out.fieldConfidence.date = out.fieldConfidence.date ?? null;
+    }
+  }
   if (vendorCandidates.length > 0) {
     vendorCandidates.sort(
       (a, b) => b.conf - a.conf || b.text.length - a.text.length || a.text.localeCompare(b.text),
@@ -204,6 +258,15 @@ function fallbackTotalFromLineItems(rows) {
   }
   if (n === 0) return null;
   return Math.round(sum * 100) / 100;
+}
+
+function fallbackDateFromLineItems(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  for (const row of rows) {
+    const d = normalizeDateText(String(row?.name ?? ""));
+    if (d) return d;
+  }
+  return null;
 }
 
 function lineItemsFromExpenseDoc(doc) {
@@ -337,11 +400,18 @@ export function createReceiptAnalyzer(ctx = {}) {
           "合計欄を自動検出できなかったため、明細行の金額を合算して推定しました。必要に応じて修正してください。";
       }
     }
+    let dateVal = summary.date;
+    if (!dateVal) {
+      dateVal = fallbackDateFromLineItems(items);
+      if (dateVal) {
+        fieldConfidence = { ...fieldConfidence, date: fieldConfidence.date ?? null };
+      }
+    }
     return {
       summary: {
         vendorName: summary.vendorName,
         totalAmount,
-        date: summary.date,
+        date: dateVal,
         fieldConfidence,
       },
       items,

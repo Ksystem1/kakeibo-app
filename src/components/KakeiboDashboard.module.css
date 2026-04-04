@@ -388,6 +388,26 @@
 
 /* スマホ: 種別列は非表示（収入/支出は行の背景色で区別）。編集時のみ表示 */
 @media (max-width: 768px) {
+  .table.txTable {
+    table-layout: fixed;
+  }
+
+  .table.txTable th.txColDate,
+  .table.txTable td.txColDate {
+    width: 26%;
+    max-width: none;
+    min-width: 4.75rem;
+    box-sizing: border-box;
+  }
+
+  .table.txTable th.txColCategory,
+  .table.txTable td.txColCategory {
+    width: 34%;
+    min-width: 0;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
   .txTable .kindCol {
     display: none;
   }
@@ -484,12 +504,13 @@
 }
 
 .mobileTxEdit {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
+  display: grid;
+  grid-template-columns: minmax(6.25rem, 32%) 1fr;
+  gap: 0.65rem 0.75rem;
   padding: 0.5rem 0;
   max-width: 100%;
   box-sizing: border-box;
+  align-items: start;
 }
 
 .mobileTxEditField {
@@ -498,6 +519,18 @@
   align-items: stretch;
   gap: 0.3rem;
   min-width: 0;
+}
+
+.mobileTxEditField:nth-child(1) {
+  grid-column: 1;
+}
+
+.mobileTxEditField:nth-child(2) {
+  grid-column: 2;
+}
+
+.mobileTxEditField:nth-child(n + 3) {
+  grid-column: 1 / -1;
 }
 
 .mobileTxEditLabel {
@@ -522,6 +555,7 @@
 }
 
 .mobileTxEditActions {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: row;
   gap: 0.5rem;
@@ -743,6 +777,10 @@
   font-size: 0.9rem;
   color: var(--text-muted);
   line-height: 1.45;
+}
+
+.receiptMemoField {
+  grid-column: 1 / -1;
 }
 
 .receiptLoadingPanel {
