@@ -433,18 +433,30 @@
 
 /* スマホ: 種別列は非表示（収入/支出は行の背景色で区別）。編集時のみ表示 */
 @media (max-width: 768px) {
+  /*
+   * fixed + 日付 width:1%/min-width:0 だと、カテゴリ列の大きな min-width に幅を奪われ
+   * 日付セルが潰れる。nowrap のまま隣セルへ描画され「かぶり」に見える。
+   * auto レイアウトで列幅を内容・min-width に任せ、親は横スクロールで収める。
+   */
   .table.txTable {
-    table-layout: fixed;
+    table-layout: auto;
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
+    box-sizing: border-box;
   }
 
   .table.txTable th.txColDate,
   .table.txTable td.txColDate {
-    width: 1%;
-    max-width: calc(11.5ch + 0.85rem);
-    min-width: 0;
+    width: auto;
+    /* MM/DD（例 12/31）＋パディングを最低限確保 */
+    min-width: calc(5.25ch + 0.85rem);
+    max-width: none;
     box-sizing: border-box;
     padding-left: 0.35rem;
     padding-right: 0.35rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .table.txTable th.txColCategory,
