@@ -157,6 +157,7 @@ export function ReceiptPage() {
   const totalFieldId = useId();
   const dateFieldId = useId();
   const memoFieldId = useId();
+  const categoryFieldId = useId();
 
   const navigate = useNavigate();
 
@@ -377,34 +378,19 @@ export function ReceiptPage() {
         </button>
       </div>
 
-      <form
-        className={styles.receiptSummaryForm}
-        onSubmit={(e) => e.preventDefault()}
-      >
+      <form className={styles.form} onSubmit={(e) => e.preventDefault()}>
         <p className={styles.receiptSummaryHint}>
           {touchUi
             ? "内容確認"
             : "解析後、店舗名・合計・日付が下記に自動入力されます。内容はいつでも手で修正できます。"}
         </p>
         <div className={styles.field}>
-          <label htmlFor={vendorFieldId}>店舗名</label>
-          <input
-            id={vendorFieldId}
-            type="text"
-            autoComplete="organization"
-            placeholder="例: 〇〇ストア"
-            value={draftVendor}
-            onChange={(e) => setDraftVendor(e.target.value)}
-            disabled={loading}
-          />
-        </div>
-        <div className={styles.field}>
-          <label htmlFor={totalFieldId}>合計金額（円）</label>
+          <label htmlFor={totalFieldId}>金額</label>
           <input
             id={totalFieldId}
             type="text"
             inputMode="decimal"
-            placeholder="例: 1234"
+            placeholder="1200"
             value={draftTotal}
             onChange={(e) => setDraftTotal(e.target.value)}
             disabled={loading}
@@ -432,28 +418,17 @@ export function ReceiptPage() {
             />
           )}
         </div>
-        <div className={`${styles.field} ${styles.receiptMemoField}`}>
-          <label htmlFor={memoFieldId}>メモ</label>
-          <input
-            id={memoFieldId}
-            type="text"
-            autoComplete="off"
-            placeholder="店舗名など（解析時に自動入力されます）"
-            value={draftMemo}
-            onChange={(e) => setDraftMemo(e.target.value)}
-            disabled={loading}
-          />
-        </div>
         <div className={styles.field}>
-          <label>カテゴリ</label>
+          <label htmlFor={categoryFieldId}>カテゴリ</label>
           <select
+            id={categoryFieldId}
             value={draftCategoryId ?? ""}
             onChange={(e) =>
               setDraftCategoryId(e.target.value ? Number(e.target.value) : null)
             }
             disabled={loading}
           >
-            <option value="">未分類</option>
+            <option value="">なし</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -461,12 +436,36 @@ export function ReceiptPage() {
             ))}
           </select>
           {draftCategoryId != null && categorySuggestSource ? (
-            <small className={styles.receiptSummaryHint}>
+            <small className={styles.receiptCategoryHint}>
               {categorySuggestSource === "history"
                 ? "過去の登録履歴から自動分類しました。必要なら変更できます。"
                 : "店舗名と明細のキーワードからカテゴリを推定しました。必要なら変更できます。"}
             </small>
           ) : null}
+        </div>
+        <div className={styles.field}>
+          <label htmlFor={vendorFieldId}>店舗名</label>
+          <input
+            id={vendorFieldId}
+            type="text"
+            autoComplete="organization"
+            placeholder="例: 〇〇ストア"
+            value={draftVendor}
+            onChange={(e) => setDraftVendor(e.target.value)}
+            disabled={loading}
+          />
+        </div>
+        <div className={`${styles.field} ${styles.receiptMemoField}`}>
+          <label htmlFor={memoFieldId}>メモ</label>
+          <input
+            id={memoFieldId}
+            type="text"
+            autoComplete="off"
+            placeholder="内容"
+            value={draftMemo}
+            onChange={(e) => setDraftMemo(e.target.value)}
+            disabled={loading}
+          />
         </div>
 
         <button
