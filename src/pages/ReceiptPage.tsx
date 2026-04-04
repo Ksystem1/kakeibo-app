@@ -396,28 +396,6 @@ export function ReceiptPage() {
           </select>
         </div>
         <div className={styles.field}>
-          <label htmlFor={dateFieldId}>日付</label>
-          {dateField.kind === "iso" ? (
-            <input
-              id={dateFieldId}
-              type="date"
-              value={dateField.value}
-              onChange={(e) => setDraftDate(e.target.value)}
-              disabled={loading}
-            />
-          ) : (
-            <input
-              id={dateFieldId}
-              type="text"
-              inputMode="numeric"
-              placeholder="YYYY-MM-DD など"
-              value={dateField.value}
-              onChange={(e) => setDraftDate(e.target.value)}
-              disabled={loading}
-            />
-          )}
-        </div>
-        <div className={styles.field}>
           <label htmlFor={categoryFieldId}>カテゴリ</label>
           <select
             id={categoryFieldId}
@@ -441,6 +419,28 @@ export function ReceiptPage() {
                 : "店舗名と明細のキーワードからカテゴリを推定しました。必要なら変更できます。"}
             </small>
           ) : null}
+        </div>
+        <div className={styles.field}>
+          <label htmlFor={dateFieldId}>日付</label>
+          {dateField.kind === "iso" ? (
+            <input
+              id={dateFieldId}
+              type="date"
+              value={dateField.value}
+              onChange={(e) => setDraftDate(e.target.value)}
+              disabled={loading}
+            />
+          ) : (
+            <input
+              id={dateFieldId}
+              type="text"
+              inputMode="numeric"
+              placeholder="YYYY-MM-DD など"
+              value={dateField.value}
+              onChange={(e) => setDraftDate(e.target.value)}
+              disabled={loading}
+            />
+          )}
         </div>
         <div className={styles.field}>
           <label htmlFor={totalFieldId}>金額</label>

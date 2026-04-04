@@ -549,15 +549,6 @@ export function KakeiboDashboard() {
           </select>
         </div>
         <div className={styles.field}>
-          <label htmlFor="kb-date">日付</label>
-          <input
-            id="kb-date"
-            type="date"
-            value={formDate}
-            onChange={(ev) => setFormDate(ev.target.value)}
-          />
-        </div>
-        <div className={styles.field}>
           <label htmlFor="kb-cat">カテゴリ</label>
           <select
             id="kb-cat"
@@ -571,6 +562,15 @@ export function KakeiboDashboard() {
               </option>
             ))}
           </select>
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="kb-date">日付</label>
+          <input
+            id="kb-date"
+            type="date"
+            value={formDate}
+            onChange={(ev) => setFormDate(ev.target.value)}
+          />
         </div>
         <div className={styles.field}>
           <label htmlFor="kb-amt">金額</label>
@@ -614,8 +614,8 @@ export function KakeiboDashboard() {
           <thead>
             <tr>
               <th className={styles.kindCol}>種別</th>
-              <th className={styles.txColDate}>日付</th>
               <th className={styles.txColCategory}>カテゴリ</th>
+              <th className={styles.txColDate}>日付</th>
               <th>金額</th>
               <th>メモ</th>
             </tr>
@@ -638,6 +638,19 @@ export function KakeiboDashboard() {
                     : t.kind === "expense"
                       ? styles.trExpense
                       : styles.trNeutral;
+
+                const categoryDisplay =
+                  t.category_id != null
+                    ? (() => {
+                        const cid =
+                          typeof t.category_id === "number"
+                            ? t.category_id
+                            : Number(t.category_id);
+                        return Number.isFinite(cid)
+                          ? (categoryById.get(cid) ?? `ID:${cid}`)
+                          : "—";
+                      })()
+                    : "—";
 
                 if (isEditing && edit && txMobileNarrow) {
                   return (
@@ -752,6 +765,75 @@ export function KakeiboDashboard() {
                   );
                 }
 
+                if (txMobileNarrow && !isEditing) {
+                  return (
+                    <tr key={t.id} className={`${rowKind} ${styles.mobileTxViewRow}`}>
+                      <td colSpan={5} className={styles.mobileTxViewCell}>
+                        <div className={styles.mobileTxView}>
+                          <div className={styles.mobileTxViewRow1}>
+                            <span
+                              className={`${styles.kind} ${styles.mobileTxViewKind} ${
+                                t.kind === "income"
+                                  ? styles.kindIncome
+                                  : t.kind === "expense"
+                                    ? styles.kindExpense
+                                    : styles.kindOther
+                              }`}
+                            >
+                              {t.kind === "income"
+                                ? "収入"
+                                : t.kind === "expense"
+                                  ? "支出"
+                                  : t.kind}
+                            </span>
+                            <span
+                              className={styles.mobileTxViewDate}
+                              title={formatTxDateYmd(t.transaction_date)}
+                            >
+                              {formatTxDateMd(t.transaction_date)}
+                            </span>
+                            <span
+                              className={styles.mobileTxViewCat}
+                              title={categoryDisplay}
+                            >
+                              {categoryDisplay}
+                            </span>
+                          </div>
+                          <div className={styles.mobileTxViewRow2}>
+                            <span className={styles.mobileTxViewAmt}>
+                              {yen.format(numAmount(t.amount))}
+                            </span>
+                            <span
+                              className={styles.mobileTxViewMemo}
+                              title={t.memo?.trim() ? t.memo : undefined}
+                            >
+                              {t.memo ?? ""}
+                            </span>
+                          </div>
+                          <div className={styles.mobileTxViewActions}>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnSm} ${styles.mobileTxViewBtn}`}
+                              disabled={!base}
+                              onClick={() => beginEdit(t)}
+                            >
+                              変更
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnSm} ${styles.btnDanger} ${styles.mobileTxViewBtn}`}
+                              disabled={!base}
+                              onClick={() => void removeTransaction(t.id)}
+                            >
+                              削除
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
                 return (
                   <tr
                     key={t.id}
@@ -792,6 +874,27 @@ export function KakeiboDashboard() {
                         </span>
                       )}
                     </td>
+                    <td className={styles.txColCategory}>
+                      {isEditing && edit ? (
+                        <select
+                          className={styles.cellInput}
+                          value={edit.category_id}
+                          onChange={(ev) =>
+                            setEdit({ ...edit, category_id: ev.target.value })
+                          }
+                          aria-label="カテゴリ"
+                        >
+                          <option value="">なし</option>
+                          {editCategories.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        categoryDisplay
+                      )}
+                    </td>
                     <td className={styles.txColDate}>
                       {isEditing && edit ? (
                         <input
@@ -810,35 +913,6 @@ export function KakeiboDashboard() {
                         >
                           {formatTxDateMd(t.transaction_date)}
                         </span>
-                      )}
-                    </td>
-                    <td className={styles.txColCategory}>
-                      {isEditing && edit ? (
-                        <select
-                          className={styles.cellInput}
-                          value={edit.category_id}
-                          onChange={(ev) =>
-                            setEdit({ ...edit, category_id: ev.target.value })
-                          }
-                          aria-label="カテゴリ"
-                        >
-                          <option value="">なし</option>
-                          {editCategories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : t.category_id != null ? (() => {
-                        const cid =
-                          typeof t.category_id === "number"
-                            ? t.category_id
-                            : Number(t.category_id);
-                        return Number.isFinite(cid)
-                          ? (categoryById.get(cid) ?? `ID:${cid}`)
-                          : "—";
-                      })() : (
-                        "—"
                       )}
                     </td>
                     <td>
