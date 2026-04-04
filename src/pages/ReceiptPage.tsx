@@ -155,6 +155,7 @@ export function ReceiptPage() {
   const [isStandalone, setIsStandalone] = useState(false);
   const vendorFieldId = useId();
   const totalFieldId = useId();
+  const kindFieldId = useId();
   const dateFieldId = useId();
   const memoFieldId = useId();
   const categoryFieldId = useId();
@@ -378,23 +379,21 @@ export function ReceiptPage() {
         </button>
       </div>
 
-      <form className={styles.form} onSubmit={(e) => e.preventDefault()}>
+      <form
+        className={styles.form}
+        data-receipt-form
+        onSubmit={(e) => e.preventDefault()}
+      >
         <p className={styles.receiptSummaryHint}>
           {touchUi
             ? "内容確認"
             : "解析後、店舗名・合計・日付が下記に自動入力されます。内容はいつでも手で修正できます。"}
         </p>
         <div className={styles.field}>
-          <label htmlFor={totalFieldId}>金額</label>
-          <input
-            id={totalFieldId}
-            type="text"
-            inputMode="decimal"
-            placeholder="1200"
-            value={draftTotal}
-            onChange={(e) => setDraftTotal(e.target.value)}
-            disabled={loading}
-          />
+          <label htmlFor={kindFieldId}>種別</label>
+          <select id={kindFieldId} value="expense" disabled aria-readonly>
+            <option value="expense">支出</option>
+          </select>
         </div>
         <div className={styles.field}>
           <label htmlFor={dateFieldId}>日付</label>
@@ -442,6 +441,18 @@ export function ReceiptPage() {
                 : "店舗名と明細のキーワードからカテゴリを推定しました。必要なら変更できます。"}
             </small>
           ) : null}
+        </div>
+        <div className={styles.field}>
+          <label htmlFor={totalFieldId}>金額</label>
+          <input
+            id={totalFieldId}
+            type="text"
+            inputMode="decimal"
+            placeholder="1200"
+            value={draftTotal}
+            onChange={(e) => setDraftTotal(e.target.value)}
+            disabled={loading}
+          />
         </div>
         <div className={styles.field}>
           <label htmlFor={vendorFieldId}>店舗名</label>

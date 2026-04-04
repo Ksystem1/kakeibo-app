@@ -139,6 +139,30 @@ export function KakeiboDashboard() {
     return m;
   }, [categories]);
 
+  /** 一覧のカテゴリ列が最長の表示ラベルに収まるよう 1ch 単位で渡す */
+  const txCategoryMinCh = useMemo(() => {
+    let m = "カテゴリ".length;
+    for (const c of categories) {
+      m = Math.max(m, c.name.length);
+    }
+    for (const t of transactions) {
+      let label: string;
+      if (t.category_id != null) {
+        const cid =
+          typeof t.category_id === "number"
+            ? t.category_id
+            : Number(t.category_id);
+        label = Number.isFinite(cid)
+          ? (categoryById.get(cid) ?? `ID:${cid}`)
+          : "—";
+      } else {
+        label = "—";
+      }
+      m = Math.max(m, label.length);
+    }
+    return m + 1;
+  }, [categories, transactions, categoryById]);
+
   function normalizeCategoryRows(raw: unknown[]): Category[] {
     const out: Category[] = [];
     for (const row of raw) {
@@ -525,18 +549,6 @@ export function KakeiboDashboard() {
           </select>
         </div>
         <div className={styles.field}>
-          <label htmlFor="kb-amt">金額</label>
-          <input
-            id="kb-amt"
-            type="number"
-            min={1}
-            step={1}
-            placeholder="1200"
-            value={formAmount}
-            onChange={(ev) => setFormAmount(ev.target.value)}
-          />
-        </div>
-        <div className={styles.field}>
           <label htmlFor="kb-date">日付</label>
           <input
             id="kb-date"
@@ -559,6 +571,18 @@ export function KakeiboDashboard() {
               </option>
             ))}
           </select>
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="kb-amt">金額</label>
+          <input
+            id="kb-amt"
+            type="number"
+            min={1}
+            step={1}
+            placeholder="1200"
+            value={formAmount}
+            onChange={(ev) => setFormAmount(ev.target.value)}
+          />
         </div>
         <div className={styles.field} style={{ gridColumn: "1 / -1" }}>
           <label htmlFor="kb-memo">メモ</label>
@@ -583,12 +607,15 @@ export function KakeiboDashboard() {
         取引一覧（{from} 〜 {to}）
       </h2>
       <div className={styles.tableWrap}>
-        <table className={`${styles.table} ${styles.txTable}`}>
+        <table
+          className={`${styles.table} ${styles.txTable}`}
+          style={{ ["--tx-cat-ch" as string]: String(txCategoryMinCh) }}
+        >
           <thead>
             <tr>
+              <th className={styles.kindCol}>種別</th>
               <th className={styles.txColDate}>日付</th>
               <th className={styles.txColCategory}>カテゴリ</th>
-              <th className={styles.kindCol}>種別</th>
               <th>金額</th>
               <th>メモ</th>
             </tr>
@@ -620,6 +647,24 @@ export function KakeiboDashboard() {
                     >
                       <td colSpan={5} className={styles.mobileTxEditCell}>
                         <div className={styles.mobileTxEdit}>
+                          <div className={styles.mobileTxEditField}>
+                            <span className={styles.mobileTxEditLabel}>種別</span>
+                            <select
+                              className={styles.mobileTxEditInput}
+                              value={edit.kind}
+                              onChange={(ev) =>
+                                setEdit({
+                                  ...edit,
+                                  kind: ev.target.value as "expense" | "income",
+                                  category_id: "",
+                                })
+                              }
+                              aria-label="種別"
+                            >
+                              <option value="expense">支出</option>
+                              <option value="income">収入</option>
+                            </select>
+                          </div>
                           <div className={styles.mobileTxEditField}>
                             <span className={styles.mobileTxEditLabel}>日付</span>
                             <input
@@ -654,24 +699,6 @@ export function KakeiboDashboard() {
                                   {c.name}
                                 </option>
                               ))}
-                            </select>
-                          </div>
-                          <div className={styles.mobileTxEditField}>
-                            <span className={styles.mobileTxEditLabel}>種別</span>
-                            <select
-                              className={styles.mobileTxEditInput}
-                              value={edit.kind}
-                              onChange={(ev) =>
-                                setEdit({
-                                  ...edit,
-                                  kind: ev.target.value as "expense" | "income",
-                                  category_id: "",
-                                })
-                              }
-                              aria-label="種別"
-                            >
-                              <option value="expense">支出</option>
-                              <option value="income">収入</option>
                             </select>
                           </div>
                           <div className={styles.mobileTxEditField}>
@@ -730,6 +757,41 @@ export function KakeiboDashboard() {
                     key={t.id}
                     className={`${rowKind}${isEditing ? ` ${styles.rowEditing}` : ""}`}
                   >
+                    <td className={styles.kindCol}>
+                      {isEditing && edit ? (
+                        <select
+                          className={styles.cellInput}
+                          value={edit.kind}
+                          onChange={(ev) =>
+                            setEdit({
+                              ...edit,
+                              kind: ev.target.value as "expense" | "income",
+                              category_id: "",
+                            })
+                          }
+                          aria-label="種別"
+                        >
+                          <option value="expense">支出</option>
+                          <option value="income">収入</option>
+                        </select>
+                      ) : (
+                        <span
+                          className={`${styles.kind} ${
+                            t.kind === "income"
+                              ? styles.kindIncome
+                              : t.kind === "expense"
+                                ? styles.kindExpense
+                                : styles.kindOther
+                          }`}
+                        >
+                          {t.kind === "income"
+                            ? "収入"
+                            : t.kind === "expense"
+                              ? "支出"
+                              : t.kind}
+                        </span>
+                      )}
+                    </td>
                     <td className={styles.txColDate}>
                       {isEditing && edit ? (
                         <input
@@ -777,41 +839,6 @@ export function KakeiboDashboard() {
                           : "—";
                       })() : (
                         "—"
-                      )}
-                    </td>
-                    <td className={styles.kindCol}>
-                      {isEditing && edit ? (
-                        <select
-                          className={styles.cellInput}
-                          value={edit.kind}
-                          onChange={(ev) =>
-                            setEdit({
-                              ...edit,
-                              kind: ev.target.value as "expense" | "income",
-                              category_id: "",
-                            })
-                          }
-                          aria-label="種別"
-                        >
-                          <option value="expense">支出</option>
-                          <option value="income">収入</option>
-                        </select>
-                      ) : (
-                        <span
-                          className={`${styles.kind} ${
-                            t.kind === "income"
-                              ? styles.kindIncome
-                              : t.kind === "expense"
-                                ? styles.kindExpense
-                                : styles.kindOther
-                          }`}
-                        >
-                          {t.kind === "income"
-                            ? "収入"
-                            : t.kind === "expense"
-                              ? "支出"
-                              : t.kind}
-                        </span>
                       )}
                     </td>
                     <td>
