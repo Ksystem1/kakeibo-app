@@ -1010,18 +1010,40 @@ export async function handleApiRequest(req, options = {}) {
             skipCors,
           );
         }
-        let minD = validRows[0].dateStr;
-        let maxD = validRows[0].dateStr;
+        const ymSet = new Set();
         for (const r of validRows) {
-          if (r.dateStr < minD) minD = r.dateStr;
-          if (r.dateStr > maxD) maxD = r.dateStr;
+          ymSet.add(r.dateStr.slice(0, 7));
+        }
+        /** @type {Array<{ from: string; to: string }>} */
+        const monthRanges = [];
+        for (const ym of [...ymSet].sort()) {
+          const bounds = ymBounds(ym);
+          if (bounds) monthRanges.push(bounds);
+        }
+        if (monthRanges.length === 0) {
+          return json(
+            500,
+            {
+              error: "CsvImportError",
+              detail: "CSV の日付から年月を解釈できませんでした。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        const monthOr = monthRanges
+          .map(() => "(t.transaction_date >= ? AND t.transaction_date <= ?)")
+          .join(" OR ");
+        const delParams = [userId, userId];
+        for (const { from, to } of monthRanges) {
+          delParams.push(from, to);
         }
         const [delRes] = await pool.query(
           `DELETE FROM transactions t
            WHERE ${txWhere}
            AND t.kind = 'expense'
-           AND t.transaction_date >= ? AND t.transaction_date <= ?`,
-          [userId, userId, minD, maxD],
+           AND (${monthOr})`,
+          delParams,
         );
         const deleted =
           delRes && typeof delRes.affectedRows === "number"
@@ -1060,7 +1082,7 @@ export async function handleApiRequest(req, options = {}) {
             inserted,
             categoriesCreated,
             message:
-              "CSV に含まれる日付の最小〜最大の期間にある既存の支出を削除し、行を追加しました。カテゴリ列が空なら未分類、未登録名は支出カテゴリとして自動追加します。収入・範囲外の日付の取引は削除しません。",
+              "CSV の行に現れる年月（YYYY-MM）ごとに、その月の既存の支出を削除してから行を追加しました。カテゴリ列が空なら未分類、未登録名は支出カテゴリとして自動追加します。収入は削除しません。",
           },
           hdrs,
           skipCors,

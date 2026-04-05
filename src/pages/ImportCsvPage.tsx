@@ -51,7 +51,7 @@ export function ImportCsvPage() {
     <div className={styles.wrap}>
       <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
       <p className={styles.sub}>
-        カテゴリ,日付,金額,メモの順（カンマ区切り）。取込むと、CSVに含まれる日付の最小〜最大の範囲にある既存の支出をいったん削除してから、行を追加します（収入は残ります）。
+        カテゴリ,日付,金額,メモの順（カンマ区切り）。取込むと、CSVに現れる年月（YYYY-MM）ごとに、その月の既存の支出をいったん削除してから、行を追加します（収入は残ります）。
       </p>
       <form onSubmit={onSubmit}>
         <textarea
