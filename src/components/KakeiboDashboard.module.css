@@ -271,46 +271,44 @@
     box-sizing: border-box;
   }
 
-  /* レシート: p → 種別｜カテゴリ → 日付｜金額（同一行）→ 店舗・メモ・登録 */
-  .form[data-receipt-form] > .field:nth-child(2) {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .form[data-receipt-form] > .field:nth-child(3) {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .form[data-receipt-form] > .field:nth-child(4) {
-    grid-column: 1;
-    grid-row: 3;
-  }
-
-  .form[data-receipt-form] > .field:nth-child(5) {
-    grid-column: 2;
-    grid-row: 3;
-  }
-
-  .form[data-receipt-form] > .field:nth-child(6),
-  .form[data-receipt-form] > .field:nth-child(7),
-  .form[data-receipt-form] > button {
+  /* レシート: 先頭の説明 → 種別｜カテゴリ → 日付｜金額 → メモ全幅 → 登録（nth-child に依存しない） */
+  .form[data-receipt-form] > .receiptFormBanner {
     grid-column: 1 / -1;
+    grid-row: 1;
+    margin: 0 0 0.25rem;
   }
 
-  .form[data-receipt-form] > .field:nth-child(6) {
+  .form[data-receipt-form] > .receiptFieldKind {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .form[data-receipt-form] > .receiptFieldCategory {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .form[data-receipt-form] > .receiptFieldDate {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .form[data-receipt-form] > .receiptFieldAmount {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  .form[data-receipt-form] > .receiptFieldMemo {
+    grid-column: 1 / -1;
     grid-row: 4;
   }
 
-  .form[data-receipt-form] > .field:nth-child(7) {
+  .form[data-receipt-form] > .receiptFormSubmit {
+    grid-column: 1 / -1;
     grid-row: 5;
   }
 
-  .form[data-receipt-form] > button {
-    grid-row: 6;
-  }
-
-  .form[data-receipt-form] > .field:nth-child(4) input[type="date"] {
+  .form[data-receipt-form] .receiptFieldDate input[type="date"] {
     width: 100%;
     max-width: min(11.5ch, 100%);
     box-sizing: border-box;

@@ -13,6 +13,10 @@ import {
   decodeImageBuffer,
 } from "./textract-receipt.mjs";
 import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
+import {
+  buildReceiptOcrSnapshot,
+  receiptOcrMatchKey,
+} from "./receipt-learn.mjs";
 
 const logger = createLogger("api");
 
@@ -1089,6 +1093,92 @@ export async function handleApiRequest(req, options = {}) {
         );
       }
 
+      case "POST /receipts/learn": {
+        const b = JSON.parse(req.body || "{}");
+        const summary = b.summary;
+        const items = Array.isArray(b.items) ? b.items : [];
+        if (summary == null || typeof summary !== "object") {
+          return json(
+            400,
+            { error: "InvalidRequest", detail: "summary（取込データ）が必要です。" },
+            hdrs,
+            skipCors,
+          );
+        }
+        const snapshot = buildReceiptOcrSnapshot(summary, items);
+        const matchKey = receiptOcrMatchKey(summary, items);
+        let categoryId = null;
+        if (b.category_id != null && b.category_id !== "") {
+          const n = Number(b.category_id);
+          if (!Number.isFinite(n) || n <= 0) {
+            return json(
+              400,
+              { error: "InvalidRequest", detail: "category_id が不正です。" },
+              hdrs,
+              skipCors,
+            );
+          }
+          categoryId = n;
+        }
+        let memo = b.memo == null || b.memo === "" ? null : String(b.memo).trim().slice(0, 500);
+        if (memo === "") memo = null;
+
+        try {
+          const [existing] = await pool.query(
+            `SELECT category_id, memo FROM receipt_ocr_corrections
+             WHERE user_id = ? AND match_key = ? LIMIT 1`,
+            [userId, matchKey],
+          );
+          const ex = Array.isArray(existing) && existing[0];
+          const exCat =
+            ex?.category_id != null && ex.category_id !== ""
+              ? Number(ex.category_id)
+              : null;
+          const exMemo = ex?.memo != null ? String(ex.memo) : null;
+          const sameCat = (exCat ?? null) === (categoryId ?? null);
+          const sameMemo = (exMemo ?? "") === (memo ?? "");
+          if (ex && sameCat && sameMemo) {
+            return json(200, { ok: true, skipped: true }, hdrs, skipCors);
+          }
+
+          const jsonSnap = JSON.stringify(snapshot);
+          await pool.query(
+            `INSERT INTO receipt_ocr_corrections
+              (user_id, family_id, match_key, ocr_snapshot_json, category_id, memo)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+               family_id = VALUES(family_id),
+               ocr_snapshot_json = VALUES(ocr_snapshot_json),
+               category_id = VALUES(category_id),
+               memo = VALUES(memo),
+               updated_at = CURRENT_TIMESTAMP`,
+            [userId, familyId, matchKey, jsonSnap, categoryId, memo],
+          );
+          return json(200, { ok: true, skipped: false }, hdrs, skipCors);
+        } catch (e) {
+          const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+          if (code === "ER_NO_SUCH_TABLE") {
+            return json(
+              503,
+              {
+                error: "ReceiptLearnUnavailable",
+                detail:
+                  "receipt_ocr_corrections テーブルがありません。db/migration_v5_receipt_ocr_corrections.sql を実行してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          logError("receipts.learn", e);
+          return json(
+            500,
+            { error: "ReceiptLearnError", detail: "補正データの保存に失敗しました。" },
+            hdrs,
+            skipCors,
+          );
+        }
+      }
+
       case "POST /receipts/parse": {
         const b = JSON.parse(req.body || "{}");
         if (b.imageBase64 == null || typeof b.imageBase64 !== "string") {
@@ -1114,22 +1204,82 @@ export async function handleApiRequest(req, options = {}) {
             result?.summary?.vendorName ?? "",
             result?.items ?? [],
           );
-          return json(
-            200,
-            {
-              ok: true,
-              demo: false,
-              summary: result.summary,
-              items: result.items,
-              notice: result.notice,
-              expenseIndex: result.expenseIndex,
-              suggestedCategoryId: suggestedCategory?.id ?? null,
-              suggestedCategoryName: suggestedCategory?.name ?? null,
-              suggestedCategorySource: suggestedCategory?.source ?? null,
-            },
-            hdrs,
-            skipCors,
-          );
+
+          let learnCorrectionHit = false;
+          let learnedCategoryId = null;
+          let learnedCategoryName = null;
+          let learnedMemoPresent = false;
+          let learnedMemoValue = "";
+          try {
+            const mk = receiptOcrMatchKey(
+              result?.summary,
+              result?.items ?? [],
+            );
+            const [lcRows] = await pool.query(
+              `SELECT category_id, memo FROM receipt_ocr_corrections
+               WHERE user_id = ? AND match_key = ? LIMIT 1`,
+              [userId, mk],
+            );
+            const row = Array.isArray(lcRows) && lcRows[0];
+            if (row) {
+              const hasCat = row.category_id != null && row.category_id !== "";
+              const hasMemo = row.memo != null;
+              if (hasCat || hasMemo) {
+                learnCorrectionHit = true;
+                if (hasCat) {
+                  learnedCategoryId = Number(row.category_id);
+                  const [cn] = await pool.query(
+                    `SELECT c.name FROM categories c
+                     WHERE ${catWhere} AND c.id = ? AND c.is_archived = 0 LIMIT 1`,
+                    [userId, userId, learnedCategoryId],
+                  );
+                  if (Array.isArray(cn) && cn[0]?.name) {
+                    learnedCategoryName = String(cn[0].name);
+                  }
+                }
+                if (hasMemo) {
+                  learnedMemoPresent = true;
+                  learnedMemoValue = String(row.memo).slice(0, 500);
+                }
+              }
+            }
+          } catch (e) {
+            const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+            if (code !== "ER_NO_SUCH_TABLE") {
+              logError("receipts.parse.correction_lookup", e);
+            }
+          }
+
+          const finalSuggestedId =
+            learnedCategoryId != null
+              ? learnedCategoryId
+              : suggestedCategory?.id ?? null;
+          const finalSuggestedName =
+            learnedCategoryId != null
+              ? learnedCategoryName
+              : suggestedCategory?.name ?? null;
+          const finalSource =
+            learnCorrectionHit &&
+            (learnedCategoryId != null || learnedMemoPresent)
+              ? "correction"
+              : suggestedCategory?.source ?? null;
+
+          const body = {
+            ok: true,
+            demo: false,
+            summary: result.summary,
+            items: result.items,
+            notice: result.notice,
+            expenseIndex: result.expenseIndex,
+            learnCorrectionHit,
+            suggestedCategoryId: finalSuggestedId,
+            suggestedCategoryName: finalSuggestedName ?? null,
+            suggestedCategorySource: finalSource,
+          };
+          if (learnCorrectionHit && learnedMemoPresent) {
+            body.suggestedMemo = learnedMemoValue;
+          }
+          return json(200, body, hdrs, skipCors);
         } catch (e) {
           const status =
             e &&

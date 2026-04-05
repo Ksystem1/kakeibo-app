@@ -1,7 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { createTransaction, getCategories, parseReceiptImage } from "../lib/api";
+import {
+  createTransaction,
+  getCategories,
+  parseReceiptImage,
+  saveReceiptOcrCorrection,
+} from "../lib/api";
 import { normalizeReceiptDateToYmd } from "../lib/receiptDate";
 import { prepareReceiptImageForApi } from "../lib/receiptImage";
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
@@ -173,8 +178,13 @@ export function ReceiptPage() {
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [draftCategoryId, setDraftCategoryId] = useState<number | null>(null);
   const [categorySuggestSource, setCategorySuggestSource] = useState<
-    "history" | "keywords" | null
+    "history" | "keywords" | "correction" | null
   >(null);
+  /** 登録時に POST /receipts/learn へ送る直近の取込スナップショット */
+  const [lastOcrForLearn, setLastOcrForLearn] = useState<{
+    summary: Record<string, unknown>;
+    items: Array<{ name: string; amount: number | null; confidence?: number }>;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [registering, setRegistering] = useState(false);
 
@@ -251,14 +261,27 @@ export function ReceiptPage() {
     setDraftCategoryId(null);
     setCategorySuggestSource(null);
     setItems([]);
+    setLastOcrForLearn(null);
     try {
       const b64 = await prepareReceiptImageForApi(f);
       const r = await parseReceiptImage(b64);
       setItems(r.items ?? []);
       const s = r.summary;
+      if (s && typeof s === "object") {
+        setLastOcrForLearn({
+          summary: s as Record<string, unknown>,
+          items: r.items ?? [],
+        });
+      } else {
+        setLastOcrForLearn(null);
+      }
       const vendorTrim = s?.vendorName?.trim() ?? "";
       setOcrVendor(vendorTrim);
-      setDraftMemo(vendorTrim);
+      if (r.learnCorrectionHit && r.suggestedMemo !== undefined) {
+        setDraftMemo(r.suggestedMemo);
+      } else {
+        setDraftMemo(vendorTrim);
+      }
       setDraftTotal(
         s?.totalAmount != null && Number.isFinite(Number(s.totalAmount))
           ? String(s.totalAmount)
@@ -383,18 +406,20 @@ export function ReceiptPage() {
         data-receipt-form
         onSubmit={(e) => e.preventDefault()}
       >
-        <p className={styles.receiptSummaryHint}>
+        <p
+          className={`${styles.receiptSummaryHint} ${styles.receiptFormBanner}`}
+        >
           {touchUi
             ? "内容確認"
             : "解析後、合計・日付・メモ（店舗名が取れた場合はここ）が下記に自動入力されます。内容はいつでも手で修正できます。"}
         </p>
-        <div className={styles.field}>
+        <div className={`${styles.field} ${styles.receiptFieldKind}`}>
           <label htmlFor={kindFieldId}>種別</label>
           <select id={kindFieldId} value="expense" disabled aria-readonly>
             <option value="expense">支出</option>
           </select>
         </div>
-        <div className={styles.field}>
+        <div className={`${styles.field} ${styles.receiptFieldCategory}`}>
           <label htmlFor={categoryFieldId}>カテゴリ</label>
           <select
             id={categoryFieldId}
@@ -411,15 +436,17 @@ export function ReceiptPage() {
               </option>
             ))}
           </select>
-          {draftCategoryId != null && categorySuggestSource ? (
+          {categorySuggestSource ? (
             <small className={styles.receiptCategoryHint}>
               {categorySuggestSource === "history"
                 ? "過去の登録履歴から自動分類しました。必要なら変更できます。"
-                : "店舗名と明細のキーワードからカテゴリを推定しました。必要なら変更できます。"}
+                : categorySuggestSource === "correction"
+                  ? "過去に同じ読み取り結果へ入力した補正（カテゴリ・メモ）を反映しました。必要なら変更できます。"
+                  : "店舗名と明細のキーワードからカテゴリを推定しました。必要なら変更できます。"}
             </small>
           ) : null}
         </div>
-        <div className={styles.field}>
+        <div className={`${styles.field} ${styles.receiptFieldDate}`}>
           <label htmlFor={dateFieldId}>日付</label>
           {dateField.kind === "iso" ? (
             <input
@@ -441,7 +468,7 @@ export function ReceiptPage() {
             />
           )}
         </div>
-        <div className={styles.field}>
+        <div className={`${styles.field} ${styles.receiptFieldAmount}`}>
           <label htmlFor={totalFieldId}>金額</label>
           <input
             id={totalFieldId}
@@ -453,7 +480,9 @@ export function ReceiptPage() {
             disabled={loading}
           />
         </div>
-        <div className={`${styles.field} ${styles.receiptMemoField}`}>
+        <div
+          className={`${styles.field} ${styles.receiptMemoField} ${styles.receiptFieldMemo}`}
+        >
           <label htmlFor={memoFieldId}>メモ</label>
           <input
             id={memoFieldId}
@@ -468,7 +497,7 @@ export function ReceiptPage() {
 
         <button
           type="button"
-          className={`${styles.btn} ${styles.btnPrimary}`}
+          className={`${styles.btn} ${styles.btnPrimary} ${styles.receiptFormSubmit}`}
           disabled={
             loading ||
             registering ||
@@ -498,6 +527,14 @@ export function ReceiptPage() {
                 memo: draftMemo.trim() || null,
                 category_id: draftCategoryId,
               });
+              if (lastOcrForLearn?.summary) {
+                void saveReceiptOcrCorrection({
+                  summary: lastOcrForLearn.summary,
+                  items: lastOcrForLearn.items,
+                  category_id: draftCategoryId,
+                  memo: draftMemo.trim() || null,
+                }).catch(() => {});
+              }
               const month = dateField.value.slice(0, 7);
               navigate(`/?month=${encodeURIComponent(month)}`, { replace: true });
             } catch (e) {

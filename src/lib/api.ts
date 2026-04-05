@@ -364,8 +364,24 @@ export async function parseReceiptImage(imageBase64: string) {
     expenseIndex?: number | null;
     suggestedCategoryId?: number | null;
     suggestedCategoryName?: string | null;
-    suggestedCategorySource?: "history" | "keywords" | null;
+    suggestedCategorySource?: "history" | "keywords" | "correction" | null;
+    learnCorrectionHit?: boolean;
+    suggestedMemo?: string;
   }>(res);
+}
+
+export async function saveReceiptOcrCorrection(body: {
+  summary: Record<string, unknown>;
+  items: Array<{ name: string; amount: number | null; confidence?: number }>;
+  category_id: number | null;
+  memo: string | null;
+}) {
+  const res = await apiFetch(`${BASE}/receipts/learn`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean; skipped?: boolean }>(res);
 }
 
 export async function reclassifyUncategorizedReceipts() {
