@@ -1,12 +1,15 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import type { DragEvent } from "react";
 import {
   createCategory,
   deleteCategory,
   getCategories,
-  type CategoryItem,
   updateCategory,
+  type CategoryItem,
 } from "../lib/api";
+import { useIsMobile } from "../hooks/useIsMobile";
 import styles from "../components/KakeiboDashboard.module.css";
+import catStyles from "./CategoriesPage.module.css";
 
 type CategoryDraft = {
   name: string;
@@ -24,6 +27,7 @@ function sortCategories(items: CategoryItem[]) {
 }
 
 export function CategoriesPage() {
+  const mobile = useIsMobile();
   const [items, setItems] = useState<CategoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -193,15 +197,21 @@ export function CategoriesPage() {
             title="支出"
             rows={expenseRows}
             savingId={savingId}
+            allowReorder={!mobile}
             onSave={onSaveRow}
             onRemove={onRemove}
+            onReload={load}
+            onReorderError={(msg) => setError(msg)}
           />
           <CategoryTable
             title="収入"
             rows={incomeRows}
             savingId={savingId}
+            allowReorder={!mobile}
             onSave={onSaveRow}
             onRemove={onRemove}
+            onReload={load}
+            onReorderError={(msg) => setError(msg)}
           />
         </>
       )}
@@ -215,45 +225,163 @@ export function CategoriesPage() {
   );
 }
 
+const DND_TYPE = "application/x-kakeibo-category-id";
+
 function CategoryTable({
   title,
   rows,
   savingId,
+  allowReorder,
   onSave,
   onRemove,
+  onReload,
+  onReorderError,
 }: {
   title: string;
   rows: CategoryItem[];
   savingId: number | null;
+  allowReorder: boolean;
   onSave: (
     c: CategoryItem,
     draft: { name: string; kind: "expense" | "income"; color_hex: string; sort_order: string },
   ) => void;
   onRemove: (c: CategoryItem) => void;
+  onReload: () => Promise<void>;
+  onReorderError: (msg: string | null) => void;
 }) {
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [localOrder, setLocalOrder] = useState<number[] | null>(null);
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<number | null>(null);
+  const [reordering, setReordering] = useState(false);
+
+  const rowIdsKey = rows.map((r) => r.id).join(",");
+  useEffect(() => {
+    setLocalOrder(null);
+  }, [rowIdsKey]);
+
+  const displayRows = useMemo(() => {
+    if (localOrder) {
+      const m = new Map(rows.map((r) => [r.id, r]));
+      return localOrder.map((id) => m.get(id)).filter(Boolean) as CategoryItem[];
+    }
+    const list = [...rows];
+    if (sortDir === "asc") {
+      list.sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+    } else {
+      list.sort((a, b) => b.sort_order - a.sort_order || a.id - b.id);
+    }
+    return list;
+  }, [rows, localOrder, sortDir]);
+
+  async function persistOrder(orderedIds: number[]) {
+    setReordering(true);
+    onReorderError(null);
+    try {
+      const step = 10;
+      for (let i = 0; i < orderedIds.length; i++) {
+        await updateCategory(orderedIds[i], { sort_order: (i + 1) * step });
+      }
+      setLocalOrder(null);
+      await onReload();
+    } catch (e) {
+      setLocalOrder(null);
+      onReorderError(
+        e instanceof Error ? e.message : "並び替えの保存に失敗しました",
+      );
+    } finally {
+      setReordering(false);
+    }
+  }
+
+  function reorderIds(dragId: number, dropId: number) {
+    const base = localOrder ?? rows.map((r) => r.id);
+    const i = base.indexOf(dragId);
+    const j = base.indexOf(dropId);
+    if (i < 0 || j < 0 || dragId === dropId) return;
+    const next = [...base];
+    next.splice(i, 1);
+    next.splice(j, 0, dragId);
+    setLocalOrder(next);
+    void persistOrder(next);
+  }
+
+  function handleDragStart(e: DragEvent, id: number) {
+    e.dataTransfer.setData(DND_TYPE, String(id));
+    e.dataTransfer.effectAllowed = "move";
+    setDraggingId(id);
+    setDropTargetId(null);
+  }
+
+  function handleDragEnd() {
+    setDraggingId(null);
+    setDropTargetId(null);
+  }
+
+  function handleDragOver(e: DragEvent, id: number) {
+    if (draggingId == null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropTargetId(id);
+  }
+
+  function handleDrop(e: DragEvent, dropId: number) {
+    e.preventDefault();
+    const raw = e.dataTransfer.getData(DND_TYPE);
+    const dragId = Number.parseInt(raw, 10);
+    setDropTargetId(null);
+    setDraggingId(null);
+    if (!Number.isFinite(dragId) || dragId === dropId) return;
+    reorderIds(dragId, dropId);
+  }
+
   return (
     <div className={styles.settingsPanel} style={{ maxWidth: 900, marginBottom: "1rem" }}>
       <h2 className={styles.sectionTitle}>{title}</h2>
+      {allowReorder ? (
+        <p className={catStyles.hint}>
+          左の「⠿」をドラッグして並べ替えると、並び順の番号が自動で保存されます。「並び」の↑↓で、番号に応じた表示順を切り替えられます。
+        </p>
+      ) : null}
       {rows.length === 0 ? (
         <p className={styles.sub}>カテゴリがありません。</p>
       ) : (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.92rem" }}>
+          <table className={catStyles.table}>
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
-                <th style={{ padding: "0.45rem 0.35rem" }}>名前</th>
-                <th style={{ padding: "0.45rem 0.35rem" }}>種別</th>
-                <th style={{ padding: "0.45rem 0.35rem" }}>色</th>
-                <th style={{ padding: "0.45rem 0.35rem" }}>並び</th>
-                <th style={{ padding: "0.45rem 0.35rem" }} />
+              <tr>
+                {allowReorder ? (
+                  <th className={catStyles.th} style={{ width: "2.5rem" }} aria-label="並べ替え" />
+                ) : null}
+                <th className={catStyles.th}>名前</th>
+                <th className={catStyles.th}>種別</th>
+                <th className={catStyles.th}>色</th>
+                <th className={catStyles.th}>
+                  <button
+                    type="button"
+                    className={catStyles.sortHeader}
+                    onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                    title="並び順の番号で表示を切り替え"
+                  >
+                    並び {sortDir === "asc" ? "↑" : "↓"}
+                  </button>
+                </th>
+                <th className={catStyles.th} />
               </tr>
             </thead>
             <tbody>
-              {rows.map((c) => (
+              {displayRows.map((c) => (
                 <CategoryRow
                   key={c.id}
                   c={c}
-                  disabled={savingId === c.id}
+                  disabled={reordering || savingId === c.id}
+                  allowReorder={allowReorder}
+                  dragOver={dropTargetId === c.id && draggingId != null && draggingId !== c.id}
+                  onDragStartHandle={(e) => handleDragStart(e, c.id)}
+                  onDragEndHandle={handleDragEnd}
+                  onRowDragOver={(e) => handleDragOver(e, c.id)}
+                  onRowDrop={(e) => handleDrop(e, c.id)}
+                  onRowDragLeave={() => setDropTargetId(null)}
                   onSave={onSave}
                   onRemove={onRemove}
                 />
@@ -269,11 +397,25 @@ function CategoryTable({
 function CategoryRow({
   c,
   disabled,
+  allowReorder,
+  dragOver,
+  onDragStartHandle,
+  onDragEndHandle,
+  onRowDragOver,
+  onRowDrop,
+  onRowDragLeave,
   onSave,
   onRemove,
 }: {
   c: CategoryItem;
   disabled: boolean;
+  allowReorder: boolean;
+  dragOver: boolean;
+  onDragStartHandle: (e: DragEvent) => void;
+  onDragEndHandle: () => void;
+  onRowDragOver: (e: DragEvent) => void;
+  onRowDrop: (e: DragEvent) => void;
+  onRowDragLeave: () => void;
   onSave: (c: CategoryItem, draft: CategoryDraft) => void;
   onRemove: (c: CategoryItem) => void;
 }) {
@@ -291,8 +433,28 @@ function CategoryRow({
     setSortOrder(String(c.sort_order));
   }, [c.id, c.name, c.kind, c.color_hex, c.sort_order]);
 
+  const trClass = dragOver ? catStyles.dragOver : undefined;
+
   return (
-    <tr style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+    <tr
+      className={trClass}
+      style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}
+      onDragOver={allowReorder ? onRowDragOver : undefined}
+      onDrop={allowReorder ? onRowDrop : undefined}
+      onDragLeave={allowReorder ? onRowDragLeave : undefined}
+    >
+      {allowReorder ? (
+        <td
+          className={catStyles.dragHandleCell}
+          draggable
+          onDragStart={onDragStartHandle}
+          onDragEnd={onDragEndHandle}
+          title="ドラッグして並べ替え"
+          aria-grabbed="false"
+        >
+          ⠿
+        </td>
+      ) : null}
       <td style={{ padding: "0.4rem 0.35rem", verticalAlign: "middle" }}>
         <input
           type="text"
