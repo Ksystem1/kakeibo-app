@@ -17,6 +17,10 @@ import {
   buildReceiptOcrSnapshot,
   receiptOcrMatchKey,
 } from "./receipt-learn.mjs";
+import {
+  mergeDuplicateCategories,
+  normalizeCategoryNameKey,
+} from "./category-utils.mjs";
 
 const logger = createLogger("api");
 
@@ -261,7 +265,28 @@ async function suggestExpenseCategoryForMemo(pool, userId, catWhere, txWhere, me
 }
 
 /**
+ * 同一種別・正規化名の既存カテゴリ ID（あれば）。excludeId は PATCH 時に自分自身を除く。
+ */
+async function findDuplicateCategoryId(pool, userId, catWhere, kind, rawName, excludeId) {
+  const nm = String(rawName ?? "").trim();
+  if (!nm) return null;
+  const want = normalizeCategoryNameKey(nm);
+  const [rows] = await pool.query(
+    `SELECT c.id, c.name FROM categories c
+     WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = ?`,
+    [userId, userId, kind],
+  );
+  for (const r of rows || []) {
+    const id = Number(r.id);
+    if (excludeId != null && id === Number(excludeId)) continue;
+    if (normalizeCategoryNameKey(r.name) === want) return id;
+  }
+  return null;
+}
+
+/**
  * CSV 取込用: 支出カテゴリを名前で検索し、無ければ作成する。
+ * idByNormKey: 同一リクエスト内の正規化名 → id キャッシュ（省略可）
  * @returns {{ categoryId: number | null, created: boolean }}
  */
 async function findOrCreateExpenseCategoryByName(
@@ -270,21 +295,28 @@ async function findOrCreateExpenseCategoryByName(
   familyId,
   catWhere,
   rawName,
+  idByNormKey = null,
 ) {
   const name = String(rawName ?? "").trim();
   if (!name) return { categoryId: null, created: false };
   const safeName = name.length <= 100 ? name : name.slice(0, 100);
-  const paramsBase = [userId, userId];
-  const [existing] = await pool.query(
-    `SELECT c.id FROM categories c
-     WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense' AND c.name = ?
-     LIMIT 1`,
-    [...paramsBase, safeName],
-  );
-  const row = Array.isArray(existing) && existing[0];
-  if (row?.id != null) {
-    return { categoryId: Number(row.id), created: false };
+  const normKey = normalizeCategoryNameKey(safeName);
+  if (idByNormKey?.has(normKey)) {
+    return { categoryId: idByNormKey.get(normKey), created: false };
   }
+  const dup = await findDuplicateCategoryId(
+    pool,
+    userId,
+    catWhere,
+    "expense",
+    safeName,
+    null,
+  );
+  if (dup != null) {
+    idByNormKey?.set(normKey, dup);
+    return { categoryId: dup, created: false };
+  }
+  const paramsBase = [userId, userId];
   const [[mx]] = await pool.query(
     `SELECT COALESCE(MAX(c.sort_order), 0) AS m FROM categories c
      WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense'`,
@@ -296,7 +328,9 @@ async function findOrCreateExpenseCategoryByName(
      VALUES (?, ?, NULL, ?, 'expense', NULL, ?)`,
     [userId, familyId, safeName, sortOrder],
   );
-  return { categoryId: Number(ins.insertId), created: true };
+  const newId = Number(ins.insertId);
+  idByNormKey?.set(normKey, newId);
+  return { categoryId: newId, created: true };
 }
 
 function ymBounds(yearMonth) {
@@ -733,6 +767,14 @@ export async function handleApiRequest(req, options = {}) {
         return json(400, { error: "カテゴリIDが不正です" }, hdrs, skipCors);
       }
       const b = JSON.parse(req.body || "{}");
+      const [[cur]] = await pool.query(
+        `SELECT c.name, c.kind FROM categories c
+         WHERE c.id = ? AND (${catWhere}) AND c.is_archived = 0 LIMIT 1`,
+        [categoryId, userId, userId],
+      );
+      if (!cur) {
+        return json(404, { error: "カテゴリが見つかりません" }, hdrs, skipCors);
+      }
       const fields = [];
       const params = [];
       if (Object.prototype.hasOwnProperty.call(b, "name")) {
@@ -776,6 +818,38 @@ export async function handleApiRequest(req, options = {}) {
       if (fields.length === 0) {
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
       }
+      const nextName = Object.prototype.hasOwnProperty.call(b, "name")
+        ? String(b.name).trim()
+        : String(cur.name ?? "");
+      const nextKind =
+        Object.prototype.hasOwnProperty.call(b, "kind") &&
+        (b.kind === "expense" || b.kind === "income")
+          ? b.kind
+          : String(cur.kind ?? "expense");
+      if (
+        Object.prototype.hasOwnProperty.call(b, "name") ||
+        Object.prototype.hasOwnProperty.call(b, "kind")
+      ) {
+        const dupId = await findDuplicateCategoryId(
+          pool,
+          userId,
+          catWhere,
+          nextKind,
+          nextName,
+          categoryId,
+        );
+        if (dupId != null) {
+          return json(
+            409,
+            {
+              error: "同じ名前のカテゴリが既にあります",
+              existing_id: dupId,
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+      }
       const [upd] = await pool.query(
         `UPDATE categories c SET ${fields.join(", ")}, updated_at = NOW()
          WHERE c.id = ? AND (${catWhere})`,
@@ -806,6 +880,11 @@ export async function handleApiRequest(req, options = {}) {
     switch (routeKey(method, path)) {
       case "GET /categories": {
         await seedDefaultCategoriesIfEmpty(pool, userId, familyId);
+        try {
+          await mergeDuplicateCategories(pool, userId, catWhere, txWhere);
+        } catch (e) {
+          logError("categories.merge_duplicates", e);
+        }
         const [rows] = await pool.query(
           `SELECT c.id, c.parent_id, c.name, c.kind, c.color_hex, c.sort_order, c.is_archived, c.created_at, c.updated_at
            FROM categories c
@@ -838,6 +917,25 @@ export async function handleApiRequest(req, options = {}) {
         const so = b.sort_order != null ? Number(b.sort_order) : 0;
         if (!Number.isFinite(so)) {
           return json(400, { error: "sort_order が不正です" }, hdrs, skipCors);
+        }
+        const dupId = await findDuplicateCategoryId(
+          pool,
+          userId,
+          catWhere,
+          kind,
+          rawName,
+          null,
+        );
+        if (dupId != null) {
+          return json(
+            409,
+            {
+              error: "同じ名前のカテゴリが既にあります",
+              existing_id: dupId,
+            },
+            hdrs,
+            skipCors,
+          );
         }
         const [r] = await pool.query(
           `INSERT INTO categories (user_id, family_id, parent_id, name, kind, color_hex, sort_order)
@@ -1055,6 +1153,8 @@ export async function handleApiRequest(req, options = {}) {
             : 0;
         let inserted = 0;
         let categoriesCreated = 0;
+        /** @type {Map<string, number>} */
+        const csvCategoryByNorm = new Map();
         for (const row of validRows) {
           const { categoryId, created } = await findOrCreateExpenseCategoryByName(
             pool,
@@ -1062,6 +1162,7 @@ export async function handleApiRequest(req, options = {}) {
             familyId,
             catWhere,
             row.categoryRaw,
+            csvCategoryByNorm,
           );
           if (created) categoriesCreated += 1;
           await pool.query(
