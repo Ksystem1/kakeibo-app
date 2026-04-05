@@ -17,7 +17,10 @@ export function ImportCsvPage() {
     setLoading(true);
     try {
       const r = await importCsvText(text);
-      setMsg(`${r.inserted} 件取り込み。${r.message ?? ""}`);
+      const created = r.categoriesCreated ?? 0;
+      setMsg(
+        `${r.inserted} 件取り込み。${created > 0 ? `新規カテゴリ ${created} 件を追加しました。` : ""}${r.message ?? ""}`,
+      );
       setText("");
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
@@ -40,14 +43,16 @@ export function ImportCsvPage() {
     <div className={styles.wrap}>
       <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
       <p className={styles.sub}>
-        1行目から「日付,金額,メモ…」形式（カンマまたはタブ区切り）を想定。銀行独自形式は今後追加可能です。
+        1行目から「カテゴリ,日付,金額,メモ…」の順（カンマまたはタブ区切り）。カテゴリが空なら未分類、未登録の名前は支出カテゴリとして自動で追加されます。メモにカンマが含まれる場合はタブ区切りを使ってください。
       </p>
       <form onSubmit={onSubmit}>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={14}
-          placeholder={"2026-03-01,1200,スーパー\n2026-03-02,500,コンビニ"}
+          placeholder={
+            "食費,2026-03-01,1200,イオン\n,2026-03-02,500,コンビニ（カテゴリ空で未分類）"
+          }
           style={{
             width: "100%",
             fontFamily: "monospace",

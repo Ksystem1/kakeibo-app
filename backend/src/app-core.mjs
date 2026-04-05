@@ -256,6 +256,44 @@ async function suggestExpenseCategoryForMemo(pool, userId, catWhere, txWhere, me
   return suggestExpenseCategoryForReceipt(pool, userId, catWhere, txWhere, vendor, tokens);
 }
 
+/**
+ * CSV 取込用: 支出カテゴリを名前で検索し、無ければ作成する。
+ * @returns {{ categoryId: number | null, created: boolean }}
+ */
+async function findOrCreateExpenseCategoryByName(
+  pool,
+  userId,
+  familyId,
+  catWhere,
+  rawName,
+) {
+  const name = String(rawName ?? "").trim();
+  if (!name) return { categoryId: null, created: false };
+  const safeName = name.length <= 100 ? name : name.slice(0, 100);
+  const paramsBase = [userId, userId];
+  const [existing] = await pool.query(
+    `SELECT c.id FROM categories c
+     WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense' AND c.name = ?
+     LIMIT 1`,
+    [...paramsBase, safeName],
+  );
+  const row = Array.isArray(existing) && existing[0];
+  if (row?.id != null) {
+    return { categoryId: Number(row.id), created: false };
+  }
+  const [[mx]] = await pool.query(
+    `SELECT COALESCE(MAX(c.sort_order), 0) AS m FROM categories c
+     WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense'`,
+    paramsBase,
+  );
+  const sortOrder = Number(mx?.m ?? 0) + 10;
+  const [ins] = await pool.query(
+    `INSERT INTO categories (user_id, family_id, parent_id, name, kind, color_hex, sort_order)
+     VALUES (?, ?, NULL, ?, 'expense', NULL, ?)`,
+    [userId, familyId, safeName, sortOrder],
+  );
+  return { categoryId: Number(ins.insertId), created: true };
+}
 
 function ymBounds(yearMonth) {
   const m = /^(\d{4})-(\d{2})$/.exec(yearMonth || "");
@@ -937,19 +975,31 @@ export async function handleApiRequest(req, options = {}) {
         const text = String(b.csvText || "");
         const lines = text.split(/\r?\n/).filter((l) => l.trim());
         let inserted = 0;
+        let categoriesCreated = 0;
         for (const line of lines) {
           const parts = line.split(/[,，\t]/).map((s) => s.trim());
-          if (parts.length < 2) continue;
-          const dateStr = parts[0].replace(/\//g, "-");
-          const amount = Number.parseFloat(parts[1].replace(/[,円]/g, ""));
+          if (parts.length < 3) continue;
+          const categoryRaw = parts[0];
+          const dateStr = parts[1].replace(/\//g, "-");
+          const amount = Number.parseFloat(parts[2].replace(/[,円]/g, ""));
           if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || !Number.isFinite(amount)) {
             continue;
           }
-          const memo = parts.slice(2).join(" ") || "CSV取込";
+          let memo = parts.slice(3).join(" ").trim();
+          if (memo.length > 500) memo = memo.slice(0, 500);
+          const memoVal = memo || null;
+          const { categoryId, created } = await findOrCreateExpenseCategoryByName(
+            pool,
+            userId,
+            familyId,
+            catWhere,
+            categoryRaw,
+          );
+          if (created) categoriesCreated += 1;
           await pool.query(
-            `INSERT INTO transactions (user_id, family_id, kind, amount, transaction_date, memo)
-             VALUES (?, ?, 'expense', ?, ?, ?)`,
-            [userId, familyId, Math.abs(amount), dateStr, memo],
+            `INSERT INTO transactions (user_id, family_id, kind, amount, transaction_date, memo, category_id)
+             VALUES (?, ?, 'expense', ?, ?, ?, ?)`,
+            [userId, familyId, Math.abs(amount), dateStr, memoVal, categoryId],
           );
           inserted += 1;
         }
@@ -958,8 +1008,9 @@ export async function handleApiRequest(req, options = {}) {
           {
             ok: true,
             inserted,
+            categoriesCreated,
             message:
-              "汎用CSV（日付,金額,メモ…）を取り込みました。銀行独自形式は今後拡張予定です。",
+              "汎用CSV（カテゴリ,日付,金額,メモ…）を取り込みました。カテゴリ列が空のときは未分類、未登録名は支出カテゴリとして自動追加します。",
           },
           hdrs,
           skipCors,

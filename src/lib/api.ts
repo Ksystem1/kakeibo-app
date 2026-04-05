@@ -331,7 +331,12 @@ export async function importCsvText(csvText: string) {
     headers: buildHeaders(),
     body: JSON.stringify({ csvText }),
   });
-  return parse<{ ok: boolean; inserted: number; message?: string }>(res);
+  return parse<{
+    ok: boolean;
+    inserted: number;
+    categoriesCreated?: number;
+    message?: string;
+  }>(res);
 }
 
 export async function parseReceiptImage(imageBase64: string) {
