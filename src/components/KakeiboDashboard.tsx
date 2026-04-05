@@ -790,12 +790,17 @@ export function KakeiboDashboard() {
                                   ? "支出"
                                   : t.kind}
                             </span>
-                            <span
-                              className={styles.mobileTxViewDate}
-                              title={formatTxDateYmd(t.transaction_date)}
-                            >
-                              {formatTxDateMd(t.transaction_date)}
-                            </span>
+                            <div className={styles.mobileTxViewDateAmt}>
+                              <span
+                                className={styles.mobileTxViewDate}
+                                title={formatTxDateYmd(t.transaction_date)}
+                              >
+                                {formatTxDateMd(t.transaction_date)}
+                              </span>
+                              <span className={styles.mobileTxViewAmt}>
+                                {yen.format(numAmount(t.amount))}
+                              </span>
+                            </div>
                             <span
                               className={styles.mobileTxViewCat}
                               title={categoryDisplay}
@@ -804,9 +809,6 @@ export function KakeiboDashboard() {
                             </span>
                           </div>
                           <div className={styles.mobileTxViewRow2}>
-                            <span className={styles.mobileTxViewAmt}>
-                              {yen.format(numAmount(t.amount))}
-                            </span>
                             <span
                               className={styles.mobileTxViewMemo}
                               title={t.memo?.trim() ? t.memo : undefined}

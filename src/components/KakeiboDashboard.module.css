@@ -433,7 +433,7 @@
   background: transparent;
 }
 
-/* スマホ: 一覧は2段＋ボタン（1行目 種別｜日付｜カテゴリ右寄せ / 2行目 金額チップ＋メモを同一行）。ヘッダ非表示 */
+/* スマホ: 一覧は2段＋ボタン（1行目 種別｜日付+金額｜カテゴリ右寄せ / 2行目 メモ）。ヘッダ非表示 */
 @media (max-width: 768px) {
   .wrap {
     padding: 0.5rem 0.55rem;
@@ -480,9 +480,19 @@
 
   .mobileTxViewRow1 {
     display: grid;
-    grid-template-columns: auto max-content minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr);
     gap: 0.25rem 0.32rem;
     align-items: center;
+    min-width: 0;
+  }
+
+  /* 日付と金額を必ず同一行に（ブロックを分けない） */
+  .mobileTxViewDateAmt {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.28rem;
     min-width: 0;
   }
 
@@ -509,11 +519,6 @@
   }
 
   .mobileTxViewRow2 {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 0.35rem;
     min-width: 0;
   }
 
@@ -532,7 +537,8 @@
   }
 
   .mobileTxViewMemo {
-    flex: 1;
+    display: block;
+    width: 100%;
     min-width: 0;
     font-size: 0.74rem;
     color: var(--text-muted);
