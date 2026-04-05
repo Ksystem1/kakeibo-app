@@ -472,7 +472,7 @@ export function KakeiboDashboard() {
         </div>
       </div>
 
-      {summary ? (
+      {summary && summary.expensesByCategory.length > 0 ? (
         <>
           <h2 className={styles.sectionTitle}>品目別・支出（API集計）</h2>
           <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
@@ -484,25 +484,19 @@ export function KakeiboDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {summary.expensesByCategory.length === 0 ? (
-                  <tr>
-                    <td colSpan={2}>
-                      <div className={styles.empty}>データなし</div>
-                    </td>
+                {summary.expensesByCategory.map((row, i) => (
+                  <tr key={`${row.category_id ?? "x"}-${i}`}>
+                    <td>{row.category_name ?? "（未分類）"}</td>
+                    <td>{yen.format(numAmount(row.total as string | number))}</td>
                   </tr>
-                ) : (
-                  summary.expensesByCategory.map((row, i) => (
-                    <tr
-                      key={`${row.category_id ?? "x"}-${i}`}
-                    >
-                      <td>{row.category_name ?? "（未分類）"}</td>
-                      <td>{yen.format(numAmount(row.total as string | number))}</td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
+        </>
+      ) : null}
+      {summary && summary.incomesByCategory.length > 0 ? (
+        <>
           <h2 className={styles.sectionTitle}>品目別・収入（API集計）</h2>
           <div className={styles.tableWrap} style={{ marginBottom: "1.25rem" }}>
             <table className={styles.table}>
@@ -513,20 +507,12 @@ export function KakeiboDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {summary.incomesByCategory.length === 0 ? (
-                  <tr>
-                    <td colSpan={2}>
-                      <div className={styles.empty}>データなし</div>
-                    </td>
+                {summary.incomesByCategory.map((row, i) => (
+                  <tr key={`${row.category_id ?? "y"}-${i}`}>
+                    <td>{row.category_name ?? "（未分類）"}</td>
+                    <td>{yen.format(numAmount(row.total as string | number))}</td>
                   </tr>
-                ) : (
-                  summary.incomesByCategory.map((row, i) => (
-                    <tr key={`${row.category_id ?? "y"}-${i}`}>
-                      <td>{row.category_name ?? "（未分類）"}</td>
-                      <td>{yen.format(numAmount(row.total as string | number))}</td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>

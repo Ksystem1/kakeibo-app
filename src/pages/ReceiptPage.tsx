@@ -142,7 +142,7 @@ function suggestExpenseCategoryId(
   return ranked[0].id;
 }
 
-/** モバイル「写真を選ぶ」: フォトライブラリ/ファイル優先（image/* は付けずにライブラリ寄りに絞る） */
+/** モバイル「レシート取込」: フォトライブラリ/ファイル優先（image/* は付けずにライブラリ寄りに絞る） */
 const MOBILE_GALLERY_ACCEPT =
   "image/jpeg,image/jpg,image/png,image/heic,image/heif,image/webp,.heic,.heif";
 
@@ -236,7 +236,7 @@ export function ReceiptPage() {
     if (!isIOS) return;
     if (isStandalone) {
       setNotice(
-        "ホーム画面に追加したアプリでは、OS の制限でアルバムの挙動が Safari と異なることがあります。問題があれば Safari で開くか、「写真を選ぶ」から既存の写真を選んでください。",
+        "ホーム画面に追加したアプリでは、OS の制限でアルバムの挙動が Safari と異なることがあります。問題があれば Safari で開くか、「レシート取込」から既存の写真を選んでください。",
       );
     }
   }, [isIOS, isStandalone]);
@@ -375,7 +375,7 @@ export function ReceiptPage() {
           }}
           disabled={loading}
         >
-          写真を選ぶ
+          レシート取込
         </button>
       </div>
 
