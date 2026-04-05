@@ -42,17 +42,13 @@ export function ImportCsvPage() {
   return (
     <div className={styles.wrap}>
       <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
-      <p className={styles.sub}>
-        1行目から「カテゴリ,日付,金額,メモ…」の順（カンマまたはタブ区切り）。カテゴリが空なら未分類、未登録の名前は支出カテゴリとして自動で追加されます。メモにカンマが含まれる場合はタブ区切りを使ってください。
-      </p>
+      <p className={styles.sub}>カテゴリ,日付,金額,メモの順（カンマ区切り）。</p>
       <form onSubmit={onSubmit}>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={14}
-          placeholder={
-            "食費,2026-03-01,1200,イオン\n,2026-03-02,500,コンビニ（カテゴリ空で未分類）"
-          }
+          placeholder="食費,2026-03-01,1200,イオン（カテゴリが空の場合、未分類）"
           style={{
             width: "100%",
             fontFamily: "monospace",
