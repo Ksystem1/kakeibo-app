@@ -9,6 +9,7 @@
   "scripts": {
     "db:schema": "node scripts/run-schema.mjs",
     "db:migrate-v2": "node scripts/run-migration-v2.mjs",
+    "db:migrate-v5": "node scripts/run-migration-v5.mjs",
     "db:dev-user": "node scripts/ensure-dev-user.mjs",
     "dev:api": "node src/index.js",
     "start": "node src/index.js"
