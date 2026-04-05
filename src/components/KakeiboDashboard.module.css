@@ -442,6 +442,29 @@
   box-sizing: border-box;
 }
 
+/* PC: カテゴリ列を最長ラベルの文字幅に揃え、メモ列に余白を回す */
+@media (min-width: 769px) {
+  .table.txTable th.txColCategory,
+  .table.txTable td.txColCategory {
+    width: calc(var(--tx-cat-ch, 6) * 1ch + 1.35rem);
+    max-width: calc(var(--tx-cat-ch, 6) * 1ch + 1.35rem);
+    font-size: 0.98rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: color-mix(in oklab, var(--text) 92%, var(--accent) 8%);
+  }
+
+  .table.txTable tr.rowEditing td.txColCategory {
+    width: auto;
+    max-width: min(22rem, 100%);
+    min-width: min(22rem, calc(var(--tx-cat-ch, 6) * 1ch + 1.35rem));
+  }
+
+  .table.txTable tr.rowEditing td.txColCategory .cellInput {
+    max-width: 100%;
+  }
+}
+
 .table tbody tr:last-child td {
   border-bottom: none;
 }

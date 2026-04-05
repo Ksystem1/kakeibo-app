@@ -160,7 +160,7 @@ export function KakeiboDashboard() {
       }
       m = Math.max(m, label.length);
     }
-    return m + 1;
+    return m;
   }, [categories, transactions, categoryById]);
 
   function normalizeCategoryRows(raw: unknown[]): Category[] {

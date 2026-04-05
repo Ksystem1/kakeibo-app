@@ -153,7 +153,6 @@ export function ReceiptPage() {
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
-  const vendorFieldId = useId();
   const totalFieldId = useId();
   const kindFieldId = useId();
   const dateFieldId = useId();
@@ -163,8 +162,8 @@ export function ReceiptPage() {
   const navigate = useNavigate();
 
   const [notice, setNotice] = useState<string | null>(null);
-  /** 解析結果を反映したうえでユーザーが修正可能 */
-  const [draftVendor, setDraftVendor] = useState("");
+  /** OCR の店舗名（カテゴリ推定用・画面上は非表示） */
+  const [ocrVendor, setOcrVendor] = useState("");
   const [draftMemo, setDraftMemo] = useState("");
   const [draftTotal, setDraftTotal] = useState("");
   const [draftDate, setDraftDate] = useState("");
@@ -205,10 +204,10 @@ export function ReceiptPage() {
 
   useEffect(() => {
     if (draftCategoryId != null) return;
-    if (!draftVendor && items.length === 0) return;
-    const suggested = suggestExpenseCategoryId(categories, draftVendor, items);
+    if (!ocrVendor && items.length === 0) return;
+    const suggested = suggestExpenseCategoryId(categories, ocrVendor, items);
     if (suggested != null) setDraftCategoryId(suggested);
-  }, [categories, draftVendor, items, draftCategoryId]);
+  }, [categories, ocrVendor, items, draftCategoryId]);
 
   useEffect(() => {
     if (!touchUi || !loading) return;
@@ -245,7 +244,7 @@ export function ReceiptPage() {
     if (!f) return;
     setLoading(true);
     setNotice(null);
-    setDraftVendor("");
+    setOcrVendor("");
     setDraftMemo("");
     setDraftTotal("");
     setDraftDate("");
@@ -258,7 +257,7 @@ export function ReceiptPage() {
       setItems(r.items ?? []);
       const s = r.summary;
       const vendorTrim = s?.vendorName?.trim() ?? "";
-      setDraftVendor(vendorTrim);
+      setOcrVendor(vendorTrim);
       setDraftMemo(vendorTrim);
       setDraftTotal(
         s?.totalAmount != null && Number.isFinite(Number(s.totalAmount))
@@ -333,7 +332,7 @@ export function ReceiptPage() {
       <h1 className={styles.title}>レシート読取</h1>
 
       <p className={styles.sub}>
-        レシート画像を選ぶと、店舗名・合計金額・日付・カテゴリを自動で推定します（明細のキーワードと店舗名を優先）。
+        レシート画像を選ぶと、合計金額・日付・カテゴリを自動で推定します（読み取れた店舗名はメモに入り、カテゴリ推定にも使います）。明細のキーワードも参照します。
         合計欄が読み取れない場合は明細から推定することがあります。
       </p>
       {/* file input は flex 行の外に置き、一部モバイル WebView でレイアウトに影響しないようにする */}
@@ -387,7 +386,7 @@ export function ReceiptPage() {
         <p className={styles.receiptSummaryHint}>
           {touchUi
             ? "内容確認"
-            : "解析後、店舗名・合計・日付が下記に自動入力されます。内容はいつでも手で修正できます。"}
+            : "解析後、合計・日付・メモ（店舗名が取れた場合はここ）が下記に自動入力されます。内容はいつでも手で修正できます。"}
         </p>
         <div className={styles.field}>
           <label htmlFor={kindFieldId}>種別</label>
@@ -454,18 +453,6 @@ export function ReceiptPage() {
             disabled={loading}
           />
         </div>
-        <div className={styles.field}>
-          <label htmlFor={vendorFieldId}>店舗名</label>
-          <input
-            id={vendorFieldId}
-            type="text"
-            autoComplete="organization"
-            placeholder="例: 〇〇ストア"
-            value={draftVendor}
-            onChange={(e) => setDraftVendor(e.target.value)}
-            disabled={loading}
-          />
-        </div>
         <div className={`${styles.field} ${styles.receiptMemoField}`}>
           <label htmlFor={memoFieldId}>メモ</label>
           <input
@@ -508,7 +495,7 @@ export function ReceiptPage() {
                 kind: "expense",
                 amount,
                 transaction_date: dateField.value,
-                memo: (draftMemo.trim() || draftVendor.trim()) || null,
+                memo: draftMemo.trim() || null,
                 category_id: draftCategoryId,
               });
               const month = dateField.value.slice(0, 7);
