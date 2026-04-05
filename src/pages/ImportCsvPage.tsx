@@ -18,9 +18,17 @@ export function ImportCsvPage() {
     try {
       const r = await importCsvText(text);
       const created = r.categoriesCreated ?? 0;
-      setMsg(
-        `${r.inserted} 件取り込み。${created > 0 ? `新規カテゴリ ${created} 件を追加しました。` : ""}${r.message ?? ""}`,
-      );
+      const deleted = r.deleted ?? 0;
+      if (r.inserted > 0 || deleted > 0) {
+        const parts = [
+          `支出を ${deleted} 件削除し、${r.inserted} 件追加しました。`,
+        ];
+        if (created > 0) parts.push(`新規カテゴリ ${created} 件を追加しました。`);
+        if (r.message) parts.push(r.message);
+        setMsg(parts.join(""));
+      } else {
+        setMsg(r.message ?? "取り込める行がありませんでした。");
+      }
       setText("");
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
@@ -42,7 +50,9 @@ export function ImportCsvPage() {
   return (
     <div className={styles.wrap}>
       <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
-      <p className={styles.sub}>カテゴリ,日付,金額,メモの順（カンマ区切り）。</p>
+      <p className={styles.sub}>
+        カテゴリ,日付,金額,メモの順（カンマ区切り）。取込むと、CSVに含まれる日付の最小〜最大の範囲にある既存の支出をいったん削除してから、行を追加します（収入は残ります）。
+      </p>
       <form onSubmit={onSubmit}>
         <textarea
           value={text}

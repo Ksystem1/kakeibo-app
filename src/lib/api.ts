@@ -333,6 +333,7 @@ export async function importCsvText(csvText: string) {
   });
   return parse<{
     ok: boolean;
+    deleted?: number;
     inserted: number;
     categoriesCreated?: number;
     message?: string;

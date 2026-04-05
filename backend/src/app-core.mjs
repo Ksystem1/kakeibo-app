@@ -974,8 +974,8 @@ export async function handleApiRequest(req, options = {}) {
         const b = JSON.parse(req.body || "{}");
         const text = String(b.csvText || "");
         const lines = text.split(/\r?\n/).filter((l) => l.trim());
-        let inserted = 0;
-        let categoriesCreated = 0;
+        /** @type {Array<{ dateStr: string; categoryRaw: string; amount: number; memoVal: string | null }>} */
+        const validRows = [];
         for (const line of lines) {
           const parts = line.split(/[,，\t]/).map((s) => s.trim());
           if (parts.length < 3) continue;
@@ -988,18 +988,67 @@ export async function handleApiRequest(req, options = {}) {
           let memo = parts.slice(3).join(" ").trim();
           if (memo.length > 500) memo = memo.slice(0, 500);
           const memoVal = memo || null;
+          validRows.push({
+            dateStr,
+            categoryRaw,
+            amount: Math.abs(amount),
+            memoVal,
+          });
+        }
+        if (validRows.length === 0) {
+          return json(
+            200,
+            {
+              ok: true,
+              deleted: 0,
+              inserted: 0,
+              categoriesCreated: 0,
+              message:
+                "有効な行がありません。カテゴリ,日付,金額（YYYY-MM-DD）の形式を確認してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        let minD = validRows[0].dateStr;
+        let maxD = validRows[0].dateStr;
+        for (const r of validRows) {
+          if (r.dateStr < minD) minD = r.dateStr;
+          if (r.dateStr > maxD) maxD = r.dateStr;
+        }
+        const [delRes] = await pool.query(
+          `DELETE FROM transactions t
+           WHERE ${txWhere}
+           AND t.kind = 'expense'
+           AND t.transaction_date >= ? AND t.transaction_date <= ?`,
+          [userId, userId, minD, maxD],
+        );
+        const deleted =
+          delRes && typeof delRes.affectedRows === "number"
+            ? delRes.affectedRows
+            : 0;
+        let inserted = 0;
+        let categoriesCreated = 0;
+        for (const row of validRows) {
           const { categoryId, created } = await findOrCreateExpenseCategoryByName(
             pool,
             userId,
             familyId,
             catWhere,
-            categoryRaw,
+            row.categoryRaw,
           );
           if (created) categoriesCreated += 1;
           await pool.query(
             `INSERT INTO transactions (user_id, family_id, kind, amount, transaction_date, memo, category_id)
              VALUES (?, ?, 'expense', ?, ?, ?, ?)`,
-            [userId, familyId, Math.abs(amount), dateStr, memoVal, categoryId],
+            [
+              userId,
+              familyId,
+              row.amount,
+              row.dateStr,
+              row.memoVal,
+              categoryId,
+            ],
           );
           inserted += 1;
         }
@@ -1007,10 +1056,11 @@ export async function handleApiRequest(req, options = {}) {
           200,
           {
             ok: true,
+            deleted,
             inserted,
             categoriesCreated,
             message:
-              "汎用CSV（カテゴリ,日付,金額,メモ…）を取り込みました。カテゴリ列が空のときは未分類、未登録名は支出カテゴリとして自動追加します。",
+              "CSV に含まれる日付の最小〜最大の期間にある既存の支出を削除し、行を追加しました。カテゴリ列が空なら未分類、未登録名は支出カテゴリとして自動追加します。収入・範囲外の日付の取引は削除しません。",
           },
           hdrs,
           skipCors,
