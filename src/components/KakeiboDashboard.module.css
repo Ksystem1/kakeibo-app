@@ -218,40 +218,41 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 10%, transparent);
 }
 
-/* 狭い画面: 日付（ネイティブ UI が広い）とカテゴリが隣接で重なるのを防ぐ */
-@media (max-width: 520px) {
-  .form {
+/* モバイル〜狭いタブレット: 取引追加・レシートのみレイアウト（ログイン等の .form には影響しない） */
+@media (max-width: 768px) {
+  .form[data-kakeibo-tx-add],
+  .form[data-receipt-form] {
     grid-template-columns: 1fr 1fr;
-    gap: 0.8rem 0.7rem;
+    gap: 0.55rem 0.55rem;
     min-width: 0;
     overflow-x: clip;
   }
 
-  .form .field {
+  .form[data-kakeibo-tx-add] .field,
+  .form[data-receipt-form] .field {
     min-width: 0;
     max-width: 100%;
   }
 
-  /* 取引追加: 上段は種別｜カテゴリ、以降は日付・金額・メモを全幅 */
-  .form:not([data-receipt-form]) .field:nth-child(3),
-  .form:not([data-receipt-form]) .field:nth-child(4),
-  .form:not([data-receipt-form]) .field:nth-child(5),
-  .form:not([data-receipt-form]) > button {
+  /* 取引追加: 1行目 種別｜カテゴリ、2行目 日付は左列のみ、以降は全幅 */
+  .form[data-kakeibo-tx-add] .field:nth-child(4),
+  .form[data-kakeibo-tx-add] .field:nth-child(5),
+  .form[data-kakeibo-tx-add] > button {
     grid-column: 1 / -1;
   }
 
-  .form:not([data-receipt-form]) > .field:nth-child(3) {
+  .form[data-kakeibo-tx-add] > .field:nth-child(3) {
+    grid-column: 1;
     max-width: min(100%, calc(11.5ch + 2rem));
     justify-self: start;
   }
 
-  .form:not([data-receipt-form]) > .field:nth-child(3) input[type="date"] {
+  .form[data-kakeibo-tx-add] > .field:nth-child(3) input[type="date"] {
     width: 11.5ch;
     max-width: 100%;
   }
 
-  /* レシート: 先頭にヒント <p>、続けて種別｜カテゴリ */
-  .form[data-receipt-form] .field:nth-child(4),
+  /* レシート: ヒント <p> の次が種別｜カテゴリ、日付は左列のみ */
   .form[data-receipt-form] .field:nth-child(5),
   .form[data-receipt-form] .field:nth-child(6),
   .form[data-receipt-form] .field:nth-child(7),
@@ -260,6 +261,7 @@
   }
 
   .form[data-receipt-form] > .field:nth-child(4) {
+    grid-column: 1;
     max-width: min(100%, calc(11.5ch + 2rem));
     justify-self: start;
   }
@@ -431,7 +433,7 @@
   background: transparent;
 }
 
-/* スマホ: 一覧は2段カード（種別｜日付｜カテゴリ / 金額｜メモ）。ヘッダ非表示 */
+/* スマホ: 一覧は2段＋ボタン（1行目 種別｜日付｜カテゴリ右寄せ / 2行目 金額チップ＋メモを同一行）。ヘッダ非表示 */
 @media (max-width: 768px) {
   .wrap {
     padding: 0.5rem 0.55rem;
@@ -507,32 +509,37 @@
   }
 
   .mobileTxViewRow2 {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 0.32rem 0.4rem;
-    align-items: start;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.35rem;
     min-width: 0;
   }
 
   .mobileTxViewAmt {
+    flex-shrink: 0;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     white-space: nowrap;
+    padding: 0.1rem 0.42rem;
+    border-radius: 999px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    line-height: 1.25;
+    box-sizing: border-box;
   }
 
   .mobileTxViewMemo {
+    flex: 1;
+    min-width: 0;
     font-size: 0.74rem;
     color: var(--text-muted);
     line-height: 1.25;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-    min-width: 0;
-    max-height: 2.5em;
+    white-space: nowrap;
     overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    text-overflow: ellipsis;
   }
 
   .mobileTxViewActions {
@@ -641,10 +648,10 @@
   vertical-align: top;
 }
 
-/* 1段目: 種別・日付・カテゴリ / 2段目: 金額・メモ */
+/* 追加フォームのイメージに合わせ: 1段目 種別｜カテゴリ、2段目 日付は左のみ、3〜4段目 金額・メモ */
 .mobileTxEdit {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 0.32rem 0.35rem;
   padding: 0.2rem 0;
   max-width: 100%;
@@ -670,23 +677,26 @@
   grid-row: 1;
 }
 
-.mobileTxEditField:nth-child(2) .mobileTxEditInput {
+.mobileTxEditField:nth-child(3) {
+  grid-column: 1;
+  grid-row: 2;
+  max-width: calc(11.5ch + 1.15rem);
+  justify-self: start;
+  width: 100%;
+}
+
+.mobileTxEditField:nth-child(3) .mobileTxEditInput {
   font-variant-numeric: tabular-nums;
 }
 
-.mobileTxEditField:nth-child(3) {
-  grid-column: 3;
-  grid-row: 1;
-}
-
 .mobileTxEditField:nth-child(4) {
-  grid-column: 1;
-  grid-row: 2;
+  grid-column: 1 / -1;
+  grid-row: 3;
 }
 
 .mobileTxEditField:nth-child(5) {
-  grid-column: 2 / span 2;
-  grid-row: 2;
+  grid-column: 1 / -1;
+  grid-row: 4;
 }
 
 .mobileTxEditLabel {
@@ -712,7 +722,7 @@
 
 .mobileTxEditActions {
   grid-column: 1 / -1;
-  grid-row: 3;
+  grid-row: 5;
   display: flex;
   flex-direction: row;
   gap: 0.35rem;

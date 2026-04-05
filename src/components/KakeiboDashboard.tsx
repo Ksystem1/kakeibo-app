@@ -534,7 +534,11 @@ export function KakeiboDashboard() {
       ) : null}
 
       <h2 className={styles.sectionTitle}>取引を追加</h2>
-      <form className={styles.form} onSubmit={handleAdd}>
+      <form
+        className={styles.form}
+        data-kakeibo-tx-add
+        onSubmit={handleAdd}
+      >
         <div className={styles.field}>
           <label htmlFor="kb-kind">種別</label>
           <select
@@ -679,24 +683,6 @@ export function KakeiboDashboard() {
                             </select>
                           </div>
                           <div className={styles.mobileTxEditField}>
-                            <span className={styles.mobileTxEditLabel}>日付</span>
-                            <input
-                              className={styles.mobileTxEditInput}
-                              type="text"
-                              inputMode="numeric"
-                              placeholder="MM/DD"
-                              autoComplete="off"
-                              value={mobileEditDateText}
-                              onChange={(ev) => {
-                                const v = ev.target.value;
-                                setMobileEditDateText(v);
-                                const ymd = parseMdToYmd(v, edit.transaction_date);
-                                if (ymd) setEdit({ ...edit, transaction_date: ymd });
-                              }}
-                              aria-label="取引日（月/日）"
-                            />
-                          </div>
-                          <div className={styles.mobileTxEditField}>
                             <span className={styles.mobileTxEditLabel}>カテゴリ</span>
                             <select
                               className={styles.mobileTxEditInput}
@@ -713,6 +699,24 @@ export function KakeiboDashboard() {
                                 </option>
                               ))}
                             </select>
+                          </div>
+                          <div className={styles.mobileTxEditField}>
+                            <span className={styles.mobileTxEditLabel}>日付</span>
+                            <input
+                              className={styles.mobileTxEditInput}
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="MM/DD"
+                              autoComplete="off"
+                              value={mobileEditDateText}
+                              onChange={(ev) => {
+                                const v = ev.target.value;
+                                setMobileEditDateText(v);
+                                const ymd = parseMdToYmd(v, edit.transaction_date);
+                                if (ymd) setEdit({ ...edit, transaction_date: ymd });
+                              }}
+                              aria-label="取引日（月/日）"
+                            />
                           </div>
                           <div className={styles.mobileTxEditField}>
                             <span className={styles.mobileTxEditLabel}>金額</span>
