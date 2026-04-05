@@ -79,12 +79,28 @@ function fieldText(f) {
 function fieldLabel(f) {
   return String(f?.LabelDetection?.Text ?? "").trim();
 }
+function compactLabel(label) {
+  return String(label || "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/[　]/g, "");
+}
+
+/** お釣り・釣銭・預り（合計ではない金額欄） */
+function looksLikeChangeOrTenderLabel(label) {
+  const c = compactLabel(label);
+  if (!c) return false;
+  return /(お釣|つり|おつり|釣銭|釣り|変更|預り|お預かり|預かり|お預り|change\s*due|changes?\s*given|cash\s*back)/i.test(
+    c,
+  );
+}
+
 function looksLikeTotalLabel(label) {
   const raw = String(label || "").trim();
   if (!raw) return false;
   const c = raw.replace(/\s/g, "").replace(/[　]/g, "");
-  if (/(お釣|つり|おつり|変更)/i.test(c)) return false;
-  return /合計|税込(?:額)?|御購入|お買上|支払(?:い)?(?:金額)?|ご利用|お支払|総額|^Total$|^TOTAL$/i.test(
+  if (/(お釣|つり|おつり|変更|釣銭|釣り|預り|お預かり)/i.test(c)) return false;
+  return /合計|税込(?:額)?|御購入|お買上|支払(?:い)?(?:金額)?|ご利用|お支払|総額|お会計|^Total$|^TOTAL$/i.test(
     c,
   );
 }
@@ -108,7 +124,13 @@ function fieldConfidence01(f) {
 }
 function parseMoney(raw) {
   if (raw == null || raw === "") return null;
-  const s = String(raw).replace(/[¥￥,\s]/g, "").replace(/円/g, "");
+  let s = String(raw)
+    .replace(/[¥￥,\s]/g, "")
+    .replace(/，/g, "")
+    .replace(/円/g, "");
+  s = s.replace(/[０-９]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
+  );
   const n = Number.parseFloat(s);
   return Number.isFinite(n) ? n : null;
 }
@@ -118,6 +140,7 @@ function normalizeDateText(raw) {
   if (!s) return null;
   s = s.replace(/[（(].*[)）]/g, "").trim();
   s = s.replace(/T.*$/i, "").replace(/\s+.*$/, "").trim();
+  s = s.replace(/\s/g, "").replace(/[　]/g, "");
 
   const rei = /令和\s*(\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/.exec(s);
   if (rei) {
@@ -138,9 +161,25 @@ function normalizeDateText(raw) {
   const jp = /^(\d{4})年(\d{1,2})月(\d{1,2})日?/.exec(s);
   if (jp) return `${jp[1]}-${jp[2].padStart(2, "0")}-${jp[3].padStart(2, "0")}`;
 
+  const reiShort = /^R(\d{1,2})[./-](\d{1,2})[./-](\d{1,2})$/i.exec(s);
+  if (reiShort) {
+    const y = 2018 + Number.parseInt(reiShort[1], 10);
+    return `${y}-${reiShort[2].padStart(2, "0")}-${reiShort[3].padStart(2, "0")}`;
+  }
+
   const isoLike = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(s);
   if (isoLike) {
     return `${isoLike[1]}-${isoLike[2].padStart(2, "0")}-${isoLike[3].padStart(2, "0")}`;
+  }
+
+  const ymdDot = /^(\d{4})[.](\d{1,2})[.](\d{1,2})$/.exec(s);
+  if (ymdDot) {
+    return `${ymdDot[1]}-${ymdDot[2].padStart(2, "0")}-${ymdDot[3].padStart(2, "0")}`;
+  }
+
+  const compact8 = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
+  if (compact8) {
+    return `${compact8[1]}-${compact8[2]}-${compact8[3]}`;
   }
 
   const us = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(s);
@@ -151,6 +190,27 @@ function normalizeDateText(raw) {
     const n = Number.parseInt(mdY2[3], 10);
     const y = n >= 70 ? 1900 + n : 2000 + n;
     return `${y}-${mdY2[1].padStart(2, "0")}-${mdY2[2].padStart(2, "0")}`;
+  }
+
+  const ymdShort = /^(\d{2})[./-](\d{1,2})[./-](\d{1,2})$/.exec(s);
+  if (ymdShort) {
+    const n = Number.parseInt(ymdShort[1], 10);
+    const y = n >= 70 ? 1900 + n : 2000 + n;
+    return `${y}-${ymdShort[2].padStart(2, "0")}-${ymdShort[3].padStart(2, "0")}`;
+  }
+
+  const laxJp = /(20\d{2}|19\d{2})年(\d{1,2})月(\d{1,2})日?/.exec(s);
+  if (laxJp) {
+    return `${laxJp[1]}-${laxJp[2].padStart(2, "0")}-${laxJp[3].padStart(2, "0")}`;
+  }
+  const laxIso = /(20\d{2}|19\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(s);
+  if (laxIso) {
+    return `${laxIso[1]}-${laxIso[2].padStart(2, "0")}-${laxIso[3].padStart(2, "0")}`;
+  }
+  const laxR = /R(\d{1,2})[./-](\d{1,2})[./-](\d{1,2})/i.exec(s);
+  if (laxR) {
+    const y = 2018 + Number.parseInt(laxR[1], 10);
+    return `${y}-${laxR[2].padStart(2, "0")}-${laxR[3].padStart(2, "0")}`;
   }
 
   return null;
@@ -179,9 +239,34 @@ const VENDOR_SUMMARY_TYPES = new Set([
   "STORE_NAME",
 ]);
 
+const DATE_SUMMARY_TYPES = new Set([
+  "INVOICE_RECEIPT_DATE",
+  "DATE",
+  "TRANSACTION_DATE",
+  "ORDER_DATE",
+  "RECEIPT_DATE",
+  "PAYMENT_DATE",
+  "DUE_DATE",
+  "DOCUMENT_DATE",
+  "SERVICE_DATE",
+  "DELIVERY_DATE",
+  "SHIP_DATE",
+  "TIME_PERIOD_START",
+  "TIME_PERIOD_END",
+]);
+
+/** 値・ラベルに「お釣り」等が含まれる（TOTAL 型でも除外） */
+function valueOrLabelSuggestsChange(text, label) {
+  const blob = `${String(text ?? "")} ${String(label ?? "")}`.replace(/\s/g, "").replace(/[　]/g, "");
+  return /(お釣|つり|おつり|釣銭|釣り|預り|お預かり|預かり|お預り|change\s*due|changes?\s*given)/i.test(
+    blob,
+  );
+}
+
 function summaryFromFields(summaryFields) {
   const out = { vendorName: null, totalAmount: null, date: null, fieldConfidence: {} };
   if (!Array.isArray(summaryFields)) return out;
+  /** @type {Array<{ amt: number; conf: number | null; label: string; preferred: boolean }>} */
   const totalCandidates = [];
   const vendorCandidates = [];
   let subtotal = null;
@@ -189,18 +274,43 @@ function summaryFromFields(summaryFields) {
   for (const f of summaryFields) {
     const t = fieldType(f);
     const text = fieldText(f);
+    const label = fieldLabel(f);
     const conf = fieldConfidence01(f);
-    if (!t) continue;
+
+    if (!t) {
+      if (!out.date) {
+        const d = normalizeDateText(text) ?? normalizeDateText(label);
+        if (d) {
+          out.date = d;
+          out.fieldConfidence.date = conf;
+        }
+      }
+      continue;
+    }
+
     if (VENDOR_SUMMARY_TYPES.has(t) && text) {
       vendorCandidates.push({ text, conf: typeof conf === "number" ? conf : 0 });
     }
     if (TOTAL_FIELD_TYPES.has(t)) {
       const amt = parseMoney(text);
-      if (amt != null) totalCandidates.push({ amt, conf });
+      if (
+        amt != null &&
+        !looksLikeChangeOrTenderLabel(label) &&
+        !valueOrLabelSuggestsChange(text, label)
+      ) {
+        totalCandidates.push({
+          amt,
+          conf,
+          label,
+          preferred: looksLikeTotalLabel(label),
+        });
+      }
     }
-    if (t === "OTHER" && looksLikeTotalLabel(fieldLabel(f))) {
+    if (t === "OTHER" && looksLikeTotalLabel(label)) {
       const amt = parseMoney(text);
-      if (amt != null) totalCandidates.push({ amt, conf });
+      if (amt != null && !looksLikeChangeOrTenderLabel(label)) {
+        totalCandidates.push({ amt, conf, label, preferred: true });
+      }
     }
     if (t === "SUBTOTAL") {
       const amt = parseMoney(text);
@@ -209,10 +319,8 @@ function summaryFromFields(summaryFields) {
         subtotalConf = conf;
       }
     }
-    if (
-      ["INVOICE_RECEIPT_DATE", "DATE", "TRANSACTION_DATE", "ORDER_DATE", "RECEIPT_DATE"].includes(t)
-    ) {
-      const d = normalizeDateText(text);
+    if (DATE_SUMMARY_TYPES.has(t)) {
+      const d = normalizeDateText(text) ?? normalizeDateText(label);
       if (d && !out.date) {
         out.date = d;
         out.fieldConfidence.date = conf;
@@ -235,7 +343,13 @@ function summaryFromFields(summaryFields) {
     out.fieldConfidence.vendorName = best.conf;
   }
   if (totalCandidates.length > 0) {
-    totalCandidates.sort((a, b) => b.amt - a.amt);
+    totalCandidates.sort((a, b) => {
+      if (a.preferred !== b.preferred) return (b.preferred ? 1 : 0) - (a.preferred ? 1 : 0);
+      const ca = a.conf ?? 0;
+      const cb = b.conf ?? 0;
+      if (Math.abs(cb - ca) > 0.001) return cb - ca;
+      return b.amt - a.amt;
+    });
     out.totalAmount = totalCandidates[0].amt;
     out.fieldConfidence.totalAmount = totalCandidates[0].conf;
   } else if (subtotal != null) {
@@ -250,6 +364,7 @@ function fallbackTotalFromLineItems(rows) {
   let sum = 0;
   let n = 0;
   for (const row of rows) {
+    if (looksLikeChangeOrTenderLabel(String(row?.name ?? ""))) continue;
     const a = row?.amount;
     if (typeof a === "number" && Number.isFinite(a) && a > 0) {
       sum += a;
