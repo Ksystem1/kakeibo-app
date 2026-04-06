@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PiggyBank, Wallet, WalletCards } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import {
@@ -12,9 +11,6 @@ import {
   getTransactions,
   updateTransaction,
 } from "../lib/api";
-import { MetricCard } from "./demo/MetricCard";
-import { RecentTransactions } from "./demo/RecentTransactions";
-import { SpendingChart } from "./demo/SpendingChart";
 import styles from "./KakeiboDashboard.module.css";
 
 type Category = {
@@ -105,12 +101,6 @@ function yearOptions() {
   const out: number[] = [];
   for (let yy = cy - 5; yy <= cy + 2; yy += 1) out.push(yy);
   return out;
-}
-
-function md(raw: string | null | undefined) {
-  if (!raw) return "今日";
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
-  return m ? `${m[2]}/${m[3]}` : raw.slice(0, 10);
 }
 
 export function KakeiboDashboard() {
@@ -264,47 +254,6 @@ export function KakeiboDashboard() {
     : totals.expense;
   const balanceNum = incomeTotalNum - expenseTotalNum;
   const hasIncome = incomeTotalNum > 0;
-  const savingsEstimate = useMemo(
-    () => Math.max(0, Math.round(balanceNum * 8 + incomeTotalNum * 0.5)),
-    [balanceNum, incomeTotalNum],
-  );
-  const monthRatio = useMemo(() => {
-    if (!hasIncome || incomeTotalNum === 0) return 0;
-    return ((incomeTotalNum - expenseTotalNum) / incomeTotalNum) * 100;
-  }, [expenseTotalNum, hasIncome, incomeTotalNum]);
-  const chartColors = ["#2fbf71", "#86efac", "#fdba74", "#fb923c", "#cbd5e1"];
-  const spendingChartData = useMemo(() => {
-    const rows = summary?.expensesByCategory ?? [];
-    const top = rows.slice(0, 5);
-    return top.map((r, i) => ({
-      name: r.category_name ?? "未分類",
-      value: Math.max(0, Math.round(numAmount(r.total as string | number))),
-      color: chartColors[i % chartColors.length],
-    }));
-  }, [summary?.expensesByCategory]);
-  const recentExpenseItems = useMemo(
-    () =>
-      transactions
-        .filter((t) => t.kind === "expense")
-        .slice(0, 3)
-        .map((t) => {
-          const categoryName =
-            t.category_id != null
-              ? (() => {
-                  const cid = typeof t.category_id === "number" ? t.category_id : Number(t.category_id);
-                  return Number.isFinite(cid) ? (categoryById.get(cid) ?? "未分類") : "未分類";
-                })()
-              : "未分類";
-          return {
-            id: t.id,
-            category: categoryName,
-            title: t.memo?.trim() ? t.memo : categoryName,
-            amount: Math.max(0, Math.round(numAmount(t.amount))),
-            time: md(t.transaction_date),
-          };
-        }),
-    [categoryById, transactions],
-  );
 
   const [formAmount, setFormAmount] = useState("");
   const [formKind, setFormKind] = useState<"expense" | "income">("expense");
@@ -499,36 +448,6 @@ export function KakeiboDashboard() {
       ) : null}
 
       <div className={styles.cards}>
-        <div className={styles.demoBand}>
-          <p className={styles.demoBandLabel}>共有ダッシュボード（家族共通）</p>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <MetricCard
-              label="今月の残り予算"
-              value={hasIncome ? yen.format(balanceNum) : "収入待ち"}
-              subLabel="家族全体の今月収支"
-              icon={<Wallet size={16} />}
-              trend={balanceNum >= 0 ? "up" : "down"}
-            />
-            <MetricCard
-              label="現在の貯金額"
-              value={yen.format(savingsEstimate)}
-              subLabel="家族口座の目安"
-              icon={<PiggyBank size={16} />}
-              trend="up"
-            />
-            <MetricCard
-              label="前月比"
-              value={`${monthRatio >= 0 ? "+" : ""}${monthRatio.toFixed(1)}%`}
-              subLabel="収入に対する残額比率"
-              icon={<WalletCards size={16} />}
-              trend={monthRatio >= 0 ? "up" : "down"}
-            />
-          </div>
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SpendingChart data={spendingChartData} />
-            <RecentTransactions items={recentExpenseItems} />
-          </div>
-        </div>
         <div className={`${styles.card} ${styles.cardIncome}`}>
           <div className={styles.cardLabel}>収入（今月）</div>
           <div className={`${styles.cardValue} ${styles.income}`}>
