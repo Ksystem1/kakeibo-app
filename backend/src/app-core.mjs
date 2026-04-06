@@ -126,6 +126,111 @@ function normalizeVendorName(s) {
     .replace(/\(有\)/g, "");
 }
 
+function normalizeReceiptToken(s) {
+  return String(s ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[　]/g, "");
+}
+
+function normalizeReceiptVendor(s) {
+  return normalizeReceiptToken(s)
+    .replace(/株式会社/g, "")
+    .replace(/\(株\)/g, "")
+    .replace(/有限会社/g, "")
+    .replace(/\(有\)/g, "");
+}
+
+function buildReceiptItemSet(items) {
+  const set = new Set();
+  for (const it of Array.isArray(items) ? items : []) {
+    const n = normalizeReceiptToken(it?.name ?? "");
+    if (n) set.add(n);
+  }
+  return set;
+}
+
+function receiptItemOverlapScore(aItems, bItems) {
+  const a = buildReceiptItemSet(aItems);
+  const b = buildReceiptItemSet(bItems);
+  if (a.size === 0 || b.size === 0) return 0;
+  let hit = 0;
+  for (const x of a) {
+    if (b.has(x)) hit += 1;
+  }
+  return hit / Math.max(a.size, b.size);
+}
+
+async function findLearnedReceiptCorrection(pool, userId, catWhere, summary, items) {
+  const mk = receiptOcrMatchKey(summary, items ?? []);
+  const [exactRows] = await pool.query(
+    `SELECT category_id, memo FROM receipt_ocr_corrections
+     WHERE user_id = ? AND match_key = ? LIMIT 1`,
+    [userId, mk],
+  );
+  const exact = Array.isArray(exactRows) ? exactRows[0] : null;
+  if (exact) {
+    return {
+      hit: true,
+      categoryId:
+        exact.category_id != null && exact.category_id !== ""
+          ? Number(exact.category_id)
+          : null,
+      memoPresent: exact.memo != null,
+      memoValue: exact.memo != null ? String(exact.memo).slice(0, 500) : "",
+      mode: "exact",
+    };
+  }
+
+  const vendorNorm = normalizeReceiptVendor(summary?.vendorName ?? "");
+  if (!vendorNorm) {
+    return { hit: false, categoryId: null, memoPresent: false, memoValue: "", mode: null };
+  }
+  const [candRows] = await pool.query(
+    `SELECT category_id, memo, ocr_snapshot_json
+     FROM receipt_ocr_corrections
+     WHERE user_id = ?
+       AND (category_id IS NOT NULL OR memo IS NOT NULL)
+     ORDER BY updated_at DESC
+     LIMIT 200`,
+    [userId],
+  );
+  if (!Array.isArray(candRows) || candRows.length === 0) {
+    return { hit: false, categoryId: null, memoPresent: false, memoValue: "", mode: null };
+  }
+  let best = null;
+  for (const row of candRows) {
+    let snap = null;
+    try {
+      snap = JSON.parse(String(row.ocr_snapshot_json ?? "{}"));
+    } catch {
+      continue;
+    }
+    const sv = normalizeReceiptVendor(snap?.vendorName ?? "");
+    if (!sv) continue;
+    const vendorMatched = sv === vendorNorm || sv.includes(vendorNorm) || vendorNorm.includes(sv);
+    if (!vendorMatched) continue;
+    const overlap = receiptItemOverlapScore(items ?? [], snap?.items ?? []);
+    const score = 10 + overlap * 5;
+    if (!best || score > best.score) {
+      best = { row, score };
+    }
+  }
+  if (!best || best.score < 10.5) {
+    return { hit: false, categoryId: null, memoPresent: false, memoValue: "", mode: null };
+  }
+  return {
+    hit: true,
+    categoryId:
+      best.row.category_id != null && best.row.category_id !== ""
+        ? Number(best.row.category_id)
+        : null,
+    memoPresent: best.row.memo != null,
+    memoValue: best.row.memo != null ? String(best.row.memo).slice(0, 500) : "",
+    mode: "vendor_fallback",
+  };
+}
+
 function tagFromCategoryName(name) {
   const n = normalizeKeyword(name);
   for (const [tag, aliases] of Object.entries(RECEIPT_CATEGORY_ALIASES)) {
@@ -1311,24 +1416,23 @@ export async function handleApiRequest(req, options = {}) {
           let learnedCategoryName = null;
           let learnedMemoPresent = false;
           let learnedMemoValue = "";
+          let learnedMode = null;
           try {
-            const mk = receiptOcrMatchKey(
+            const learned = await findLearnedReceiptCorrection(
+              pool,
+              userId,
+              catWhere,
               result?.summary,
               result?.items ?? [],
             );
-            const [lcRows] = await pool.query(
-              `SELECT category_id, memo FROM receipt_ocr_corrections
-               WHERE user_id = ? AND match_key = ? LIMIT 1`,
-              [userId, mk],
-            );
-            const row = Array.isArray(lcRows) && lcRows[0];
-            if (row) {
-              const hasCat = row.category_id != null && row.category_id !== "";
-              const hasMemo = row.memo != null;
+            if (learned?.hit) {
+              const hasCat = learned.categoryId != null;
+              const hasMemo = learned.memoPresent;
               if (hasCat || hasMemo) {
                 learnCorrectionHit = true;
+                learnedMode = learned.mode;
                 if (hasCat) {
-                  learnedCategoryId = Number(row.category_id);
+                  learnedCategoryId = Number(learned.categoryId);
                   const [cn] = await pool.query(
                     `SELECT c.name FROM categories c
                      WHERE ${catWhere} AND c.id = ? AND c.is_archived = 0 LIMIT 1`,
@@ -1340,7 +1444,7 @@ export async function handleApiRequest(req, options = {}) {
                 }
                 if (hasMemo) {
                   learnedMemoPresent = true;
-                  learnedMemoValue = String(row.memo).slice(0, 500);
+                  learnedMemoValue = learned.memoValue;
                 }
               }
             }
@@ -1376,6 +1480,7 @@ export async function handleApiRequest(req, options = {}) {
             suggestedCategoryId: finalSuggestedId,
             suggestedCategoryName: finalSuggestedName ?? null,
             suggestedCategorySource: finalSource,
+            suggestedCategoryCorrectionMode: learnedMode,
           };
           if (learnCorrectionHit && learnedMemoPresent) {
             body.suggestedMemo = learnedMemoValue;

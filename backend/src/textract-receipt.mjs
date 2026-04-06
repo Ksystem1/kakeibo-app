@@ -216,13 +216,36 @@ function normalizeDateText(raw) {
   return null;
 }
 
+function extractDateFromText(raw) {
+  if (raw == null || raw === "") return null;
+  const s = String(raw);
+  const direct = normalizeDateText(s);
+  if (direct) return direct;
+  const patterns = [
+    /(令和\s*\d{1,2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?)/,
+    /(平成\s*\d{1,2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?)/,
+    /(昭和\s*\d{1,2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?)/,
+    /((?:19|20)\d{2}[./-]\d{1,2}[./-]\d{1,2})/,
+    /((?:19|20)\d{2}年\d{1,2}月\d{1,2}日?)/,
+    /(R\d{1,2}[./-]\d{1,2}[./-]\d{1,2})/i,
+    /(\d{8})/,
+  ];
+  for (const re of patterns) {
+    const m = re.exec(s);
+    if (!m) continue;
+    const d = normalizeDateText(m[1]);
+    if (d) return d;
+  }
+  return null;
+}
+
 /** SummaryFields 全体から日付らしい文字列を拾う（型付きフィールドに無い場合） */
 function fallbackDateFromSummaryFields(summaryFields) {
   if (!Array.isArray(summaryFields)) return null;
   for (const f of summaryFields) {
     const chunks = [fieldText(f), fieldLabel(f)].filter(Boolean);
     for (const c of chunks) {
-      const d = normalizeDateText(c);
+      const d = extractDateFromText(c);
       if (d) return d;
     }
   }
@@ -271,6 +294,8 @@ function summaryFromFields(summaryFields) {
   const vendorCandidates = [];
   let subtotal = null;
   let subtotalConf = null;
+  let tax = null;
+  let taxConf = null;
   for (const f of summaryFields) {
     const t = fieldType(f);
     const text = fieldText(f);
@@ -279,7 +304,7 @@ function summaryFromFields(summaryFields) {
 
     if (!t) {
       if (!out.date) {
-        const d = normalizeDateText(text) ?? normalizeDateText(label);
+        const d = extractDateFromText(text) ?? extractDateFromText(label);
         if (d) {
           out.date = d;
           out.fieldConfidence.date = conf;
@@ -319,8 +344,15 @@ function summaryFromFields(summaryFields) {
         subtotalConf = conf;
       }
     }
+    if (t === "TAX" || t === "TOTAL_TAX" || t === "VAT") {
+      const amt = parseMoney(text);
+      if (amt != null) {
+        tax = amt;
+        taxConf = conf;
+      }
+    }
     if (DATE_SUMMARY_TYPES.has(t)) {
-      const d = normalizeDateText(text) ?? normalizeDateText(label);
+      const d = extractDateFromText(text) ?? extractDateFromText(label);
       if (d && !out.date) {
         out.date = d;
         out.fieldConfidence.date = conf;
@@ -352,9 +384,12 @@ function summaryFromFields(summaryFields) {
     });
     out.totalAmount = totalCandidates[0].amt;
     out.fieldConfidence.totalAmount = totalCandidates[0].conf;
-  } else if (subtotal != null) {
-    out.totalAmount = subtotal;
-    out.fieldConfidence.totalAmount = subtotalConf;
+  } else if (subtotal != null && tax != null) {
+    out.totalAmount = Math.round((subtotal + tax) * 100) / 100;
+    out.fieldConfidence.totalAmount = Math.min(
+      subtotalConf ?? 1,
+      taxConf ?? 1,
+    );
   }
   return out;
 }
@@ -378,7 +413,7 @@ function fallbackTotalFromLineItems(rows) {
 function fallbackDateFromLineItems(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
   for (const row of rows) {
-    const d = normalizeDateText(String(row?.name ?? ""));
+    const d = extractDateFromText(String(row?.name ?? ""));
     if (d) return d;
   }
   return null;
