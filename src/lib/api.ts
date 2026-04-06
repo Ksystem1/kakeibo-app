@@ -262,10 +262,15 @@ export async function deleteCategory(id: number) {
   return parse<{ ok: boolean }>(res);
 }
 
-export async function getTransactions(from?: string, to?: string) {
+export async function getTransactions(
+  from?: string,
+  to?: string,
+  options?: { scope?: "family" | "all" },
+) {
   const q = new URLSearchParams();
   if (from) q.set("from", from);
   if (to) q.set("to", to);
+  if (options?.scope === "family") q.set("scope", "family");
   const qs = q.toString();
   const res = await apiFetch(`${BASE}/transactions${qs ? `?${qs}` : ""}`, {
     headers: buildHeaders(),
@@ -303,8 +308,12 @@ export async function deleteTransaction(id: number) {
   return parse<{ ok: boolean }>(res);
 }
 
-export async function getMonthSummary(yearMonth: string) {
+export async function getMonthSummary(
+  yearMonth: string,
+  options?: { scope?: "family" | "all" },
+) {
   const q = new URLSearchParams({ year_month: yearMonth });
+  if (options?.scope === "family") q.set("scope", "family");
   const res = await apiFetch(`${BASE}/summary/month?${q}`, {
     headers: buildHeaders(),
   });

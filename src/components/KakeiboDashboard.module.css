@@ -110,6 +110,23 @@
   margin-bottom: 1.5rem;
 }
 
+.demoBand {
+  grid-column: 1 / -1;
+  padding: 0.9rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--bg-card) 90%, white 10%);
+}
+
+.demoBandLabel {
+  margin: 0 0 0.65rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 @media (max-width: 768px) {
   .cards {
     grid-template-columns: 1fr;

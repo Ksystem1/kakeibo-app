@@ -608,6 +608,7 @@ export async function handleApiRequest(req, options = {}) {
 
     const catWhere = `(c.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (c.family_id IS NULL AND c.user_id = ?))`;
     const txWhere = `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (t.family_id IS NULL AND t.user_id = ?))`;
+    const txWhereFamily = `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?))`;
 
     const normPath = path.replace(/\/$/, "") || "/";
     const txOneMatch = /^\/transactions\/(\d+)$/.exec(normPath);
@@ -1061,10 +1062,12 @@ export async function handleApiRequest(req, options = {}) {
       case "GET /transactions": {
         const from = q.from;
         const to = q.to;
+        const familyScopeOnly = String(q.scope ?? "").toLowerCase() === "family";
+        const txWhereForScope = familyScopeOnly ? txWhereFamily : txWhere;
         let sql = `SELECT t.id, t.account_id, t.category_id, t.kind, t.amount, t.transaction_date, t.memo, t.created_at, t.updated_at, t.user_id
                    FROM transactions t
-                   WHERE ${txWhere}`;
-        const params = [userId, userId];
+                   WHERE ${txWhereForScope}`;
+        const params = familyScopeOnly ? [userId] : [userId, userId];
         if (from) {
           sql += ` AND t.transaction_date >= ?`;
           params.push(from);
@@ -1117,6 +1120,9 @@ export async function handleApiRequest(req, options = {}) {
 
       case "GET /summary/month": {
         const ym = q.year_month || q.yearMonth;
+        const familyScopeOnly = String(q.scope ?? "").toLowerCase() === "family";
+        const txWhereForScope = familyScopeOnly ? txWhereFamily : txWhere;
+        const txScopeParams = familyScopeOnly ? [userId] : [userId, userId];
         const bounds = ymBounds(ym);
         if (!bounds) {
           return json(
@@ -1131,35 +1137,35 @@ export async function handleApiRequest(req, options = {}) {
           `SELECT c.id AS category_id, c.name AS category_name, COALESCE(SUM(t.amount),0) AS total
            FROM transactions t
            LEFT JOIN categories c ON c.id = t.category_id
-           WHERE ${txWhere}
+           WHERE ${txWhereForScope}
            AND t.transaction_date >= ? AND t.transaction_date <= ?
            AND t.kind = 'expense'
            GROUP BY c.id, c.name
            ORDER BY total DESC`,
-          [userId, userId, from, to],
+          [...txScopeParams, from, to],
         );
         const [incRows] = await pool.query(
           `SELECT c.id AS category_id, c.name AS category_name, COALESCE(SUM(t.amount),0) AS total
            FROM transactions t
            LEFT JOIN categories c ON c.id = t.category_id
-           WHERE ${txWhere}
+           WHERE ${txWhereForScope}
            AND t.transaction_date >= ? AND t.transaction_date <= ?
            AND t.kind = 'income'
            GROUP BY c.id, c.name
            ORDER BY total DESC`,
-          [userId, userId, from, to],
+          [...txScopeParams, from, to],
         );
         const [[sumE]] = await pool.query(
           `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
-           WHERE ${txWhere}
+           WHERE ${txWhereForScope}
            AND t.transaction_date >= ? AND t.transaction_date <= ? AND t.kind = 'expense'`,
-          [userId, userId, from, to],
+          [...txScopeParams, from, to],
         );
         const [[sumI]] = await pool.query(
           `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
-           WHERE ${txWhere}
+           WHERE ${txWhereForScope}
            AND t.transaction_date >= ? AND t.transaction_date <= ? AND t.kind = 'income'`,
-          [userId, userId, from, to],
+          [...txScopeParams, from, to],
         );
         return json(
           200,
