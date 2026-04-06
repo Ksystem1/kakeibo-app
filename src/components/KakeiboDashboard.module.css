@@ -42,6 +42,25 @@
   flex: 1 1 auto;
 }
 
+.demoLinkBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border));
+  background: color-mix(in oklab, var(--accent-dim) 80%, white 20%);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.demoLinkBtn:hover {
+  background: color-mix(in oklab, var(--accent-dim) 65%, white 35%);
+}
+
 .monthInput {
   font: inherit;
   font-size: 0.92rem;

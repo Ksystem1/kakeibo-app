@@ -1,5 +1,6 @@
 import { Pause, PiggyBank, Play, Plus, Wallet, WalletCards } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { MetricCard } from "../components/demo/MetricCard";
 import { RecentTransactions } from "../components/demo/RecentTransactions";
 import { SpendingChart } from "../components/demo/SpendingChart";
@@ -236,12 +237,18 @@ export function DemoDashboardPage() {
   );
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-[375px] bg-gradient-to-b from-white to-slate-50 px-4 pb-28 pt-6 text-slate-900">
+    <main className="mx-auto min-h-screen w-full max-w-6xl bg-gradient-to-b from-white to-slate-50 px-4 pb-28 pt-6 text-slate-900 md:px-6">
       <header className="mb-4 flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold tracking-wide text-mint-600">Kakeibo Demo</p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">今月の家計</h1>
           <p className="mt-1 text-sm text-slate-500">4月の支出バランスと貯金の進捗</p>
+          <Link
+            to="/"
+            className="mt-2 inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            トップへ戻る
+          </Link>
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <button
@@ -284,7 +291,7 @@ export function DemoDashboardPage() {
         </div>
       </header>
 
-      <section className="grid grid-cols-1 gap-3">
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <MetricCard
           label="今月の残り予算"
           value={yen(remainingBudget)}
@@ -308,14 +315,14 @@ export function DemoDashboardPage() {
         />
       </section>
 
-      <div className="mt-4 space-y-4">
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         <SpendingChart data={spendingData} />
         <RecentTransactions items={recentItems} />
       </div>
 
       <button
         type="button"
-        className={fabClass}
+        className={`${fabClass} md:left-auto md:right-8 md:translate-x-0`}
         aria-label="支出を追加"
       >
         <Plus size={24} />
