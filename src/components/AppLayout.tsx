@@ -145,6 +145,9 @@ export function AppLayout() {
         >
           {token ? (
             <>
+              <NavLink to="/dashboard" style={(p) => linkStyle(mobile, p)}>
+                ダッシュボード
+              </NavLink>
               <NavLink to="/" style={(p) => linkStyle(mobile, p)} end>
                 家計簿
               </NavLink>

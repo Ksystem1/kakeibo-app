@@ -25,6 +25,7 @@ export default function App() {
       <Route path="/demo-dashboard" element={<DemoDashboardPage />} />
       <Route element={<AppLayout />}>
         <Route element={<ProtectedRoute />}>
+          <Route path="/dashboard" element={<DemoDashboardPage />} />
           <Route path="/" element={<KakeiboDashboard />} />
           <Route path="/import" element={<ImportCsvPage />} />
           <Route path="/receipt" element={<ReceiptPage />} />
