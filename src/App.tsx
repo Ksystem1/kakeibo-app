@@ -13,6 +13,7 @@ import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { AdminPage } from "./pages/AdminPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { CategoriesPage } from "./pages/CategoriesPage";
+import { DemoDashboardPage } from "./pages/DemoDashboardPage";
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/demo-dashboard" element={<DemoDashboardPage />} />
       <Route element={<AppLayout />}>
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<KakeiboDashboard />} />

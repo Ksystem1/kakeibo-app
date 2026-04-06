@@ -1,0 +1,268 @@
+import { Pause, PiggyBank, Play, Plus, Wallet, WalletCards } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MetricCard } from "../components/demo/MetricCard";
+import { RecentTransactions } from "../components/demo/RecentTransactions";
+import { SpendingChart } from "../components/demo/SpendingChart";
+
+const baseSpendingData = [
+  { name: "食費", value: 27600, color: "#2fbf71" },
+  { name: "光熱費", value: 9300, color: "#86efac" },
+  { name: "日用品", value: 7400, color: "#fdba74" },
+  { name: "交通費", value: 6200, color: "#fb923c" },
+];
+
+const baseRecentItems = [
+  { id: 1, category: "食費", title: "スーパー まいばすけっと", amount: 1280, time: "今日 18:45" },
+  { id: 2, category: "光熱費", title: "電気料金", amount: 6380, time: "昨日 09:10" },
+  { id: 3, category: "日用品", title: "ドラッグストア", amount: 980, time: "4/4 20:12" },
+];
+
+const demoInputs = [
+  { category: "食費", amount: 1200, title: "コンビニ ランチ" },
+  { category: "日用品", amount: 980, title: "ドラッグストア" },
+  { category: "カフェ", amount: 650, title: "カフェ休憩" },
+];
+
+function yen(n: number) {
+  return `¥${Math.round(n).toLocaleString("ja-JP")}`;
+}
+
+function pct(n: number) {
+  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+
+export function DemoDashboardPage() {
+  const [isRunning, setIsRunning] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [typedCategory, setTypedCategory] = useState("");
+  const [typedAmount, setTypedAmount] = useState("");
+  const [remainingBudget, setRemainingBudget] = useState(42800);
+  const [savings, setSavings] = useState(1284000);
+  const [monthDelta, setMonthDelta] = useState(-12.4);
+  const [spendingData, setSpendingData] = useState(baseSpendingData);
+  const [recentItems, setRecentItems] = useState(baseRecentItems);
+  const rafRef = useRef<number | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const loopIndexRef = useRef(0);
+  const runningRef = useRef(true);
+  const remainingRef = useRef(42800);
+  const savingsRef = useRef(1284000);
+  const deltaRef = useRef(-12.4);
+
+  function clearTimers() {
+    if (timerRef.current != null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    if (rafRef.current != null) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  }
+
+  function animateNumber(setter: (n: number) => void, from: number, to: number, durationMs: number) {
+    if (!runningRef.current) return;
+    const start = performance.now();
+    const delta = to - from;
+    const step = (now: number) => {
+      if (!runningRef.current) return;
+      const p = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - (1 - p) ** 3;
+      setter(from + delta * eased);
+      if (p < 1) {
+        rafRef.current = window.requestAnimationFrame(step);
+      }
+    };
+    rafRef.current = window.requestAnimationFrame(step);
+  }
+
+  function typeText(text: string, setter: (v: string) => void, done: () => void, speedMs = 90) {
+    let i = 0;
+    setter("");
+    const tick = () => {
+      if (!runningRef.current) return;
+      i += 1;
+      setter(text.slice(0, i));
+      if (i < text.length) {
+        timerRef.current = window.setTimeout(tick, speedMs);
+      } else {
+        done();
+      }
+    };
+    timerRef.current = window.setTimeout(tick, speedMs);
+  }
+
+  useEffect(() => {
+    remainingRef.current = remainingBudget;
+  }, [remainingBudget]);
+  useEffect(() => {
+    savingsRef.current = savings;
+  }, [savings]);
+  useEffect(() => {
+    deltaRef.current = monthDelta;
+  }, [monthDelta]);
+
+  useEffect(() => {
+    runningRef.current = isRunning;
+    if (!isRunning) {
+      clearTimers();
+      return;
+    }
+
+    const runLoop = () => {
+      if (!runningRef.current) return;
+      const demo = demoInputs[loopIndexRef.current % demoInputs.length];
+      loopIndexRef.current += 1;
+
+      timerRef.current = window.setTimeout(() => {
+        if (!runningRef.current) return;
+        setShowModal(true);
+        setTypedCategory("");
+        setTypedAmount("");
+
+        typeText(demo.category, setTypedCategory, () => {
+          timerRef.current = window.setTimeout(() => {
+            typeText(`${demo.amount.toLocaleString("ja-JP")}円`, setTypedAmount, () => {
+              timerRef.current = window.setTimeout(() => {
+                if (!runningRef.current) return;
+                setShowModal(false);
+                setTypedCategory("");
+                setTypedAmount("");
+
+                setSpendingData((prev) =>
+                  prev.map((d) =>
+                    d.name === demo.category ? { ...d, value: d.value + demo.amount } : d,
+                  ),
+                );
+                setRecentItems((prev) => [
+                  {
+                    id: Date.now(),
+                    category: demo.category,
+                    title: demo.title,
+                    amount: demo.amount,
+                    time: "たった今",
+                  },
+                  ...prev.slice(0, 2),
+                ]);
+
+                animateNumber(
+                  setRemainingBudget,
+                  remainingRef.current,
+                  remainingRef.current - demo.amount,
+                  700,
+                );
+                animateNumber(
+                  setSavings,
+                  savingsRef.current,
+                  savingsRef.current + Math.round(demo.amount * 0.25),
+                  700,
+                );
+                animateNumber(setMonthDelta, deltaRef.current, deltaRef.current - 0.2, 700);
+
+                timerRef.current = window.setTimeout(runLoop, 1800);
+              }, 450);
+            }, 80);
+          }, 350);
+        }, 100);
+      }, 2200);
+    };
+
+    runLoop();
+    return () => {
+      clearTimers();
+    };
+  }, [isRunning]);
+
+  const fabClass = useMemo(
+    () =>
+      `fixed bottom-6 left-1/2 z-10 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full bg-mint-500 text-white shadow-lg shadow-mint-500/30 transition focus:outline-none focus:ring-4 focus:ring-mint-200 ${
+        isRunning ? "animate-pulse hover:bg-mint-600" : "hover:bg-mint-600"
+      }`,
+    [isRunning],
+  );
+
+  return (
+    <main className="mx-auto min-h-screen w-full max-w-[375px] bg-gradient-to-b from-white to-slate-50 px-4 pb-28 pt-6 text-slate-900">
+      <header className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold tracking-wide text-mint-600">Kakeibo Demo</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">今月の家計</h1>
+          <p className="mt-1 text-sm text-slate-500">4月の支出バランスと貯金の進捗</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsRunning((v) => !v)}
+          className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
+        >
+          {isRunning ? <Pause size={14} /> : <Play size={14} />}
+          {isRunning ? "一時停止" : "再開"}
+        </button>
+      </header>
+
+      <section className="grid grid-cols-1 gap-3">
+        <MetricCard
+          label="今月の残り予算"
+          value={yen(remainingBudget)}
+          subLabel="登録ごとに自動更新"
+          icon={<Wallet size={16} />}
+          trend="down"
+        />
+        <MetricCard
+          label="現在の貯金額"
+          value={yen(savings)}
+          subLabel="目標まで 64%"
+          icon={<PiggyBank size={16} />}
+          trend="up"
+        />
+        <MetricCard
+          label="前月比"
+          value={pct(monthDelta)}
+          subLabel="支出が改善しています"
+          icon={<WalletCards size={16} />}
+          trend="up"
+        />
+      </section>
+
+      <div className="mt-4 space-y-4">
+        <SpendingChart data={spendingData} />
+        <RecentTransactions items={recentItems} />
+      </div>
+
+      <button
+        type="button"
+        className={fabClass}
+        aria-label="支出を追加"
+      >
+        <Plus size={24} />
+      </button>
+
+      {showModal ? (
+        <div className="fixed inset-0 z-20 flex items-end justify-center bg-slate-900/35 p-3">
+          <section className="w-full max-w-[360px] rounded-2xl bg-white p-4 shadow-2xl">
+            <h2 className="text-sm font-semibold text-slate-900">支出入力</h2>
+            <div className="mt-3 space-y-2">
+              <label className="block text-xs text-slate-500">
+                カテゴリ
+                <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900">
+                  {typedCategory || " "}
+                </div>
+              </label>
+              <label className="block text-xs text-slate-500">
+                金額
+                <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900">
+                  {typedAmount || " "}
+                </div>
+              </label>
+            </div>
+            <button
+              type="button"
+              className="mt-4 w-full rounded-xl bg-mint-500 px-3 py-2.5 text-sm font-semibold text-white"
+            >
+              登録
+            </button>
+          </section>
+        </div>
+      ) : null}
+    </main>
+  );
+}
