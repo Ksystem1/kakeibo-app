@@ -60,6 +60,9 @@ export function LoginPage() {
             <p className={styles.cardSub}>
               登録済みのメールまたはユーザIDでサインイン
             </p>
+            <Link to="/demo-dashboard" className={styles.demoCta}>
+              デモを見る
+            </Link>
           </header>
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
             <div className={styles.field}>

@@ -373,9 +373,6 @@ export function KakeiboDashboard() {
           <h1 className={styles.title}>家計簿</h1>
         </div>
         <div className={styles.actions}>
-          <Link to="/demo-dashboard" className={styles.demoLinkBtn}>
-            デモを見る
-          </Link>
           <label htmlFor={txMobileNarrow ? undefined : "kb-month"} className={styles.monthRow}>
             表示月
             {txMobileNarrow ? (

@@ -148,6 +148,33 @@
   color: var(--text-muted);
 }
 
+.demoCta {
+  margin-top: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.82rem 1rem;
+  border-radius: 12px;
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+  background: linear-gradient(135deg, #16a34a 0%, #22c55e 55%, #fb923c 100%);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  box-shadow: 0 10px 22px rgba(34, 197, 94, 0.24);
+  transition: transform 0.08s ease, filter 0.16s ease;
+}
+
+.demoCta:hover {
+  filter: brightness(1.06);
+}
+
+.demoCta:active {
+  transform: translateY(1px);
+}
+
 .form {
   display: flex;
   flex-direction: column;
