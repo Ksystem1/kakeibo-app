@@ -14,6 +14,7 @@ import { AdminPage } from "./pages/AdminPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { CategoriesPage } from "./pages/CategoriesPage";
 import { DemoDashboardPage } from "./pages/DemoDashboardPage";
+import { DashboardPage } from "./pages/DashboardPage";
 
 export default function App() {
   return (
@@ -25,7 +26,7 @@ export default function App() {
       <Route path="/demo-dashboard" element={<DemoDashboardPage />} />
       <Route element={<AppLayout />}>
         <Route element={<ProtectedRoute />}>
-          <Route path="/dashboard" element={<DemoDashboardPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/" element={<KakeiboDashboard />} />
           <Route path="/import" element={<ImportCsvPage />} />
           <Route path="/receipt" element={<ReceiptPage />} />
