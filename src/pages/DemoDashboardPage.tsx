@@ -23,6 +23,49 @@ const demoInputs = [
   { category: "カフェ", amount: 650, title: "カフェ休憩" },
 ];
 
+type SpeedPreset = "slow" | "normal" | "fast";
+
+const speedMap: Record<
+  SpeedPreset,
+  {
+    loopStartDelay: number;
+    categoryTypeMs: number;
+    amountTypeMs: number;
+    betweenFieldsMs: number;
+    submitDelayMs: number;
+    afterUpdateDelayMs: number;
+    numberAnimMs: number;
+  }
+> = {
+  slow: {
+    loopStartDelay: 2800,
+    categoryTypeMs: 135,
+    amountTypeMs: 110,
+    betweenFieldsMs: 500,
+    submitDelayMs: 600,
+    afterUpdateDelayMs: 2200,
+    numberAnimMs: 900,
+  },
+  normal: {
+    loopStartDelay: 2200,
+    categoryTypeMs: 100,
+    amountTypeMs: 80,
+    betweenFieldsMs: 350,
+    submitDelayMs: 450,
+    afterUpdateDelayMs: 1800,
+    numberAnimMs: 700,
+  },
+  fast: {
+    loopStartDelay: 1500,
+    categoryTypeMs: 70,
+    amountTypeMs: 55,
+    betweenFieldsMs: 220,
+    submitDelayMs: 280,
+    afterUpdateDelayMs: 1000,
+    numberAnimMs: 420,
+  },
+};
+
 function yen(n: number) {
   return `¥${Math.round(n).toLocaleString("ja-JP")}`;
 }
@@ -33,6 +76,7 @@ function pct(n: number) {
 
 export function DemoDashboardPage() {
   const [isRunning, setIsRunning] = useState(true);
+  const [speed, setSpeed] = useState<SpeedPreset>("normal");
   const [showModal, setShowModal] = useState(false);
   const [typedCategory, setTypedCategory] = useState("");
   const [typedAmount, setTypedAmount] = useState("");
@@ -45,6 +89,7 @@ export function DemoDashboardPage() {
   const timerRef = useRef<number | null>(null);
   const loopIndexRef = useRef(0);
   const runningRef = useRef(true);
+  const speedRef = useRef<SpeedPreset>("normal");
   const remainingRef = useRef(42800);
   const savingsRef = useRef(1284000);
   const deltaRef = useRef(-12.4);
@@ -101,6 +146,9 @@ export function DemoDashboardPage() {
   useEffect(() => {
     deltaRef.current = monthDelta;
   }, [monthDelta]);
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
 
   useEffect(() => {
     runningRef.current = isRunning;
@@ -113,6 +161,7 @@ export function DemoDashboardPage() {
       if (!runningRef.current) return;
       const demo = demoInputs[loopIndexRef.current % demoInputs.length];
       loopIndexRef.current += 1;
+      const conf = speedMap[speedRef.current];
 
       timerRef.current = window.setTimeout(() => {
         if (!runningRef.current) return;
@@ -149,29 +198,34 @@ export function DemoDashboardPage() {
                   setRemainingBudget,
                   remainingRef.current,
                   remainingRef.current - demo.amount,
-                  700,
+                  conf.numberAnimMs,
                 );
                 animateNumber(
                   setSavings,
                   savingsRef.current,
                   savingsRef.current + Math.round(demo.amount * 0.25),
-                  700,
+                  conf.numberAnimMs,
                 );
-                animateNumber(setMonthDelta, deltaRef.current, deltaRef.current - 0.2, 700);
+                animateNumber(
+                  setMonthDelta,
+                  deltaRef.current,
+                  deltaRef.current - 0.2,
+                  conf.numberAnimMs,
+                );
 
-                timerRef.current = window.setTimeout(runLoop, 1800);
-              }, 450);
-            }, 80);
-          }, 350);
-        }, 100);
-      }, 2200);
+                timerRef.current = window.setTimeout(runLoop, conf.afterUpdateDelayMs);
+              }, conf.submitDelayMs);
+            }, conf.amountTypeMs);
+          }, conf.betweenFieldsMs);
+        }, conf.categoryTypeMs);
+      }, conf.loopStartDelay);
     };
 
     runLoop();
     return () => {
       clearTimers();
     };
-  }, [isRunning]);
+  }, [isRunning, speed]);
 
   const fabClass = useMemo(
     () =>
@@ -189,14 +243,45 @@ export function DemoDashboardPage() {
           <h1 className="mt-1 text-2xl font-bold tracking-tight">今月の家計</h1>
           <p className="mt-1 text-sm text-slate-500">4月の支出バランスと貯金の進捗</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setIsRunning((v) => !v)}
-          className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
-        >
-          {isRunning ? <Pause size={14} /> : <Play size={14} />}
-          {isRunning ? "一時停止" : "再開"}
-        </button>
+        <div className="flex flex-col items-end gap-1.5">
+          <button
+            type="button"
+            onClick={() => setIsRunning((v) => !v)}
+            className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
+          >
+            {isRunning ? <Pause size={14} /> : <Play size={14} />}
+            {isRunning ? "一時停止" : "再開"}
+          </button>
+          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 text-[11px] font-semibold text-slate-600 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setSpeed("slow")}
+              className={`rounded-full px-2 py-1 transition ${
+                speed === "slow" ? "bg-slate-900 text-white" : "hover:bg-slate-100"
+              }`}
+            >
+              ゆっくり
+            </button>
+            <button
+              type="button"
+              onClick={() => setSpeed("normal")}
+              className={`rounded-full px-2 py-1 transition ${
+                speed === "normal" ? "bg-slate-900 text-white" : "hover:bg-slate-100"
+              }`}
+            >
+              標準
+            </button>
+            <button
+              type="button"
+              onClick={() => setSpeed("fast")}
+              className={`rounded-full px-2 py-1 transition ${
+                speed === "fast" ? "bg-slate-900 text-white" : "hover:bg-slate-100"
+              }`}
+            >
+              高速
+            </button>
+          </div>
+        </div>
       </header>
 
       <section className="grid grid-cols-1 gap-3">
