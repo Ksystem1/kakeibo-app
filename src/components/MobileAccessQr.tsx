@@ -58,10 +58,11 @@ export function MobileAccessQr({
   compact?: boolean;
 }) {
   const { pathname, search } = useLocation();
+  const effectiveFixedPath = fixedPath ?? `${import.meta.env.BASE_URL}login`;
   const value = useMemo(
     () =>
-      typeof window === "undefined" ? "" : buildQrUrl(pathname, search, fixedPath),
-    [pathname, search, fixedPath],
+      typeof window === "undefined" ? "" : buildQrUrl(pathname, search, effectiveFixedPath),
+    [pathname, search, effectiveFixedPath],
   );
 
   const originOk = getMobileQrOrigin() !== null;
