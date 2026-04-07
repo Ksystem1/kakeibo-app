@@ -67,6 +67,11 @@ export function AiAdvisorChat() {
           })),
         },
       });
+      if (reply.source === "openai") {
+        console.log("Real AI Response", reply.reply);
+      } else {
+        console.log("Fallback AI Response", reply.reply);
+      }
       setMessages((prev) =>
         prev.map((m) => (m.id === typingId ? { id: typingId, role: "ai", text: reply.reply } : m)),
       );

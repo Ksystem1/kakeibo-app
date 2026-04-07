@@ -50,7 +50,11 @@ async function askOpenAiAdvisor(message, context) {
   if (!apiKey) return null;
   const model = String(process.env.OPENAI_MODEL || "gpt-4o-mini");
   const systemPrompt =
-    "あなたは家計簿アプリのAI家計アドバイザーです。短く、具体的で、実行しやすい節約アドバイスを日本語で返してください。";
+    [
+      "あなたはプロの家計再生コンサルタントです。",
+      "ユーザーの支出データ（現在はデモデータで可）に基づき、具体的かつポジティブな節約案を提案してください。",
+      "回答は3行以内で、インスタ映えする絵文字を適度に使ってください。",
+    ].join("\n");
   const userPrompt = [
     `ユーザー質問: ${message}`,
     `対象月: ${context?.yearMonth ?? "不明"}`,
@@ -1225,7 +1229,7 @@ export async function handleApiRequest(req, options = {}) {
         const ctx = b.context && typeof b.context === "object" ? b.context : {};
         try {
           const ai = await askOpenAiAdvisor(message, ctx);
-          if (ai) return json(200, { ok: true, reply: ai }, hdrs, skipCors);
+          if (ai) return json(200, { ok: true, reply: ai, source: "openai" }, hdrs, skipCors);
         } catch (e) {
           logError("ai.advisor.openai", e);
         }
@@ -1236,7 +1240,7 @@ export async function handleApiRequest(req, options = {}) {
           message.includes("あといくら")
             ? `今月の残り予算は${rest.toLocaleString("ja-JP")}円です。固定費と外食費を優先的に見直すと、さらに余裕を作れます。`
             : "まずは固定費（通信費・保険・サブスク）を見直し、次に変動費の上限をカテゴリ別に決めるのが効果的です。";
-        return json(200, { ok: true, reply }, hdrs, skipCors);
+        return json(200, { ok: true, reply, source: "fallback" }, hdrs, skipCors);
       }
 
       case "POST /import/csv": {

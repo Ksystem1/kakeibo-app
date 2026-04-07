@@ -528,5 +528,5 @@ export async function askAiAdvisor(body: {
     headers: buildHeaders(),
     body: JSON.stringify(body),
   });
-  return parse<{ ok: boolean; reply: string }>(res);
+  return parse<{ ok: boolean; reply: string; source?: "openai" | "fallback" }>(res);
 }
