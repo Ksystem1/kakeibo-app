@@ -1,5 +1,5 @@
-import { MessageCircle, Send, Sparkles, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Bot, MessageCircle, PiggyBank, Send, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { askAiAdvisor, getMonthSummary } from "../lib/api";
 
 type ChatMessage = {
@@ -7,6 +7,7 @@ type ChatMessage = {
   role: "user" | "ai";
   text: string;
   typing?: boolean;
+  typingUser?: boolean;
 };
 
 function currentYm() {
@@ -18,42 +19,38 @@ export function AiAdvisorChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 1, role: "ai", text: "こんにちは。AI家計アドバイザーです。気軽に相談してください。" },
   ]);
 
   const canSend = input.trim().length > 0 && !busy;
 
-  async function runDemoMode() {
-    if (busy) return;
-    setOpen(true);
-    const prompt = "今月あといくら使える？";
-    const userMsg: ChatMessage = { id: Date.now(), role: "user", text: prompt };
-    const typingId = Date.now() + 1;
-    setMessages((prev) => [...prev, userMsg, { id: typingId, role: "ai", text: "", typing: true }]);
-    setBusy(true);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === typingId
-          ? {
-              id: typingId,
-              role: "ai",
-              text: "今月の残り予算は24,500円です。このペースだと月末に5,000円余る計算ですよ！",
-            }
-          : m,
-      ),
-    );
-    setBusy(false);
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    });
   }
 
-  async function onSend() {
-    const text = input.trim();
+  function renderRichAiText(text: string) {
+    const parts = text.split(/(節約額[:：]?\s*¥[\d,]+|¥[\d,]+)/g).filter(Boolean);
+    return parts.map((p, i) => {
+      const strong = /(節約額[:：]?\s*¥[\d,]+|¥[\d,]+)/.test(p);
+      return (
+        <span key={`${p}-${i}`} className={strong ? "font-bold text-emerald-600" : ""}>
+          {p}
+        </span>
+      );
+    });
+  }
+
+  async function sendMessage(rawText: string) {
+    const text = rawText.trim();
     if (!text || busy) return;
-    setInput("");
     const userMsg: ChatMessage = { id: Date.now(), role: "user", text };
     const typingId = Date.now() + 1;
     setMessages((prev) => [...prev, userMsg, { id: typingId, role: "ai", text: "", typing: true }]);
+    scrollToBottom();
     setBusy(true);
     try {
       const ym = currentYm();
@@ -73,6 +70,7 @@ export function AiAdvisorChat() {
       setMessages((prev) =>
         prev.map((m) => (m.id === typingId ? { id: typingId, role: "ai", text: reply.reply } : m)),
       );
+      scrollToBottom();
     } catch {
       setMessages((prev) =>
         prev.map((m) =>
@@ -85,9 +83,40 @@ export function AiAdvisorChat() {
             : m,
         ),
       );
+      scrollToBottom();
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onSend() {
+    const text = input.trim();
+    if (!text || busy) return;
+    setInput("");
+    await sendMessage(text);
+  }
+
+  async function runDemoMode() {
+    if (busy) return;
+    setOpen(true);
+    setBusy(true);
+    const demoText = "今月の食費、削れるところある？";
+    const typingUserId = Date.now();
+    setMessages((prev) => [...prev, { id: typingUserId, role: "user", text: "", typingUser: true }]);
+    scrollToBottom();
+
+    for (let i = 1; i <= demoText.length; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === typingUserId ? { ...m, text: demoText.slice(0, i), typingUser: true } : m,
+        ),
+      );
+      scrollToBottom();
+    }
+    setMessages((prev) => prev.map((m) => (m.id === typingUserId ? { ...m, typingUser: false } : m)));
+    setBusy(false);
+    await sendMessage(demoText);
   }
 
   const bubbles = useMemo(
@@ -97,11 +126,24 @@ export function AiAdvisorChat() {
           <div
             className={
               m.role === "user"
-                ? "max-w-[78%] rounded-2xl rounded-br-md bg-blue-500 px-3 py-2 text-sm text-white"
-                : "max-w-[78%] rounded-2xl rounded-bl-md bg-slate-100 px-3 py-2 text-sm text-slate-800"
+                ? "max-w-[82%] rounded-2xl rounded-br-md bg-blue-500 px-3 py-2 text-sm text-white shadow-sm"
+                : "max-w-[82%] rounded-2xl rounded-bl-md bg-slate-100 px-3 py-2 text-sm text-slate-800 shadow-sm"
             }
           >
-            {m.typing ? <span className="inline-flex animate-pulse">入力中...</span> : m.text}
+            {m.typing ? (
+              <span className="inline-flex items-center gap-1 text-slate-600">
+                AIが考えています
+                <span className="inline-flex">
+                  <span className="animate-bounce [animation-delay:0ms]">.</span>
+                  <span className="animate-bounce [animation-delay:120ms]">.</span>
+                  <span className="animate-bounce [animation-delay:240ms]">.</span>
+                </span>
+              </span>
+            ) : m.role === "ai" ? (
+              <span>{renderRichAiText(m.text)}</span>
+            ) : (
+              <span>{m.text}</span>
+            )}
           </div>
         </div>
       )),
@@ -111,30 +153,34 @@ export function AiAdvisorChat() {
   return (
     <>
       {open ? (
-        <section className="fixed bottom-24 right-4 z-[120] flex h-[70vh] w-[min(92vw,380px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-          <header className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
+        <section className="fixed bottom-20 right-3 z-[120] flex h-[74vh] w-[min(96vw,420px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl md:right-4">
+          <header className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <Sparkles size={16} className="text-emerald-500" />
+              <span className="rounded-full bg-emerald-100 p-1.5 text-emerald-600">
+                <Bot size={14} />
+              </span>
               AI家計アドバイザー
             </div>
-            <button type="button" onClick={() => setOpen(false)} className="rounded-md p-1 text-slate-500 hover:bg-slate-200">
-              <X size={16} />
-            </button>
-          </header>
-
-          <div className="flex-1 space-y-2 overflow-y-auto bg-white p-3">{bubbles}</div>
-
-          <div className="border-t border-slate-200 bg-white p-2">
-            <div className="mb-2 flex justify-end">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => void runDemoMode()}
                 disabled={busy}
                 className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
               >
-                デモモード再生
+                デモ開始
+              </button>
+              <button type="button" onClick={() => setOpen(false)} className="rounded-md p-1 text-slate-500 hover:bg-slate-200">
+                <X size={16} />
               </button>
             </div>
+          </header>
+
+          <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto bg-slate-100 p-3">
+            {bubbles}
+          </div>
+
+          <div className="border-t border-slate-200 bg-white p-2">
             <div className="flex items-center gap-2">
               <input
                 className="h-10 flex-1 rounded-full border border-slate-300 px-3 text-sm outline-none focus:border-emerald-400"
@@ -144,6 +190,7 @@ export function AiAdvisorChat() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void onSend();
                 }}
+                disabled={busy}
               />
               <button
                 type="button"
@@ -164,7 +211,10 @@ export function AiAdvisorChat() {
         className="fixed bottom-6 right-4 z-[110] flex h-14 w-14 items-center justify-center rounded-full bg-blue-500 text-white shadow-xl shadow-blue-500/30"
         aria-label="AIアドバイザーチャットを開く"
       >
-        <MessageCircle size={22} />
+        <span className="relative">
+          <MessageCircle size={22} />
+          <PiggyBank size={12} className="absolute -bottom-2 -right-2 rounded-full bg-white p-0.5 text-emerald-600" />
+        </span>
       </button>
     </>
   );
