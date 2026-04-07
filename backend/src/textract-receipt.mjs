@@ -10,7 +10,7 @@ import { Agent as HttpsAgent } from "node:https";
 const DEFAULT_REGION = "ap-northeast-1";
 const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
-const DEFAULT_SEND_RETRIES = 1;
+const DEFAULT_SEND_RETRIES = 4;
 
 function envInt(name, fallback) {
   const v = process.env[name];
@@ -131,8 +131,22 @@ function parseMoney(raw) {
   s = s.replace(/[０-９]/g, (ch) =>
     String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
   );
+  // OCR が桁区切りカンマをドット誤認するケース（例: 253.76 => 25376）を補正
+  if (/^\d{1,3}\.\d{2,3}$/.test(s)) {
+    const [lhs, rhs] = s.split(".");
+    if ((rhs.length === 2 || rhs.length === 3) && Number.parseInt(lhs, 10) >= 100) {
+      s = `${lhs}${rhs}`;
+    }
+  }
+  // 通貨欄は円建て想定のため、末尾小数は整数へ寄せる
+  if (/^\d+\.\d+$/.test(s)) {
+    const n0 = Number.parseFloat(s);
+    if (Number.isFinite(n0) && n0 >= 1000) {
+      return Math.round(n0);
+    }
+  }
   const n = Number.parseFloat(s);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
 }
 function normalizeDateText(raw) {
   if (raw == null || raw === "") return null;
@@ -535,7 +549,13 @@ export function createReceiptAnalyzer(ctx = {}) {
       };
     }
 
-    const doc = docs[0];
+    // 複数候補がある場合は SummaryFields が最も充実した候補を優先
+    const doc = [...docs].sort((a, b) => {
+      const aFields = Array.isArray(a?.SummaryFields) ? a.SummaryFields.length : 0;
+      const bFields = Array.isArray(b?.SummaryFields) ? b.SummaryFields.length : 0;
+      if (bFields !== aFields) return bFields - aFields;
+      return Number(b?.ExpenseIndex ?? 0) - Number(a?.ExpenseIndex ?? 0);
+    })[0];
     const summary = summaryFromFields(doc.SummaryFields);
     const items = lineItemsFromExpenseDoc(doc);
     let notice = null;

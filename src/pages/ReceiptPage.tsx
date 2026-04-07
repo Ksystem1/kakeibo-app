@@ -413,6 +413,15 @@ export function ReceiptPage() {
             ? "内容確認"
             : "解析後、合計・日付・メモ（店舗名が取れた場合はここ）が下記に自動入力されます。内容はいつでも手で修正できます。"}
         </p>
+        {categorySuggestSource ? (
+          <p className={styles.receiptSummaryHint} style={{ marginTop: "-0.2rem" }}>
+            {categorySuggestSource === "history"
+              ? "過去履歴から自動反映しました（必要なら変更できます）。"
+              : categorySuggestSource === "correction"
+                ? "過去の補正内容を反映しました（必要なら変更できます）。"
+                : "カテゴリ候補を自動提案しました（必要なら変更できます）。"}
+          </p>
+        ) : null}
         <div className={`${styles.field} ${styles.receiptFieldKind}`}>
           <label htmlFor={kindFieldId}>種別</label>
           <select id={kindFieldId} value="expense" disabled aria-readonly>
@@ -436,15 +445,7 @@ export function ReceiptPage() {
               </option>
             ))}
           </select>
-          {categorySuggestSource ? (
-            <small className={styles.receiptCategoryHint}>
-              {categorySuggestSource === "history"
-                ? "過去の登録履歴から自動分類しました。必要なら変更できます。"
-                : categorySuggestSource === "correction"
-                  ? "過去に同じ読み取り結果へ入力した補正（カテゴリ・メモ）を反映しました。必要なら変更できます。"
-                  : "店舗名と明細のキーワードからカテゴリを推定しました。必要なら変更できます。"}
-            </small>
-          ) : null}
+          {categorySuggestSource ? <small className={styles.receiptCategoryHint}>自動候補</small> : null}
         </div>
         <div className={`${styles.field} ${styles.receiptFieldDate}`}>
           <label htmlFor={dateFieldId}>日付</label>

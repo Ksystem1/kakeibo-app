@@ -16,6 +16,7 @@ const FETCH_TIMEOUT_MS = 25_000;
 const RECEIPT_PARSE_TIMEOUT_MS = 45_000;
 /** 全期間の未分類をバッチ処理するため長め */
 const RECEIPT_RECLASSIFY_TIMEOUT_MS = 180_000;
+const RECEIPT_PARSE_MAX_RETRIES = 5;
 
 async function apiFetch(
   input: string | URL,
@@ -47,6 +48,15 @@ async function apiFetch(
   } finally {
     globalThis.clearTimeout(t);
   }
+}
+
+function isRetryableNetworkMessage(msg: string): boolean {
+  return (
+    msg.includes("タイムアウト") ||
+    msg.includes("接続できません") ||
+    msg.includes("NetworkError") ||
+    msg.includes("Failed to fetch")
+  );
 }
 
 export function getApiBaseUrl() {
@@ -350,33 +360,45 @@ export async function importCsvText(csvText: string) {
 }
 
 export async function parseReceiptImage(imageBase64: string) {
-  const res = await apiFetch(
-    `${BASE}/receipts/parse`,
-    {
-      method: "POST",
-      headers: buildHeaders(),
-      body: JSON.stringify({ imageBase64 }),
-    },
-    RECEIPT_PARSE_TIMEOUT_MS,
+  for (let attempt = 1; attempt <= RECEIPT_PARSE_MAX_RETRIES; attempt += 1) {
+    try {
+      const res = await apiFetch(
+        `${BASE}/receipts/parse`,
+        {
+          method: "POST",
+          headers: buildHeaders(),
+          body: JSON.stringify({ imageBase64 }),
+        },
+        RECEIPT_PARSE_TIMEOUT_MS,
+      );
+      return parse<{
+        ok: boolean;
+        demo?: boolean;
+        summary?: {
+          vendorName: string | null;
+          totalAmount: number | null;
+          date: string | null;
+          fieldConfidence?: Record<string, number | null | undefined>;
+        };
+        items: Array<{ name: string; amount: number | null; confidence?: number }>;
+        notice?: string | null;
+        expenseIndex?: number | null;
+        suggestedCategoryId?: number | null;
+        suggestedCategoryName?: string | null;
+        suggestedCategorySource?: "history" | "keywords" | "correction" | null;
+        learnCorrectionHit?: boolean;
+        suggestedMemo?: string;
+      }>(res);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const retryable = isRetryableNetworkMessage(msg);
+      if (!retryable || attempt >= RECEIPT_PARSE_MAX_RETRIES) break;
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 450 * attempt));
+    }
+  }
+  throw new Error(
+    "ネットワーク接続を5回再試行しましたが失敗しました。通信環境を確認して再度お試しください。",
   );
-  return parse<{
-    ok: boolean;
-    demo?: boolean;
-    summary?: {
-      vendorName: string | null;
-      totalAmount: number | null;
-      date: string | null;
-      fieldConfidence?: Record<string, number | null | undefined>;
-    };
-    items: Array<{ name: string; amount: number | null; confidence?: number }>;
-    notice?: string | null;
-    expenseIndex?: number | null;
-    suggestedCategoryId?: number | null;
-    suggestedCategoryName?: string | null;
-    suggestedCategorySource?: "history" | "keywords" | "correction" | null;
-    learnCorrectionHit?: boolean;
-    suggestedMemo?: string;
-  }>(res);
 }
 
 export async function saveReceiptOcrCorrection(body: {
