@@ -103,7 +103,7 @@ export function AppLayout() {
               flex: "1 1 auto",
             }}
           >
-            {!mobile ? <MobileAccessQr /> : null}
+            {!mobile ? <MobileAccessQr compact /> : null}
             {token ? (
               <button
                 type="button"

@@ -50,7 +50,13 @@ function buildQrUrl(pathname: string, search: string, fixedPath?: string) {
  * 同一 Wi‑Fi のスマホで画面 URL を開くための QR。
  * RR の pathname は basename を含まないため、origin との単純結合では /kakeibo/ が欠ける。
  */
-export function MobileAccessQr({ fixedPath }: { fixedPath?: string }) {
+export function MobileAccessQr({
+  fixedPath,
+  compact = false,
+}: {
+  fixedPath?: string;
+  compact?: boolean;
+}) {
   const { pathname, search } = useLocation();
   const value = useMemo(
     () =>
@@ -104,8 +110,8 @@ export function MobileAccessQr({ fixedPath }: { fixedPath?: string }) {
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 4,
-        padding: "4px 8px",
+        gap: compact ? 4 : 6,
+        padding: compact ? "6px 8px" : "8px 10px",
         borderRadius: 10,
         border: "1px solid var(--border)",
         background: "rgba(255,255,255,0.04)",
@@ -113,7 +119,7 @@ export function MobileAccessQr({ fixedPath }: { fixedPath?: string }) {
     >
       <span
         style={{
-          fontSize: "0.7rem",
+          fontSize: compact ? "0.68rem" : "0.74rem",
           color: "var(--text-muted)",
           fontWeight: 600,
           letterSpacing: "0.02em",
@@ -123,14 +129,31 @@ export function MobileAccessQr({ fixedPath }: { fixedPath?: string }) {
       </span>
       <div
         style={{
-          padding: 6,
+          padding: compact ? 8 : 10,
           borderRadius: 8,
           background: "#fff",
           lineHeight: 0,
+          border: "1px solid #dbe3ea",
         }}
       >
-        <QRCode value={value} size={88} level="M" fgColor="#0f1419" bgColor="#ffffff" />
+        <QRCode
+          value={value}
+          size={compact ? 108 : 156}
+          level="Q"
+          fgColor="#0f1419"
+          bgColor="#ffffff"
+        />
       </div>
+      {!compact ? (
+        <a
+          href={value}
+          target="_blank"
+          rel="noreferrer"
+          style={{ fontSize: "0.7rem", color: "var(--accent)", textDecoration: "none" }}
+        >
+          読み取れない場合はURLを開く
+        </a>
+      ) : null}
     </div>
   );
 }
