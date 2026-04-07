@@ -45,6 +45,39 @@ function routeKey(method, path) {
   return `${method} ${p}`;
 }
 
+async function askOpenAiAdvisor(message, context) {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey) return null;
+  const model = String(process.env.OPENAI_MODEL || "gpt-4o-mini");
+  const systemPrompt =
+    "あなたは家計簿アプリのAI家計アドバイザーです。短く、具体的で、実行しやすい節約アドバイスを日本語で返してください。";
+  const userPrompt = [
+    `ユーザー質問: ${message}`,
+    `対象月: ${context?.yearMonth ?? "不明"}`,
+    `収入合計: ${Number(context?.incomeTotal ?? 0)}円`,
+    `支出合計: ${Number(context?.expenseTotal ?? 0)}円`,
+    `上位カテゴリ: ${JSON.stringify(context?.topCategories ?? [])}`,
+  ].join("\n");
+  const res = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      input: [
+        { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
+        { role: "user", content: [{ type: "input_text", text: userPrompt }] },
+      ],
+      max_output_tokens: 300,
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenAI API error: ${res.status}`);
+  const data = await res.json();
+  return String(data?.output_text ?? "").trim() || null;
+}
+
 const RECEIPT_CATEGORY_KEYWORDS = {
   food: [
     "りんご",
@@ -1181,6 +1214,29 @@ export async function handleApiRequest(req, options = {}) {
           hdrs,
           skipCors,
         );
+      }
+
+      case "POST /ai/advisor": {
+        const b = JSON.parse(req.body || "{}");
+        const message = String(b.message ?? "").trim();
+        if (!message) {
+          return json(400, { error: "message が必要です" }, hdrs, skipCors);
+        }
+        const ctx = b.context && typeof b.context === "object" ? b.context : {};
+        try {
+          const ai = await askOpenAiAdvisor(message, ctx);
+          if (ai) return json(200, { ok: true, reply: ai }, hdrs, skipCors);
+        } catch (e) {
+          logError("ai.advisor.openai", e);
+        }
+        const income = Number(ctx?.incomeTotal ?? 0);
+        const expense = Number(ctx?.expenseTotal ?? 0);
+        const rest = Math.max(0, Math.round(income - expense));
+        const reply =
+          message.includes("あといくら")
+            ? `今月の残り予算は${rest.toLocaleString("ja-JP")}円です。固定費と外食費を優先的に見直すと、さらに余裕を作れます。`
+            : "まずは固定費（通信費・保険・サブスク）を見直し、次に変動費の上限をカテゴリ別に決めるのが効果的です。";
+        return json(200, { ok: true, reply }, hdrs, skipCors);
       }
 
       case "POST /import/csv": {

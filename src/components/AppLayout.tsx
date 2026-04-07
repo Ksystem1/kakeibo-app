@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { getAuthMe, normalizeAuthContextUser } from "../lib/api";
 import { AdSlot } from "./AdSlot";
+import { AiAdvisorChat } from "./AiAdvisorChat";
 import { MobileAccessQr } from "./MobileAccessQr";
 
 function linkStyle(
@@ -191,6 +192,7 @@ export function AppLayout() {
       <main style={{ flex: 1 }}>
         <Outlet />
       </main>
+      {token ? <AiAdvisorChat /> : null}
       <AdSlot placement="footer" />
     </div>
   );

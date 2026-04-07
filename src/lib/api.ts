@@ -513,3 +513,20 @@ export async function deleteAdminUser(userId: number) {
   });
   return parse<{ ok: boolean }>(res);
 }
+
+export async function askAiAdvisor(body: {
+  message: string;
+  context?: {
+    yearMonth?: string;
+    incomeTotal?: number;
+    expenseTotal?: number;
+    topCategories?: Array<{ name: string; total: number }>;
+  };
+}) {
+  const res = await apiFetch(`${BASE}/ai/advisor`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean; reply: string }>(res);
+}
