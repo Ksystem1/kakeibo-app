@@ -103,6 +103,7 @@ export function DashboardPage() {
   const prevIncome = num(previous?.incomeTotal);
   const prevExpense = num(previous?.expenseTotal);
   const prevBalance = prevIncome - prevExpense;
+  const currentSavings = prevBalance + income;
   const balanceDiffPct =
     prevBalance === 0 ? 0 : ((balance - prevBalance) / Math.abs(prevBalance)) * 100;
   const hasIncome = income > 0;
@@ -157,10 +158,10 @@ export function DashboardPage() {
         />
         <MetricCard
           label="現在の貯金額"
-          value={yen(Math.max(0, balance))}
-          subLabel={loading ? "更新中…" : "対象月の収支ベース"}
+          value={yen(currentSavings)}
+          subLabel={loading ? "更新中…" : "前月残高 + 今月収入"}
           icon={<PiggyBank size={16} />}
-          trend={balance >= 0 ? "up" : "down"}
+          trend={currentSavings >= prevBalance ? "up" : "down"}
         />
         <MetricCard
           label="前月比"
