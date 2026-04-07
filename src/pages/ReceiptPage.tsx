@@ -21,6 +21,13 @@ function dateFieldMode(raw: string): { kind: "iso"; value: string } | { kind: "t
   return { kind: "text", value: s };
 }
 
+function todayYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
 type ExpenseCategory = { id: number; name: string; kind: "expense" | "income" };
 
 const CATEGORY_TAGS = {
@@ -291,7 +298,12 @@ export function ReceiptPage() {
         const raw = s?.date?.trim() ?? "";
         const ymd = normalizeReceiptDateToYmd(raw) ?? raw;
         const dm = dateFieldMode(ymd);
-        setDraftDate(dm.kind === "iso" ? dm.value : ymd);
+        if (dm.kind === "iso" && dm.value) {
+          setDraftDate(dm.value);
+        } else {
+          setDraftDate(todayYmd());
+          setNotice("日付を読み取れなかったため、本日の日付を仮入力しました。必要なら変更してください。");
+        }
       }
       const localSuggested = suggestExpenseCategoryId(
         categories,

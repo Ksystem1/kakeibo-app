@@ -391,10 +391,11 @@ function summaryFromFields(summaryFields) {
   if (totalCandidates.length > 0) {
     totalCandidates.sort((a, b) => {
       if (a.preferred !== b.preferred) return (b.preferred ? 1 : 0) - (a.preferred ? 1 : 0);
+      if (Math.abs(b.amt - a.amt) > 0.009) return b.amt - a.amt;
       const ca = a.conf ?? 0;
       const cb = b.conf ?? 0;
       if (Math.abs(cb - ca) > 0.001) return cb - ca;
-      return b.amt - a.amt;
+      return 0;
     });
     out.totalAmount = totalCandidates[0].amt;
     out.fieldConfidence.totalAmount = totalCandidates[0].conf;
@@ -575,6 +576,16 @@ export function createReceiptAnalyzer(ctx = {}) {
       dateVal = fallbackDateFromLineItems(items);
       if (dateVal) {
         fieldConfidence = { ...fieldConfidence, date: fieldConfidence.date ?? null };
+      }
+    }
+    if (!dateVal) {
+      for (const d of docs) {
+        const fb = fallbackDateFromSummaryFields(d?.SummaryFields);
+        if (fb) {
+          dateVal = fb;
+          fieldConfidence = { ...fieldConfidence, date: fieldConfidence.date ?? null };
+          break;
+        }
       }
     }
     return {
