@@ -201,7 +201,7 @@ export function AiAdvisorChat() {
   return (
     <>
       {open ? (
-        <section className="fixed bottom-20 right-3 z-[120] flex h-[74vh] w-[min(96vw,420px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl md:right-4">
+        <section className="fixed bottom-20 right-3 z-[120] flex h-[62vh] w-[min(90vw,360px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl md:right-4 md:h-[74vh] md:w-[min(96vw,420px)]">
           <header className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
               <span className="rounded-full bg-emerald-100 p-1.5 text-emerald-600">

@@ -21,7 +21,7 @@ import {
   mergeDuplicateCategories,
   normalizeCategoryNameKey,
 } from "./category-utils.mjs";
-import { askBedrockAdvisor } from "./ai-advisor-service.mjs";
+import { askBedrockAdvisor, askBedrockReceiptAssistant } from "./ai-advisor-service.mjs";
 
 const logger = createLogger("api");
 
@@ -138,6 +138,28 @@ const RECEIPT_VENDOR_TAG_HINTS = {
 
 function normalizeKeyword(s) {
   return String(s ?? "").toLowerCase().replace(/\s+/g, "").replace(/[　]/g, "");
+}
+
+function normalizeReceiptCategoryName(s) {
+  return String(s ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[　・/]/g, "");
+}
+
+function pickCategoryIdByAiName(aiName, categoryRows) {
+  const target = normalizeReceiptCategoryName(aiName);
+  if (!target) return null;
+  let partial = null;
+  for (const r of categoryRows || []) {
+    const nm = normalizeReceiptCategoryName(r?.name ?? "");
+    if (!nm) continue;
+    if (nm === target) return Number(r.id);
+    if (!partial && (nm.includes(target) || target.includes(nm))) {
+      partial = Number(r.id);
+    }
+  }
+  return partial;
 }
 
 function normalizeVendorName(s) {
@@ -1468,6 +1490,14 @@ export async function handleApiRequest(req, options = {}) {
         try {
           const buf = decodeImageBuffer(b.imageBase64);
           const result = await analyzeReceiptImageBytes(buf, { logError });
+          const [expenseCats] = await pool.query(
+            `SELECT c.id, c.name
+             FROM categories c
+             WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense'
+             ORDER BY c.sort_order, c.id`,
+            [userId, userId],
+          );
+          const expenseCatRows = Array.isArray(expenseCats) ? expenseCats : [];
           const suggestedCategory = await suggestExpenseCategoryForReceipt(
             pool,
             userId,
@@ -1476,6 +1506,51 @@ export async function handleApiRequest(req, options = {}) {
             result?.summary?.vendorName ?? "",
             result?.items ?? [],
           );
+          let aiReceipt = null;
+          try {
+            aiReceipt = await askBedrockReceiptAssistant({
+              summary: result?.summary ?? {},
+              items: result?.items ?? [],
+              categoryCandidates: expenseCatRows.map((c) => c.name),
+            });
+          } catch (e) {
+            logError("receipts.parse.ai_assist", e);
+          }
+
+          let adjustedSummary = { ...(result?.summary ?? {}) };
+          let aiCategoryId = null;
+          let aiCategoryName = null;
+          if (aiReceipt?.ok && aiReceipt.data) {
+            const d = aiReceipt.data;
+            const aiVendor = String(d.vendorName ?? "").trim();
+            const aiDate = String(d.date ?? "").trim();
+            const aiTotal = Number(d.totalAmount ?? NaN);
+            const aiCat = String(d.categoryName ?? "").trim();
+            if (
+              aiVendor &&
+              (!adjustedSummary.vendorName ||
+                String(adjustedSummary.vendorName).trim().length < 2 ||
+                /^(不明|unknown|不詳)$/i.test(String(adjustedSummary.vendorName).trim()))
+            ) {
+              adjustedSummary.vendorName = aiVendor.slice(0, 120);
+            }
+            if (aiDate && /^\d{4}-\d{2}-\d{2}$/.test(aiDate) && !adjustedSummary.date) {
+              adjustedSummary.date = aiDate;
+            }
+            if (Number.isFinite(aiTotal) && aiTotal > 0) {
+              const current = Number(adjustedSummary.totalAmount ?? NaN);
+              if (!Number.isFinite(current) || current <= 0 || aiTotal > current * 1.15) {
+                adjustedSummary.totalAmount = Math.round(aiTotal);
+              }
+            }
+            if (aiCat) {
+              aiCategoryId = pickCategoryIdByAiName(aiCat, expenseCatRows);
+              if (aiCategoryId != null) {
+                const hit = expenseCatRows.find((x) => Number(x.id) === Number(aiCategoryId));
+                aiCategoryName = hit?.name ? String(hit.name) : aiCat;
+              }
+            }
+          }
 
           let learnCorrectionHit = false;
           let learnedCategoryId = null;
@@ -1524,21 +1599,27 @@ export async function handleApiRequest(req, options = {}) {
           const finalSuggestedId =
             learnedCategoryId != null
               ? learnedCategoryId
-              : suggestedCategory?.id ?? null;
+              : aiCategoryId != null
+                ? aiCategoryId
+                : suggestedCategory?.id ?? null;
           const finalSuggestedName =
             learnedCategoryId != null
               ? learnedCategoryName
-              : suggestedCategory?.name ?? null;
+              : aiCategoryName != null
+                ? aiCategoryName
+                : suggestedCategory?.name ?? null;
           const finalSource =
             learnCorrectionHit &&
             (learnedCategoryId != null || learnedMemoPresent)
               ? "correction"
-              : suggestedCategory?.source ?? null;
+              : aiCategoryId != null
+                ? "ai"
+                : suggestedCategory?.source ?? null;
 
           const body = {
             ok: true,
             demo: false,
-            summary: result.summary,
+            summary: adjustedSummary,
             items: result.items,
             notice: result.notice,
             expenseIndex: result.expenseIndex,

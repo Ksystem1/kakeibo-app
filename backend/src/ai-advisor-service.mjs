@@ -13,6 +13,8 @@ function buildPrompt(message, context) {
   const systemPrompt = [
     "あなたはプロの家計再生コンサルタントです。",
     "ユーザーの支出データ（現在はデモデータで可）に基づき、具体的かつポジティブな節約案を提案してください。",
+    "質問文に必ず直接回答してください。質問と無関係な一般論だけを返してはいけません。",
+    "可能なら金額やカテゴリ名を入れて提案してください。",
     "回答は3行以内で、インスタ映えする絵文字を適度に使ってください。",
   ].join("\n");
   const userPrompt = [
@@ -49,16 +51,15 @@ function parseClaudeText(data) {
   return texts.join("\n").trim();
 }
 
-export async function askBedrockAdvisor(message, context) {
+async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, temperature = 0.4 }) {
   const { region, modelId } = getBedrockConfig();
   if (!modelId) return null;
-  const { systemPrompt, userPrompt } = buildPrompt(message, context);
   const client = new BedrockRuntimeClient({ region });
 
   const body = JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
-    max_tokens: 300,
-    temperature: 0.4,
+    max_tokens: maxTokens,
+    temperature,
     system: systemPrompt,
     messages: [{ role: "user", content: [{ type: "text", text: userPrompt }] }],
   });
@@ -79,4 +80,47 @@ export async function askBedrockAdvisor(message, context) {
   } catch (e) {
     return { ok: false, ...mapAwsError(e) };
   }
+}
+
+export async function askBedrockAdvisor(message, context) {
+  const { systemPrompt, userPrompt } = buildPrompt(message, context);
+  return invokeBedrockText({ systemPrompt, userPrompt, maxTokens: 300, temperature: 0.4 });
+}
+
+function parseJsonBlock(raw) {
+  const t = String(raw ?? "").trim();
+  if (!t) return null;
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const src = fenced ? fenced[1] : t;
+  try {
+    return JSON.parse(src);
+  } catch {
+    return null;
+  }
+}
+
+export async function askBedrockReceiptAssistant(input) {
+  const systemPrompt = [
+    "あなたは家計簿アプリのレシート読取補助AIです。",
+    "OCRで崩れた店舗名・日付・合計金額を補正し、最適な支出カテゴリを提案してください。",
+    "必ずJSONのみを返してください。説明文は不要です。",
+  ].join("\n");
+  const userPrompt = [
+    "次の情報から補正してください。",
+    JSON.stringify(input),
+    "出力JSONスキーマ:",
+    '{"vendorName":"string|null","date":"YYYY-MM-DD|null","totalAmount":number|null,"categoryName":"string|null","reason":"string"}',
+  ].join("\n");
+  const out = await invokeBedrockText({
+    systemPrompt,
+    userPrompt,
+    maxTokens: 260,
+    temperature: 0.2,
+  });
+  if (!out?.ok) return out;
+  const data = parseJsonBlock(out.reply);
+  if (!data || typeof data !== "object") {
+    return { ok: false, code: "InvalidModelJson", message: "Receipt AI JSON parse failed" };
+  }
+  return { ok: true, data };
 }
