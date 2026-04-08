@@ -67,12 +67,24 @@ export function AiAdvisorChat() {
     });
   }
 
-  async function sendMessage(rawText: string) {
+  async function sendMessage(rawText: string, options?: { existingUserMessageId?: number }) {
     const text = rawText.trim();
     if (!text || busy) return;
-    const userMsg: ChatMessage = { id: Date.now(), role: "user", text };
+    const userMsg: ChatMessage = {
+      id: options?.existingUserMessageId ?? Date.now(),
+      role: "user",
+      text,
+    };
     const typingId = Date.now() + 1;
-    setMessages((prev) => [...prev, userMsg, { id: typingId, role: "ai", text: "", typing: true }]);
+    setMessages((prev) => {
+      const hasExisting =
+        options?.existingUserMessageId != null &&
+        prev.some((m) => m.id === options.existingUserMessageId);
+      if (hasExisting) {
+        return [...prev, { id: typingId, role: "ai", text: "", typing: true }];
+      }
+      return [...prev, userMsg, { id: typingId, role: "ai", text: "", typing: true }];
+    });
     scrollToBottom();
     setBusy(true);
     try {
@@ -155,7 +167,7 @@ export function AiAdvisorChat() {
     }
     setMessages((prev) => prev.map((m) => (m.id === typingUserId ? { ...m, typingUser: false } : m)));
     setBusy(false);
-    await sendMessage(demoText);
+    await sendMessage(demoText, { existingUserMessageId: typingUserId });
   }
 
   const bubbles = useMemo(
