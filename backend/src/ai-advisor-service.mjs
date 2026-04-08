@@ -107,6 +107,7 @@ export async function askBedrockReceiptAssistant(input) {
   ].join("\n");
   const userPrompt = [
     "次の情報から補正してください。",
+    "ocrLines にはレシートから抽出した生テキスト行が含まれます。summary/itemsより優先して文脈判断に使ってください。",
     JSON.stringify(input),
     "出力JSONスキーマ:",
     '{"vendorName":"string|null","date":"YYYY-MM-DD|null","totalAmount":number|null,"categoryName":"string|null","reason":"string"}',

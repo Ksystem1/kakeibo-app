@@ -1511,6 +1511,7 @@ export async function handleApiRequest(req, options = {}) {
             aiReceipt = await askBedrockReceiptAssistant({
               summary: result?.summary ?? {},
               items: result?.items ?? [],
+              ocrLines: result?.ocrLines ?? [],
               categoryCandidates: expenseCatRows.map((c) => c.name),
             });
           } catch (e) {

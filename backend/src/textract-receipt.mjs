@@ -470,6 +470,39 @@ function lineItemsFromExpenseDoc(doc) {
   return rows;
 }
 
+function collectOcrLinesFromExpenseDoc(doc) {
+  const lines = [];
+  const push = (v) => {
+    const s = String(v ?? "").trim();
+    if (!s) return;
+    lines.push(s);
+  };
+
+  for (const f of Array.isArray(doc?.SummaryFields) ? doc.SummaryFields : []) {
+    push(fieldLabel(f));
+    push(fieldText(f));
+  }
+
+  const groups = Array.isArray(doc?.LineItemGroups) ? doc.LineItemGroups : [];
+  for (const g of groups) {
+    for (const li of Array.isArray(g?.LineItems) ? g.LineItems : []) {
+      for (const f of Array.isArray(li?.LineItemExpenseFields) ? li.LineItemExpenseFields : []) {
+        push(fieldLabel(f));
+        push(fieldText(f));
+      }
+    }
+  }
+
+  const uniq = [];
+  const seen = new Set();
+  for (const x of lines) {
+    if (seen.has(x)) continue;
+    seen.add(x);
+    uniq.push(x);
+  }
+  return uniq.slice(0, 180);
+}
+
 export function decodeImageBuffer(imageBase64) {
   let s = String(imageBase64 ?? "").trim();
   const dataUrl = /^data:image\/[a-z0-9.+-]+;base64,(.+)$/is.exec(s);
@@ -559,6 +592,7 @@ export function createReceiptAnalyzer(ctx = {}) {
     })[0];
     const summary = summaryFromFields(doc.SummaryFields);
     const items = lineItemsFromExpenseDoc(doc);
+    const ocrLines = collectOcrLinesFromExpenseDoc(doc);
     let notice = null;
     let totalAmount = summary.totalAmount;
     let fieldConfidence = { ...summary.fieldConfidence };
@@ -596,6 +630,7 @@ export function createReceiptAnalyzer(ctx = {}) {
         fieldConfidence,
       },
       items,
+      ocrLines,
       notice,
       expenseIndex: doc.ExpenseIndex ?? null,
     };
