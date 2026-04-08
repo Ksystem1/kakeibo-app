@@ -256,7 +256,10 @@ export function KakeiboDashboard() {
     : totals.expense;
   const balanceNum = incomeTotalNum - expenseTotalNum;
   const hasIncome = incomeTotalNum > 0;
-  const fixedCostForMonth = Number(fixedCostsByMonth[ym] ?? 0);
+  const fixedCostForMonth = (fixedCostsByMonth[ym] ?? []).reduce(
+    (acc, x) => acc + Number(x.amount || 0),
+    0,
+  );
   const expenseRowsWithFixed = useMemo(() => {
     const rows = [...(summary?.expensesByCategory ?? [])];
     if (!Number.isFinite(fixedCostForMonth) || fixedCostForMonth <= 0) return rows;

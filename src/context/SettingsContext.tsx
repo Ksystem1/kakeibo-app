@@ -13,6 +13,11 @@ const THEME_KEY = "kakeibo_theme_mode";
 const FIXED_COSTS_KEY = "kakeibo_fixed_costs_by_month";
 
 type FontMode = "small" | "standard" | "large" | "xlarge";
+export type FixedCostItem = {
+  id: string;
+  amount: number;
+  note: string;
+};
 const THEME_MODES = ["light", "dark", "paper", "ocean"] as const;
 type ThemeMode = (typeof THEME_MODES)[number];
 
@@ -30,11 +35,11 @@ type Settings = {
   fontScale: number;
   fontMode: FontMode;
   themeMode: ThemeMode;
-  fixedCostsByMonth: Record<string, number>;
+  fixedCostsByMonth: Record<string, FixedCostItem[]>;
   setFontScale: (n: number) => void;
   setFontMode: (m: FontMode) => void;
   setThemeMode: (m: ThemeMode) => void;
-  setFixedCostForMonth: (ym: string, amount: number) => void;
+  setFixedCostsForMonth: (ym: string, items: FixedCostItem[]) => void;
 };
 
 const SettingsContext = createContext<Settings | null>(null);
@@ -68,16 +73,31 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       return FONT_MODE_SCALE[fontMode];
     }
   });
-  const [fixedCostsByMonth, setFixedCostsByMonth] = useState<Record<string, number>>(() => {
+  const [fixedCostsByMonth, setFixedCostsByMonth] = useState<Record<string, FixedCostItem[]>>(() => {
     try {
       const raw = localStorage.getItem(FIXED_COSTS_KEY);
       const parsed = raw ? JSON.parse(raw) : {};
       if (!parsed || typeof parsed !== "object") return {};
-      const out: Record<string, number> = {};
+      const out: Record<string, FixedCostItem[]> = {};
       for (const [k, v] of Object.entries(parsed)) {
         if (!/^\d{4}-\d{2}$/.test(k)) continue;
+        if (Array.isArray(v)) {
+          const items: FixedCostItem[] = [];
+          for (const x of v) {
+            if (!x || typeof x !== "object") continue;
+            const amt = Number((x as { amount?: unknown }).amount);
+            if (!Number.isFinite(amt) || amt < 0) continue;
+            const id = String((x as { id?: unknown }).id ?? `fixed-${items.length + 1}`);
+            const note = String((x as { note?: unknown }).note ?? "").trim().slice(0, 80);
+            items.push({ id, amount: Math.round(amt), note });
+          }
+          if (items.length > 0) out[k] = items;
+          continue;
+        }
         const n = Number(v);
-        if (Number.isFinite(n) && n >= 0) out[k] = Math.round(n);
+        if (Number.isFinite(n) && n > 0) {
+          out[k] = [{ id: "legacy-1", amount: Math.round(n), note: "" }];
+        }
       }
       return out;
     } catch {
@@ -145,15 +165,21 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setThemeModeState(m);
   };
 
-  const setFixedCostForMonth = (ym: string, amount: number) => {
+  const setFixedCostsForMonth = (ym: string, items: FixedCostItem[]) => {
     if (!/^\d{4}-\d{2}$/.test(ym)) return;
-    const n = Math.max(0, Math.round(Number.isFinite(amount) ? amount : 0));
+    const cleaned = (Array.isArray(items) ? items : [])
+      .map((x, i) => ({
+        id: String(x?.id ?? `fixed-${i + 1}`),
+        amount: Math.max(0, Math.round(Number(x?.amount ?? 0))),
+        note: String(x?.note ?? "").trim().slice(0, 80),
+      }))
+      .filter((x) => Number.isFinite(x.amount) && x.amount > 0);
     setFixedCostsByMonth((prev) => {
       const next = { ...prev };
-      if (n <= 0) {
+      if (cleaned.length === 0) {
         delete next[ym];
       } else {
-        next[ym] = n;
+        next[ym] = cleaned;
       }
       return next;
     });
@@ -168,7 +194,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setFontScale,
       setFontMode,
       setThemeMode,
-      setFixedCostForMonth,
+      setFixedCostsForMonth,
     }),
     [fontScale, fontMode, themeMode, fixedCostsByMonth],
   );

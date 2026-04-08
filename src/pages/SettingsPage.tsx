@@ -1,4 +1,4 @@
-import { useSettings } from "../context/SettingsContext";
+import { type FixedCostItem, useSettings } from "../context/SettingsContext";
 import { useMemo, useState } from "react";
 import { reclassifyUncategorizedReceipts } from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
@@ -17,19 +17,28 @@ export function SettingsPage() {
     themeMode,
     setThemeMode,
     fixedCostsByMonth,
-    setFixedCostForMonth,
+    setFixedCostsForMonth,
   } = useSettings();
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyResult, setReclassifyResult] = useState<string | null>(null);
   const [fixedYm, setFixedYm] = useState(currentYm);
-  const [fixedAmount, setFixedAmount] = useState(() =>
-    String(fixedCostsByMonth[currentYm()] ?? ""),
-  );
+  const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() => {
+    const ym = currentYm();
+    const src = fixedCostsByMonth[ym] ?? [];
+    if (src.length > 0) return src;
+    return [{ id: `fixed-${Date.now()}`, amount: 0, note: "" }];
+  });
 
   const fixedCostRows = useMemo(
     () =>
       Object.entries(fixedCostsByMonth)
-        .sort(([a], [b]) => b.localeCompare(a))
+        .map(([ym, items]) => ({
+          ym,
+          total: items.reduce((acc, x) => acc + Number(x.amount || 0), 0),
+          count: items.length,
+        }))
+        .filter((x) => x.total > 0)
+        .sort((a, b) => b.ym.localeCompare(a.ym))
         .slice(0, 12),
     [fixedCostsByMonth],
   );
@@ -130,31 +139,75 @@ export function SettingsPage() {
               id="fixed-ym"
               type="month"
               value={fixedYm}
+              style={{ maxWidth: 180 }}
               onChange={(e) => {
                 const ym = e.target.value;
                 setFixedYm(ym);
-                setFixedAmount(String(fixedCostsByMonth[ym] ?? ""));
+                const src = fixedCostsByMonth[ym] ?? [];
+                setFixedItems(
+                  src.length > 0
+                    ? src
+                    : [{ id: `fixed-${Date.now()}`, amount: 0, note: "" }],
+                );
               }}
             />
           </div>
-          <div className={styles.field}>
-            <label htmlFor="fixed-amount">固定費（円）</label>
-            <input
-              id="fixed-amount"
-              type="number"
-              min={0}
-              step={1}
-              placeholder="80000"
-              value={fixedAmount}
-              onChange={(e) => setFixedAmount(e.target.value)}
-            />
+          <div className={styles.field} style={{ gridColumn: "1 / -1" }}>
+            <label>固定費入力（1行 = 金額 + 備考）</label>
+            <div style={{ display: "grid", gap: 8 }}>
+              {fixedItems.map((item, idx) => (
+                <div key={item.id} style={{ display: "grid", gridTemplateColumns: "140px 1fr auto", gap: 8 }}>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="金額"
+                    value={item.amount > 0 ? String(item.amount) : ""}
+                    onChange={(e) => {
+                      const next = [...fixedItems];
+                      const n = Number.parseFloat(e.target.value || "0");
+                      next[idx] = { ...next[idx], amount: Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0 };
+                      setFixedItems(next);
+                    }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="備考（例: 家賃・通信費）"
+                    value={item.note}
+                    onChange={(e) => {
+                      const next = [...fixedItems];
+                      next[idx] = { ...next[idx], note: e.target.value };
+                      setFixedItems(next);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={styles.btn}
+                    onClick={() => {
+                      const next = fixedItems.filter((x) => x.id !== item.id);
+                      setFixedItems(next.length > 0 ? next : [{ id: `fixed-${Date.now()}`, amount: 0, note: "" }]);
+                    }}
+                  >
+                    削除
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
+          <button
+            type="button"
+            className={styles.btn}
+            onClick={() =>
+              setFixedItems((prev) => [...prev, { id: `fixed-${Date.now()}-${prev.length}`, amount: 0, note: "" }])
+            }
+          >
+            入力行を追加
+          </button>
           <button
             type="button"
             className={`${styles.btn} ${styles.btnPrimary}`}
             onClick={() => {
-              const amount = Number.parseFloat(fixedAmount || "0");
-              setFixedCostForMonth(fixedYm, Number.isFinite(amount) ? amount : 0);
+              setFixedCostsForMonth(fixedYm, fixedItems);
             }}
           >
             保存
@@ -170,10 +223,10 @@ export function SettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {fixedCostRows.map(([ym, amount]) => (
-                  <tr key={ym}>
-                    <td>{ym}</td>
-                    <td>¥{Number(amount).toLocaleString("ja-JP")}</td>
+                {fixedCostRows.map((row) => (
+                  <tr key={row.ym}>
+                    <td>{row.ym}</td>
+                    <td>¥{Number(row.total).toLocaleString("ja-JP")}（{row.count}件）</td>
                   </tr>
                 ))}
               </tbody>
