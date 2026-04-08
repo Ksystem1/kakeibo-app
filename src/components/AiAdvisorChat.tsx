@@ -109,10 +109,7 @@ export function AiAdvisorChat() {
         },
       });
       const normalizedReply = String(reply.reply ?? "").trim();
-      const finalReply =
-        reply.source === "bedrock"
-          ? normalizedReply
-          : buildClientFallback(text, summaryLite);
+      const finalReply = normalizedReply || buildClientFallback(text, summaryLite);
       if (reply.source === "bedrock") {
         console.log("Real AI Response", normalizedReply);
       } else {
