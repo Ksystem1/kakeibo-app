@@ -15,6 +15,29 @@ function currentYm() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function buildClientFallback(
+  question: string,
+  summary: {
+    incomeTotal: number;
+    expenseTotal: number;
+    topCategoryName: string;
+    topCategoryTotal: number;
+  },
+) {
+  const q = String(question ?? "");
+  const rest = Math.max(0, Math.round(summary.incomeTotal - summary.expenseTotal));
+  if (q.includes("使い方")) {
+    return `「食費を月5,000円下げたい」のように数値つきで聞くと、より具体的に提案できます。今月は${summary.topCategoryName}が${summary.topCategoryTotal.toLocaleString("ja-JP")}円なので、まずここから見直しましょう。`;
+  }
+  if (q.includes("カテゴリ")) {
+    return `カテゴリ別では、まず${summary.topCategoryName}が見直し候補です。上限を先に決めて、週ごとに配分すると管理しやすくなります。`;
+  }
+  if (q.includes("食費")) {
+    return "食費は週予算を先に決めるとブレにくくなります。買い物前に上限を決め、余った分は翌週へ繰り越す運用がおすすめです。";
+  }
+  return `今月の残り予算は${rest.toLocaleString("ja-JP")}円です。まずは${summary.topCategoryName}の上限設定から始めると効果が出やすいです。`;
+}
+
 export function AiAdvisorChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -55,25 +78,36 @@ export function AiAdvisorChat() {
     try {
       const ym = currentYm();
       const sum = await getMonthSummary(ym, { scope: "family" });
+      const summaryLite = {
+        incomeTotal: Number(sum.incomeTotal ?? 0),
+        expenseTotal: Number(sum.expenseTotal ?? 0),
+        topCategoryName: sum.expensesByCategory?.[0]?.category_name ?? "変動費",
+        topCategoryTotal: Number(sum.expensesByCategory?.[0]?.total ?? 0),
+      };
       const reply = await askAiAdvisor({
         message: text,
         context: {
           yearMonth: ym,
-          incomeTotal: Number(sum.incomeTotal ?? 0),
-          expenseTotal: Number(sum.expenseTotal ?? 0),
+          incomeTotal: summaryLite.incomeTotal,
+          expenseTotal: summaryLite.expenseTotal,
           topCategories: (sum.expensesByCategory ?? []).slice(0, 3).map((x) => ({
             name: x.category_name ?? "未分類",
             total: Number(x.total ?? 0),
           })),
         },
       });
+      const normalizedReply = String(reply.reply ?? "").trim();
+      const finalReply =
+        reply.source === "bedrock"
+          ? normalizedReply
+          : buildClientFallback(text, summaryLite);
       if (reply.source === "bedrock") {
-        console.log("Real AI Response", reply.reply);
+        console.log("Real AI Response", normalizedReply);
       } else {
-        console.log("Fallback AI Response", reply.reply);
+        console.log("Fallback AI Response", normalizedReply);
       }
       setMessages((prev) =>
-        prev.map((m) => (m.id === typingId ? { id: typingId, role: "ai", text: reply.reply } : m)),
+        prev.map((m) => (m.id === typingId ? { id: typingId, role: "ai", text: finalReply } : m)),
       );
       scrollToBottom();
     } catch {
