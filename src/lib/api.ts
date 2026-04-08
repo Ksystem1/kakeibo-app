@@ -521,6 +521,7 @@ export async function askAiAdvisor(body: {
     incomeTotal?: number;
     expenseTotal?: number;
     topCategories?: Array<{ name: string; total: number }>;
+    history?: Array<{ role: "user" | "ai"; text: string }>;
   };
 }) {
   const res = await apiFetch(`${BASE}/ai/advisor`, {

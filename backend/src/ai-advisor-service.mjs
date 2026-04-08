@@ -10,11 +10,22 @@ function getBedrockConfig() {
 }
 
 function buildPrompt(message, context) {
+  const history = Array.isArray(context?.history)
+    ? context.history
+        .filter((x) => x && (x.role === "user" || x.role === "ai") && typeof x.text === "string")
+        .slice(-8)
+        .map((x) => ({
+          role: x.role === "ai" ? "assistant" : "user",
+          text: String(x.text).trim().slice(0, 240),
+        }))
+    : [];
   const systemPrompt = [
     "あなたはプロの家計再生コンサルタントです。",
     "ユーザーの支出データ（現在はデモデータで可）に基づき、具体的かつポジティブな節約案を提案してください。",
     "質問文に必ず直接回答してください。質問と無関係な一般論だけを返してはいけません。",
     "可能なら金額やカテゴリ名を入れて提案してください。",
+    "回答は質問への結論を最初の1文で示し、その後に根拠や実行案を述べてください。",
+    "会話履歴がある場合は、直近の質問意図を優先し、文脈と矛盾しない回答にしてください。",
     "回答は3行以内で、インスタ映えする絵文字を適度に使ってください。",
   ].join("\n");
   const userPrompt = [
@@ -23,6 +34,7 @@ function buildPrompt(message, context) {
     `収入合計: ${Number(context?.incomeTotal ?? 0)}円`,
     `支出合計: ${Number(context?.expenseTotal ?? 0)}円`,
     `上位カテゴリ: ${JSON.stringify(context?.topCategories ?? [])}`,
+    `直近会話: ${JSON.stringify(history)}`,
   ].join("\n");
   return { systemPrompt, userPrompt };
 }
@@ -84,7 +96,7 @@ async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, te
 
 export async function askBedrockAdvisor(message, context) {
   const { systemPrompt, userPrompt } = buildPrompt(message, context);
-  return invokeBedrockText({ systemPrompt, userPrompt, maxTokens: 300, temperature: 0.4 });
+  return invokeBedrockText({ systemPrompt, userPrompt, maxTokens: 300, temperature: 0.2 });
 }
 
 function parseJsonBlock(raw) {

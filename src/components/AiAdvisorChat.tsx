@@ -96,6 +96,17 @@ export function AiAdvisorChat() {
         topCategoryName: sum.expensesByCategory?.[0]?.category_name ?? "変動費",
         topCategoryTotal: Number(sum.expensesByCategory?.[0]?.total ?? 0),
       };
+      const historySeed: ChatMessage[] = [
+        ...messages,
+        { id: -1, role: "user", text },
+      ];
+      const history = historySeed
+        .filter((m) => !m.typing && !m.typingUser && String(m.text ?? "").trim())
+        .slice(-8)
+        .map((m) => ({
+          role: m.role,
+          text: String(m.text).trim().slice(0, 240),
+        }));
       const reply = await askAiAdvisor({
         message: text,
         context: {
@@ -106,6 +117,7 @@ export function AiAdvisorChat() {
             name: x.category_name ?? "未分類",
             total: Number(x.total ?? 0),
           })),
+          history,
         },
       });
       const normalizedReply = String(reply.reply ?? "").trim();
