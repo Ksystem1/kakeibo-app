@@ -11,10 +11,12 @@
     "db:migrate-v2": "node scripts/run-migration-v2.mjs",
     "db:migrate-v5": "node scripts/run-migration-v5.mjs",
     "db:dev-user": "node scripts/ensure-dev-user.mjs",
+    "test:bedrock": "node scripts/test-bedrock.mjs",
     "dev:api": "node src/index.js",
     "start": "node src/index.js"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1026.0",
     "@aws-sdk/client-textract": "^3.1021.0",
     "@smithy/node-http-handler": "^4.4.5",
     "bcryptjs": "^2.4.3",

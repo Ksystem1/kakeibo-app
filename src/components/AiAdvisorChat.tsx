@@ -67,7 +67,7 @@ export function AiAdvisorChat() {
           })),
         },
       });
-      if (reply.source === "openai") {
+      if (reply.source === "bedrock") {
         console.log("Real AI Response", reply.reply);
       } else {
         console.log("Fallback AI Response", reply.reply);

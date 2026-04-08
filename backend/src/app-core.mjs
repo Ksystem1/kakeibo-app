@@ -21,6 +21,7 @@ import {
   mergeDuplicateCategories,
   normalizeCategoryNameKey,
 } from "./category-utils.mjs";
+import { askBedrockAdvisor } from "./ai-advisor-service.mjs";
 
 const logger = createLogger("api");
 
@@ -43,43 +44,6 @@ function json(statusCode, body, reqHeaders, skipCors) {
 function routeKey(method, path) {
   const p = path.replace(/\/$/, "") || "/";
   return `${method} ${p}`;
-}
-
-async function askOpenAiAdvisor(message, context) {
-  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
-  if (!apiKey) return null;
-  const model = String(process.env.OPENAI_MODEL || "gpt-4o-mini");
-  const systemPrompt =
-    [
-      "あなたはプロの家計再生コンサルタントです。",
-      "ユーザーの支出データ（現在はデモデータで可）に基づき、具体的かつポジティブな節約案を提案してください。",
-      "回答は3行以内で、インスタ映えする絵文字を適度に使ってください。",
-    ].join("\n");
-  const userPrompt = [
-    `ユーザー質問: ${message}`,
-    `対象月: ${context?.yearMonth ?? "不明"}`,
-    `収入合計: ${Number(context?.incomeTotal ?? 0)}円`,
-    `支出合計: ${Number(context?.expenseTotal ?? 0)}円`,
-    `上位カテゴリ: ${JSON.stringify(context?.topCategories ?? [])}`,
-  ].join("\n");
-  const res = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      input: [
-        { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
-        { role: "user", content: [{ type: "input_text", text: userPrompt }] },
-      ],
-      max_output_tokens: 300,
-    }),
-  });
-  if (!res.ok) throw new Error(`OpenAI API error: ${res.status}`);
-  const data = await res.json();
-  return String(data?.output_text ?? "").trim() || null;
 }
 
 const RECEIPT_CATEGORY_KEYWORDS = {
@@ -1228,10 +1192,31 @@ export async function handleApiRequest(req, options = {}) {
         }
         const ctx = b.context && typeof b.context === "object" ? b.context : {};
         try {
-          const ai = await askOpenAiAdvisor(message, ctx);
-          if (ai) return json(200, { ok: true, reply: ai, source: "openai" }, hdrs, skipCors);
+          const ai = await askBedrockAdvisor(message, ctx);
+          if (ai?.ok && ai.reply) {
+            return json(200, { ok: true, reply: ai.reply, source: "bedrock" }, hdrs, skipCors);
+          }
+          if (ai && !ai.ok) {
+            logError("ai.advisor.bedrock", new Error(`${ai.code}: ${ai.message}`), {
+              authFailed: !!ai.authFailed,
+              throttled: !!ai.throttled,
+            });
+          }
         } catch (e) {
-          logError("ai.advisor.openai", e);
+          const msg = e instanceof Error ? e.message : String(e);
+          const authFailed =
+            msg.includes("AuthError") ||
+            msg.includes("AccessDeniedException") ||
+            msg.includes("ExpiredTokenException") ||
+            msg.includes("UnrecognizedClientException");
+          const throttled =
+            msg.includes("RateLimitError") ||
+            msg.includes("ThrottlingException") ||
+            msg.includes("TooManyRequestsException");
+          logError("ai.advisor.bedrock", e, {
+            authFailed,
+            throttled,
+          });
         }
         const income = Number(ctx?.incomeTotal ?? 0);
         const expense = Number(ctx?.expenseTotal ?? 0);
