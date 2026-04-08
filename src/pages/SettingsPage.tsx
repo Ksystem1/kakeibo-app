@@ -1,12 +1,38 @@
 import { useSettings } from "../context/SettingsContext";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { reclassifyUncategorizedReceipts } from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
 
+function currentYm() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function SettingsPage() {
-  const { fontScale, setFontScale, fontMode, setFontMode, themeMode, setThemeMode } = useSettings();
+  const {
+    fontScale,
+    setFontScale,
+    fontMode,
+    setFontMode,
+    themeMode,
+    setThemeMode,
+    fixedCostsByMonth,
+    setFixedCostForMonth,
+  } = useSettings();
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyResult, setReclassifyResult] = useState<string | null>(null);
+  const [fixedYm, setFixedYm] = useState(currentYm);
+  const [fixedAmount, setFixedAmount] = useState(() =>
+    String(fixedCostsByMonth[currentYm()] ?? ""),
+  );
+
+  const fixedCostRows = useMemo(
+    () =>
+      Object.entries(fixedCostsByMonth)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .slice(0, 12),
+    [fixedCostsByMonth],
+  );
 
   return (
     <div className={styles.wrap}>
@@ -50,6 +76,13 @@ export function SettingsPage() {
         <div className={styles.modeRow}>
           <button
             type="button"
+            className={`${styles.btn} ${fontMode === "small" ? styles.btnPrimary : ""}`}
+            onClick={() => setFontMode("small")}
+          >
+            小
+          </button>
+          <button
+            type="button"
             className={`${styles.btn} ${fontMode === "standard" ? styles.btnPrimary : ""}`}
             onClick={() => setFontMode("standard")}
           >
@@ -83,6 +116,70 @@ export function SettingsPage() {
           onChange={(e) => setFontScale(Number.parseFloat(e.target.value))}
           className={styles.settingsRange}
         />
+      </div>
+
+      <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 420 }}>
+        <h2 className={styles.sectionTitle}>固定費設定（月別）</h2>
+        <p className={styles.reclassifyHint}>
+          ここで入力した固定費は、家計簿の「品目別・支出」にカテゴリ「固定費」として表示されます。
+        </p>
+        <div className={styles.form} style={{ marginTop: "0.5rem" }}>
+          <div className={styles.field}>
+            <label htmlFor="fixed-ym">対象月</label>
+            <input
+              id="fixed-ym"
+              type="month"
+              value={fixedYm}
+              onChange={(e) => {
+                const ym = e.target.value;
+                setFixedYm(ym);
+                setFixedAmount(String(fixedCostsByMonth[ym] ?? ""));
+              }}
+            />
+          </div>
+          <div className={styles.field}>
+            <label htmlFor="fixed-amount">固定費（円）</label>
+            <input
+              id="fixed-amount"
+              type="number"
+              min={0}
+              step={1}
+              placeholder="80000"
+              value={fixedAmount}
+              onChange={(e) => setFixedAmount(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            onClick={() => {
+              const amount = Number.parseFloat(fixedAmount || "0");
+              setFixedCostForMonth(fixedYm, Number.isFinite(amount) ? amount : 0);
+            }}
+          >
+            保存
+          </button>
+        </div>
+        {fixedCostRows.length > 0 ? (
+          <div className={styles.tableWrap} style={{ marginTop: "0.75rem" }}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>月</th>
+                  <th>固定費</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fixedCostRows.map(([ym, amount]) => (
+                  <tr key={ym}>
+                    <td>{ym}</td>
+                    <td>¥{Number(amount).toLocaleString("ja-JP")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </div>
 
       <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 420 }}>

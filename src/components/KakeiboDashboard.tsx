@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useSettings } from "../context/SettingsContext";
 import {
   createTransaction,
   deleteTransaction,
@@ -104,6 +105,7 @@ function yearOptions() {
 }
 
 export function KakeiboDashboard() {
+  const { fixedCostsByMonth } = useSettings();
   const location = useLocation();
   const routerNavigate = useNavigate();
   const base = getApiBaseUrl();
@@ -254,6 +256,27 @@ export function KakeiboDashboard() {
     : totals.expense;
   const balanceNum = incomeTotalNum - expenseTotalNum;
   const hasIncome = incomeTotalNum > 0;
+  const fixedCostForMonth = Number(fixedCostsByMonth[ym] ?? 0);
+  const expenseRowsWithFixed = useMemo(() => {
+    const rows = [...(summary?.expensesByCategory ?? [])];
+    if (!Number.isFinite(fixedCostForMonth) || fixedCostForMonth <= 0) return rows;
+    const idx = rows.findIndex((r) => String(r.category_name ?? "").trim() === "固定費");
+    if (idx >= 0) {
+      const merged = numAmount(rows[idx].total as string | number) + fixedCostForMonth;
+      rows[idx] = { ...rows[idx], total: merged };
+    } else {
+      rows.push({
+        category_id: null,
+        category_name: "固定費",
+        total: fixedCostForMonth,
+      });
+    }
+    rows.sort(
+      (a, b) =>
+        numAmount(b.total as string | number) - numAmount(a.total as string | number),
+    );
+    return rows;
+  }, [summary?.expensesByCategory, fixedCostForMonth]);
 
   const [formAmount, setFormAmount] = useState("");
   const [formKind, setFormKind] = useState<"expense" | "income">("expense");
@@ -472,7 +495,7 @@ export function KakeiboDashboard() {
         </div>
       </div>
 
-      {summary && summary.expensesByCategory.length > 0 ? (
+      {summary && expenseRowsWithFixed.length > 0 ? (
         <>
           <h2 className={styles.sectionTitle}>品目別・支出（API集計）</h2>
           <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
@@ -484,7 +507,7 @@ export function KakeiboDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {summary.expensesByCategory.map((row, i) => (
+                {expenseRowsWithFixed.map((row, i) => (
                   <tr key={`${row.category_id ?? "x"}-${i}`}>
                     <td>{row.category_name ?? "（未分類）"}</td>
                     <td>{yen.format(numAmount(row.total as string | number))}</td>
