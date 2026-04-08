@@ -46,6 +46,27 @@ function routeKey(method, path) {
   return `${method} ${p}`;
 }
 
+function buildAdvisorFallbackReply(message, ctx) {
+  const income = Number(ctx?.incomeTotal ?? 0);
+  const expense = Number(ctx?.expenseTotal ?? 0);
+  const rest = Math.max(0, Math.round(income - expense));
+  const top = Array.isArray(ctx?.topCategories) ? ctx.topCategories[0] : null;
+  const topName = top?.name ? String(top.name) : "変動費";
+  const topTotal = Number(top?.total ?? 0);
+  const msg = String(message ?? "");
+
+  if (msg.includes("あといくら") || msg.includes("残り")) {
+    return `今月の残り予算は${rest.toLocaleString("ja-JP")}円です。${topName}の上限を先に決めると、使い過ぎを防ぎやすくなります。`;
+  }
+  if (msg.includes("使い方")) {
+    return `「固定費を減らしたい」「${topName}を抑えたい」のように、カテゴリ名つきで質問すると具体案を返しやすいです。今月は${topName}が${topTotal.toLocaleString("ja-JP")}円なので、まずはここから見直しましょう。`;
+  }
+  if (msg.includes("食費")) {
+    return `食費は「週予算」を先に決めるのが効果的です。今週分を封筒方式で分けると、月末のオーバーを防ぎやすくなります。`;
+  }
+  return `まずは固定費（通信費・保険・サブスク）を見直し、次に${topName}の上限を先に決めるのがおすすめです。今月の残り予算は${rest.toLocaleString("ja-JP")}円です。`;
+}
+
 const RECEIPT_CATEGORY_KEYWORDS = {
   food: [
     "りんご",
@@ -1218,13 +1239,7 @@ export async function handleApiRequest(req, options = {}) {
             throttled,
           });
         }
-        const income = Number(ctx?.incomeTotal ?? 0);
-        const expense = Number(ctx?.expenseTotal ?? 0);
-        const rest = Math.max(0, Math.round(income - expense));
-        const reply =
-          message.includes("あといくら")
-            ? `今月の残り予算は${rest.toLocaleString("ja-JP")}円です。固定費と外食費を優先的に見直すと、さらに余裕を作れます。`
-            : "まずは固定費（通信費・保険・サブスク）を見直し、次に変動費の上限をカテゴリ別に決めるのが効果的です。";
+        const reply = buildAdvisorFallbackReply(message, ctx);
         return json(200, { ok: true, reply, source: "fallback" }, hdrs, skipCors);
       }
 
