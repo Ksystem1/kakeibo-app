@@ -54,12 +54,12 @@
 
 .heroImg {
   width: 100%;
-  max-width: min(100%, 28rem);
+  max-width: min(100%, 33rem);
   height: auto;
-  max-height: min(48vh, 26rem);
+  max-height: min(55vh, 33rem);
   object-fit: contain;
   object-position: center bottom;
-  filter: drop-shadow(0 12px 28px rgba(8, 32, 26, 0.12));
+  filter: drop-shadow(0 16px 30px rgba(8, 32, 26, 0.15));
 }
 
 @media (min-width: 901px) {
@@ -133,6 +133,14 @@
 
 .cardHeader {
   margin-bottom: 1.75rem;
+}
+
+.promoStrip {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 20px rgba(20, 46, 76, 0.16);
+  margin-top: 0.8rem;
 }
 
 .cardTitle {

@@ -89,22 +89,43 @@ export function AppLayout() {
             minWidth: 0,
           }}
         >
-          <strong
+          <div
             style={{
-              letterSpacing: "-0.02em",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.45rem",
               flexShrink: 0,
-              lineHeight: 1.2,
-              fontSize: mobile ? "1rem" : "1.08rem",
-              padding: "0.3rem 0.7rem",
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.58)",
-              background:
-                "linear-gradient(135deg, rgba(255,255,255,0.88) 0%, rgba(225,245,255,0.72) 100%)",
-              boxShadow: "0 4px 10px rgba(20, 46, 76, 0.12)",
             }}
           >
-            🐷 Kakeibo
-          </strong>
+            <img
+              src={`${import.meta.env.BASE_URL}brand-kakeibo-2.png`}
+              alt=""
+              aria-hidden="true"
+              width={42}
+              height={42}
+              style={{
+                width: mobile ? 34 : 42,
+                height: mobile ? 34 : 42,
+                borderRadius: 12,
+                boxShadow: "0 6px 14px rgba(20, 46, 76, 0.2)",
+              }}
+            />
+            <strong
+              style={{
+                letterSpacing: "-0.02em",
+                lineHeight: 1.2,
+                fontSize: mobile ? "1rem" : "1.08rem",
+                padding: "0.3rem 0.7rem",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.58)",
+                background:
+                  "linear-gradient(135deg, rgba(255,255,255,0.88) 0%, rgba(225,245,255,0.72) 100%)",
+                boxShadow: "0 4px 10px rgba(20, 46, 76, 0.12)",
+              }}
+            >
+              🐷 Kakeibo
+            </strong>
+          </div>
           <div
             style={{
               display: "flex",

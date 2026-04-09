@@ -8,11 +8,11 @@ export function AuthHeroAside({ children }: Props) {
     <aside className={styles.hero}>
       <div className={styles.heroVisual} aria-hidden="true">
         <img
-          src={`${import.meta.env.BASE_URL}auth-hero.png`}
+          src={`${import.meta.env.BASE_URL}brand-kakeibo-1.png`}
           alt=""
           className={styles.heroImg}
-          width={640}
-          height={400}
+          width={1024}
+          height={1024}
           loading="eager"
           decoding="async"
         />

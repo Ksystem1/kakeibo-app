@@ -63,6 +63,13 @@ export function LoginPage() {
             <Link to="/demo-dashboard" className={styles.demoCta}>
               🎬 デモを見る
             </Link>
+            <img
+              src={`${import.meta.env.BASE_URL}promo-panels.png`}
+              alt="家計簿アプリの紹介パネル"
+              className={styles.promoStrip}
+              loading="lazy"
+              decoding="async"
+            />
           </header>
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
             <div className={styles.field}>

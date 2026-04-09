@@ -458,6 +458,20 @@ export function KakeiboDashboard() {
           </button>
         </div>
       </header>
+      <div style={{ marginBottom: "0.9rem" }}>
+        <img
+          src={`${import.meta.env.BASE_URL}menu-buttons.png`}
+          alt="家計簿メニューイメージ"
+          style={{
+            width: "100%",
+            borderRadius: 14,
+            border: "1px solid rgba(255,255,255,0.7)",
+            boxShadow: "0 10px 22px rgba(20, 46, 76, 0.18)",
+          }}
+          loading="lazy"
+          decoding="async"
+        />
+      </div>
 
       {error ? (
         <div className={styles.err} role="alert">
