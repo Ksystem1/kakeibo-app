@@ -45,7 +45,7 @@ export function LoginPage() {
   return (
     <div className={styles.page}>
       <AuthHeroAside>
-        <span className={styles.badge}>Kakeibo</span>
+        <span className={styles.badge}>Kakeibo ✨</span>
         <h1 className={styles.heroTitle}>夫婦で共有。みんなの家計簿</h1>
         <p className={styles.heroDesc}>
           メールアドレスまたはログインIDでサインイン。
@@ -61,7 +61,7 @@ export function LoginPage() {
               登録済みのメールまたはユーザIDでサインイン
             </p>
             <Link to="/demo-dashboard" className={styles.demoCta}>
-              デモを見る
+              🎬 デモを見る
             </Link>
           </header>
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
@@ -118,7 +118,7 @@ export function LoginPage() {
               className={styles.submit}
               disabled={submitting}
             >
-              {submitting ? "サインイン中…" : "ログイン"}
+              {submitting ? "サインイン中…" : "🔐 ログイン"}
             </button>
           </form>
           <p className={styles.footer}>

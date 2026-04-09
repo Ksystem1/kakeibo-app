@@ -64,17 +64,22 @@
 .btn {
   font: inherit;
   font-size: 0.96rem;
-  font-weight: 600;
+  font-weight: 700;
   padding: 0.62rem 1.08rem;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--panel-bg);
-  color: var(--text);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(220, 243, 255, 0.72) 100%);
+  color: color-mix(in oklab, var(--text) 92%, #3f230e 8%);
   cursor: pointer;
+  box-shadow:
+    0 5px 12px rgba(16, 36, 60, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  transition: transform 0.08s ease, filter 0.16s ease;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--accent-dim);
+  filter: brightness(1.04);
+  transform: translateY(-1px);
 }
 
 .btn:disabled {
@@ -83,13 +88,16 @@
 }
 
 .btnPrimary {
-  background: var(--accent);
-  border-color: transparent;
-  color: #08201a;
+  background: linear-gradient(135deg, #ffe589 0%, #ffd166 55%, #ffb84d 100%);
+  border-color: rgba(255, 208, 108, 0.62);
+  color: #4a2a10;
+  box-shadow:
+    0 8px 18px rgba(255, 173, 52, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
 }
 
 .btnPrimary:hover:not(:disabled) {
-  background: var(--accent-hover);
+  filter: brightness(1.06);
 }
 
 .btnLine {
@@ -119,8 +127,9 @@
 .card {
   padding: 0.85rem 1rem;
   border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: linear-gradient(155deg, color-mix(in oklab, var(--bg-card) 96%, #ffffff 4%) 0%, var(--bg-card) 100%);
+  box-shadow: 0 8px 18px rgba(16, 36, 60, 0.1);
 }
 
 .cardIncome {

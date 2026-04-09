@@ -12,14 +12,19 @@ function linkStyle(
   { isActive }: { isActive: boolean },
 ) {
   return {
-    fontWeight: isActive ? 700 : 500,
-    color: isActive ? "var(--accent)" : "var(--text-muted)",
+    fontWeight: isActive ? 800 : 600,
+    color: isActive ? "#3a200f" : "var(--text)",
     textDecoration: "none",
-    padding: mobile ? "0.28rem 0.45rem" : "0.35rem 0.65rem",
+    padding: mobile ? "0.34rem 0.6rem" : "0.45rem 0.78rem",
     fontSize: mobile ? "0.8rem" : undefined,
-    borderRadius: 8,
-    border: isActive ? "1px solid rgba(61,214,180,0.35)" : "1px solid transparent",
-    background: isActive ? "var(--accent-dim)" : "transparent",
+    borderRadius: 999,
+    border: "1px solid rgba(255,255,255,0.62)",
+    background: isActive
+      ? "linear-gradient(135deg, #ffe589 0%, #ffd166 50%, #ffb84d 100%)"
+      : "linear-gradient(135deg, rgba(255,255,255,0.75) 0%, rgba(255,255,255,0.45) 100%)",
+    boxShadow: isActive
+      ? "0 6px 14px rgba(255, 179, 60, 0.24)"
+      : "0 4px 10px rgba(15, 43, 71, 0.1)",
     whiteSpace: "nowrap" as const,
   };
 }
@@ -89,9 +94,16 @@ export function AppLayout() {
               letterSpacing: "-0.02em",
               flexShrink: 0,
               lineHeight: 1.2,
+              fontSize: mobile ? "1rem" : "1.08rem",
+              padding: "0.3rem 0.7rem",
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.58)",
+              background:
+                "linear-gradient(135deg, rgba(255,255,255,0.88) 0%, rgba(225,245,255,0.72) 100%)",
+              boxShadow: "0 4px 10px rgba(20, 46, 76, 0.12)",
             }}
           >
-            Kakeibo
+            🐷 Kakeibo
           </strong>
           <div
             style={{
@@ -147,43 +159,43 @@ export function AppLayout() {
           {token ? (
             <>
               <NavLink to="/dashboard" style={(p) => linkStyle(mobile, p)}>
-                ダッシュボード
+                📊 ダッシュボード
               </NavLink>
               <NavLink to="/" style={(p) => linkStyle(mobile, p)} end>
-                家計簿
+                🏠 家計簿
               </NavLink>
               {!mobile ? (
                 <NavLink to="/import" style={(p) => linkStyle(mobile, p)}>
-                  CSV取込（PC）
+                  📥 CSV取込（PC）
                 </NavLink>
               ) : null}
               <NavLink to="/receipt" style={(p) => linkStyle(mobile, p)}>
-                レシート
+                🧾 レシート
               </NavLink>
               <NavLink to="/members" style={(p) => linkStyle(mobile, p)}>
-                家族
+                👨‍👩‍👧‍👦 家族
               </NavLink>
               <NavLink to="/categories" style={(p) => linkStyle(mobile, p)}>
-                カテゴリ
+                🗂️ カテゴリ
               </NavLink>
               <NavLink to="/settings" style={(p) => linkStyle(mobile, p)}>
-                設定
+                ⚙️ 設定
               </NavLink>
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
                 <NavLink to="/admin" style={(p) => linkStyle(mobile, p)}>
-                  管理
+                  🛠️ 管理
                 </NavLink>
               ) : null}
             </>
           ) : (
             <>
               <NavLink to="/login" style={(p) => linkStyle(mobile, p)}>
-                ログイン
+                🔐 ログイン
               </NavLink>
               <NavLink to="/register" style={(p) => linkStyle(mobile, p)}>
-                新規登録
+                ✨ 新規登録
               </NavLink>
             </>
           )}
