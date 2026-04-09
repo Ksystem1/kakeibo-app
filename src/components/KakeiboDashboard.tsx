@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { useSettings } from "../context/SettingsContext";
+import { getEffectiveFixedCostsForMonth, useSettings } from "../context/SettingsContext";
 import {
   createTransaction,
   deleteTransaction,
@@ -256,7 +256,7 @@ export function KakeiboDashboard() {
     : totals.expense;
   const balanceNum = incomeTotalNum - expenseTotalNum;
   const hasIncome = incomeTotalNum > 0;
-  const fixedCostForMonth = (fixedCostsByMonth[ym] ?? []).reduce(
+  const fixedCostForMonth = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym).reduce(
     (acc, x) => acc + Number(x.amount || 0),
     0,
   );
@@ -458,25 +458,6 @@ export function KakeiboDashboard() {
           </button>
         </div>
       </header>
-      <div className={styles.kawaiiActions} aria-label="クイックメニュー">
-        <Link to="/receipt" className={styles.kawaiiActionBtn}>
-          <span className={styles.kawaiiActionEmoji}>🧾</span>
-          <span>レシート読取</span>
-        </Link>
-        <Link to="/categories" className={styles.kawaiiActionBtn}>
-          <span className={styles.kawaiiActionEmoji}>🗂️</span>
-          <span>カテゴリ管理</span>
-        </Link>
-        <Link to="/dashboard" className={styles.kawaiiActionBtn}>
-          <span className={styles.kawaiiActionEmoji}>📊</span>
-          <span>ダッシュボード</span>
-        </Link>
-        <Link to="/settings" className={styles.kawaiiActionBtn}>
-          <span className={styles.kawaiiActionEmoji}>⚙️</span>
-          <span>設定</span>
-        </Link>
-      </div>
-
       {error ? (
         <div className={styles.err} role="alert">
           {error}

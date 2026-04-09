@@ -1,4 +1,8 @@
-import { type FixedCostItem, useSettings } from "../context/SettingsContext";
+import {
+  getEffectiveFixedCostsForMonth,
+  type FixedCostItem,
+  useSettings,
+} from "../context/SettingsContext";
 import { useMemo, useState } from "react";
 import { reclassifyUncategorizedReceipts } from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
@@ -24,7 +28,7 @@ export function SettingsPage() {
   const [fixedYm, setFixedYm] = useState(currentYm);
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() => {
     const ym = currentYm();
-    const src = fixedCostsByMonth[ym] ?? [];
+    const src = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym);
     if (src.length > 0) return src;
     return [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }];
   });
@@ -50,7 +54,7 @@ export function SettingsPage() {
       <p className={styles.sub}>
         背景色（4 種）と文字サイズを変更します。
       </p>
-      <div className={styles.settingsPanel} style={{ maxWidth: 360 }}>
+      <div className={styles.settingsPanel} style={{ maxWidth: 820 }}>
         <label className={styles.settingsLabel}>表示テーマ</label>
         <div className={`${styles.modeRow} ${styles.modeRowTheme}`}>
           <button
@@ -121,7 +125,7 @@ export function SettingsPage() {
         />
       </div>
 
-      <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 420 }}>
+      <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 720 }}>
         <h2 className={styles.sectionTitle}>固定費設定（月別）</h2>
         <p className={styles.reclassifyHint}>
           「固定費」として表示されます。
@@ -140,7 +144,7 @@ export function SettingsPage() {
               onChange={(e) => {
                 const ym = e.target.value;
                 setFixedYm(ym);
-                const src = fixedCostsByMonth[ym] ?? [];
+                const src = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym);
                 setFixedItems(
                   src.length > 0
                     ? src
@@ -242,10 +246,12 @@ export function SettingsPage() {
         ) : null}
       </div>
 
-      <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 420 }}>
+      <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 720 }}>
         <h2 className={styles.sectionTitle}>レシート自動再分類</h2>
         <p className={styles.reclassifyHint}>
-          全期間の未分類の支出に対して、履歴・キーワードを使ってカテゴリを再推定します（件数が多いと時間がかかります）。
+          全期間の未分類を、履歴・キーワードより再推定します
+          <br />
+          （件数が多いと時間がかかります）。
         </p>
         <button
           type="button"

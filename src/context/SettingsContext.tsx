@@ -35,6 +35,31 @@ function isFutureYm(ym: string) {
   return ym > currentYm();
 }
 
+function ymToNumber(ym: string) {
+  const m = /^(\d{4})-(\d{2})$/.exec(ym);
+  if (!m) return null;
+  return Number(m[1]) * 100 + Number(m[2]);
+}
+
+export function getEffectiveFixedCostsForMonth(
+  fixedCostsByMonth: Record<string, FixedCostItem[]>,
+  ym: string,
+) {
+  const target = ymToNumber(ym);
+  if (target == null) return [];
+  let hitYm = "";
+  let hitNum = -1;
+  for (const key of Object.keys(fixedCostsByMonth)) {
+    const n = ymToNumber(key);
+    if (n == null) continue;
+    if (n <= target && n > hitNum) {
+      hitNum = n;
+      hitYm = key;
+    }
+  }
+  return hitYm ? fixedCostsByMonth[hitYm] ?? [] : [];
+}
+
 const FONT_MODE_SCALE: Record<FontMode, number> = {
   small: 0.92,
   standard: 1,
