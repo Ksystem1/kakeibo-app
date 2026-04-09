@@ -135,14 +135,6 @@
   margin-bottom: 1.75rem;
 }
 
-.promoStrip {
-  width: 100%;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  box-shadow: 0 10px 20px rgba(20, 46, 76, 0.16);
-  margin-top: 0.8rem;
-}
-
 .cardTitle {
   margin: 0 0 0.35rem;
   font-size: 1.5rem;
