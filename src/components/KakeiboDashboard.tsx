@@ -472,6 +472,24 @@ export function KakeiboDashboard() {
           decoding="async"
         />
       </div>
+      <div className={styles.kawaiiActions} aria-label="クイックメニュー">
+        <Link to="/receipt" className={styles.kawaiiActionBtn}>
+          <span className={styles.kawaiiActionEmoji}>🧾</span>
+          <span>レシート読取</span>
+        </Link>
+        <Link to="/categories" className={styles.kawaiiActionBtn}>
+          <span className={styles.kawaiiActionEmoji}>🗂️</span>
+          <span>カテゴリ管理</span>
+        </Link>
+        <Link to="/dashboard" className={styles.kawaiiActionBtn}>
+          <span className={styles.kawaiiActionEmoji}>📊</span>
+          <span>ダッシュボード</span>
+        </Link>
+        <Link to="/settings" className={styles.kawaiiActionBtn}>
+          <span className={styles.kawaiiActionEmoji}>⚙️</span>
+          <span>設定</span>
+        </Link>
+      </div>
 
       {error ? (
         <div className={styles.err} role="alert">

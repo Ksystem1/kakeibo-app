@@ -18,6 +18,44 @@
   min-width: 0;
 }
 
+.kawaiiActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.9rem;
+}
+
+.kawaiiActionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  text-decoration: none;
+  font-weight: 800;
+  color: #4a2a10;
+  padding: 0.56rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 208, 108, 0.62);
+  background: linear-gradient(135deg, #ffe589 0%, #ffd166 52%, #ffb84d 100%);
+  box-shadow:
+    0 8px 16px rgba(255, 173, 52, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  transition: transform 0.08s ease, filter 0.16s ease;
+}
+
+.kawaiiActionBtn:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.kawaiiActionBtn:active {
+  transform: translateY(0);
+}
+
+.kawaiiActionEmoji {
+  font-size: 1.06rem;
+}
+
 .title {
   margin: 0;
   font-size: clamp(1.7rem, 5.2vw, 2.3rem);

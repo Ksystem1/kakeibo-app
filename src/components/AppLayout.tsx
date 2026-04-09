@@ -75,6 +75,9 @@ export function AppLayout() {
           maxWidth: "100%",
           minWidth: 0,
           boxSizing: "border-box",
+          backgroundImage: `linear-gradient(rgba(255,255,255,0.06), rgba(255,255,255,0.06)), url(${import.meta.env.BASE_URL}promo-panels.png)`,
+          backgroundSize: mobile ? "auto 140px" : "auto 180px",
+          backgroundPosition: "center",
         }}
       >
         {/* 1段目: ブランド + ユーティリティ（横スクロール防止のため flex:1 スペーサーは使わない） */}
