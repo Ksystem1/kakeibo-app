@@ -2,7 +2,7 @@
   min-height: calc(100vh - 52px);
   padding: clamp(0.85rem, 3.5vw, 2rem);
   width: 100%;
-  max-width: min(960px, 100%);
+  max-width: min(1040px, 100%);
   margin: 0 auto;
   box-sizing: border-box;
   font-size: 1.02rem;
@@ -34,12 +34,10 @@
   font-weight: 800;
   color: #4a2a10;
   padding: 0.56rem 0.8rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 208, 108, 0.62);
-  background: linear-gradient(135deg, #ffe589 0%, #ffd166 52%, #ffb84d 100%);
-  box-shadow:
-    0 8px 16px rgba(255, 173, 52, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--bg-card) 88%, #ffe8f8 12%);
+  box-shadow: 0 2px 7px rgba(18, 40, 66, 0.12);
   transition: transform 0.08s ease, filter 0.16s ease;
 }
 
@@ -104,14 +102,13 @@
   font-size: 0.96rem;
   font-weight: 700;
   padding: 0.62rem 1.08rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.68);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(220, 243, 255, 0.72) 100%);
-  color: color-mix(in oklab, var(--text) 92%, #3f230e 8%);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
   cursor: pointer;
   box-shadow:
-    0 5px 12px rgba(16, 36, 60, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    0 2px 8px rgba(16, 36, 60, 0.12);
   transition: transform 0.08s ease, filter 0.16s ease;
 }
 
@@ -126,12 +123,10 @@
 }
 
 .btnPrimary {
-  background: linear-gradient(135deg, #ffe589 0%, #ffd166 55%, #ffb84d 100%);
-  border-color: rgba(255, 208, 108, 0.62);
-  color: #4a2a10;
-  box-shadow:
-    0 8px 18px rgba(255, 173, 52, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 3px 10px rgba(16, 92, 156, 0.25);
 }
 
 .btnPrimary:hover:not(:disabled) {
@@ -165,9 +160,9 @@
 .card {
   padding: 0.85rem 1rem;
   border-radius: var(--radius);
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  background: linear-gradient(155deg, color-mix(in oklab, var(--bg-card) 96%, #ffffff 4%) 0%, var(--bg-card) 100%);
-  box-shadow: 0 8px 18px rgba(16, 36, 60, 0.1);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  box-shadow: 0 3px 10px rgba(16, 36, 60, 0.08);
 }
 
 .cardIncome {
@@ -416,6 +411,8 @@
 
 .tableWrap {
   overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--panel-bg-strong);
@@ -1144,7 +1141,8 @@
 
 .settingsPanel {
   margin-top: 1rem;
-  max-width: 440px;
+  width: 100%;
+  max-width: min(440px, 100%);
   padding: 1rem;
   border-radius: var(--radius);
   border: 1px solid var(--input-border);

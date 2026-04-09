@@ -3,21 +3,21 @@
 @tailwind utilities;
 
 :root {
-  --app-font-scale: 1.18;
+  --app-font-scale: 1;
   --bg-deep: #f5f8fc;
   --bg-card: #ffffff;
   --panel-bg: #edf3fb;
   --panel-bg-strong: #e4edf9;
   --input-bg: #ffffff;
-  --input-border: #9eb9d8;
-  --border: rgba(39, 67, 98, 0.22);
+  --input-border: #86a6c8;
+  --border: rgba(39, 67, 98, 0.35);
   --text: #10243c;
   --text-muted: #445e7c;
   --accent: #2e9ff5;
   --accent-dim: rgba(46, 159, 245, 0.12);
   --accent-hover: #238fdf;
   --danger: #f87171;
-  --radius: 14px;
+  --radius: 10px;
   --shadow: 0 14px 30px rgba(27, 58, 95, 0.14);
   font-family: "DM Sans", "Noto Sans JP", system-ui, sans-serif;
   font-size: calc(100% * var(--app-font-scale, 1));
@@ -36,8 +36,8 @@
   --panel-bg: rgba(9, 18, 30, 0.62);
   --panel-bg-strong: rgba(8, 16, 28, 0.78);
   --input-bg: rgba(7, 17, 29, 0.85);
-  --input-border: rgba(116, 156, 202, 0.44);
-  --border: rgba(255, 255, 255, 0.08);
+  --input-border: rgba(141, 178, 220, 0.58);
+  --border: rgba(255, 255, 255, 0.2);
   --text: #e8edf2;
   --text-muted: #8b98a6;
   --accent: #3dd6b4;
@@ -53,8 +53,8 @@
   --panel-bg: #e8dfd2;
   --panel-bg-strong: #ddd2c2;
   --input-bg: #fffef9;
-  --input-border: #b5a896;
-  --border: rgba(60, 48, 36, 0.2);
+  --input-border: #a79682;
+  --border: rgba(60, 48, 36, 0.32);
   --text: #2a2318;
   --text-muted: #5a5248;
   --accent: #2a7a6e;
@@ -70,8 +70,8 @@
   --panel-bg: #d8e6f2;
   --panel-bg-strong: #c8daeb;
   --input-bg: #ffffff;
-  --input-border: #7fa3c4;
-  --border: rgba(28, 58, 88, 0.22);
+  --input-border: #6f9bc3;
+  --border: rgba(28, 58, 88, 0.34);
   --text: #0c1f32;
   --text-muted: #3d5670;
   --accent: #1a7fd4;
@@ -146,14 +146,3 @@ body {
   border: 0;
 }
 
-@media (max-width: 768px) {
-  :root {
-    --app-font-scale: 1.24;
-  }
-}
-
-@media (max-width: 520px) {
-  :root {
-    --app-font-scale: 1.3;
-  }
-}

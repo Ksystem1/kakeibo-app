@@ -26,7 +26,7 @@ export function SettingsPage() {
     const ym = currentYm();
     const src = fixedCostsByMonth[ym] ?? [];
     if (src.length > 0) return src;
-    return [{ id: `fixed-${Date.now()}`, amount: 0, note: "" }];
+    return [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }];
   });
 
   const fixedCostRows = useMemo(
@@ -104,13 +104,6 @@ export function SettingsPage() {
           >
             大
           </button>
-          <button
-            type="button"
-            className={`${styles.btn} ${fontMode === "xlarge" ? styles.btnPrimary : ""}`}
-            onClick={() => setFontMode("xlarge")}
-          >
-            特大
-          </button>
         </div>
         <label htmlFor="font-range" className={styles.settingsLabel}>
           文字サイズ: {Math.round(fontScale * 100)}%
@@ -119,7 +112,7 @@ export function SettingsPage() {
           id="font-range"
           type="range"
           min={0.85}
-          max={1.35}
+          max={1.2}
           step={0.05}
           value={fontScale}
           onChange={(e) => setFontScale(Number.parseFloat(e.target.value))}
@@ -130,7 +123,7 @@ export function SettingsPage() {
       <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 420 }}>
         <h2 className={styles.sectionTitle}>固定費設定（月別）</h2>
         <p className={styles.reclassifyHint}>
-          ここで入力した固定費は、家計簿の「品目別・支出」にカテゴリ「固定費」として表示されます。
+          「固定費」として表示されます。
         </p>
         <div className={styles.form} style={{ marginTop: "0.5rem" }}>
           <div className={styles.field}>
@@ -147,16 +140,26 @@ export function SettingsPage() {
                 setFixedItems(
                   src.length > 0
                     ? src
-                    : [{ id: `fixed-${Date.now()}`, amount: 0, note: "" }],
+                    : [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }],
                 );
               }}
             />
           </div>
           <div className={styles.field} style={{ gridColumn: "1 / -1" }}>
-            <label>固定費入力（1行 = 金額 + 備考）</label>
+            <label>固定費入力（1行 = カテゴリ + 金額）</label>
             <div style={{ display: "grid", gap: 8 }}>
               {fixedItems.map((item, idx) => (
                 <div key={item.id} style={{ display: "grid", gridTemplateColumns: "140px 1fr auto", gap: 8 }}>
+                  <input
+                    type="text"
+                    placeholder="カテゴリ（例: 家賃）"
+                    value={item.category}
+                    onChange={(e) => {
+                      const next = [...fixedItems];
+                      next[idx] = { ...next[idx], category: e.target.value };
+                      setFixedItems(next);
+                    }}
+                  />
                   <input
                     type="number"
                     min={0}
@@ -170,22 +173,12 @@ export function SettingsPage() {
                       setFixedItems(next);
                     }}
                   />
-                  <input
-                    type="text"
-                    placeholder="備考（例: 家賃・通信費）"
-                    value={item.note}
-                    onChange={(e) => {
-                      const next = [...fixedItems];
-                      next[idx] = { ...next[idx], note: e.target.value };
-                      setFixedItems(next);
-                    }}
-                  />
                   <button
                     type="button"
                     className={styles.btn}
                     onClick={() => {
                       const next = fixedItems.filter((x) => x.id !== item.id);
-                      setFixedItems(next.length > 0 ? next : [{ id: `fixed-${Date.now()}`, amount: 0, note: "" }]);
+                      setFixedItems(next.length > 0 ? next : [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }]);
                     }}
                   >
                     削除
@@ -198,7 +191,7 @@ export function SettingsPage() {
             type="button"
             className={styles.btn}
             onClick={() =>
-              setFixedItems((prev) => [...prev, { id: `fixed-${Date.now()}-${prev.length}`, amount: 0, note: "" }])
+              setFixedItems((prev) => [...prev, { id: `fixed-${Date.now()}-${prev.length}`, amount: 0, category: "固定費" }])
             }
           >
             入力行を追加

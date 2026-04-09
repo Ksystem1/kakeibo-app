@@ -23,6 +23,9 @@ function buildPrompt(message, context) {
     "あなたはプロの家計再生コンサルタントです。",
     "ユーザーの支出データ（現在はデモデータで可）に基づき、具体的かつポジティブな節約案を提案してください。",
     "質問文に必ず直接回答してください。質問と無関係な一般論だけを返してはいけません。",
+    "1行目は質問への直接回答（結論）にしてください。質問のキーワードを1つ以上そのまま含めてください。",
+    "質問が「あといくら」「残り」「使える金額」なら、必ず円金額を明示してください。",
+    "質問がカテゴリや節約方法なら、対象カテゴリ名を明示して答えてください。",
     "可能なら金額やカテゴリ名を入れて提案してください。",
     "回答は質問への結論を最初の1文で示し、その後に根拠や実行案を述べてください。",
     "会話履歴がある場合は、直近の質問意図を優先し、文脈と矛盾しない回答にしてください。",
@@ -96,7 +99,7 @@ async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, te
 
 export async function askBedrockAdvisor(message, context) {
   const { systemPrompt, userPrompt } = buildPrompt(message, context);
-  return invokeBedrockText({ systemPrompt, userPrompt, maxTokens: 300, temperature: 0.2 });
+  return invokeBedrockText({ systemPrompt, userPrompt, maxTokens: 320, temperature: 0.1 });
 }
 
 function parseJsonBlock(raw) {

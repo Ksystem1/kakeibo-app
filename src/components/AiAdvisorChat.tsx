@@ -213,13 +213,14 @@ export function AiAdvisorChat() {
   return (
     <>
       {open ? (
-        <section className="fixed bottom-20 right-3 z-[120] flex h-[62vh] w-[min(90vw,360px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl md:right-4 md:h-[74vh] md:w-[min(96vw,420px)]">
+        <section className="fixed right-3 z-[1100] flex h-[62vh] w-[min(90vw,360px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl md:right-4 md:h-[74vh] md:w-[min(96vw,420px)]"
+          style={{ bottom: "max(5.5rem, calc(env(safe-area-inset-bottom) + 5rem))" }}>
           <header className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
               <span className="rounded-full bg-emerald-100 p-1.5 text-emerald-600">
                 <Bot size={14} />
               </span>
-              AI家計アドバイザー
+              AI家計アドバイザー 🐷
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -268,7 +269,8 @@ export function AiAdvisorChat() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-6 right-4 z-[110] flex h-14 w-14 items-center justify-center rounded-full bg-blue-500 text-white shadow-xl shadow-blue-500/30"
+        className="fixed right-4 z-[1200] flex h-14 w-14 items-center justify-center rounded-full bg-blue-500 text-white shadow-xl shadow-blue-500/30"
+        style={{ bottom: "max(1rem, calc(env(safe-area-inset-bottom) + 0.75rem))" }}
         aria-label="AIアドバイザーチャットを開く"
       >
         <span className="relative">

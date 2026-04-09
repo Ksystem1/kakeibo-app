@@ -12,11 +12,11 @@ const MODE_KEY = "kakeibo_font_mode";
 const THEME_KEY = "kakeibo_theme_mode";
 const FIXED_COSTS_KEY = "kakeibo_fixed_costs_by_month";
 
-type FontMode = "small" | "standard" | "large" | "xlarge";
+type FontMode = "small" | "standard" | "large";
 export type FixedCostItem = {
   id: string;
   amount: number;
-  note: string;
+  category: string;
 };
 const THEME_MODES = ["light", "dark", "paper", "ocean"] as const;
 type ThemeMode = (typeof THEME_MODES)[number];
@@ -25,10 +25,9 @@ function parseThemeMode(raw: string | null): ThemeMode {
   return THEME_MODES.includes(raw as ThemeMode) ? (raw as ThemeMode) : "light";
 }
 const FONT_MODE_SCALE: Record<FontMode, number> = {
-  small: 0.94,
-  standard: 1.06,
-  large: 1.18,
-  xlarge: 1.3,
+  small: 0.92,
+  standard: 1,
+  large: 1.12,
 };
 
 type Settings = {
@@ -56,11 +55,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [fontMode, setFontModeState] = useState<FontMode>(() => {
     try {
       const raw = localStorage.getItem(MODE_KEY);
-      return raw === "small" || raw === "standard" || raw === "large" || raw === "xlarge"
+      return raw === "small" || raw === "standard" || raw === "large"
         ? raw
-        : "large";
+        : "standard";
     } catch {
-      return "large";
+      return "standard";
     }
   });
 
@@ -68,7 +67,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     try {
       const fallback = FONT_MODE_SCALE[fontMode];
       const v = Number.parseFloat(localStorage.getItem(KEY) || String(fallback));
-      return Number.isFinite(v) && v >= 0.85 && v <= 1.4 ? v : fallback;
+      return Number.isFinite(v) && v >= 0.85 && v <= 1.2 ? v : fallback;
     } catch {
       return FONT_MODE_SCALE[fontMode];
     }
@@ -88,15 +87,18 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             const amt = Number((x as { amount?: unknown }).amount);
             if (!Number.isFinite(amt) || amt < 0) continue;
             const id = String((x as { id?: unknown }).id ?? `fixed-${items.length + 1}`);
-            const note = String((x as { note?: unknown }).note ?? "").trim().slice(0, 80);
-            items.push({ id, amount: Math.round(amt), note });
+            const legacyNote = String((x as { note?: unknown }).note ?? "");
+            const category = String((x as { category?: unknown }).category ?? legacyNote)
+              .trim()
+              .slice(0, 40);
+            items.push({ id, amount: Math.round(amt), category });
           }
           if (items.length > 0) out[k] = items;
           continue;
         }
         const n = Number(v);
         if (Number.isFinite(n) && n > 0) {
-          out[k] = [{ id: "legacy-1", amount: Math.round(n), note: "" }];
+          out[k] = [{ id: "legacy-1", amount: Math.round(n), category: "固定費" }];
         }
       }
       return out;
@@ -143,7 +145,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [fixedCostsByMonth]);
 
   const setFontScale = (n: number) => {
-    const clamped = Math.min(1.4, Math.max(0.85, n));
+    const clamped = Math.min(1.2, Math.max(0.85, n));
     setFontScaleState(clamped);
     if (Math.abs(clamped - FONT_MODE_SCALE.small) < 0.03) {
       setFontModeState("small");
@@ -151,8 +153,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setFontModeState("standard");
     } else if (Math.abs(clamped - FONT_MODE_SCALE.large) < 0.03) {
       setFontModeState("large");
-    } else if (Math.abs(clamped - FONT_MODE_SCALE.xlarge) < 0.03) {
-      setFontModeState("xlarge");
     }
   };
 
@@ -171,7 +171,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       .map((x, i) => ({
         id: String(x?.id ?? `fixed-${i + 1}`),
         amount: Math.max(0, Math.round(Number(x?.amount ?? 0))),
-        note: String(x?.note ?? "").trim().slice(0, 80),
+        category: String(x?.category ?? "").trim().slice(0, 40),
       }))
       .filter((x) => Number.isFinite(x.amount) && x.amount > 0);
     setFixedCostsByMonth((prev) => {
