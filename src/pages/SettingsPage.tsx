@@ -42,6 +42,7 @@ export function SettingsPage() {
         .slice(0, 12),
     [fixedCostsByMonth],
   );
+  const futureEditable = fixedYm > currentYm();
 
   return (
     <div className={styles.wrap}>
@@ -125,6 +126,9 @@ export function SettingsPage() {
         <p className={styles.reclassifyHint}>
           「固定費」として表示されます。
         </p>
+        {!futureEditable ? (
+          <p className={styles.infoText}>過去月・当月は変更できません。未来月を選択してください。</p>
+        ) : null}
         <div className={styles.form} style={{ marginTop: "0.5rem" }}>
           <div className={styles.field}>
             <label htmlFor="fixed-ym">対象月</label>
@@ -155,10 +159,12 @@ export function SettingsPage() {
                     placeholder="カテゴリ（例: 家賃）"
                     value={item.category}
                     onChange={(e) => {
+                      if (!futureEditable) return;
                       const next = [...fixedItems];
                       next[idx] = { ...next[idx], category: e.target.value };
                       setFixedItems(next);
                     }}
+                    disabled={!futureEditable}
                   />
                   <input
                     type="number"
@@ -167,19 +173,23 @@ export function SettingsPage() {
                     placeholder="金額"
                     value={item.amount > 0 ? String(item.amount) : ""}
                     onChange={(e) => {
+                      if (!futureEditable) return;
                       const next = [...fixedItems];
                       const n = Number.parseFloat(e.target.value || "0");
                       next[idx] = { ...next[idx], amount: Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0 };
                       setFixedItems(next);
                     }}
+                    disabled={!futureEditable}
                   />
                   <button
                     type="button"
                     className={styles.btn}
                     onClick={() => {
+                      if (!futureEditable) return;
                       const next = fixedItems.filter((x) => x.id !== item.id);
                       setFixedItems(next.length > 0 ? next : [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }]);
                     }}
+                    disabled={!futureEditable}
                   >
                     削除
                   </button>
@@ -191,8 +201,10 @@ export function SettingsPage() {
             type="button"
             className={styles.btn}
             onClick={() =>
+              futureEditable &&
               setFixedItems((prev) => [...prev, { id: `fixed-${Date.now()}-${prev.length}`, amount: 0, category: "固定費" }])
             }
+            disabled={!futureEditable}
           >
             入力行を追加
           </button>
@@ -200,8 +212,10 @@ export function SettingsPage() {
             type="button"
             className={`${styles.btn} ${styles.btnPrimary}`}
             onClick={() => {
+              if (!futureEditable) return;
               setFixedCostsForMonth(fixedYm, fixedItems);
             }}
+            disabled={!futureEditable}
           >
             保存
           </button>

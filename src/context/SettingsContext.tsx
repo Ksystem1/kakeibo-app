@@ -24,6 +24,17 @@ type ThemeMode = (typeof THEME_MODES)[number];
 function parseThemeMode(raw: string | null): ThemeMode {
   return THEME_MODES.includes(raw as ThemeMode) ? (raw as ThemeMode) : "light";
 }
+
+function currentYm() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function isFutureYm(ym: string) {
+  if (!/^\d{4}-\d{2}$/.test(ym)) return false;
+  return ym > currentYm();
+}
+
 const FONT_MODE_SCALE: Record<FontMode, number> = {
   small: 0.92,
   standard: 1,
@@ -167,6 +178,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const setFixedCostsForMonth = (ym: string, items: FixedCostItem[]) => {
     if (!/^\d{4}-\d{2}$/.test(ym)) return;
+    if (!isFutureYm(ym)) return;
     const cleaned = (Array.isArray(items) ? items : [])
       .map((x, i) => ({
         id: String(x?.id ?? `fixed-${i + 1}`),
