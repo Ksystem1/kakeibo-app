@@ -13,18 +13,18 @@ function linkStyle(
 ) {
   return {
     fontWeight: isActive ? 800 : 600,
-    color: isActive ? "#3a200f" : "var(--text)",
+    color: isActive ? "#3a200f" : "var(--text-muted)",
     textDecoration: "none",
     padding: mobile ? "0.34rem 0.6rem" : "0.45rem 0.78rem",
     fontSize: mobile ? "0.8rem" : undefined,
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.62)",
+    border: isActive ? "1px solid rgba(255, 196, 84, 0.78)" : "1px solid rgba(130, 152, 178, 0.3)",
     background: isActive
       ? "linear-gradient(135deg, #ffe589 0%, #ffd166 50%, #ffb84d 100%)"
-      : "linear-gradient(135deg, rgba(255,255,255,0.75) 0%, rgba(255,255,255,0.45) 100%)",
+      : "linear-gradient(135deg, rgba(255,255,255,0.92) 0%, rgba(241,247,255,0.88) 100%)",
     boxShadow: isActive
-      ? "0 6px 14px rgba(255, 179, 60, 0.24)"
-      : "0 4px 10px rgba(15, 43, 71, 0.1)",
+      ? "0 6px 14px rgba(255, 179, 60, 0.22)"
+      : "0 4px 10px rgba(15, 43, 71, 0.08)",
     whiteSpace: "nowrap" as const,
   };
 }
@@ -70,14 +70,13 @@ export function AppLayout() {
           display: "flex",
           flexDirection: "column",
           gap: "0.45rem",
-          background: "rgba(0,0,0,0.2)",
+          background:
+            "linear-gradient(135deg, rgba(255,255,255,0.94) 0%, rgba(236,246,255,0.9) 45%, rgba(255,243,220,0.9) 100%)",
           width: "100%",
           maxWidth: "100%",
           minWidth: 0,
           boxSizing: "border-box",
-          backgroundImage: `linear-gradient(rgba(255,255,255,0.06), rgba(255,255,255,0.06)), url(${import.meta.env.BASE_URL}promo-panels.png)`,
-          backgroundSize: mobile ? "auto 140px" : "auto 180px",
-          backgroundPosition: "center",
+          backdropFilter: "saturate(1.05)",
         }}
       >
         {/* 1段目: ブランド + ユーティリティ（横スクロール防止のため flex:1 スペーサーは使わない） */}
