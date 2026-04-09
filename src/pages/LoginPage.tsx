@@ -46,12 +46,8 @@ export function LoginPage() {
     <div className={styles.page}>
       <AuthHeroAside>
         <span className={styles.badge}>Kakeibo ✨</span>
-        <h1 className={styles.heroTitle}>夫婦で共有。みんなの家計簿</h1>
-        <p className={styles.heroDesc}>
-          メールアドレスまたはログインIDでサインイン。
-          <br />
-          家計簿を共有できます。
-        </p>
+        <h1 className={styles.heroTitle}>みんなの家計簿</h1>
+        <p className={styles.heroDesc}>家計簿を共有できます。</p>
       </AuthHeroAside>
       <main className={styles.panel}>
         <div className={styles.card}>

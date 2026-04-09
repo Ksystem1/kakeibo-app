@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
@@ -9,7 +10,53 @@ export default defineConfig(({ mode }) => {
   return {
     // 本番: https://ksystemapp.com/kakeibo/（CloudFront+S3）。ローカルは http://localhost:5173/kakeibo/
     base: "/kakeibo/",
-    plugins: [react()],
+    plugins: [
+      react(),
+      VitePWA({
+        registerType: "autoUpdate",
+        includeAssets: ["robots.txt", "og-image.png", "top-hero.png"],
+        manifest: {
+          name: "Kakeibo 家計簿",
+          short_name: "Kakeibo",
+          description: "家族で共有できる家計簿アプリ",
+          start_url: "/kakeibo/",
+          scope: "/kakeibo/",
+          display: "standalone",
+          orientation: "portrait",
+          background_color: "#f5f8fc",
+          theme_color: "#ffd166",
+          icons: [
+            {
+              src: "/kakeibo/brand-kakeibo-2.png",
+              sizes: "1024x1024",
+              type: "image/png",
+              purpose: "any maskable",
+            },
+          ],
+        },
+        workbox: {
+          navigateFallback: "/kakeibo/index.html",
+          globPatterns: ["**/*.{js,css,html,ico,png,svg,webp}"],
+          runtimeCaching: [
+            {
+              urlPattern: ({ request }) =>
+                request.destination === "script" ||
+                request.destination === "style" ||
+                request.destination === "image" ||
+                request.destination === "font",
+              handler: "StaleWhileRevalidate",
+              options: {
+                cacheName: "kakeibo-static-assets",
+                expiration: {
+                  maxEntries: 120,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ],
     server: {
       // 0.0.0.0 で待ち受け — PC は http://localhost:5173、同一 Wi‑Fi のスマホは http://<このPCのIP>:5173
       host: true,
