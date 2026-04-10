@@ -59,9 +59,6 @@ export function SettingsPage() {
   return (
     <div className={styles.wrap}>
       <h1 className={styles.title}>設定</h1>
-      <p className={styles.sub}>
-        背景色（4 種）と文字サイズを変更します。
-      </p>
       <div className={styles.settingsPanel} style={{ marginTop: "0.75rem", maxWidth: 980 }}>
         <h2 className={styles.sectionTitle}>家族・利用ユーザー</h2>
         <p className={styles.reclassifyHint}>
@@ -70,6 +67,9 @@ export function SettingsPage() {
         <MembersPage embedded />
       </div>
       <div className={styles.settingsPanel} style={{ maxWidth: 820 }}>
+        <p className={styles.sub} style={{ margin: "0 0 0.5rem" }}>
+          背景色（4 種）と文字サイズを変更します。
+        </p>
         <label className={styles.settingsLabel}>表示テーマ</label>
         <div className={`${styles.modeRow} ${styles.modeRowTheme}`}>
           <button
