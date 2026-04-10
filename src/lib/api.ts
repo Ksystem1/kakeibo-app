@@ -545,5 +545,10 @@ export async function askAiAdvisor(body: {
     headers: buildHeaders(),
     body: JSON.stringify(body),
   });
-  return parse<{ ok: boolean; reply: string; source?: "bedrock" | "fallback" }>(res);
+  return parse<{
+    ok: boolean;
+    reply: string;
+    source?: "bedrock" | "fallback";
+    sourceDetail?: string;
+  }>(res);
 }

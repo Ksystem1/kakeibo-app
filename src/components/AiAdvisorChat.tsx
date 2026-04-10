@@ -63,6 +63,7 @@ export function AiAdvisorChat() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [lastSource, setLastSource] = useState<"bedrock" | "fallback" | null>(null);
+  const [lastSourceDetail, setLastSourceDetail] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 1, role: "ai", text: "こんにちは。AI家計アドバイザーです。気軽に相談してください。" },
@@ -144,6 +145,11 @@ export function AiAdvisorChat() {
       const normalizedReply = String(reply.reply ?? "").trim();
       const finalReply = normalizedReply || buildClientFallback(text, summaryLite);
       setLastSource(reply.source === "bedrock" ? "bedrock" : "fallback");
+      setLastSourceDetail(
+        reply.source === "fallback" && reply.sourceDetail
+          ? String(reply.sourceDetail)
+          : "",
+      );
       setMessages((prev) =>
         prev.map((m) => (m.id === typingId ? { id: typingId, role: "ai", text: finalReply } : m)),
       );
@@ -242,7 +248,9 @@ export function AiAdvisorChat() {
             <div className="flex flex-col items-end gap-0.5">
               {lastSource ? (
                 <span className="text-[10px] font-medium text-slate-500" title="直近の応答の生成元">
-                  {lastSource === "bedrock" ? "AWS Bedrock" : "ルール応答（Bedrock未使用）"}
+                  {lastSource === "bedrock"
+                    ? "AWS Bedrock"
+                    : `ルール応答（Bedrock未使用${lastSourceDetail ? `: ${lastSourceDetail}` : ""}）`}
                 </span>
               ) : null}
               <div className="flex items-center gap-2">

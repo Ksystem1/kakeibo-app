@@ -1353,12 +1353,14 @@ export async function handleApiRequest(req, options = {}) {
           return json(400, { error: "message が必要です" }, hdrs, skipCors);
         }
         const ctx = b.context && typeof b.context === "object" ? b.context : {};
+        let bedrockDetail = "";
         try {
           const ai = await askBedrockAdvisor(message, ctx);
           if (ai?.ok && ai.reply) {
             return json(200, { ok: true, reply: ai.reply, source: "bedrock" }, hdrs, skipCors);
           }
           if (ai && !ai.ok) {
+            bedrockDetail = ai.code ? String(ai.code) : "BedrockUnavailable";
             logError("ai.advisor.bedrock", new Error(`${ai.code}: ${ai.message}`), {
               authFailed: !!ai.authFailed,
               throttled: !!ai.throttled,
@@ -1375,13 +1377,24 @@ export async function handleApiRequest(req, options = {}) {
             msg.includes("RateLimitError") ||
             msg.includes("ThrottlingException") ||
             msg.includes("TooManyRequestsException");
+          bedrockDetail = authFailed ? "AccessDeniedException" : throttled ? "ThrottlingException" : "BedrockUnavailable";
           logError("ai.advisor.bedrock", e, {
             authFailed,
             throttled,
           });
         }
         const reply = buildAdvisorFallbackReply(message, ctx);
-        return json(200, { ok: true, reply, source: "fallback" }, hdrs, skipCors);
+        return json(
+          200,
+          {
+            ok: true,
+            reply,
+            source: "fallback",
+            ...(bedrockDetail ? { sourceDetail: bedrockDetail } : {}),
+          },
+          hdrs,
+          skipCors,
+        );
       }
 
       case "POST /import/csv": {

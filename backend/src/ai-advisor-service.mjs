@@ -1,10 +1,10 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 
-const DEFAULT_REGION = "us-east-1";
-const DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-6";
+const DEFAULT_REGION = "ap-northeast-1";
+const DEFAULT_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0";
 
 function getBedrockConfig() {
-  const region = String(process.env.BEDROCK_REGION || DEFAULT_REGION).trim() || DEFAULT_REGION;
+  const region = String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() || DEFAULT_REGION;
   const modelId = String(process.env.BEDROCK_MODEL_ID || DEFAULT_MODEL_ID).trim();
   return { region, modelId };
 }
