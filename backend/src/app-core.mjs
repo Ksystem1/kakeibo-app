@@ -796,6 +796,90 @@ export async function handleApiRequest(req, options = {}) {
       return json(200, { items }, hdrs, skipCors);
     }
 
+    if (routeKey(method, path) === "POST /admin/users") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const b = JSON.parse(req.body || "{}");
+      const email = String(b.email ?? "").trim().toLowerCase();
+      const loginRaw = b.login_name != null ? String(b.login_name).trim() : "";
+      const loginName = loginRaw.length > 0 ? loginRaw : null;
+      const password = String(b.password ?? "");
+      const displayRaw = b.display_name != null ? String(b.display_name).trim() : "";
+      const displayName = displayRaw.length > 0 ? displayRaw : null;
+      const isAdmin = b.isAdmin === true;
+
+      if (!email || !email.includes("@")) {
+        return json(400, { error: "メールアドレスが不正です" }, hdrs, skipCors);
+      }
+      if (!/^[a-zA-Z0-9]{8,}$/.test(password)) {
+        return json(400, { error: "パスワードは英数字8文字以上にしてください" }, hdrs, skipCors);
+      }
+      if (loginName && !/^[a-zA-Z0-9]{1,15}$/.test(loginName)) {
+        return json(400, { error: "ログインIDは英数字のみ・最大15文字で入力してください" }, hdrs, skipCors);
+      }
+      if (displayName && (!/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z0-9]+$/u.test(displayName) || displayName.length > 10)) {
+        return json(400, { error: "表示名は漢字・カナ・英数字のみ、最大10文字で入力してください" }, hdrs, skipCors);
+      }
+
+      const passwordHash = await hashPassword(password);
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [emailDup] = await conn.query(
+          `SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1`,
+          [email],
+        );
+        if (emailDup.length > 0) {
+          await conn.rollback();
+          return json(409, { error: "このメールアドレスは既に登録されています。別のメールアドレスを入力してください。" }, hdrs, skipCors);
+        }
+        if (loginName) {
+          const loginLc = loginName.toLowerCase();
+          const [loginDup] = await conn.query(
+            `SELECT id FROM users WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?) LIMIT 1`,
+            [loginLc, loginLc],
+          );
+          if (loginDup.length > 0) {
+            await conn.rollback();
+            return json(409, { error: "このログインIDは既に使用されています（他の方のメールアドレスと同じ文字列も使えません）。別のログインIDを入力してください。" }, hdrs, skipCors);
+          }
+        }
+        if (displayName) {
+          const [dispDup] = await conn.query(
+            `SELECT id FROM users WHERE display_name IS NOT NULL AND TRIM(display_name) <> '' AND LOWER(TRIM(display_name)) = LOWER(?) LIMIT 1`,
+            [displayName],
+          );
+          if (dispDup.length > 0) {
+            await conn.rollback();
+            return json(409, { error: "この表示名は既に使われています。別の表示名を入力してください。" }, hdrs, skipCors);
+          }
+        }
+
+        const [ur] = await conn.query(
+          `INSERT INTO users (email, login_name, password_hash, display_name, is_admin)
+           VALUES (?, ?, ?, ?, ?)`,
+          [email, loginName, passwordHash, displayName, isAdmin ? 1 : 0],
+        );
+        const newUserId = Number(ur.insertId);
+        const [fr] = await conn.query(`INSERT INTO families (name) VALUES (?)`, ["夫婦"]);
+        const familyId = Number(fr.insertId);
+        await conn.query(`UPDATE users SET default_family_id = ? WHERE id = ?`, [familyId, newUserId]);
+        await conn.query(
+          `INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, ?)`,
+          [familyId, newUserId, "owner"],
+        );
+        await conn.commit();
+
+        await seedDefaultCategoriesIfEmpty(pool, newUserId, familyId);
+        return json(201, { ok: true, id: newUserId }, hdrs, skipCors);
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      } finally {
+        conn.release();
+      }
+    }
+
     if (adminUserOneMatch && method === "PATCH") {
       const admin = await ensureAdmin(pool, userId);
       if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);

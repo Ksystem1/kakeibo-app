@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  createAdminUser,
   deleteAdminUser,
   getAdminUsers,
   resetAdminUserPassword,
@@ -18,6 +19,10 @@ type AdminUser = {
   default_family_id: number | null;
   family_peers: string | null;
 };
+
+const PW_RE = /^[a-zA-Z0-9]{8,}$/;
+const LOGIN_ID_RE = /^[a-zA-Z0-9]{1,15}$/;
+const NAME_RE = /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z0-9]+$/u;
 
 function formatAdminApiError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e ?? "");
@@ -64,6 +69,12 @@ export function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [displayNameDrafts, setDisplayNameDrafts] = useState<Record<number, string>>({});
   const [tempPasswords, setTempPasswords] = useState<Record<number, string>>({});
+  const [creating, setCreating] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newLoginName, setNewLoginName] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newIsAdmin, setNewIsAdmin] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -201,12 +212,125 @@ export function AdminPage() {
     }
   }, []);
 
+  const onCreateUser = useCallback(async () => {
+    const email = newEmail.trim().toLowerCase();
+    const loginName = newLoginName.trim();
+    const displayName = newDisplayName.trim();
+    if (!email || !email.includes("@")) {
+      setError("有効なメールアドレスを入力してください。");
+      return;
+    }
+    if (!PW_RE.test(newPassword)) {
+      setError("パスワードは英数字8文字以上にしてください。");
+      return;
+    }
+    if (loginName && !LOGIN_ID_RE.test(loginName)) {
+      setError("ログインIDは英数字のみ・最大15文字で入力してください。");
+      return;
+    }
+    if (displayName && (!NAME_RE.test(displayName) || displayName.length > 10)) {
+      setError("表示名は漢字・カナ・英数字のみ、最大10文字で入力してください。");
+      return;
+    }
+
+    setCreating(true);
+    setError(null);
+    try {
+      await createAdminUser({
+        email,
+        password: newPassword,
+        login_name: loginName || undefined,
+        display_name: displayName || undefined,
+        isAdmin: newIsAdmin,
+      });
+      setNewEmail("");
+      setNewLoginName("");
+      setNewDisplayName("");
+      setNewPassword("");
+      setNewIsAdmin(false);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "ユーザー追加に失敗しました");
+    } finally {
+      setCreating(false);
+    }
+  }, [newEmail, newLoginName, newDisplayName, newPassword, newIsAdmin, load]);
+
   return (
     <section style={{ padding: "1rem", maxWidth: 1400, margin: "0 auto" }}>
       <h1 style={{ margin: 0 }}>管理者ダッシュボード</h1>
       <p style={{ color: "var(--text-muted)" }}>
         管理者数: {adminCount} / 全ユーザー: {items.length}
       </p>
+      <div
+        style={{
+          margin: "0.8rem 0 1rem",
+          padding: "0.9rem 1rem",
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+        }}
+      >
+        <h2 style={{ margin: "0 0 0.65rem", fontSize: "1.02rem" }}>ユーザー追加</h2>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: "0.55rem",
+          }}
+        >
+          <input
+            type="email"
+            placeholder="メールアドレス（必須）"
+            value={newEmail}
+            disabled={creating}
+            onChange={(e) => setNewEmail(e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="ログインID（任意）"
+            value={newLoginName}
+            maxLength={15}
+            disabled={creating}
+            onChange={(e) => setNewLoginName(e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="表示名（任意）"
+            value={newDisplayName}
+            maxLength={10}
+            disabled={creating}
+            onChange={(e) => setNewDisplayName(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="初期パスワード（英数字8文字以上）"
+            value={newPassword}
+            disabled={creating}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
+        </div>
+        <div style={{ marginTop: "0.65rem", display: "flex", alignItems: "center", gap: "0.7rem" }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+            <input
+              type="checkbox"
+              checked={newIsAdmin}
+              disabled={creating}
+              onChange={(e) => setNewIsAdmin(e.target.checked)}
+            />
+            管理者として作成
+          </label>
+          <button
+            type="button"
+            disabled={creating}
+            onClick={() => {
+              void onCreateUser();
+            }}
+          >
+            {creating ? "追加中..." : "ユーザー追加"}
+          </button>
+        </div>
+      </div>
       <div
         style={{
           margin: "0.8rem 0 1rem",

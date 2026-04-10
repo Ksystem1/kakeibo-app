@@ -486,6 +486,21 @@ export async function getAdminUsers() {
   }>(res);
 }
 
+export async function createAdminUser(body: {
+  email: string;
+  password: string;
+  login_name?: string;
+  display_name?: string;
+  isAdmin?: boolean;
+}) {
+  const res = await apiFetch(`${BASE}/admin/users`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean; id: number }>(res);
+}
+
 export async function updateAdminUser(
   userId: number,
   body: { isAdmin?: boolean; displayName?: string | null },
