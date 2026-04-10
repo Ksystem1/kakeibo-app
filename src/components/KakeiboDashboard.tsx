@@ -37,6 +37,16 @@ function ymToRange(ym: string) {
   return { from, to };
 }
 
+/** YYYY-MM を delta 月シフト（例: -1 で前月） */
+function shiftYm(ym: string, deltaMonths: number): string | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(ym);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo0 = Number(m[2]) - 1;
+  const d = new Date(y, mo0 + deltaMonths, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function currentYm() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -120,6 +130,8 @@ export function KakeiboDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  /** 前月の収入合計 − 支出合計（今月収入が0のとき収入カード表示用） */
+  const [prevMonthBalance, setPrevMonthBalance] = useState(0);
   const [summary, setSummary] = useState<{
     expenseTotal: unknown;
     incomeTotal: unknown;
@@ -209,17 +221,30 @@ export function KakeiboDashboard() {
           /* 古い API では POST が無い場合がある */
         }
       }
-      const [txRes, sumRes] = await Promise.all([
+      const prevYm = shiftYm(ym, -1);
+      const prevSummaryPromise = prevYm
+        ? getMonthSummary(prevYm, { scope: "family" })
+        : Promise.resolve(null);
+      const [txRes, sumRes, prevSumRes] = await Promise.all([
         getTransactions(from, to, { scope: "family" }),
         getMonthSummary(ym, { scope: "family" }),
+        prevSummaryPromise,
       ]);
       setCategories(normalizeCategoryRows(items));
       setTransactions((txRes.items ?? []) as Transaction[]);
       setSummary(sumRes);
+      if (prevSumRes) {
+        const pi = numAmount(prevSumRes.incomeTotal as string | number);
+        const pe = numAmount(prevSumRes.expenseTotal as string | number);
+        setPrevMonthBalance(pi - pe);
+      } else {
+        setPrevMonthBalance(0);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setTransactions([]);
       setSummary(null);
+      setPrevMonthBalance(0);
     } finally {
       setLoading(false);
     }
@@ -259,8 +284,12 @@ export function KakeiboDashboard() {
   const expenseTotalNum = summary
     ? numAmount(summary.expenseTotal as string | number)
     : totals.expense;
-  const balanceNum = incomeTotalNum - expenseTotalNum;
-  const hasIncome = incomeTotalNum > 0;
+  /** 今月の登録収入が0のときは前月残高を収入カード・残金計算の土台に使う */
+  const incomeBasisNum =
+    incomeTotalNum > 0 ? incomeTotalNum : prevMonthBalance;
+  const balanceNum = incomeBasisNum - expenseTotalNum;
+  const hasIncome = incomeBasisNum > 0;
+  const incomeCardShowsCarryover = incomeTotalNum <= 0 && prevMonthBalance !== 0;
   const fixedCostForMonth = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym).reduce(
     (acc, x) => acc + Number(x.amount || 0),
     0,
@@ -482,8 +511,15 @@ export function KakeiboDashboard() {
           <div className={styles.cardLabel} title="収入（今月）">
             収入（今月）
           </div>
-          <div className={`${styles.cardValue} ${styles.income}`}>
-            {formatYenSingleLine(incomeTotalNum)}
+          <div
+            className={`${styles.cardValue} ${styles.income}`}
+            title={
+              incomeCardShowsCarryover
+                ? "今月の登録収入が0のため、前月の残金（前月収入−前月支出）を表示しています。"
+                : undefined
+            }
+          >
+            {formatYenSingleLine(incomeBasisNum)}
           </div>
         </div>
         <div className={`${styles.card} ${styles.cardExpense}`}>
