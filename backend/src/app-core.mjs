@@ -91,6 +91,12 @@ function buildAdvisorFallbackReply(message, ctx) {
   return `まずは固定費（通信費・保険・サブスク）を見直し、次に${topName}の上限を先に決めるのがおすすめです。今月の残り予算は${rest.toLocaleString("ja-JP")}円です。`;
 }
 
+function normalizeTxMemo(raw) {
+  if (raw == null || raw === "") return null;
+  const s = String(raw).trim().slice(0, 500);
+  return s === "" ? null : s;
+}
+
 const RECEIPT_CATEGORY_KEYWORDS = {
   food: [
     "りんご",
@@ -688,11 +694,43 @@ export async function handleApiRequest(req, options = {}) {
       const txId = Number(txOneMatch[1], 10);
       const b = JSON.parse(req.body || "{}");
       const [[existing]] = await pool.query(
-        `SELECT id, kind FROM transactions t WHERE t.id = ? AND (${txWhere})`,
+        `SELECT id, user_id, family_id, kind, amount, transaction_date, memo, category_id
+         FROM transactions t WHERE t.id = ? AND (${txWhere})`,
         [txId, userId, userId],
       );
       if (!existing) {
         return json(404, { error: "見つかりません" }, hdrs, skipCors);
+      }
+      const nextKind =
+        b.kind === "income" || b.kind === "expense"
+          ? b.kind
+          : String(existing.kind || "expense");
+      const nextAmount =
+        b.amount != null && b.amount !== ""
+          ? Number(b.amount)
+          : Number(existing.amount);
+      const nextDate =
+        b.transaction_date != null && b.transaction_date !== ""
+          ? String(b.transaction_date).slice(0, 10)
+          : String(existing.transaction_date ?? "").slice(0, 10);
+      const nextMemo = Object.prototype.hasOwnProperty.call(b, "memo")
+        ? normalizeTxMemo(b.memo)
+        : normalizeTxMemo(existing.memo);
+      let nextCategoryId = existing.category_id;
+      if (Object.prototype.hasOwnProperty.call(b, "category_id")) {
+        if (b.category_id == null || b.category_id === "") {
+          nextCategoryId = null;
+        } else {
+          const cid = Number(b.category_id);
+          if (!Number.isFinite(cid)) {
+            return json(400, { error: "category_id が不正です" }, hdrs, skipCors);
+          }
+          nextCategoryId = cid;
+        }
+      }
+      const nextAmountValidation = validateTransactionAmount(nextKind, nextAmount);
+      if (!nextAmountValidation.ok) {
+        return json(400, { error: nextAmountValidation.error }, hdrs, skipCors);
       }
       const fields = [];
       const params = [];
@@ -701,39 +739,71 @@ export async function handleApiRequest(req, options = {}) {
         params.push(b.kind);
       }
       if (b.amount != null && b.amount !== "") {
-        const amt = Number(b.amount);
-        const kindForAmount =
-          b.kind === "income" || b.kind === "expense"
-            ? b.kind
-            : String(existing.kind || "expense");
-        const v = validateTransactionAmount(kindForAmount, amt);
-        if (!v.ok) {
-          return json(400, { error: v.error }, hdrs, skipCors);
-        }
         fields.push("amount = ?");
-        params.push(amt);
+        params.push(nextAmount);
       }
       if (b.transaction_date != null && b.transaction_date !== "") {
         fields.push("transaction_date = ?");
-        params.push(String(b.transaction_date).slice(0, 10));
+        params.push(nextDate);
       }
       if (Object.prototype.hasOwnProperty.call(b, "memo")) {
         fields.push("memo = ?");
-        params.push(b.memo == null || b.memo === "" ? null : String(b.memo));
+        params.push(nextMemo);
       }
       if (Object.prototype.hasOwnProperty.call(b, "category_id")) {
-        let cid = null;
-        if (b.category_id != null && b.category_id !== "") {
-          cid = Number(b.category_id);
-          if (!Number.isFinite(cid)) {
-            return json(400, { error: "category_id が不正です" }, hdrs, skipCors);
-          }
-        }
         fields.push("category_id = ?");
-        params.push(cid);
+        params.push(nextCategoryId);
       }
       if (fields.length === 0) {
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
+      }
+      const [dupRows] = await pool.query(
+        `SELECT t.id, t.amount
+         FROM transactions t
+         WHERE t.user_id = ?
+           AND t.id <> ?
+           AND t.kind = ?
+           AND t.transaction_date = ?
+           AND (t.category_id <=> ?)
+           AND (t.memo <=> ?)
+         ORDER BY t.id DESC
+         LIMIT 1`,
+        [userId, txId, nextKind, nextDate, nextCategoryId, nextMemo],
+      );
+      const dup = Array.isArray(dupRows) && dupRows.length > 0 ? dupRows[0] : null;
+      if (dup) {
+        const mergedAmount = Number(dup.amount ?? 0) + Number(nextAmount ?? 0);
+        const mergedValidation = validateTransactionAmount(nextKind, mergedAmount);
+        if (!mergedValidation.ok) {
+          return json(400, { error: mergedValidation.error }, hdrs, skipCors);
+        }
+        const conn = await pool.getConnection();
+        try {
+          await conn.beginTransaction();
+          await conn.query(
+            `UPDATE transactions
+             SET amount = ?, updated_at = NOW()
+             WHERE id = ? AND user_id = ?`,
+            [mergedAmount, dup.id, userId],
+          );
+          await conn.query(
+            `DELETE FROM transactions
+             WHERE id = ? AND user_id = ?`,
+            [txId, userId],
+          );
+          await conn.commit();
+        } catch (e) {
+          await conn.rollback();
+          throw e;
+        } finally {
+          conn.release();
+        }
+        return json(
+          200,
+          { ok: true, merged: true, mergedIntoId: Number(dup.id), deletedId: txId },
+          hdrs,
+          skipCors,
+        );
       }
       params.push(txId);
       await pool.query(
@@ -1246,6 +1316,45 @@ export async function handleApiRequest(req, options = {}) {
         if (!v.ok) {
           return json(400, { error: v.error }, hdrs, skipCors);
         }
+        const txDate = String(b.transaction_date ?? "").slice(0, 10);
+        if (!txDate) {
+          return json(400, { error: "transaction_date が必要です" }, hdrs, skipCors);
+        }
+        let categoryId = null;
+        if (b.category_id != null && b.category_id !== "") {
+          categoryId = Number(b.category_id);
+          if (!Number.isFinite(categoryId)) {
+            return json(400, { error: "category_id が不正です" }, hdrs, skipCors);
+          }
+        }
+        const memo = normalizeTxMemo(b.memo);
+        const [dupRows] = await pool.query(
+          `SELECT t.id, t.amount
+           FROM transactions t
+           WHERE t.user_id = ?
+             AND t.kind = ?
+             AND t.transaction_date = ?
+             AND (t.category_id <=> ?)
+             AND (t.memo <=> ?)
+           ORDER BY t.id DESC
+           LIMIT 1`,
+          [userId, kind, txDate, categoryId, memo],
+        );
+        const dup = Array.isArray(dupRows) && dupRows.length > 0 ? dupRows[0] : null;
+        if (dup) {
+          const mergedAmount = Number(dup.amount ?? 0) + Number(amt);
+          const mergedValidation = validateTransactionAmount(kind, mergedAmount);
+          if (!mergedValidation.ok) {
+            return json(400, { error: mergedValidation.error }, hdrs, skipCors);
+          }
+          await pool.query(
+            `UPDATE transactions
+             SET amount = ?, updated_at = NOW()
+             WHERE id = ? AND user_id = ?`,
+            [mergedAmount, dup.id, userId],
+          );
+          return json(200, { id: Number(dup.id), merged: true }, hdrs, skipCors);
+        }
         const [r] = await pool.query(
           `INSERT INTO transactions
            (user_id, family_id, account_id, category_id, kind, amount, transaction_date, memo, external_id)
@@ -1254,11 +1363,11 @@ export async function handleApiRequest(req, options = {}) {
             userId,
             familyId,
             b.account_id ?? null,
-            b.category_id ?? null,
+            categoryId,
             kind,
             amt,
-            b.transaction_date,
-            b.memo ?? null,
+            txDate,
+            memo,
             b.external_id ?? null,
           ],
         );

@@ -717,7 +717,7 @@ export function KakeiboDashboard() {
       </form>
 
       <h2 className={styles.sectionTitle}>
-        取引一覧（{from} 〜 {to}）
+        取引一覧（{from} 〜 {to} / {transactions.length}件）
       </h2>
       <div className={styles.tableWrap}>
         <table
