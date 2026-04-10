@@ -71,9 +71,16 @@ function buildAdvisorFallbackReply(message, ctx) {
   const topName = top?.name ? String(top.name) : "変動費";
   const topTotal = Number(top?.total ?? 0);
   const msg = String(message ?? "");
+  const lower = msg.toLowerCase();
 
   if (msg.includes("あといくら") || msg.includes("残り")) {
     return `今月の残り予算は${rest.toLocaleString("ja-JP")}円です。${topName}の上限を先に決めると、使い過ぎを防ぎやすくなります。`;
+  }
+  if (msg.includes("解析") || msg.includes("読み取り") || msg.includes("読取")) {
+    return "レシート画面で「レシート取込」を押して画像を選ぶと、合計・日付・カテゴリ候補が自動入力されます。内容確認後に「登録」を押せば家計簿へ保存できます。";
+  }
+  if (msg.includes("登録方法") || msg.includes("登録") || lower.includes("how to register")) {
+    return "家計簿の「取引を追加」で種別・カテゴリ・日付・金額を入力し「追加」を押すと登録できます。レシート取込なら読み取り後に内容確認して「登録」を押してください。";
   }
   if (msg.includes("使い方")) {
     return `「固定費を減らしたい」「${topName}を抑えたい」のように、カテゴリ名つきで質問すると具体案を返しやすいです。今月は${topName}が${topTotal.toLocaleString("ja-JP")}円なので、まずはここから見直しましょう。`;
