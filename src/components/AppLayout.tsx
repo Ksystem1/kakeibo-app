@@ -31,7 +31,7 @@ function linkStyle(
     fontWeight: isActive ? 700 : 600,
     color: isActive ? "var(--text)" : "var(--text-muted)",
     textDecoration: "none",
-    padding: mobile ? "0.34rem 0.6rem" : "0.45rem 0.78rem",
+    padding: mobile ? "0.46rem 0.62rem" : "0.58rem 0.82rem",
     fontSize: mobile ? "0.8rem" : undefined,
     borderRadius: 10,
     border: isActive ? "1px solid var(--accent)" : "1px solid var(--border)",
@@ -40,6 +40,10 @@ function linkStyle(
       ? "0 3px 8px rgba(22, 108, 182, 0.18)"
       : "0 1px 4px rgba(15, 43, 71, 0.08)",
     whiteSpace: "nowrap" as const,
+    minHeight: mobile ? 54 : 62,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
   };
 }
 
@@ -50,7 +54,7 @@ function navIconSrc(file: string) {
 function navIconStyle(mobile: boolean) {
   return {
     display: "block",
-    width: mobile ? 110 : 136,
+    width: mobile ? 116 : 146,
     maxWidth: "100%",
     height: "auto",
     objectFit: "contain" as const,
