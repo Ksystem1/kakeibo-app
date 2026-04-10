@@ -290,10 +290,8 @@ export function KakeiboDashboard() {
   const balanceNum = incomeBasisNum - expenseTotalNum;
   const hasIncome = incomeBasisNum > 0;
   const incomeCardShowsCarryover = incomeTotalNum <= 0 && prevMonthBalance !== 0;
-  const fixedCostForMonth = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym).reduce(
-    (acc, x) => acc + Number(x.amount || 0),
-    0,
-  );
+  const fixedCostItemsForMonth = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym);
+  const fixedCostForMonth = fixedCostItemsForMonth.reduce((acc, x) => acc + Number(x.amount || 0), 0);
   const expenseRowsWithFixed = useMemo(() => {
     const rows = [...(summary?.expensesByCategory ?? [])];
     if (!Number.isFinite(fixedCostForMonth) || fixedCostForMonth <= 0) return rows;
@@ -575,6 +573,28 @@ export function KakeiboDashboard() {
               </tbody>
             </table>
           </div>
+          {fixedCostItemsForMonth.length > 0 ? (
+            <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>固定費明細</th>
+                    <th>金額</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fixedCostItemsForMonth.map((item, i) => (
+                    <tr key={`${item.id}-${i}`}>
+                      <td style={{ whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }}>
+                        {item.category || "固定費"}
+                      </td>
+                      <td>{yen.format(numAmount(item.amount))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </>
       ) : null}
       {summary && summary.incomesByCategory.length > 0 ? (

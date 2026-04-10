@@ -11,6 +11,7 @@ const KEY = "kakeibo_font_scale";
 const MODE_KEY = "kakeibo_font_mode";
 const THEME_KEY = "kakeibo_theme_mode";
 const FIXED_COSTS_KEY = "kakeibo_fixed_costs_by_month";
+const GLOBAL_FIXED_COSTS_KEY = "__all__";
 
 type FontMode = "small" | "standard" | "large";
 export type FixedCostItem = {
@@ -25,12 +26,6 @@ function parseThemeMode(raw: string | null): ThemeMode {
   return THEME_MODES.includes(raw as ThemeMode) ? (raw as ThemeMode) : "light";
 }
 
-function isEditableYm(ym: string) {
-  if (!/^\d{4}-\d{2}$/.test(ym)) return false;
-  const currentYear = new Date().getFullYear();
-  return ym.startsWith(`${currentYear}-`);
-}
-
 function ymToNumber(ym: string) {
   const m = /^(\d{4})-(\d{2})$/.exec(ym);
   if (!m) return null;
@@ -41,6 +36,10 @@ export function getEffectiveFixedCostsForMonth(
   fixedCostsByMonth: Record<string, FixedCostItem[]>,
   ym: string,
 ) {
+  const globalItems = fixedCostsByMonth[GLOBAL_FIXED_COSTS_KEY];
+  if (Array.isArray(globalItems) && globalItems.length > 0) {
+    return globalItems;
+  }
   const target = ymToNumber(ym);
   if (target == null) return [];
   let hitYm = "";
@@ -111,7 +110,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       if (!parsed || typeof parsed !== "object") return {};
       const out: Record<string, FixedCostItem[]> = {};
       for (const [k, v] of Object.entries(parsed)) {
-        if (!/^\d{4}-\d{2}$/.test(k)) continue;
+        if (k !== GLOBAL_FIXED_COSTS_KEY && !/^\d{4}-\d{2}$/.test(k)) continue;
         if (Array.isArray(v)) {
           const items: FixedCostItem[] = [];
           for (const x of v) {
@@ -199,7 +198,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const setFixedCostsForMonth = (ym: string, items: FixedCostItem[]) => {
     if (!/^\d{4}-\d{2}$/.test(ym)) return;
-    if (!isEditableYm(ym)) return;
     const cleaned = (Array.isArray(items) ? items : [])
       .map((x, i) => ({
         id: String(x?.id ?? `fixed-${i + 1}`),
@@ -207,15 +205,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         category: String(x?.category ?? "").trim().slice(0, 40),
       }))
       .filter((x) => Number.isFinite(x.amount) && x.amount > 0);
-    setFixedCostsByMonth((prev) => {
-      const next = { ...prev };
-      if (cleaned.length === 0) {
-        delete next[ym];
-      } else {
-        next[ym] = cleaned;
-      }
-      return next;
-    });
+    // 固定費は全ての月で共通扱い。保存時は既存の月別定義を上書きする。
+    setFixedCostsByMonth(cleaned.length === 0 ? {} : { [GLOBAL_FIXED_COSTS_KEY]: cleaned });
   };
 
   const value = useMemo(
