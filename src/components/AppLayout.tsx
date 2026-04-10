@@ -43,6 +43,20 @@ function linkStyle(
   };
 }
 
+function navIconSrc(file: string) {
+  return `${import.meta.env.BASE_URL}png-icons/${file}`;
+}
+
+function navIconStyle(mobile: boolean) {
+  return {
+    display: "block",
+    width: mobile ? 110 : 136,
+    maxWidth: "100%",
+    height: "auto",
+    objectFit: "contain" as const,
+  };
+}
+
 export function AppLayout() {
   const { token, user, setUser, logout } = useAuth();
   const navigate = useNavigate();
@@ -252,8 +266,9 @@ export function AppLayout() {
                   type="button"
                   onClick={() => void handleChromiumInstallClick()}
                   style={linkStyle(mobile, { isActive: false })}
+                  aria-label="アプリをインストール / 再読込"
                 >
-                  📲 アプリをインストール
+                  <img src={navIconSrc("install-reload.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </button>
               ) : null}
               {showIosAddToHome ? (
@@ -261,36 +276,37 @@ export function AppLayout() {
                   type="button"
                   onClick={() => setIosPwaHintOpen(true)}
                   style={linkStyle(mobile, { isActive: false })}
+                  aria-label="ホーム画面に追加"
                 >
-                  📲 ホーム画面に追加
+                  <img src={navIconSrc("homeadd.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </button>
               ) : null}
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <NavLink to="/dashboard" style={(p) => linkStyle(mobile, p)}>
-                  🐷 ダッシュボード
+                <NavLink to="/dashboard" style={(p) => linkStyle(mobile, p)} aria-label="ダッシュボード">
+                  <img src={navIconSrc("dashboard.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </NavLink>
               ) : null}
-              <NavLink to="/" style={(p) => linkStyle(mobile, p)} end>
-                🏠 家計簿
+              <NavLink to="/" style={(p) => linkStyle(mobile, p)} end aria-label="家計簿">
+                <img src={navIconSrc("change.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
               </NavLink>
               {!mobile ? (
-                <NavLink to="/import" style={(p) => linkStyle(mobile, p)}>
-                  📥 CSV取込（PC）
+                <NavLink to="/import" style={(p) => linkStyle(mobile, p)} aria-label="CSV取込（PC）">
+                  <img src={navIconSrc("csv-pc.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </NavLink>
               ) : null}
-              <NavLink to="/receipt" style={(p) => linkStyle(mobile, p)}>
-                🧾 レシート
+              <NavLink to="/receipt" style={(p) => linkStyle(mobile, p)} aria-label="レシート">
+                <img src={navIconSrc("receipt.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
               </NavLink>
-              <NavLink to="/settings" style={(p) => linkStyle(mobile, p)}>
-                🎀 設定
+              <NavLink to="/settings" style={(p) => linkStyle(mobile, p)} aria-label="設定">
+                <img src={navIconSrc("settings.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
               </NavLink>
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <NavLink to="/admin" style={(p) => linkStyle(mobile, p)}>
-                  🛠️ 管理
+                <NavLink to="/admin" style={(p) => linkStyle(mobile, p)} aria-label="管理">
+                  <img src={navIconSrc("admin.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </NavLink>
               ) : null}
             </>
