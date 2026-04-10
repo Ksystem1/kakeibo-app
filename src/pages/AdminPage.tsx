@@ -101,42 +101,6 @@ export function AdminPage() {
 
   const adminCount = useMemo(() => items.filter((x) => x.isAdmin).length, [items]);
 
-  /** 家族IDごとに 1 家族としてカウント（夫婦など複数ユーザーでも家族数は 1） */
-  const familySummary = useMemo(() => {
-    const byId = new Map<
-      number,
-      { userRows: number; peersLabel: string | null }
-    >();
-    let usersWithoutFamily = 0;
-    for (const u of items) {
-      const fid = u.default_family_id;
-      if (fid == null) {
-        usersWithoutFamily += 1;
-        continue;
-      }
-      const cur = byId.get(fid);
-      const label = u.family_peers?.trim() || null;
-      if (!cur) {
-        byId.set(fid, { userRows: 1, peersLabel: label });
-      } else {
-        cur.userRows += 1;
-        if (!cur.peersLabel && label) cur.peersLabel = label;
-      }
-    }
-    const families = [...byId.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([familyId, v]) => ({
-        familyId,
-        peersLabel: v.peersLabel,
-        userRows: v.userRows,
-      }));
-    return {
-      distinctFamilyCount: byId.size,
-      usersWithoutFamily,
-      families,
-    };
-  }, [items]);
-
   const onToggleAdmin = useCallback(
     async (userId: number, nextValue: boolean) => {
       setSavingUserId(userId);
@@ -330,60 +294,6 @@ export function AdminPage() {
             {creating ? "追加中..." : "ユーザー追加"}
           </button>
         </div>
-      </div>
-      <div
-        style={{
-          margin: "0.8rem 0 1rem",
-          padding: "1rem 1.1rem",
-          borderRadius: 12,
-          border: "1px solid var(--border)",
-          background: "var(--bg-card)",
-          boxShadow: "0 2px 8px rgba(16, 36, 60, 0.08)",
-        }}
-      >
-        <h2 style={{ margin: "0 0 0.65rem", fontSize: "1.05rem", lineHeight: 1.35 }}>家族IDサマリ</h2>
-        <p style={{ margin: "0 0 0.7rem", fontSize: "0.95rem", lineHeight: 1.65, color: "var(--text-muted)" }}>
-          同じ家族IDは<strong> 1 家族</strong>として数えます（例: 本人・招待者の 2 ユーザーでも家族数は 1）。
-        </p>
-        <ul style={{ margin: "0 0 0.8rem", paddingLeft: "1.25rem", fontSize: "0.96rem", lineHeight: 1.7 }}>
-          <li>
-            <strong>登録家族数（ユニークな家族ID）</strong>: {familySummary.distinctFamilyCount}
-          </li>
-          <li>
-            <strong>家族未設定のユーザー行</strong>: {familySummary.usersWithoutFamily}
-          </li>
-        </ul>
-        {familySummary.families.length === 0 ? (
-          <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.9rem" }}>
-            家族に紐づくユーザーはいません。
-          </p>
-        ) : (
-          <ul
-            style={{
-              margin: 0,
-              paddingLeft: "1.25rem",
-              fontSize: "0.94rem",
-              lineHeight: 1.75,
-              color: "var(--text)",
-            }}
-          >
-            {familySummary.families.map((f) => (
-              <li key={f.familyId} style={{ marginBottom: "0.5rem" }}>
-                <strong>家族ID {f.familyId}</strong>
-                {f.userRows > 1 ? (
-                  <span style={{ color: "var(--text-muted)" }}>
-                    {" "}
-                   （一覧上 {f.userRows} 行 = 同一家族のユーザー数）
-                  </span>
-                ) : null}
-                <br />
-                <span style={{ color: "var(--text-muted)" }}>
-                  {f.peersLabel ?? "（メンバー表記なし）"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
       <div
         style={{
