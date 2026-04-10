@@ -118,9 +118,9 @@ export function AppLayout() {
     return () => window.removeEventListener("keydown", onKey);
   }, [iosPwaHintOpen]);
 
-  const showChromiumInstall = !isInstalled && installPromptEvent != null;
+  const showChromiumInstall = mobile && !isInstalled && installPromptEvent != null;
   const showIosAddToHome =
-    !isInstalled && isLikelyIos() && installPromptEvent == null;
+    mobile && !isInstalled && isLikelyIos() && installPromptEvent == null;
 
   return (
     <>
