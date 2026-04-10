@@ -20,6 +20,24 @@ function currentYearEndYm() {
   return `${new Date().getFullYear()}-12`;
 }
 
+/** 対象月の初期値：当月に保存があれば当月、なければ当年で一番新しい保存月（明細がすぐ見えるようにする） */
+function pickDefaultFixedYm(byMonth: Record<string, FixedCostItem[]>): string {
+  const cur = currentYm();
+  if ((byMonth[cur]?.length ?? 0) > 0) return cur;
+  const y = new Date().getFullYear();
+  const prefix = `${y}-`;
+  const keys = Object.keys(byMonth)
+    .filter(
+      (k) =>
+        /^\d{4}-\d{2}$/.test(k) &&
+        k.startsWith(prefix) &&
+        Array.isArray(byMonth[k]) &&
+        byMonth[k].length > 0,
+    )
+    .sort((a, b) => b.localeCompare(a));
+  return keys[0] ?? cur;
+}
+
 /** 編集フォーム用：まずその月の保存行、なければ直近の繰越、なければ1行の空フォーム（参照は新配列・行idはフォーム専用） */
 function itemsForFixedCostEditor(
   ym: string,
@@ -60,11 +78,11 @@ export function SettingsPage() {
   } = useSettings();
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyResult, setReclassifyResult] = useState<string | null>(null);
-  const [fixedYm, setFixedYm] = useState(currentYm);
+  const [fixedYm, setFixedYm] = useState(() => pickDefaultFixedYm(fixedCostsByMonth));
   const [monthExpenseTotal, setMonthExpenseTotal] = useState<number>(0);
   const [checkingMonth, setCheckingMonth] = useState(false);
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
-    itemsForFixedCostEditor(currentYm(), fixedCostsByMonth),
+    itemsForFixedCostEditor(pickDefaultFixedYm(fixedCostsByMonth), fixedCostsByMonth),
   );
 
   const fixedCostRows = useMemo(
@@ -85,10 +103,6 @@ export function SettingsPage() {
   const hasSavedFixedForMonth = (fixedCostsByMonth[fixedYm]?.length ?? 0) > 0;
   const fixedCostEditable =
     sameYearEditable && (hasExpenseMonth || hasSavedFixedForMonth);
-  const fixedYmSummary = useMemo(
-    () => fixedItems.reduce((acc, x) => acc + Number(x.amount || 0), 0),
-    [fixedItems],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -271,9 +285,6 @@ export function SettingsPage() {
               ))}
             </div>
           </div>
-          <p className={styles.infoText} style={{ margin: "0.1rem 0 0" }}>
-            対象月の固定費サマリー: ¥{Math.round(fixedYmSummary).toLocaleString("ja-JP")}
-          </p>
           <button
             type="button"
             className={styles.btn}
