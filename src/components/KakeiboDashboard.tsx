@@ -337,8 +337,13 @@ export function KakeiboDashboard() {
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     const amount = Number.parseFloat(formAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setError("金額は正の数で入力してください。");
+    const minAmount = formKind === "income" ? 0 : 1;
+    if (!Number.isFinite(amount) || amount < minAmount) {
+      setError(
+        formKind === "income"
+          ? "収入は 0 以上で入力してください。"
+          : "支出は 1 以上で入力してください。",
+      );
       return;
     }
     setSaving(true);
@@ -389,8 +394,13 @@ export function KakeiboDashboard() {
   async function saveEdit() {
     if (!edit) return;
     const amount = Number.parseFloat(edit.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setError("金額は正の数で入力してください。");
+    const minAmount = edit.kind === "income" ? 0 : 1;
+    if (!Number.isFinite(amount) || amount < minAmount) {
+      setError(
+        edit.kind === "income"
+          ? "収入は 0 以上で入力してください。"
+          : "支出は 1 以上で入力してください。",
+      );
       return;
     }
     setEditSaving(true);
@@ -639,7 +649,7 @@ export function KakeiboDashboard() {
           <input
             id="kb-amt"
             type="number"
-            min={1}
+            min={formKind === "income" ? 0 : 1}
             step={1}
             placeholder="1200"
             value={formAmount}
@@ -781,7 +791,7 @@ export function KakeiboDashboard() {
                             <input
                               className={styles.mobileTxEditInput}
                               type="number"
-                              min={1}
+                              min={edit.kind === "income" ? 0 : 1}
                               step={1}
                               value={edit.amount}
                               onChange={(ev) =>
@@ -984,7 +994,7 @@ export function KakeiboDashboard() {
                         <input
                           className={styles.cellInput}
                           type="number"
-                          min={1}
+                          min={edit.kind === "income" ? 0 : 1}
                           step={1}
                           value={edit.amount}
                           onChange={(ev) =>

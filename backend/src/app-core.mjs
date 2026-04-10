@@ -46,6 +46,23 @@ function routeKey(method, path) {
   return `${method} ${p}`;
 }
 
+/** 収入は 0 円可。支出は正の数のみ。 */
+function validateTransactionAmount(kind, amt) {
+  if (!Number.isFinite(amt) || amt < 0) {
+    return { ok: false, error: "金額が不正です" };
+  }
+  if (kind === "income") {
+    return { ok: true };
+  }
+  if (amt <= 0) {
+    return {
+      ok: false,
+      error: "支出の金額は正の数である必要があります",
+    };
+  }
+  return { ok: true };
+}
+
 function buildAdvisorFallbackReply(message, ctx) {
   const income = Number(ctx?.incomeTotal ?? 0);
   const expense = Number(ctx?.expenseTotal ?? 0);
@@ -664,7 +681,7 @@ export async function handleApiRequest(req, options = {}) {
       const txId = Number(txOneMatch[1], 10);
       const b = JSON.parse(req.body || "{}");
       const [[existing]] = await pool.query(
-        `SELECT id FROM transactions t WHERE t.id = ? AND (${txWhere})`,
+        `SELECT id, kind FROM transactions t WHERE t.id = ? AND (${txWhere})`,
         [txId, userId, userId],
       );
       if (!existing) {
@@ -678,8 +695,13 @@ export async function handleApiRequest(req, options = {}) {
       }
       if (b.amount != null && b.amount !== "") {
         const amt = Number(b.amount);
-        if (!Number.isFinite(amt) || amt <= 0) {
-          return json(400, { error: "金額は正の数である必要があります" }, hdrs, skipCors);
+        const kindForAmount =
+          b.kind === "income" || b.kind === "expense"
+            ? b.kind
+            : String(existing.kind || "expense");
+        const v = validateTransactionAmount(kindForAmount, amt);
+        if (!v.ok) {
+          return json(400, { error: v.error }, hdrs, skipCors);
         }
         fields.push("amount = ?");
         params.push(amt);
@@ -1127,6 +1149,12 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /transactions": {
         const b = JSON.parse(req.body || "{}");
+        const kind = b.kind === "income" ? "income" : "expense";
+        const amt = Number(b.amount);
+        const v = validateTransactionAmount(kind, amt);
+        if (!v.ok) {
+          return json(400, { error: v.error }, hdrs, skipCors);
+        }
         const [r] = await pool.query(
           `INSERT INTO transactions
            (user_id, family_id, account_id, category_id, kind, amount, transaction_date, memo, external_id)
@@ -1136,8 +1164,8 @@ export async function handleApiRequest(req, options = {}) {
             familyId,
             b.account_id ?? null,
             b.category_id ?? null,
-            b.kind ?? "expense",
-            b.amount,
+            kind,
+            amt,
             b.transaction_date,
             b.memo ?? null,
             b.external_id ?? null,
