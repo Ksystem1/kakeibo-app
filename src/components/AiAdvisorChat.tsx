@@ -276,7 +276,7 @@ export function AiAdvisorChat() {
           <div className="border-t border-slate-200 bg-white p-2">
             <div className="flex items-center gap-2">
               <input
-                className="h-10 flex-1 rounded-full border border-slate-300 px-3 text-sm outline-none focus:border-emerald-400"
+                className="h-10 flex-1 rounded-full border border-slate-300 px-3 text-base outline-none focus:border-emerald-400 md:text-sm"
                 placeholder="家計の相談を入力..."
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
