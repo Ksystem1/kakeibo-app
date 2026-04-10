@@ -1,5 +1,6 @@
 import { Bot, MessageCircle, PiggyBank, Send, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { askAiAdvisor, getMonthSummary } from "../lib/api";
 
 type ChatMessage = {
@@ -13,6 +14,16 @@ type ChatMessage = {
 function currentYm() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** 家計簿の ?month= と同じルール（ダッシュボード表示月とAIの集計月を一致させる） */
+function parseMonthParam(search: string): string | null {
+  const p = new URLSearchParams(search).get("month");
+  return p && /^\d{4}-\d{2}$/.test(p) ? p : null;
+}
+
+function advisorYearMonth(search: string) {
+  return parseMonthParam(search) ?? currentYm();
 }
 
 function buildClientFallback(
@@ -39,9 +50,12 @@ function buildClientFallback(
 }
 
 export function AiAdvisorChat() {
+  const location = useLocation();
+  const summaryYm = useMemo(() => advisorYearMonth(location.search), [location.search]);
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lastSource, setLastSource] = useState<"bedrock" | "fallback" | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 1, role: "ai", text: "こんにちは。AI家計アドバイザーです。気軽に相談してください。" },
@@ -88,7 +102,7 @@ export function AiAdvisorChat() {
     scrollToBottom();
     setBusy(true);
     try {
-      const ym = currentYm();
+      const ym = summaryYm;
       const sum = await getMonthSummary(ym, { scope: "family" });
       const summaryLite = {
         incomeTotal: Number(sum.incomeTotal ?? 0),
@@ -113,7 +127,7 @@ export function AiAdvisorChat() {
           yearMonth: ym,
           incomeTotal: summaryLite.incomeTotal,
           expenseTotal: summaryLite.expenseTotal,
-          topCategories: (sum.expensesByCategory ?? []).slice(0, 3).map((x) => ({
+          topCategories: (sum.expensesByCategory ?? []).slice(0, 10).map((x) => ({
             name: x.category_name ?? "未分類",
             total: Number(x.total ?? 0),
           })),
@@ -122,11 +136,7 @@ export function AiAdvisorChat() {
       });
       const normalizedReply = String(reply.reply ?? "").trim();
       const finalReply = normalizedReply || buildClientFallback(text, summaryLite);
-      if (reply.source === "bedrock") {
-        console.log("Real AI Response", normalizedReply);
-      } else {
-        console.log("Fallback AI Response", normalizedReply);
-      }
+      setLastSource(reply.source === "bedrock" ? "bedrock" : "fallback");
       setMessages((prev) =>
         prev.map((m) => (m.id === typingId ? { id: typingId, role: "ai", text: finalReply } : m)),
       );
@@ -222,7 +232,13 @@ export function AiAdvisorChat() {
               </span>
               AI家計アドバイザー 🐷
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end gap-0.5">
+              {lastSource ? (
+                <span className="text-[10px] font-medium text-slate-500" title="直近の応答の生成元">
+                  {lastSource === "bedrock" ? "AWS Bedrock" : "ルール応答（Bedrock未使用）"}
+                </span>
+              ) : null}
+              <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => void runDemoMode()}
@@ -234,6 +250,7 @@ export function AiAdvisorChat() {
               <button type="button" onClick={() => setOpen(false)} className="rounded-md p-1 text-slate-500 hover:bg-slate-200">
                 <X size={16} />
               </button>
+              </div>
             </div>
           </header>
 
