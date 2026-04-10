@@ -210,17 +210,18 @@ export function AdminPage() {
       <div
         style={{
           margin: "0.8rem 0 1rem",
-          padding: "0.75rem 0.9rem",
-          borderRadius: 10,
+          padding: "1rem 1.1rem",
+          borderRadius: 12,
           border: "1px solid var(--border)",
-          background: "var(--panel-bg)",
+          background: "var(--bg-card)",
+          boxShadow: "0 2px 8px rgba(16, 36, 60, 0.08)",
         }}
       >
-        <h2 style={{ margin: "0 0 0.5rem", fontSize: "0.98rem" }}>家族IDサマリ</h2>
-        <p style={{ margin: "0 0 0.5rem", fontSize: "0.92rem", color: "var(--text-muted)" }}>
+        <h2 style={{ margin: "0 0 0.65rem", fontSize: "1.05rem", lineHeight: 1.35 }}>家族IDサマリ</h2>
+        <p style={{ margin: "0 0 0.7rem", fontSize: "0.95rem", lineHeight: 1.65, color: "var(--text-muted)" }}>
           同じ家族IDは<strong> 1 家族</strong>として数えます（例: 本人・招待者の 2 ユーザーでも家族数は 1）。
         </p>
-        <ul style={{ margin: "0 0 0.65rem", paddingLeft: "1.2rem", fontSize: "0.92rem" }}>
+        <ul style={{ margin: "0 0 0.8rem", paddingLeft: "1.25rem", fontSize: "0.96rem", lineHeight: 1.7 }}>
           <li>
             <strong>登録家族数（ユニークな家族ID）</strong>: {familySummary.distinctFamilyCount}
           </li>
@@ -236,14 +237,14 @@ export function AdminPage() {
           <ul
             style={{
               margin: 0,
-              paddingLeft: "1.2rem",
-              fontSize: "0.88rem",
-              lineHeight: 1.55,
+              paddingLeft: "1.25rem",
+              fontSize: "0.94rem",
+              lineHeight: 1.75,
               color: "var(--text)",
             }}
           >
             {familySummary.families.map((f) => (
-              <li key={f.familyId} style={{ marginBottom: "0.35rem" }}>
+              <li key={f.familyId} style={{ marginBottom: "0.5rem" }}>
                 <strong>家族ID {f.familyId}</strong>
                 {f.userRows > 1 ? (
                   <span style={{ color: "var(--text-muted)" }}>
