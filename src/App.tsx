@@ -6,7 +6,6 @@ import { KakeiboDashboard } from "./components/KakeiboDashboard";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ImportCsvPage } from "./pages/ImportCsvPage";
 import { LoginPage } from "./pages/LoginPage";
-import { MembersPage } from "./pages/MembersPage";
 import { ReceiptPage } from "./pages/ReceiptPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
@@ -28,7 +27,7 @@ export default function App() {
           <Route path="/" element={<KakeiboDashboard />} />
           <Route path="/import" element={<ImportCsvPage />} />
           <Route path="/receipt" element={<ReceiptPage />} />
-          <Route path="/members" element={<MembersPage />} />
+          <Route path="/members" element={<Navigate to="/settings" replace />} />
           <Route path="/categories" element={<Navigate to="/settings" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route element={<AdminRoute />}>

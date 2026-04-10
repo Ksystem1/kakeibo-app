@@ -3,7 +3,7 @@ import QRCode from "react-qr-code";
 import { getFamilyMembers, inviteFamilyMember } from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
 
-export function MembersPage() {
+export function MembersPage({ embedded = false }: { embedded?: boolean }) {
   const [items, setItems] = useState<
     Array<{
       id: number;
@@ -78,12 +78,8 @@ export function MembersPage() {
     }
   }
 
-  return (
-    <div className={styles.wrap}>
-      <h1 className={styles.title}>家族・利用ユーザー</h1>
-      <p className={styles.sub}>
-        同じ家族に紐づいた人は取引の入力・閲覧ができます。招待する方のメールアドレスを入力のうえ、URLをメール・QR・LINEで送れます（LINEはリンク共有または案内文付きのどちらでも可）。
-      </p>
+  const content = (
+    <>
       {err ? (
         <p className={styles.err} role="alert">
           {err}
@@ -203,6 +199,18 @@ export function MembersPage() {
           招待を登録
         </button>
       </form>
+    </>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <div className={styles.wrap}>
+      <h1 className={styles.title}>家族・利用ユーザー</h1>
+      <p className={styles.sub}>
+        同じ家族に紐づいた人は取引の入力・閲覧ができます。招待する方のメールアドレスを入力のうえ、URLをメール・QR・LINEで送れます（LINEはリンク共有または案内文付きのどちらでも可）。
+      </p>
+      {content}
     </div>
   );
 }

@@ -283,9 +283,6 @@ export function AppLayout() {
               <NavLink to="/receipt" style={(p) => linkStyle(mobile, p)}>
                 🧾 レシート
               </NavLink>
-              <NavLink to="/members" style={(p) => linkStyle(mobile, p)}>
-                👨‍👩‍👧‍👦 家族
-              </NavLink>
               <NavLink to="/settings" style={(p) => linkStyle(mobile, p)}>
                 🎀 設定
               </NavLink>

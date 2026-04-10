@@ -2,11 +2,19 @@ import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedroc
 
 const DEFAULT_REGION = "ap-northeast-1";
 const DEFAULT_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0";
+const FALLBACK_MODEL_IDS = [
+  "anthropic.claude-3-5-sonnet-20240620-v1:0",
+  "us.anthropic.claude-sonnet-4-6",
+];
 
 function getBedrockConfig() {
   const region = String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() || DEFAULT_REGION;
   const modelId = String(process.env.BEDROCK_MODEL_ID || DEFAULT_MODEL_ID).trim();
-  return { region, modelId };
+  const candidates = [modelId, ...FALLBACK_MODEL_IDS]
+    .map((x) => String(x || "").trim())
+    .filter(Boolean)
+    .filter((x, i, arr) => arr.indexOf(x) === i);
+  return { region, modelId, candidates };
 }
 
 function buildPrompt(message, context) {
@@ -73,8 +81,8 @@ function parseClaudeText(data) {
 }
 
 async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, temperature = 0.4 }) {
-  const { region, modelId } = getBedrockConfig();
-  if (!modelId) return null;
+  const { region, modelId, candidates } = getBedrockConfig();
+  if (!modelId || candidates.length === 0) return null;
   const client = new BedrockRuntimeClient({ region });
 
   const body = JSON.stringify({
@@ -85,22 +93,29 @@ async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, te
     messages: [{ role: "user", content: [{ type: "text", text: userPrompt }] }],
   });
 
-  try {
-    const cmd = new InvokeModelCommand({
-      modelId,
-      contentType: "application/json",
-      accept: "application/json",
-      body,
-    });
-    const res = await client.send(cmd);
-    const raw = Buffer.from(res.body ?? new Uint8Array()).toString("utf-8");
-    const data = JSON.parse(raw || "{}");
-    const reply = parseClaudeText(data);
-    if (!reply) return null;
-    return { ok: true, reply };
-  } catch (e) {
-    return { ok: false, ...mapAwsError(e) };
+  let lastErr = null;
+  for (const mid of candidates) {
+    try {
+      const cmd = new InvokeModelCommand({
+        modelId: mid,
+        contentType: "application/json",
+        accept: "application/json",
+        body,
+      });
+      const res = await client.send(cmd);
+      const raw = Buffer.from(res.body ?? new Uint8Array()).toString("utf-8");
+      const data = JSON.parse(raw || "{}");
+      const reply = parseClaudeText(data);
+      if (!reply) {
+        lastErr = { name: "EmptyModelReply", message: "Bedrock returned empty text", modelId: mid };
+        continue;
+      }
+      return { ok: true, reply, modelId: mid };
+    } catch (e) {
+      lastErr = e;
+    }
   }
+  return { ok: false, ...mapAwsError(lastErr), modelId };
 }
 
 export async function askBedrockAdvisor(message, context) {

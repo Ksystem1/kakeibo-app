@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { reclassifyUncategorizedReceipts } from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
 import { CategoriesPage } from "./CategoriesPage";
+import { MembersPage } from "./MembersPage";
 
 function currentYm() {
   const d = new Date();
@@ -61,6 +62,13 @@ export function SettingsPage() {
       <p className={styles.sub}>
         背景色（4 種）と文字サイズを変更します。
       </p>
+      <div className={styles.settingsPanel} style={{ marginTop: "0.75rem", maxWidth: 980 }}>
+        <h2 className={styles.sectionTitle}>家族・利用ユーザー</h2>
+        <p className={styles.reclassifyHint}>
+          同じ家族に紐づいた人は取引の入力・閲覧ができます。メール登録で招待URLを発行します。
+        </p>
+        <MembersPage embedded />
+      </div>
       <div className={styles.settingsPanel} style={{ maxWidth: 820 }}>
         <label className={styles.settingsLabel}>表示テーマ</label>
         <div className={`${styles.modeRow} ${styles.modeRowTheme}`}>
