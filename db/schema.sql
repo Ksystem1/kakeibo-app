@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   account_id       BIGINT UNSIGNED NULL,
   category_id      BIGINT UNSIGNED NULL,
   kind             ENUM('expense','income','transfer') NOT NULL DEFAULT 'expense',
-  amount           DECIMAL(19, 4) NOT NULL COMMENT 'JPY 想定。通貨単位は POSITIVE',
+  amount           DECIMAL(19, 4) NOT NULL COMMENT 'JPY。0 円可（収入）。支出はアプリ/API で正の数のみ',
   transaction_date DATE NOT NULL,
   memo             VARCHAR(500) NULL,
   external_id      VARCHAR(64) NULL COMMENT '連携元IDなど（冪等用）',
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   CONSTRAINT fk_transactions_category
     FOREIGN KEY (category_id) REFERENCES categories (id)
     ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT chk_transactions_amount_positive CHECK (amount > 0)
+  CONSTRAINT chk_transactions_amount_nonneg CHECK (amount >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- transfer の相手口座は別テーブルで表現すると拡張しやすい（最小構成では expense/income のみ運用も可）

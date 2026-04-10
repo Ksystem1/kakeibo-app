@@ -7,6 +7,12 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget =
     env.VITE_API_PROXY_TARGET?.replace(/\/$/, "") || "http://127.0.0.1:3456";
 
+  const pwaCanon = env.VITE_PWA_CANONICAL_ORIGIN?.replace(/\/$/, "").trim() || "";
+  const pwaManifestBase = pwaCanon ? `${pwaCanon}/kakeibo/` : "/kakeibo/";
+  const pwaIconSrc = pwaCanon
+    ? `${pwaCanon}/kakeibo/brand-kakeibo-2.png`
+    : "/kakeibo/brand-kakeibo-2.png";
+
   return {
     // 本番: https://ksystemapp.com/kakeibo/（CloudFront+S3）。ローカルは http://localhost:5173/kakeibo/
     base: "/kakeibo/",
@@ -19,15 +25,23 @@ export default defineConfig(({ mode }) => {
           name: "Kakeibo 家計簿",
           short_name: "Kakeibo",
           description: "家族で共有できる家計簿アプリ",
-          start_url: "/kakeibo/",
-          scope: "/kakeibo/",
+          ...(pwaCanon
+            ? {
+                id: pwaManifestBase,
+                start_url: pwaManifestBase,
+                scope: pwaManifestBase,
+              }
+            : {
+                start_url: "/kakeibo/",
+                scope: "/kakeibo/",
+              }),
           display: "standalone",
           orientation: "portrait",
           background_color: "#f5f8fc",
           theme_color: "#ffd166",
           icons: [
             {
-              src: "/kakeibo/brand-kakeibo-2.png",
+              src: pwaIconSrc,
               sizes: "1024x1024",
               type: "image/png",
               purpose: "any maskable",
