@@ -331,6 +331,13 @@ export function KakeiboDashboard() {
   const [editSaving, setEditSaving] = useState(false);
   /** モバイル編集時の日付（MM/DD）。ネイティブ date の yyyy/mm/dd 表示を避ける */
   const [mobileEditDateText, setMobileEditDateText] = useState("");
+  const [fixedCostExpanded, setFixedCostExpanded] = useState(false);
+  const mobileFixedCostInitialRows = 6;
+  const visibleFixedCostItems = useMemo(() => {
+    if (!txMobileNarrow) return fixedCostItemsForMonth;
+    if (fixedCostExpanded) return fixedCostItemsForMonth;
+    return fixedCostItemsForMonth.slice(0, mobileFixedCostInitialRows);
+  }, [txMobileNarrow, fixedCostExpanded, fixedCostItemsForMonth]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -583,7 +590,7 @@ export function KakeiboDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {fixedCostItemsForMonth.map((item, i) => (
+                  {visibleFixedCostItems.map((item, i) => (
                     <tr key={`${item.id}-${i}`}>
                       <td style={{ whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }}>
                         {item.category || "固定費"}
@@ -593,6 +600,20 @@ export function KakeiboDashboard() {
                   ))}
                 </tbody>
               </table>
+              {txMobileNarrow && fixedCostItemsForMonth.length > mobileFixedCostInitialRows ? (
+                <div style={{ padding: "0.45rem 0.55rem", borderTop: "1px solid var(--border)" }}>
+                  <button
+                    type="button"
+                    className={styles.btn}
+                    style={{ width: "100%" }}
+                    onClick={() => setFixedCostExpanded((v) => !v)}
+                  >
+                    {fixedCostExpanded
+                      ? "固定費明細を折りたたむ"
+                      : `固定費明細をすべて表示（全${fixedCostItemsForMonth.length}件）`}
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </>
