@@ -26,7 +26,7 @@ function sortCategories(items: CategoryItem[]) {
   });
 }
 
-export function CategoriesPage() {
+export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
   const mobile = useIsMobile();
   const [items, setItems] = useState<CategoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,12 +131,8 @@ export function CategoriesPage() {
     }
   }
 
-  return (
-    <div className={styles.wrap}>
-      <h1 className={styles.title}>カテゴリ</h1>
-      <p className={styles.sub}>
-        支出・収入のカテゴリを追加・変更・削除できます。初回アクセス時や新規登録時に、よく使うカテゴリが自動で用意されます。
-      </p>
+  const content = (
+    <>
       {error ? (
         <p className={styles.infoText} style={{ color: "#fecaca" }}>
           {error}
@@ -221,6 +217,18 @@ export function CategoriesPage() {
           再読み込み
         </button>
       </p>
+    </>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <div className={styles.wrap}>
+      <h1 className={styles.title}>カテゴリ</h1>
+      <p className={styles.sub}>
+        支出・収入のカテゴリを追加・変更・削除できます。初回アクセス時や新規登録時に、よく使うカテゴリが自動で用意されます。
+      </p>
+      {content}
     </div>
   );
 }

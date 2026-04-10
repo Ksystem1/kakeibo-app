@@ -286,9 +286,6 @@ export function AppLayout() {
               <NavLink to="/members" style={(p) => linkStyle(mobile, p)}>
                 👨‍👩‍👧‍👦 家族
               </NavLink>
-              <NavLink to="/categories" style={(p) => linkStyle(mobile, p)}>
-                🗂️ カテゴリ
-              </NavLink>
               <NavLink to="/settings" style={(p) => linkStyle(mobile, p)}>
                 🎀 設定
               </NavLink>

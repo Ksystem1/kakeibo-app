@@ -5,6 +5,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { reclassifyUncategorizedReceipts } from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
+import { CategoriesPage } from "./CategoriesPage";
 
 function currentYm() {
   const d = new Date();
@@ -199,6 +200,14 @@ export function SettingsPage() {
           </button>
         </div>
         <p className={styles.infoText}>固定費合計: ¥{fixedCostTotal.toLocaleString("ja-JP")}</p>
+      </div>
+
+      <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 980 }}>
+        <h2 className={styles.sectionTitle}>カテゴリ管理</h2>
+        <p className={styles.reclassifyHint}>
+          支出・収入のカテゴリを追加・変更・削除できます。
+        </p>
+        <CategoriesPage embedded />
       </div>
 
       <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 720 }}>

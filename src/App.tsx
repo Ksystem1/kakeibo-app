@@ -12,7 +12,6 @@ import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { AdminPage } from "./pages/AdminPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { CategoriesPage } from "./pages/CategoriesPage";
 import { DemoDashboardPage } from "./pages/DemoDashboardPage";
 import { DashboardPage } from "./pages/DashboardPage";
 
@@ -30,7 +29,7 @@ export default function App() {
           <Route path="/import" element={<ImportCsvPage />} />
           <Route path="/receipt" element={<ReceiptPage />} />
           <Route path="/members" element={<MembersPage />} />
-          <Route path="/categories" element={<CategoriesPage />} />
+          <Route path="/categories" element={<Navigate to="/settings" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route element={<AdminRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
