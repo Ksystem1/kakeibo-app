@@ -58,6 +58,11 @@ const yen = new Intl.NumberFormat("ja-JP", {
   maximumFractionDigits: 0,
 });
 
+/** 通貨記号まわりの空白をノーブレーク化し、カード内で金額が途中改行されにくくする */
+function formatYenSingleLine(n: number) {
+  return yen.format(n).replace(/\s/g, "\u00a0");
+}
+
 function numAmount(v: string | number) {
   const n = typeof v === "number" ? v : Number.parseFloat(String(v));
   return Number.isFinite(n) ? n : 0;
@@ -474,25 +479,31 @@ export function KakeiboDashboard() {
 
       <div className={styles.cards}>
         <div className={`${styles.card} ${styles.cardIncome}`}>
-          <div className={styles.cardLabel}>収入（今月）</div>
+          <div className={styles.cardLabel} title="収入（今月）">
+            収入（今月）
+          </div>
           <div className={`${styles.cardValue} ${styles.income}`}>
-            {yen.format(incomeTotalNum)}
+            {formatYenSingleLine(incomeTotalNum)}
           </div>
         </div>
         <div className={`${styles.card} ${styles.cardExpense}`}>
-          <div className={styles.cardLabel}>支出（今月）</div>
+          <div className={styles.cardLabel} title="支出（今月）">
+            支出（今月）
+          </div>
           <div className={`${styles.cardValue} ${styles.expense}`}>
-            {yen.format(expenseTotalNum)}
+            {formatYenSingleLine(expenseTotalNum)}
           </div>
         </div>
         <div className={styles.card}>
-          <div className={styles.cardLabel}>残金（今月あといくら）</div>
+          <div className={styles.cardLabel} title="残金（今月あといくら）">
+            残金（今月あといくら）
+          </div>
           <div
             className={`${styles.cardValue} ${
               !hasIncome ? "" : balanceNum >= 0 ? styles.balancePositive : styles.balanceNegative
             }`}
           >
-            {hasIncome ? yen.format(balanceNum) : "収入待ち"}
+            {hasIncome ? formatYenSingleLine(balanceNum) : "収入待ち"}
           </div>
         </div>
       </div>
