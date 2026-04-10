@@ -1812,14 +1812,25 @@ export async function handleApiRequest(req, options = {}) {
       );
     }
     logError("api.unhandled", e, { method, path });
+    const dev = process.env.NODE_ENV === "development";
+    const dbCode =
+      e && typeof e === "object" && e.code != null ? String(e.code) : "";
+    const errno =
+      e && typeof e === "object" && typeof e.errno === "number"
+        ? e.errno
+        : null;
+    const detail = dev
+      ? e instanceof Error
+        ? e.message
+        : String(e)
+      : dbCode || errno != null
+        ? dbCode || `errno:${errno}`
+        : undefined;
     return json(
       500,
       {
         error: "InternalError",
-        message:
-          process.env.NODE_ENV === "development"
-            ? String(e.message)
-            : undefined,
+        ...(detail ? { detail } : {}),
       },
       hdrs,
       skipCors,

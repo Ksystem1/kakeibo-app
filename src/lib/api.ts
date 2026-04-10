@@ -88,9 +88,10 @@ async function parse<T>(res: Response): Promise<T> {
   const data = text ? (JSON.parse(text) as T) : ({} as T);
   if (!res.ok) {
     const err = data as { error?: string; detail?: string; message?: string };
-    throw new Error(
-      err.detail ?? err.message ?? err.error ?? res.statusText,
+    const parts = [err.error, err.detail ?? err.message].filter(
+      (x): x is string => Boolean(x && String(x).trim()),
     );
+    throw new Error(parts.length ? parts.join(" — ") : res.statusText);
   }
   return data;
 }
