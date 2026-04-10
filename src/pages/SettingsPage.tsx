@@ -3,13 +3,48 @@ import {
   type FixedCostItem,
   useSettings,
 } from "../context/SettingsContext";
-import { useMemo, useState } from "react";
-import { reclassifyUncategorizedReceipts } from "../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { getMonthSummary, reclassifyUncategorizedReceipts } from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
 
 function currentYm() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function currentYearStartYm() {
+  return `${new Date().getFullYear()}-01`;
+}
+
+function currentYearEndYm() {
+  return `${new Date().getFullYear()}-12`;
+}
+
+/** 編集フォーム用：まずその月の保存行、なければ直近の繰越、なければ1行の空フォーム（参照は新配列・行idはフォーム専用） */
+function itemsForFixedCostEditor(
+  ym: string,
+  fixedCostsByMonth: Record<string, FixedCostItem[]>,
+): FixedCostItem[] {
+  if (!/^\d{4}-\d{2}$/.test(ym)) {
+    return [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }];
+  }
+  const direct = fixedCostsByMonth[ym];
+  if (Array.isArray(direct) && direct.length > 0) {
+    return direct.map((x, i) => ({
+      id: `edit-${ym}-${i}`,
+      amount: Math.max(0, Math.round(Number(x.amount) || 0)),
+      category: String(x.category ?? "").slice(0, 40),
+    }));
+  }
+  const inherited = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym);
+  if (inherited.length > 0) {
+    return inherited.map((x, i) => ({
+      id: `edit-${ym}-${i}`,
+      amount: Math.max(0, Math.round(Number(x.amount) || 0)),
+      category: String(x.category ?? "").slice(0, 40),
+    }));
+  }
+  return [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }];
 }
 
 export function SettingsPage() {
@@ -26,12 +61,11 @@ export function SettingsPage() {
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyResult, setReclassifyResult] = useState<string | null>(null);
   const [fixedYm, setFixedYm] = useState(currentYm);
-  const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() => {
-    const ym = currentYm();
-    const src = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym);
-    if (src.length > 0) return src;
-    return [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }];
-  });
+  const [monthExpenseTotal, setMonthExpenseTotal] = useState<number>(0);
+  const [checkingMonth, setCheckingMonth] = useState(false);
+  const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
+    itemsForFixedCostEditor(currentYm(), fixedCostsByMonth),
+  );
 
   const fixedCostRows = useMemo(
     () =>
@@ -46,7 +80,44 @@ export function SettingsPage() {
         .slice(0, 12),
     [fixedCostsByMonth],
   );
-  const futureEditable = fixedYm > currentYm();
+  const sameYearEditable = fixedYm >= currentYearStartYm() && fixedYm <= currentYearEndYm();
+  const hasExpenseMonth = monthExpenseTotal > 0;
+  const hasSavedFixedForMonth = (fixedCostsByMonth[fixedYm]?.length ?? 0) > 0;
+  const fixedCostEditable =
+    sameYearEditable && (hasExpenseMonth || hasSavedFixedForMonth);
+  const fixedYmSummary = useMemo(
+    () => fixedItems.reduce((acc, x) => acc + Number(x.amount || 0), 0),
+    [fixedItems],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!/^\d{4}-\d{2}$/.test(fixedYm)) {
+      setMonthExpenseTotal(0);
+      return;
+    }
+    setCheckingMonth(true);
+    getMonthSummary(fixedYm)
+      .then((summary) => {
+        if (cancelled) return;
+        const total = Number(summary?.expenseTotal ?? 0);
+        setMonthExpenseTotal(Number.isFinite(total) ? total : 0);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMonthExpenseTotal(0);
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingMonth(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fixedYm]);
+
+  useEffect(() => {
+    setFixedItems(itemsForFixedCostEditor(fixedYm, fixedCostsByMonth));
+  }, [fixedYm, fixedCostsByMonth]);
 
   return (
     <div className={styles.wrap}>
@@ -128,10 +199,14 @@ export function SettingsPage() {
       <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 720 }}>
         <h2 className={styles.sectionTitle}>固定費設定（月別）</h2>
         <p className={styles.reclassifyHint}>
-          「固定費」として表示されます。
+          各月の固定費は、この画面で登録した金額の合計（サマリー金額）を「固定費」として表示します。
         </p>
-        {!futureEditable ? (
-          <p className={styles.infoText}>過去月・当月は変更できません。未来月を選択してください。</p>
+        {!sameYearEditable ? (
+          <p className={styles.infoText}>固定費は同じ年（当年）の月のみ変更できます。</p>
+        ) : !checkingMonth && !hasExpenseMonth && !hasSavedFixedForMonth ? (
+          <p className={styles.infoText}>
+            支出がある月に新規で固定費を登録できます。既に保存した月は、支出がなくても編集できます。
+          </p>
         ) : null}
         <div className={styles.form} style={{ marginTop: "0.5rem" }}>
           <div className={styles.field}>
@@ -140,35 +215,30 @@ export function SettingsPage() {
               id="fixed-ym"
               type="month"
               value={fixedYm}
+              min={currentYearStartYm()}
+              max={currentYearEndYm()}
               style={{ maxWidth: 180 }}
               onChange={(e) => {
-                const ym = e.target.value;
-                setFixedYm(ym);
-                const src = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym);
-                setFixedItems(
-                  src.length > 0
-                    ? src
-                    : [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }],
-                );
+                setFixedYm(e.target.value);
               }}
             />
           </div>
           <div className={styles.field} style={{ gridColumn: "1 / -1" }}>
-            <label>固定費入力（1行 = カテゴリ + 金額）</label>
+            <label>固定費入力（1行 = カテゴリ + 金額 / カテゴリは自由入力）</label>
             <div style={{ display: "grid", gap: 8 }}>
               {fixedItems.map((item, idx) => (
                 <div key={item.id} style={{ display: "grid", gridTemplateColumns: "140px 1fr auto", gap: 8 }}>
                   <input
                     type="text"
-                    placeholder="カテゴリ（例: 家賃）"
+                    placeholder="カテゴリ（自由入力: 例 家賃 / サブスク）"
                     value={item.category}
                     onChange={(e) => {
-                      if (!futureEditable) return;
+                      if (!fixedCostEditable) return;
                       const next = [...fixedItems];
                       next[idx] = { ...next[idx], category: e.target.value };
                       setFixedItems(next);
                     }}
-                    disabled={!futureEditable}
+                    disabled={!fixedCostEditable}
                   />
                   <input
                     type="number"
@@ -177,23 +247,23 @@ export function SettingsPage() {
                     placeholder="金額"
                     value={item.amount > 0 ? String(item.amount) : ""}
                     onChange={(e) => {
-                      if (!futureEditable) return;
+                      if (!fixedCostEditable) return;
                       const next = [...fixedItems];
                       const n = Number.parseFloat(e.target.value || "0");
                       next[idx] = { ...next[idx], amount: Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0 };
                       setFixedItems(next);
                     }}
-                    disabled={!futureEditable}
+                    disabled={!fixedCostEditable}
                   />
                   <button
                     type="button"
                     className={styles.btn}
                     onClick={() => {
-                      if (!futureEditable) return;
+                      if (!fixedCostEditable) return;
                       const next = fixedItems.filter((x) => x.id !== item.id);
                       setFixedItems(next.length > 0 ? next : [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }]);
                     }}
-                    disabled={!futureEditable}
+                    disabled={!fixedCostEditable}
                   >
                     削除
                   </button>
@@ -201,14 +271,17 @@ export function SettingsPage() {
               ))}
             </div>
           </div>
+          <p className={styles.infoText} style={{ margin: "0.1rem 0 0" }}>
+            対象月の固定費サマリー: ¥{Math.round(fixedYmSummary).toLocaleString("ja-JP")}
+          </p>
           <button
             type="button"
             className={styles.btn}
             onClick={() =>
-              futureEditable &&
+              fixedCostEditable &&
               setFixedItems((prev) => [...prev, { id: `fixed-${Date.now()}-${prev.length}`, amount: 0, category: "固定費" }])
             }
-            disabled={!futureEditable}
+            disabled={!fixedCostEditable}
           >
             入力行を追加
           </button>
@@ -216,10 +289,10 @@ export function SettingsPage() {
             type="button"
             className={`${styles.btn} ${styles.btnPrimary}`}
             onClick={() => {
-              if (!futureEditable) return;
+              if (!fixedCostEditable) return;
               setFixedCostsForMonth(fixedYm, fixedItems);
             }}
-            disabled={!futureEditable}
+            disabled={!fixedCostEditable}
           >
             保存
           </button>
@@ -235,7 +308,12 @@ export function SettingsPage() {
               </thead>
               <tbody>
                 {fixedCostRows.map((row) => (
-                  <tr key={row.ym}>
+                  <tr
+                    key={row.ym}
+                    style={{ cursor: "pointer" }}
+                    title="クリックしてこの月の明細を編集"
+                    onClick={() => setFixedYm(row.ym)}
+                  >
                     <td>{row.ym}</td>
                     <td>¥{Number(row.total).toLocaleString("ja-JP")}（{row.count}件）</td>
                   </tr>
