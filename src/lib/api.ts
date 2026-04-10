@@ -386,7 +386,7 @@ export async function parseReceiptImage(imageBase64: string) {
         expenseIndex?: number | null;
         suggestedCategoryId?: number | null;
         suggestedCategoryName?: string | null;
-        suggestedCategorySource?: "history" | "keywords" | "correction" | null;
+        suggestedCategorySource?: "history" | "keywords" | "correction" | "ai" | null;
         learnCorrectionHit?: boolean;
         suggestedMemo?: string;
       }>(res);

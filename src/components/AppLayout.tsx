@@ -265,9 +265,13 @@ export function AppLayout() {
                   📲 ホーム画面に追加
                 </button>
               ) : null}
-              <NavLink to="/dashboard" style={(p) => linkStyle(mobile, p)}>
-                🐷 ダッシュボード
-              </NavLink>
+              {user &&
+              (user.isAdmin ||
+                user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
+                <NavLink to="/dashboard" style={(p) => linkStyle(mobile, p)}>
+                  🐷 ダッシュボード
+                </NavLink>
+              ) : null}
               <NavLink to="/" style={(p) => linkStyle(mobile, p)} end>
                 🏠 家計簿
               </NavLink>

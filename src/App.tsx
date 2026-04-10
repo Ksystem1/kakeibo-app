@@ -26,7 +26,6 @@ export default function App() {
       <Route path="/demo-dashboard" element={<DemoDashboardPage />} />
       <Route element={<AppLayout />}>
         <Route element={<ProtectedRoute />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/" element={<KakeiboDashboard />} />
           <Route path="/import" element={<ImportCsvPage />} />
           <Route path="/receipt" element={<ReceiptPage />} />
@@ -34,6 +33,7 @@ export default function App() {
           <Route path="/categories" element={<CategoriesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route element={<AdminRoute />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/admin" element={<AdminPage />} />
           </Route>
         </Route>

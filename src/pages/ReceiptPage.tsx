@@ -154,6 +154,21 @@ function suggestExpenseCategoryId(
   return ranked[0].id;
 }
 
+function pickCategoryIdByName(
+  categories: ExpenseCategory[],
+  suggestedName: string | null | undefined,
+): number | null {
+  const target = normalizeJa(String(suggestedName ?? "").trim());
+  if (!target) return null;
+  const exact = categories.find((c) => normalizeJa(c.name) === target);
+  if (exact) return exact.id;
+  const partial = categories.find((c) => {
+    const nm = normalizeJa(c.name);
+    return nm.includes(target) || target.includes(nm);
+  });
+  return partial ? partial.id : null;
+}
+
 /** モバイル「レシート取込」: フォトライブラリ/ファイル優先（image/* は付けずにライブラリ寄りに絞る） */
 const MOBILE_GALLERY_ACCEPT =
   "image/jpeg,image/jpg,image/png,image/heic,image/heif,image/webp,.heic,.heif";
@@ -185,7 +200,7 @@ export function ReceiptPage() {
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [draftCategoryId, setDraftCategoryId] = useState<number | null>(null);
   const [categorySuggestSource, setCategorySuggestSource] = useState<
-    "history" | "keywords" | "correction" | null
+    "history" | "keywords" | "correction" | "ai" | null
   >(null);
   /** 登録時に POST /receipts/learn へ送る直近の取込スナップショット */
   const [lastOcrForLearn, setLastOcrForLearn] = useState<{
@@ -310,10 +325,16 @@ export function ReceiptPage() {
         s?.vendorName?.trim() ?? "",
         r.items ?? [],
       );
-      setDraftCategoryId(r.suggestedCategoryId ?? localSuggested);
+      const aiNameMatchedId =
+        r.suggestedCategoryId == null
+          ? pickCategoryIdByName(categories, r.suggestedCategoryName)
+          : null;
+      setDraftCategoryId(r.suggestedCategoryId ?? aiNameMatchedId ?? localSuggested);
       setCategorySuggestSource(
         r.suggestedCategorySource ??
-          (r.suggestedCategoryId == null && localSuggested != null ? "keywords" : null),
+          (r.suggestedCategoryId == null && aiNameMatchedId == null && localSuggested != null
+            ? "keywords"
+            : null),
       );
       setNotice(r.notice ?? null);
     } catch (e) {
@@ -431,6 +452,8 @@ export function ReceiptPage() {
               ? "過去履歴から自動反映しました（必要なら変更できます）。"
               : categorySuggestSource === "correction"
                 ? "過去の補正内容を反映しました（必要なら変更できます）。"
+                : categorySuggestSource === "ai"
+                  ? "AIがカテゴリを予測して自動反映しました（必要なら変更できます）。"
                 : "カテゴリ候補を自動提案しました（必要なら変更できます）。"}
           </p>
         ) : null}
