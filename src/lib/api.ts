@@ -532,8 +532,6 @@ export async function deleteAdminUser(userId: number) {
 
 export async function askAiAdvisor(body: {
   message: string;
-  /** true のとき Bedrock を呼ばずサーバのルール応答のみ（デモ開始用） */
-  ruleOnly?: boolean;
   context?: {
     yearMonth?: string;
     incomeTotal?: number;

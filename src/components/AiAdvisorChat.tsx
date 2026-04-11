@@ -8,7 +8,6 @@ type ChatMessage = {
   role: "user" | "ai";
   text: string;
   typing?: boolean;
-  typingUser?: boolean;
 };
 
 function currentYm() {
@@ -89,27 +88,16 @@ export function AiAdvisorChat() {
     });
   }
 
-  async function sendMessage(
-    rawText: string,
-    options?: { existingUserMessageId?: number; ruleOnly?: boolean },
-  ) {
+  async function sendMessage(rawText: string) {
     const text = rawText.trim();
     if (!text || busy) return;
     const userMsg: ChatMessage = {
-      id: options?.existingUserMessageId ?? Date.now(),
+      id: Date.now(),
       role: "user",
       text,
     };
     const typingId = Date.now() + 1;
-    setMessages((prev) => {
-      const hasExisting =
-        options?.existingUserMessageId != null &&
-        prev.some((m) => m.id === options.existingUserMessageId);
-      if (hasExisting) {
-        return [...prev, { id: typingId, role: "ai", text: "", typing: true }];
-      }
-      return [...prev, userMsg, { id: typingId, role: "ai", text: "", typing: true }];
-    });
+    setMessages((prev) => [...prev, userMsg, { id: typingId, role: "ai", text: "", typing: true }]);
     scrollToBottom();
     setBusy(true);
     try {
@@ -126,7 +114,7 @@ export function AiAdvisorChat() {
         { id: -1, role: "user", text },
       ];
       const history = historySeed
-        .filter((m) => !m.typing && !m.typingUser && String(m.text ?? "").trim())
+        .filter((m) => !m.typing && String(m.text ?? "").trim())
         .slice(-8)
         .map((m) => ({
           role: m.role,
@@ -134,7 +122,6 @@ export function AiAdvisorChat() {
         }));
       const reply = await askAiAdvisor({
         message: text,
-        ...(options?.ruleOnly ? { ruleOnly: true } : {}),
         context: {
           yearMonth: ym,
           incomeTotal: summaryLite.incomeTotal,
@@ -181,32 +168,6 @@ export function AiAdvisorChat() {
     if (!text || busy) return;
     setInput("");
     await sendMessage(text);
-  }
-
-  async function runDemoMode() {
-    if (busy) return;
-    setOpen(true);
-    setBusy(true);
-    const demoText = "今月の食費、削れるところある？";
-    const typingUserId = Date.now();
-    setMessages((prev) => [...prev, { id: typingUserId, role: "user", text: "", typingUser: true }]);
-    scrollToBottom();
-
-    for (let i = 1; i <= demoText.length; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 75));
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === typingUserId ? { ...m, text: demoText.slice(0, i), typingUser: true } : m,
-        ),
-      );
-      scrollToBottom();
-    }
-    setMessages((prev) => prev.map((m) => (m.id === typingUserId ? { ...m, typingUser: false } : m)));
-    setBusy(false);
-    await sendMessage(demoText, {
-      existingUserMessageId: typingUserId,
-      ruleOnly: true,
-    });
   }
 
   const bubbles = useMemo(
@@ -260,19 +221,13 @@ export function AiAdvisorChat() {
                     : `ルール応答（Bedrock未使用${lastSourceDetail ? `: ${lastSourceDetail}` : ""}）`}
                 </span>
               ) : null}
-              <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => void runDemoMode()}
-                disabled={busy}
-                className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                onClick={() => setOpen(false)}
+                className="rounded-md p-1 text-slate-500 hover:bg-slate-200"
               >
-                デモ開始
-              </button>
-              <button type="button" onClick={() => setOpen(false)} className="rounded-md p-1 text-slate-500 hover:bg-slate-200">
                 <X size={16} />
               </button>
-              </div>
             </div>
           </header>
 
