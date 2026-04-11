@@ -7,6 +7,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useAuth } from "./AuthContext";
+import {
+  canSendAuthenticatedRequest,
+  getApiBaseUrl,
+  getFamilyFixedCosts,
+  putFamilyFixedCosts,
+} from "../lib/api";
 import {
   NAV_SKIN_CATALOG,
   type NavIconPaths,
@@ -44,6 +51,52 @@ function readPersistedNavSkinId(): string {
   } catch {
     return DEFAULT_NAV_SKIN_ID;
   }
+}
+
+function readLegacyFixedCostsFromLocalStorage(): FixedCostItem[] {
+  try {
+    const raw = localStorage.getItem(FIXED_COSTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== "object") return [];
+    const globalItems = (parsed as Record<string, unknown>)[GLOBAL_FIXED_COSTS_KEY];
+    const source = Array.isArray(globalItems)
+      ? globalItems
+      : Object.values(parsed).find((v) => Array.isArray(v));
+    if (!Array.isArray(source)) return [];
+    const out: FixedCostItem[] = [];
+    for (const x of source) {
+      if (!x || typeof x !== "object") continue;
+      const amt = Number((x as { amount?: unknown }).amount);
+      if (!Number.isFinite(amt) || amt <= 0) continue;
+      const id = String((x as { id?: unknown }).id ?? `fixed-${out.length + 1}`);
+      const legacyNote = String((x as { note?: unknown }).note ?? "");
+      const category = String((x as { category?: unknown }).category ?? legacyNote)
+        .trim()
+        .slice(0, 40);
+      if (!category) continue;
+      out.push({ id, amount: Math.round(amt), category });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function legacyFixedCostsRecord(): Record<string, FixedCostItem[]> {
+  const legacy = readLegacyFixedCostsFromLocalStorage();
+  return legacy.length > 0 ? { [GLOBAL_FIXED_COSTS_KEY]: legacy } : {};
+}
+
+function serverFixedCostsToItems(
+  rows: Array<{ id: number; category: string; amount: unknown }>,
+): FixedCostItem[] {
+  return rows.map((row) => ({
+    id: `srv-${row.id}`,
+    amount: Math.max(0, Math.round(Number(row.amount ?? 0))),
+    category: String(row.category ?? "")
+      .trim()
+      .slice(0, 40),
+  }));
 }
 
 type FontMode = "small" | "standard" | "large";
@@ -114,7 +167,7 @@ type Settings = {
   setFontScale: (n: number) => void;
   setFontMode: (m: FontMode) => void;
   setThemeMode: (m: ThemeMode) => void;
-  setFixedCostsForMonth: (ym: string, items: FixedCostItem[]) => void;
+  setFixedCostsForMonth: (ym: string, items: FixedCostItem[]) => Promise<void>;
   /** 未購入スキンは false。成功時のみ true */
   setNavSkinId: (id: string) => boolean;
   /** 決済・サーバ同期後に購入済み ID をマージ（localStorage にも保存） */
@@ -124,6 +177,9 @@ type Settings = {
 const SettingsContext = createContext<Settings | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
+  const { token } = useAuth();
+  const apiBase = getApiBaseUrl();
+
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
     try {
       return parseThemeMode(localStorage.getItem(THEME_KEY));
@@ -160,40 +216,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return resolveEffectiveNavSkinId(raw, owned);
   });
 
-  const [fixedCostsByMonth, setFixedCostsByMonth] = useState<Record<string, FixedCostItem[]>>(() => {
-    try {
-      const raw = localStorage.getItem(FIXED_COSTS_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      if (!parsed || typeof parsed !== "object") return {};
-      const out: Record<string, FixedCostItem[]> = {};
-      for (const [k, v] of Object.entries(parsed)) {
-        if (k !== GLOBAL_FIXED_COSTS_KEY && !/^\d{4}-\d{2}$/.test(k)) continue;
-        if (Array.isArray(v)) {
-          const items: FixedCostItem[] = [];
-          for (const x of v) {
-            if (!x || typeof x !== "object") continue;
-            const amt = Number((x as { amount?: unknown }).amount);
-            if (!Number.isFinite(amt) || amt < 0) continue;
-            const id = String((x as { id?: unknown }).id ?? `fixed-${items.length + 1}`);
-            const legacyNote = String((x as { note?: unknown }).note ?? "");
-            const category = String((x as { category?: unknown }).category ?? legacyNote)
-              .trim()
-              .slice(0, 40);
-            items.push({ id, amount: Math.round(amt), category });
-          }
-          if (items.length > 0) out[k] = items;
-          continue;
-        }
-        const n = Number(v);
-        if (Number.isFinite(n) && n > 0) {
-          out[k] = [{ id: "legacy-1", amount: Math.round(n), category: "固定費" }];
-        }
-      }
-      return out;
-    } catch {
-      return {};
-    }
-  });
+  const [fixedCostsByMonth, setFixedCostsByMonth] = useState<
+    Record<string, FixedCostItem[]>
+  >({});
 
   useEffect(() => {
     document.documentElement.style.setProperty(
@@ -226,14 +251,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem(FIXED_COSTS_KEY, JSON.stringify(fixedCostsByMonth));
-    } catch {
-      /* ignore */
-    }
-  }, [fixedCostsByMonth]);
-
-  useEffect(() => {
-    try {
       localStorage.setItem(OWNED_NAV_SKINS_KEY, JSON.stringify(ownedNavSkinIds));
     } catch {
       /* ignore */
@@ -247,6 +264,60 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
   }, [navSkinId]);
+
+  useEffect(() => {
+    if (!apiBase || !canSendAuthenticatedRequest(token)) {
+      setFixedCostsByMonth(legacyFixedCostsRecord());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { items } = await getFamilyFixedCosts();
+        if (cancelled) return;
+        if (items.length === 0) {
+          const legacy = readLegacyFixedCostsFromLocalStorage();
+          if (legacy.length > 0) {
+            try {
+              await putFamilyFixedCosts(
+                legacy.map((x) => ({ category: x.category, amount: x.amount })),
+              );
+              try {
+                localStorage.removeItem(FIXED_COSTS_KEY);
+              } catch {
+                /* ignore */
+              }
+              const again = await getFamilyFixedCosts();
+              if (cancelled) return;
+              const mapped = serverFixedCostsToItems(again.items).filter(
+                (x) => x.amount > 0 && x.category.length > 0,
+              );
+              setFixedCostsByMonth(
+                mapped.length === 0 ? {} : { [GLOBAL_FIXED_COSTS_KEY]: mapped },
+              );
+            } catch {
+              if (!cancelled) {
+                setFixedCostsByMonth({ [GLOBAL_FIXED_COSTS_KEY]: legacy });
+              }
+            }
+            return;
+          }
+        }
+        const mapped = serverFixedCostsToItems(items).filter(
+          (x) => x.amount > 0 && x.category.length > 0,
+        );
+        setFixedCostsByMonth(
+          mapped.length === 0 ? {} : { [GLOBAL_FIXED_COSTS_KEY]: mapped },
+        );
+      } catch {
+        if (cancelled) return;
+        setFixedCostsByMonth(legacyFixedCostsRecord());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, apiBase]);
 
   const setNavSkinId = useCallback(
     (id: string) => {
@@ -301,18 +372,35 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setThemeModeState(m);
   };
 
-  const setFixedCostsForMonth = (ym: string, items: FixedCostItem[]) => {
-    if (!/^\d{4}-\d{2}$/.test(ym)) return;
-    const cleaned = (Array.isArray(items) ? items : [])
-      .map((x, i) => ({
-        id: String(x?.id ?? `fixed-${i + 1}`),
-        amount: Math.max(0, Math.round(Number(x?.amount ?? 0))),
-        category: String(x?.category ?? "").trim().slice(0, 40),
-      }))
-      .filter((x) => Number.isFinite(x.amount) && x.amount > 0);
-    // 固定費は全ての月で共通扱い。保存時は既存の月別定義を上書きする。
-    setFixedCostsByMonth(cleaned.length === 0 ? {} : { [GLOBAL_FIXED_COSTS_KEY]: cleaned });
-  };
+  const setFixedCostsForMonth = useCallback(
+    async (ym: string, items: FixedCostItem[]) => {
+      if (!/^\d{4}-\d{2}$/.test(ym)) return;
+      const cleaned = (Array.isArray(items) ? items : [])
+        .map((x, i) => ({
+          id: String(x?.id ?? `fixed-${i + 1}`),
+          amount: Math.max(0, Math.round(Number(x?.amount ?? 0))),
+          category: String(x?.category ?? "").trim().slice(0, 40),
+        }))
+        .filter((x) => Number.isFinite(x.amount) && x.amount > 0);
+      if (!apiBase || !canSendAuthenticatedRequest(token)) {
+        setFixedCostsByMonth(
+          cleaned.length === 0 ? {} : { [GLOBAL_FIXED_COSTS_KEY]: cleaned },
+        );
+        return;
+      }
+      await putFamilyFixedCosts(
+        cleaned.map((x) => ({ category: x.category, amount: x.amount })),
+      );
+      const { items: fresh } = await getFamilyFixedCosts();
+      const mapped = serverFixedCostsToItems(fresh).filter(
+        (x) => x.amount > 0 && x.category.length > 0,
+      );
+      setFixedCostsByMonth(
+        mapped.length === 0 ? {} : { [GLOBAL_FIXED_COSTS_KEY]: mapped },
+      );
+    },
+    [token, apiBase],
+  );
 
   const value = useMemo(
     () => ({
@@ -338,6 +426,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       navSkinId,
       navIconPaths,
       navSkinOptions,
+      setFixedCostsForMonth,
       setNavSkinId,
       mergeOwnedNavSkinsFromServer,
     ],

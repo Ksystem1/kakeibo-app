@@ -2,10 +2,15 @@ import {
   type FixedCostItem,
   useSettings,
 } from "../context/SettingsContext";
+import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
-import { reclassifyUncategorizedReceipts } from "../lib/api";
+import {
+  canSendAuthenticatedRequest,
+  getApiBaseUrl,
+  reclassifyUncategorizedReceipts,
+} from "../lib/api";
 import {
   clearPwaInstallBannerHidden,
   isPwaInstallBannerHidden,
@@ -61,6 +66,7 @@ export function SettingsPage() {
     });
   }, [location.hash, location.pathname]);
 
+  const { token } = useAuth();
   const {
     fontScale,
     setFontScale,
@@ -75,6 +81,8 @@ export function SettingsPage() {
   } = useSettings();
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyResult, setReclassifyResult] = useState<string | null>(null);
+  const [fixedSaveBusy, setFixedSaveBusy] = useState(false);
+  const [fixedSaveMessage, setFixedSaveMessage] = useState<string | null>(null);
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
     itemsForFixedCostEditor(fixedCostsByMonth),
   );
@@ -264,8 +272,10 @@ export function SettingsPage() {
       <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 720 }}>
         <h2 className={styles.sectionTitle}>固定費設定（全月共通）</h2>
         <p className={styles.reclassifyHint}>
-          ここで保存した固定費はすべての月に適用されます。保存時は既存の月別設定を上書きします。
-          データはこのブラウザ（端末）の localStorage にあるため、パソコンとスマホでは共有されません。スマホの家計簿にも反映させる場合は、スマホで同じ内容を保存してください。
+          ここで保存した固定費はすべての月に適用されます。ログイン済みの場合は家族単位でサーバに保存され、同じ家族のメンバーがどの端末からでも同じ内容を参照できます。
+          {!getApiBaseUrl() || !canSendAuthenticatedRequest(token)
+            ? " API に接続できない、またはログイン・開発用ユーザー設定がない場合は、この端末の画面にのみ反映されます。"
+            : null}
         </p>
         <div className={styles.form} style={{ marginTop: "0.5rem" }}>
           <div className={styles.field} style={{ gridColumn: "1 / -1" }}>
@@ -322,13 +332,32 @@ export function SettingsPage() {
           <button
             type="button"
             className={`${styles.btn} ${styles.btnPrimary}`}
-            onClick={() => {
-              setFixedCostsForMonth(currentYm(), fixedItems);
+            disabled={fixedSaveBusy}
+            onClick={async () => {
+              setFixedSaveBusy(true);
+              setFixedSaveMessage(null);
+              try {
+                await setFixedCostsForMonth(currentYm(), fixedItems);
+                setFixedSaveMessage(
+                  getApiBaseUrl() && canSendAuthenticatedRequest(token)
+                    ? "保存しました（家族で共有）。"
+                    : "保存しました（この端末のみ）。",
+                );
+              } catch (e) {
+                setFixedSaveMessage(
+                  e instanceof Error ? e.message : String(e),
+                );
+              } finally {
+                setFixedSaveBusy(false);
+              }
             }}
           >
-            保存
+            {fixedSaveBusy ? "保存中…" : "保存"}
           </button>
         </div>
+        {fixedSaveMessage ? (
+          <p className={styles.infoText}>{fixedSaveMessage}</p>
+        ) : null}
         <p className={styles.infoText}>固定費合計: ¥{fixedCostTotal.toLocaleString("ja-JP")}</p>
       </div>
 

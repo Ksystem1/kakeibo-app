@@ -63,6 +63,14 @@ export function getApiBaseUrl() {
   return BASE;
 }
 
+/** Bearer または開発用ユーザーIDヘッダーで API を呼べるか */
+export function canSendAuthenticatedRequest(token: string | null): boolean {
+  if (token) return true;
+  const uid =
+    import.meta.env.VITE_DEV_USER_ID ?? import.meta.env.VITE_DEFAULT_USER_ID;
+  return Boolean(uid);
+}
+
 function buildHeaders(extra?: Record<string, string>) {
   const h: Record<string, string> = {
     "content-type": "application/json",
@@ -343,6 +351,32 @@ export async function getMonthSummary(
       total: unknown;
     }>;
   }>(res);
+}
+
+/** 家族共通の固定費（ログインユーザの default family） */
+export async function getFamilyFixedCosts() {
+  const res = await apiFetch(`${BASE}/settings/fixed-costs`, {
+    headers: buildHeaders(),
+  });
+  return parse<{
+    items: Array<{
+      id: number;
+      category: string;
+      amount: number;
+      sort_order?: number;
+    }>;
+  }>(res);
+}
+
+export async function putFamilyFixedCosts(
+  items: Array<{ category: string; amount: number }>,
+) {
+  const res = await apiFetch(`${BASE}/settings/fixed-costs`, {
+    method: "PUT",
+    headers: buildHeaders(),
+    body: JSON.stringify({ items }),
+  });
+  return parse<{ ok: boolean }>(res);
 }
 
 export async function importCsvText(csvText: string) {

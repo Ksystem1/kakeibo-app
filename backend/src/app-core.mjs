@@ -101,6 +101,15 @@ function normalizeTxMemo(raw) {
   return s === "" ? null : s;
 }
 
+async function verifyUserInFamily(pool, userId, familyId) {
+  if (familyId == null || !Number.isFinite(Number(familyId))) return false;
+  const [rows] = await pool.query(
+    `SELECT 1 AS ok FROM family_members WHERE family_id = ? AND user_id = ? LIMIT 1`,
+    [familyId, userId],
+  );
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 /** レシート summary.date 等を SQL DATE 比較用 YYYY-MM-DD に寄せる */
 function normalizeReceiptDateForSql(raw) {
   const t = String(raw ?? "")
@@ -596,6 +605,7 @@ export async function handleApiRequest(req, options = {}) {
             auth: "/auth/login",
             transactions: "/transactions",
             summary: "/summary/month",
+            fixedCosts: "/settings/fixed-costs",
           },
         },
         hdrs,
@@ -1491,6 +1501,89 @@ export async function handleApiRequest(req, options = {}) {
           hdrs,
           skipCors,
         );
+      }
+
+      case "GET /settings/fixed-costs": {
+        if (!familyId) {
+          return json(
+            400,
+            { error: "家族が設定されていません" },
+            hdrs,
+            skipCors,
+          );
+        }
+        const memberOk = await verifyUserInFamily(pool, userId, familyId);
+        if (!memberOk) {
+          return json(403, { error: "この家族の固定費を参照する権限がありません" }, hdrs, skipCors);
+        }
+        const [rows] = await pool.query(
+          `SELECT id, label AS category, amount, sort_order
+           FROM family_fixed_cost_items
+           WHERE family_id = ?
+           ORDER BY sort_order ASC, id ASC`,
+          [familyId],
+        );
+        return json(200, { items: rows }, hdrs, skipCors);
+      }
+
+      case "PUT /settings/fixed-costs": {
+        if (!familyId) {
+          return json(
+            400,
+            { error: "家族が設定されていません" },
+            hdrs,
+            skipCors,
+          );
+        }
+        const memberOkPut = await verifyUserInFamily(pool, userId, familyId);
+        if (!memberOkPut) {
+          return json(403, { error: "この家族の固定費を保存する権限がありません" }, hdrs, skipCors);
+        }
+        let b;
+        try {
+          b = JSON.parse(req.body || "{}");
+        } catch {
+          return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+        }
+        const rawItems = Array.isArray(b.items) ? b.items : [];
+        if (rawItems.length > 200) {
+          return json(400, { error: "固定費は200行までです" }, hdrs, skipCors);
+        }
+        const normalized = [];
+        for (let i = 0; i < rawItems.length; i += 1) {
+          const row = rawItems[i];
+          const labelRaw =
+            row?.label != null && row.label !== ""
+              ? String(row.label)
+              : String(row?.category ?? "");
+          const label = labelRaw.trim().slice(0, 100);
+          const amount = Math.max(0, Math.round(Number(row?.amount ?? 0)));
+          if (label.length === 0 || amount <= 0) continue;
+          normalized.push({ label, amount });
+        }
+        const conn = await pool.getConnection();
+        try {
+          await conn.beginTransaction();
+          await conn.query(`DELETE FROM family_fixed_cost_items WHERE family_id = ?`, [
+            familyId,
+          ]);
+          for (let i = 0; i < normalized.length; i += 1) {
+            const { label, amount } = normalized[i];
+            await conn.query(
+              `INSERT INTO family_fixed_cost_items (family_id, label, amount, sort_order)
+               VALUES (?, ?, ?, ?)`,
+              [familyId, label, amount, i],
+            );
+          }
+          await conn.commit();
+        } catch (e) {
+          await conn.rollback();
+          logError("settings.fixed-costs.put", e);
+          return json(500, { error: "固定費の保存に失敗しました" }, hdrs, skipCors);
+        } finally {
+          conn.release();
+        }
+        return json(200, { ok: true }, hdrs, skipCors);
       }
 
       case "POST /ai/advisor": {
