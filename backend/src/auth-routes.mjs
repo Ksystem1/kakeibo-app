@@ -96,6 +96,73 @@ function routeKey(method, path) {
   return `${method} ${p}`;
 }
 
+/** migration_v8 未適用（subscription_status 列なし）時の Unknown column エラー */
+function isUnknownSubscriptionColumnError(e) {
+  if (!e || typeof e !== "object") return false;
+  const code = e.code ? String(e.code) : "";
+  const errno = Number(e.errno);
+  const msg = String(e.message || "");
+  return (
+    (code === "ER_BAD_FIELD_ERROR" || errno === 1054) &&
+    msg.includes("subscription_status")
+  );
+}
+
+let warnedSubscriptionColumnMissing = false;
+function warnSubscriptionColumnMissingOnce() {
+  if (warnedSubscriptionColumnMissing) return;
+  warnedSubscriptionColumnMissing = true;
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      event: "auth.subscription_status_column_missing",
+      detail:
+        "users.subscription_status がありません。db/migration_v8_users_subscription_status.sql を適用してください。暫定で inactive としてログインを継続します。",
+    }),
+  );
+}
+
+/**
+ * @returns {Promise<{ rows: unknown[] }>}
+ */
+async function queryLoginUserRow(pool, login) {
+  const params = [login, login];
+  const sqlWithSub = `SELECT id, email, password_hash, is_admin, subscription_status FROM users
+           WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`;
+  const sqlBase = `SELECT id, email, password_hash, is_admin FROM users
+           WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`;
+  try {
+    const [rows] = await pool.query(sqlWithSub, params);
+    return { rows };
+  } catch (e) {
+    if (isUnknownSubscriptionColumnError(e)) {
+      warnSubscriptionColumnMissingOnce();
+      const [rows] = await pool.query(sqlBase, params);
+      return { rows };
+    }
+    throw e;
+  }
+}
+
+/**
+ * @returns {Promise<{ rows: unknown[] }>}
+ */
+async function queryMeUserRow(pool, uid) {
+  const sqlWithSub = `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status FROM users WHERE id = ?`;
+  const sqlBase = `SELECT id, email, login_name, display_name, default_family_id, is_admin FROM users WHERE id = ?`;
+  try {
+    const [rows] = await pool.query(sqlWithSub, [uid]);
+    return { rows };
+  } catch (e) {
+    if (isUnknownSubscriptionColumnError(e)) {
+      warnSubscriptionColumnMissingOnce();
+      const [rows] = await pool.query(sqlBase, [uid]);
+      return { rows };
+    }
+    throw e;
+  }
+}
+
 export async function getDefaultFamilyId(pool, userId) {
   const [rows] = await pool.query(
     `SELECT COALESCE(
@@ -348,14 +415,9 @@ export async function tryAuthRoutes(req, ctx) {
         return json(400, { error: "ログインIDとパスワードを入力してください" }, hdrs, skipCors);
       }
 
-      const [rows] = await withDbRetry(
+      const { rows } = await withDbRetry(
         "auth.login.queryUser",
-        () =>
-          pool.query(
-          `SELECT id, email, password_hash, is_admin, subscription_status FROM users
-           WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`,
-          [login, login],
-        ),
+        () => queryLoginUserRow(pool, login),
         Number(process.env.DB_RETRY_ATTEMPTS || "10"),
       );
       if (rows.length === 0) {
@@ -479,10 +541,7 @@ export async function tryAuthRoutes(req, ctx) {
       if (!uid) {
         return json(401, { error: "認証が必要です" }, hdrs, skipCors);
       }
-      const [rows] = await pool.query(
-        `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status FROM users WHERE id = ?`,
-        [uid],
-      );
+      const { rows } = await queryMeUserRow(pool, uid);
       if (rows.length === 0) {
         return json(404, { error: "ユーザーが見つかりません" }, hdrs, skipCors);
       }

@@ -97,8 +97,13 @@ async function checkAuthMe(token) {
       `/auth/me user.isAdmin が boolean ではありません: ${JSON.stringify(u.isAdmin)}`,
     );
   }
+  if (u.subscriptionStatus != null && typeof u.subscriptionStatus !== "string") {
+    throw new Error(
+      `/auth/me user.subscriptionStatus が string ではありません: ${JSON.stringify(u.subscriptionStatus)}`,
+    );
+  }
   console.error(
-    `verify-login: user id=${u.id} email=${u.email ?? ""} isAdmin=${u.isAdmin}`,
+    `verify-login: user id=${u.id} email=${u.email ?? ""} isAdmin=${u.isAdmin} subscriptionStatus=${u.subscriptionStatus ?? "(なし)"}`,
   );
 }
 
