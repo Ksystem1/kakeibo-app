@@ -7,8 +7,10 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget =
     env.VITE_API_PROXY_TARGET?.replace(/\/$/, "") || "http://127.0.0.1:3456";
 
-  /** マニフェストの start_url / scope / id はパス形式に統一（絶対URLは iOS のスタンドアロン起動で不具合報告あり） */
+  /** マニフェストの scope / id はパス形式に統一（絶対URLは iOS のスタンドアロン起動で不具合報告あり） */
   const pwaScope = "/kakeibo/";
+  /** 末尾スラッシュのみの /kakeibo/ がオリジンで 500 等になると PWA 起動が「書類 -0KB」になる。/login は HTML が安定して返る */
+  const pwaStartUrl = "/kakeibo/login";
   const pwaIcon = "/kakeibo/brand-kakeibo-2.png";
 
   return {
@@ -25,7 +27,7 @@ export default defineConfig(({ mode }) => {
           short_name: "Kakeibo",
           description: "家族で共有できる家計簿アプリ",
           lang: "ja",
-          start_url: pwaScope,
+          start_url: pwaStartUrl,
           scope: pwaScope,
           display: "standalone",
           display_override: ["standalone", "browser"],

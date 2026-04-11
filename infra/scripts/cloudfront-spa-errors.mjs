@@ -116,6 +116,11 @@ function main() {
 
   sh(`aws cloudfront create-invalidation --distribution-id ${distId} --paths "/*"`);
   console.error("\nInvalidation 送信済み。https://ksystemapp.com/kakeibo/ を再読み込みしてください。\n");
+  console.error(
+    "PWA 注意: GET /kakeibo/ がオリジンで 500 になるとスタンドアロン起動が壊れます。" +
+      "マニフェストの start_url は /kakeibo/login を使用。" +
+      "ルート URL も直すなら CloudFront Functions（viewer-request）で /kakeibo と /kakeibo/ を /kakeibo/index.html にリライトしてください。\n",
+  );
 }
 
 try {
