@@ -20,6 +20,8 @@ const DEFAULT_REGION = "ap-northeast-1";
  */
 const BEDROCK_MODEL_ID_SONNET_4_6 = "anthropic.claude-sonnet-4-6";
 const BEDROCK_MODEL_ID_SONNET_3_7 = "anthropic.claude-3-7-sonnet-20250219-v1:0";
+/** レガシー v1 — リージョンによっては EOL（ResourceNotFound）のため v2 を優先 */
+const BEDROCK_MODEL_ID_SONNET_3_5_V2 = "anthropic.claude-3-5-sonnet-20241022-v2:0";
 const BEDROCK_MODEL_ID_SONNET_3_5_V1 = "anthropic.claude-3-5-sonnet-20240620-v1:0";
 
 /** Bedrock コンソールのモデル ID と完全一致させる（余計な空白・囲みクォートは除去） */
@@ -55,6 +57,8 @@ function defaultBedrockModelCandidates(region) {
     BEDROCK_MODEL_ID_SONNET_4_6,
     `${geo}.${BEDROCK_MODEL_ID_SONNET_3_7}`,
     BEDROCK_MODEL_ID_SONNET_3_7,
+    `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V2}`,
+    BEDROCK_MODEL_ID_SONNET_3_5_V2,
     `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V1}`,
     BEDROCK_MODEL_ID_SONNET_3_5_V1,
   ].filter((x, i, arr) => arr.indexOf(x) === i);
@@ -94,6 +98,7 @@ function buildPrompt(message, context) {
     "「固定費」など、上位カテゴリのJSONに無いラベルに対する具体額は出さないでください。その場合はカテゴリ名をユーザーに確認するか、与えられたカテゴリ名だけを使ってください。",
     "残り予算・あといくら・使える金額と聞かれたら、必ず与えられた「残金」の数値だけを使い、他の金額と矛盾させないでください。",
     "質問文に必ず直接回答してください。質問と無関係な一般論だけを返してはいけません。",
+    "質問が家計と無直接の雑談（例: ラッキー食材・豆知識）のときは、まず質問に答え、必要なら家計へ1文だけ軽く結びつけてください。",
     "1行目は質問への直接回答（結論）にしてください。質問のキーワードを1つ以上そのまま含めてください。",
     "質問が「あといくら」「残り」「使える金額」なら、必ず上記の残金（円）を明示してください。",
     "質問がカテゴリや節約方法なら、対象カテゴリ名を明示して答えてください。",
@@ -246,9 +251,29 @@ async function tryInvokeModel(client, modelId, body, label) {
       body,
     });
     const res = await client.send(cmd);
+    const httpStatusCode = res.$metadata?.httpStatusCode;
     const raw = Buffer.from(res.body ?? new Uint8Array()).toString("utf-8");
     const data = JSON.parse(raw || "{}");
-    return parseClaudeInvokeText(data);
+    const replyText = parseClaudeInvokeText(data);
+    logger.info("bedrock_invoke_model_response", {
+      modelId,
+      label,
+      httpStatusCode,
+      bodyCharLength: raw.length,
+      replyCharLength: replyText.length,
+      replyPreview: replyText.slice(0, 240),
+    });
+    if (process.env.BEDROCK_DEBUG_LOG === "1") {
+      console.log(
+        "[bedrock] InvokeModel response:",
+        JSON.stringify({
+          modelId,
+          httpStatusCode,
+          replyPreview: replyText.slice(0, 300),
+        }),
+      );
+    }
+    return replyText;
   }, `invoke:${label}:${modelId}`);
 }
 
@@ -275,7 +300,25 @@ async function tryConverse(client, modelId, systemPrompt, userPrompt, maxTokens,
       },
     });
     const res = await client.send(cmd);
-    return parseConverseAssistantText(res);
+    const httpStatusCode = res.$metadata?.httpStatusCode;
+    const replyText = parseConverseAssistantText(res);
+    logger.info("bedrock_converse_response", {
+      modelId,
+      httpStatusCode,
+      replyCharLength: replyText.length,
+      replyPreview: replyText.slice(0, 240),
+    });
+    if (process.env.BEDROCK_DEBUG_LOG === "1") {
+      console.log(
+        "[bedrock] Converse response:",
+        JSON.stringify({
+          modelId,
+          httpStatusCode,
+          replyPreview: replyText.slice(0, 300),
+        }),
+      );
+    }
+    return replyText;
   }, `converse:${modelId}`);
 }
 

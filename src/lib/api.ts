@@ -548,7 +548,9 @@ export async function askAiAdvisor(body: {
   return parse<{
     ok: boolean;
     reply: string;
-    source?: "bedrock" | "fallback";
+    source?: "bedrock" | "fallback" | "error";
     sourceDetail?: string;
+    /** サーバーで AI_ADVISOR_DEBUG_ERRORS=1 のとき true（Bedrock 失敗内容を reply に載せる） */
+    advisorDebug?: boolean;
   }>(res);
 }

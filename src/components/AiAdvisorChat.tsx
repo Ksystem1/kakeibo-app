@@ -61,7 +61,7 @@ export function AiAdvisorChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [lastSource, setLastSource] = useState<"bedrock" | "fallback" | null>(null);
+  const [lastSource, setLastSource] = useState<"bedrock" | "fallback" | "error" | null>(null);
   const [lastSourceDetail, setLastSourceDetail] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -135,11 +135,15 @@ export function AiAdvisorChat() {
       });
       const normalizedReply = String(reply.reply ?? "").trim();
       const finalReply = normalizedReply || buildClientFallback(text, summaryLite);
-      setLastSource(reply.source === "bedrock" ? "bedrock" : "fallback");
+      setLastSource(
+        reply.source === "bedrock"
+          ? "bedrock"
+          : reply.source === "error"
+            ? "error"
+            : "fallback",
+      );
       setLastSourceDetail(
-        reply.source === "fallback" && reply.sourceDetail
-          ? String(reply.sourceDetail)
-          : "",
+        reply.sourceDetail && reply.source !== "bedrock" ? String(reply.sourceDetail) : "",
       );
       setMessages((prev) =>
         prev.map((m) => (m.id === typingId ? { id: typingId, role: "ai", text: finalReply } : m)),
@@ -218,7 +222,9 @@ export function AiAdvisorChat() {
                 <span className="text-[10px] font-medium text-slate-500" title="直近の応答の生成元">
                   {lastSource === "bedrock"
                     ? "AWS Bedrock"
-                    : `ルール応答（Bedrock未使用${lastSourceDetail ? `: ${lastSourceDetail}` : ""}）`}
+                    : lastSource === "error"
+                      ? `Bedrock失敗（デバッグ）${lastSourceDetail ? `: ${lastSourceDetail}` : ""}`
+                      : `ルール応答（Bedrock未使用${lastSourceDetail ? `: ${lastSourceDetail}` : ""}）`}
                 </span>
               ) : null}
               <button

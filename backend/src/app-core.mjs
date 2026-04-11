@@ -1463,22 +1463,29 @@ export async function handleApiRequest(req, options = {}) {
         }
         const ctx = b.context && typeof b.context === "object" ? b.context : {};
         let bedrockDetail = "";
+        let aiResult = null;
+        let bedrockThrown = null;
         try {
-          const ai = await askBedrockAdvisor(message, ctx);
-          if (ai?.ok && ai.reply) {
-            return json(200, { ok: true, reply: ai.reply, source: "bedrock" }, hdrs, skipCors);
+          aiResult = await askBedrockAdvisor(message, ctx);
+          if (aiResult?.ok && aiResult.reply) {
+            return json(200, { ok: true, reply: aiResult.reply, source: "bedrock" }, hdrs, skipCors);
           }
-          if (ai && !ai.ok) {
-            const detailParts = [ai.code, ai.message].filter(Boolean);
+          if (aiResult && !aiResult.ok) {
+            const detailParts = [aiResult.code, aiResult.message].filter(Boolean);
             bedrockDetail = detailParts.join(": ").slice(0, 280) || "BedrockUnavailable";
-            logError("ai.advisor.bedrock", new Error(`${ai.code}: ${ai.message}`), {
-              authFailed: !!ai.authFailed,
-              throttled: !!ai.throttled,
-              validationFailed: !!ai.validationFailed,
-              attemptsLog: ai.attemptsLog,
-            });
+            logError(
+              "ai.advisor.bedrock",
+              new Error(`${aiResult.code}: ${aiResult.message}`),
+              {
+                authFailed: !!aiResult.authFailed,
+                throttled: !!aiResult.throttled,
+                validationFailed: !!aiResult.validationFailed,
+                attemptsLog: aiResult.attemptsLog,
+              },
+            );
           }
         } catch (e) {
+          bedrockThrown = e;
           const msg = e instanceof Error ? e.message : String(e);
           const authFailed =
             msg.includes("AuthError") ||
@@ -1492,18 +1499,58 @@ export async function handleApiRequest(req, options = {}) {
           const validationFailed =
             msg.includes("ValidationException") || (e && e.name === "ValidationException");
           bedrockDetail = authFailed
-            ? "AccessDeniedException"
+            ? `AccessDeniedException: ${msg.slice(0, 220)}`
             : throttled
-              ? "ThrottlingException"
+              ? `ThrottlingException: ${msg.slice(0, 220)}`
               : validationFailed
-                ? `ValidationException: ${msg.slice(0, 200)}`
-                : "BedrockUnavailable";
+                ? `ValidationException: ${msg.slice(0, 220)}`
+                : `BedrockUnavailable: ${msg.slice(0, 220)}`;
           logError("ai.advisor.bedrock", e, {
             authFailed,
             throttled,
             validationFailed,
           });
         }
+
+        const debugAdvisor =
+          String(process.env.AI_ADVISOR_DEBUG_ERRORS ?? "").trim() === "1";
+        if (debugAdvisor) {
+          const stack =
+            bedrockThrown instanceof Error
+              ? String(bedrockThrown.stack || bedrockThrown.message)
+              : bedrockThrown != null
+                ? String(bedrockThrown)
+                : "";
+          const attemptsSnippet =
+            aiResult?.attemptsLog != null
+              ? JSON.stringify(aiResult.attemptsLog).slice(0, 3500)
+              : "";
+          const reply = [
+            "[AI/Bedrock デバッグ] モデル応答を取得できませんでした。",
+            "",
+            "概要:",
+            bedrockDetail || "(詳細なし)",
+            "",
+            stack ? "スタック:\n" + stack.slice(0, 6000) : "",
+            attemptsSnippet ? "\n試行ログ（抜粋）:\n" + attemptsSnippet : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+            .slice(0, 12000);
+          return json(
+            200,
+            {
+              ok: true,
+              reply,
+              source: "error",
+              sourceDetail: bedrockDetail,
+              advisorDebug: true,
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+
         const reply = buildAdvisorFallbackReply(message, ctx);
         return json(
           200,
