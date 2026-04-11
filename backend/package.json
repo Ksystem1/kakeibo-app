@@ -10,6 +10,7 @@
     "db:schema": "node scripts/run-schema.mjs",
     "db:migrate-v2": "node scripts/run-migration-v2.mjs",
     "db:migrate-v5": "node scripts/run-migration-v5.mjs",
+    "db:migrate-v7": "node scripts/run-migration-v7.mjs",
     "db:dev-user": "node scripts/ensure-dev-user.mjs",
     "test:bedrock": "node scripts/test-bedrock.mjs",
     "test:bedrock:lucky": "node scripts/test-bedrock-lucky-food.mjs",
