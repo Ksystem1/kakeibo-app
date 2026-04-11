@@ -1469,10 +1469,13 @@ export async function handleApiRequest(req, options = {}) {
             return json(200, { ok: true, reply: ai.reply, source: "bedrock" }, hdrs, skipCors);
           }
           if (ai && !ai.ok) {
-            bedrockDetail = ai.code ? String(ai.code) : "BedrockUnavailable";
+            const detailParts = [ai.code, ai.message].filter(Boolean);
+            bedrockDetail = detailParts.join(": ").slice(0, 280) || "BedrockUnavailable";
             logError("ai.advisor.bedrock", new Error(`${ai.code}: ${ai.message}`), {
               authFailed: !!ai.authFailed,
               throttled: !!ai.throttled,
+              validationFailed: !!ai.validationFailed,
+              attemptsLog: ai.attemptsLog,
             });
           }
         } catch (e) {
@@ -1486,10 +1489,19 @@ export async function handleApiRequest(req, options = {}) {
             msg.includes("RateLimitError") ||
             msg.includes("ThrottlingException") ||
             msg.includes("TooManyRequestsException");
-          bedrockDetail = authFailed ? "AccessDeniedException" : throttled ? "ThrottlingException" : "BedrockUnavailable";
+          const validationFailed =
+            msg.includes("ValidationException") || (e && e.name === "ValidationException");
+          bedrockDetail = authFailed
+            ? "AccessDeniedException"
+            : throttled
+              ? "ThrottlingException"
+              : validationFailed
+                ? `ValidationException: ${msg.slice(0, 200)}`
+                : "BedrockUnavailable";
           logError("ai.advisor.bedrock", e, {
             authFailed,
             throttled,
+            validationFailed,
           });
         }
         const reply = buildAdvisorFallbackReply(message, ctx);

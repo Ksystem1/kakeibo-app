@@ -1,14 +1,25 @@
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import {
+  BedrockRuntimeClient,
+  ConverseCommand,
+  InvokeModelCommand,
+} from "@aws-sdk/client-bedrock-runtime";
+import { createLogger } from "./logger.mjs";
+
+const logger = createLogger("bedrock");
 
 const DEFAULT_REGION = "ap-northeast-1";
 const DEFAULT_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0";
+/** 実在IDのみ。誤った推論プロファイル ID や未サフィックス ID は ValidationException の原因になる */
 const FALLBACK_MODEL_IDS = [
   "anthropic.claude-3-5-sonnet-20240620-v1:0",
-  "us.anthropic.claude-sonnet-4-6",
+  "anthropic.claude-3-5-haiku-20241022-v1:0",
+  "anthropic.claude-sonnet-4-20250514-v1:0",
 ];
 
 function getBedrockConfig() {
-  const region = String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() || DEFAULT_REGION;
+  const region =
+    String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() ||
+    DEFAULT_REGION;
   const modelId = String(process.env.BEDROCK_MODEL_ID || DEFAULT_MODEL_ID).trim();
   const candidates = [modelId, ...FALLBACK_MODEL_IDS]
     .map((x) => String(x || "").trim())
@@ -68,10 +79,65 @@ function mapAwsError(e) {
     code === "UnrecognizedClientException" ||
     code === "ExpiredTokenException" ||
     code === "InvalidClientTokenId";
-  return { code, message, throttled, authFailed };
+  const validationFailed =
+    code === "ValidationException" || message.includes("ValidationException");
+  return { code, message, throttled, authFailed, validationFailed };
 }
 
-function parseClaudeText(data) {
+function serializeAwsError(e) {
+  if (!e || typeof e !== "object") return { raw: String(e) };
+  return {
+    name: e.name,
+    message: e.message,
+    code: e.Code ?? e.code,
+    requestId: e.$metadata?.requestId,
+    httpStatusCode: e.$metadata?.httpStatusCode,
+  };
+}
+
+function isThrottlingError(e) {
+  const code = String(e?.name || e?.Code || "");
+  return (
+    code === "ThrottlingException" ||
+    code === "TooManyRequestsException" ||
+    String(e?.message || "").includes("Throttling")
+  );
+}
+
+function isValidationError(e) {
+  const code = String(e?.name || e?.Code || "");
+  return code === "ValidationException" || String(e?.message || "").includes("ValidationException");
+}
+
+async function sleep(ms) {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+async function withThrottleRetry(operation, label, maxRetries = 2) {
+  let lastErr;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (e) {
+      lastErr = e;
+      if (isThrottlingError(e) && attempt < maxRetries) {
+        const delay = 350 * 2 ** attempt;
+        logger.warn("throttle_retry", {
+          label,
+          attempt: attempt + 1,
+          delayMs: delay,
+          ...serializeAwsError(e),
+        });
+        await sleep(delay);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
+function parseClaudeInvokeText(data) {
   const content = Array.isArray(data?.content) ? data.content : [];
   const texts = content
     .filter((x) => x && x.type === "text" && typeof x.text === "string")
@@ -80,47 +146,219 @@ function parseClaudeText(data) {
   return texts.join("\n").trim();
 }
 
-async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, temperature = 0.4 }) {
-  const { region, modelId, candidates } = getBedrockConfig();
-  if (!modelId || candidates.length === 0) return null;
-  const client = new BedrockRuntimeClient({ region });
+function parseConverseAssistantText(res) {
+  const blocks = res?.output?.message?.content ?? [];
+  if (!Array.isArray(blocks)) return "";
+  return blocks
+    .filter((b) => b && typeof b.text === "string")
+    .map((b) => String(b.text).trim())
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
 
-  const body = JSON.stringify({
+function buildInvokeBodyBlocks(systemPrompt, userPrompt, maxTokens, temperature) {
+  return JSON.stringify({
     anthropic_version: "bedrock-2023-05-31",
     max_tokens: maxTokens,
     temperature,
     system: systemPrompt,
-    messages: [{ role: "user", content: [{ type: "text", text: userPrompt }] }],
+    messages: [
+      { role: "user", content: [{ type: "text", text: userPrompt }] },
+    ],
   });
+}
 
-  let lastErr = null;
-  for (const mid of candidates) {
-    try {
-      const cmd = new InvokeModelCommand({
-        modelId: mid,
-        contentType: "application/json",
-        accept: "application/json",
-        body,
-      });
-      const res = await client.send(cmd);
-      const raw = Buffer.from(res.body ?? new Uint8Array()).toString("utf-8");
-      const data = JSON.parse(raw || "{}");
-      const reply = parseClaudeText(data);
-      if (!reply) {
-        lastErr = { name: "EmptyModelReply", message: "Bedrock returned empty text", modelId: mid };
-        continue;
-      }
-      return { ok: true, reply, modelId: mid };
-    } catch (e) {
-      lastErr = e;
+/** 一部モデル／プロファイルは文字列 content のみ受け付ける */
+function buildInvokeBodyStringContent(systemPrompt, userPrompt, maxTokens, temperature) {
+  return JSON.stringify({
+    anthropic_version: "bedrock-2023-05-31",
+    max_tokens: maxTokens,
+    temperature,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+  });
+}
+
+async function tryInvokeModel(client, modelId, body, label) {
+  return withThrottleRetry(async () => {
+    const cmd = new InvokeModelCommand({
+      modelId,
+      contentType: "application/json",
+      accept: "application/json",
+      body,
+    });
+    const res = await client.send(cmd);
+    const raw = Buffer.from(res.body ?? new Uint8Array()).toString("utf-8");
+    const data = JSON.parse(raw || "{}");
+    return parseClaudeInvokeText(data);
+  }, `invoke:${label}:${modelId}`);
+}
+
+async function tryConverse(client, modelId, systemPrompt, userPrompt, maxTokens, temperature) {
+  return withThrottleRetry(async () => {
+    const cmd = new ConverseCommand({
+      modelId,
+      system: [{ text: systemPrompt }],
+      messages: [{ role: "user", content: [{ text: userPrompt }] }],
+      inferenceConfig: {
+        maxTokens,
+        temperature,
+      },
+    });
+    const res = await client.send(cmd);
+    return parseConverseAssistantText(res);
+  }, `converse:${modelId}`);
+}
+
+/**
+ * 1モデルに対し Invoke（blocks → string）→ Converse の順で試す。
+ */
+async function invokeOneModel(client, modelId, systemPrompt, userPrompt, maxTokens, temperature) {
+  const attempts = [];
+
+  try {
+    const bodyBlocks = buildInvokeBodyBlocks(
+      systemPrompt,
+      userPrompt,
+      maxTokens,
+      temperature,
+    );
+    const replyB = await tryInvokeModel(client, modelId, bodyBlocks, "blocks");
+    attempts.push({ kind: "invoke_blocks", ok: true, replyLen: replyB.length });
+    if (replyB) return { ok: true, reply: replyB, via: "invoke_blocks", attempts };
+    attempts.push({ kind: "invoke_blocks", error: "empty_model_output" });
+  } catch (e) {
+    attempts.push({ kind: "invoke_blocks", error: serializeAwsError(e) });
+    logger.warn("model_attempt_failed", {
+      modelId,
+      kind: "invoke_blocks",
+      ...serializeAwsError(e),
+    });
+    if (!isValidationError(e)) {
+      return { ok: false, lastError: e, attempts };
     }
   }
-  return { ok: false, ...mapAwsError(lastErr), modelId };
+
+  try {
+    const bodyStr = buildInvokeBodyStringContent(
+      systemPrompt,
+      userPrompt,
+      maxTokens,
+      temperature,
+    );
+    const replyS = await tryInvokeModel(client, modelId, bodyStr, "string");
+    attempts.push({ kind: "invoke_string", ok: true, replyLen: replyS.length });
+    if (replyS) return { ok: true, reply: replyS, via: "invoke_string", attempts };
+    attempts.push({ kind: "invoke_string", error: "empty_model_output" });
+  } catch (e) {
+    attempts.push({ kind: "invoke_string", error: serializeAwsError(e) });
+    logger.warn("model_attempt_failed", {
+      modelId,
+      kind: "invoke_string",
+      ...serializeAwsError(e),
+    });
+    if (!isValidationError(e)) {
+      return { ok: false, lastError: e, attempts };
+    }
+  }
+
+  try {
+    const replyC = await tryConverse(
+      client,
+      modelId,
+      systemPrompt,
+      userPrompt,
+      maxTokens,
+      temperature,
+    );
+    attempts.push({ kind: "converse", ok: true, replyLen: replyC.length });
+    if (replyC) return { ok: true, reply: replyC, via: "converse", attempts };
+    attempts.push({ kind: "converse", error: "empty_model_output" });
+    return {
+      ok: false,
+      lastError: new Error("Converse returned empty text"),
+      attempts,
+    };
+  } catch (e) {
+    attempts.push({ kind: "converse", error: serializeAwsError(e) });
+    logger.warn("model_attempt_failed", {
+      modelId,
+      kind: "converse",
+      ...serializeAwsError(e),
+    });
+    return { ok: false, lastError: e, attempts };
+  }
+}
+
+async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, temperature = 0.4 }) {
+  const { region, modelId, candidates } = getBedrockConfig();
+  if (!modelId || candidates.length === 0) {
+    return {
+      ok: false,
+      code: "NoBedrockConfig",
+      message: "BEDROCK_MODEL_ID is empty",
+      authFailed: false,
+      throttled: false,
+      validationFailed: false,
+    };
+  }
+
+  const client = new BedrockRuntimeClient({ region });
+  let lastErr = null;
+  const allAttempts = [];
+
+  for (const mid of candidates) {
+    logger.info("try_model", {
+      modelId: mid,
+      region,
+      maxTokens,
+      temperature,
+      systemLen: systemPrompt.length,
+      userLen: userPrompt.length,
+    });
+
+    const result = await invokeOneModel(
+      client,
+      mid,
+      systemPrompt,
+      userPrompt,
+      maxTokens,
+      temperature,
+    );
+
+    if (result.attempts) allAttempts.push({ modelId: mid, attempts: result.attempts });
+
+    if (result.ok && result.reply) {
+      logger.info("invoke_ok", { modelId: mid, via: result.via });
+      return { ok: true, reply: result.reply, modelId: mid, via: result.via };
+    }
+
+    lastErr = result.lastError || lastErr;
+    if (lastErr) {
+      logger.error("model_exhausted", lastErr, {
+        modelId: mid,
+        ...serializeAwsError(lastErr),
+      });
+    }
+  }
+
+  logger.error("all_models_failed", lastErr || new Error("unknown"), {
+    candidateCount: candidates.length,
+    attemptsSummary: allAttempts,
+  });
+
+  return {
+    ok: false,
+    ...mapAwsError(lastErr),
+    modelId,
+    attemptsLog: allAttempts,
+  };
 }
 
 export async function askBedrockAdvisor(message, context) {
   const { systemPrompt, userPrompt } = buildPrompt(message, context);
-  return invokeBedrockText({ systemPrompt, userPrompt, maxTokens: 320, temperature: 0.1 });
+  return invokeBedrockText({ systemPrompt, userPrompt, maxTokens: 320, temperature: 0.2 });
 }
 
 function parseJsonBlock(raw) {
