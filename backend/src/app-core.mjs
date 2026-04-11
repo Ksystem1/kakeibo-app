@@ -1462,6 +1462,19 @@ export async function handleApiRequest(req, options = {}) {
           return json(400, { error: "message が必要です" }, hdrs, skipCors);
         }
         const ctx = b.context && typeof b.context === "object" ? b.context : {};
+        const ruleOnly =
+          b.ruleOnly === true ||
+          b.demoRuleOnly === true ||
+          String(b.mode ?? "").toLowerCase() === "rule";
+        if (ruleOnly) {
+          const reply = buildAdvisorFallbackReply(message, ctx);
+          return json(
+            200,
+            { ok: true, reply, source: "fallback" },
+            hdrs,
+            skipCors,
+          );
+        }
         let bedrockDetail = "";
         try {
           const ai = await askBedrockAdvisor(message, ctx);

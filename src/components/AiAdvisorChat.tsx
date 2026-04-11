@@ -89,7 +89,10 @@ export function AiAdvisorChat() {
     });
   }
 
-  async function sendMessage(rawText: string, options?: { existingUserMessageId?: number }) {
+  async function sendMessage(
+    rawText: string,
+    options?: { existingUserMessageId?: number; ruleOnly?: boolean },
+  ) {
     const text = rawText.trim();
     if (!text || busy) return;
     const userMsg: ChatMessage = {
@@ -131,6 +134,7 @@ export function AiAdvisorChat() {
         }));
       const reply = await askAiAdvisor({
         message: text,
+        ...(options?.ruleOnly ? { ruleOnly: true } : {}),
         context: {
           yearMonth: ym,
           incomeTotal: summaryLite.incomeTotal,
@@ -199,7 +203,10 @@ export function AiAdvisorChat() {
     }
     setMessages((prev) => prev.map((m) => (m.id === typingUserId ? { ...m, typingUser: false } : m)));
     setBusy(false);
-    await sendMessage(demoText, { existingUserMessageId: typingUserId });
+    await sendMessage(demoText, {
+      existingUserMessageId: typingUserId,
+      ruleOnly: true,
+    });
   }
 
   const bubbles = useMemo(
