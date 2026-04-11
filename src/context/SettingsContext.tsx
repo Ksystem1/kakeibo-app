@@ -1,17 +1,50 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import {
+  NAV_SKIN_CATALOG,
+  type NavIconPaths,
+  buildNavIconPaths,
+  resolveEffectiveNavSkinId,
+  isNavSkinUnlocked,
+  isKnownNavSkinId,
+  DEFAULT_NAV_SKIN_ID,
+} from "../config/navSkins";
 
 const KEY = "kakeibo_font_scale";
 const MODE_KEY = "kakeibo_font_mode";
 const THEME_KEY = "kakeibo_theme_mode";
 const FIXED_COSTS_KEY = "kakeibo_fixed_costs_by_month";
 const GLOBAL_FIXED_COSTS_KEY = "__all__";
+const NAV_SKIN_KEY = "kakeibo_nav_skin_id";
+const OWNED_NAV_SKINS_KEY = "kakeibo_owned_nav_skins";
+
+function readOwnedNavSkinIds(): string[] {
+  try {
+    const raw = localStorage.getItem(OWNED_NAV_SKINS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x): x is string => typeof x === "string" && x.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function readPersistedNavSkinId(): string {
+  try {
+    const raw = localStorage.getItem(NAV_SKIN_KEY);
+    return raw && isKnownNavSkinId(raw) ? raw : DEFAULT_NAV_SKIN_ID;
+  } catch {
+    return DEFAULT_NAV_SKIN_ID;
+  }
+}
 
 type FontMode = "small" | "standard" | "large";
 export type FixedCostItem = {
@@ -61,15 +94,31 @@ const FONT_MODE_SCALE: Record<FontMode, number> = {
   large: 1.12,
 };
 
+export type NavSkinOptionView = {
+  id: string;
+  label: string;
+  description?: string;
+  unlocked: boolean;
+  selected: boolean;
+};
+
 type Settings = {
   fontScale: number;
   fontMode: FontMode;
   themeMode: ThemeMode;
   fixedCostsByMonth: Record<string, FixedCostItem[]>;
+  /** 実際に表示に使うナビアイコン（未購入スキンは既定へフォールバック済み） */
+  navSkinId: string;
+  navIconPaths: NavIconPaths;
+  navSkinOptions: NavSkinOptionView[];
   setFontScale: (n: number) => void;
   setFontMode: (m: FontMode) => void;
   setThemeMode: (m: ThemeMode) => void;
   setFixedCostsForMonth: (ym: string, items: FixedCostItem[]) => void;
+  /** 未購入スキンは false。成功時のみ true */
+  setNavSkinId: (id: string) => boolean;
+  /** 決済・サーバ同期後に購入済み ID をマージ（localStorage にも保存） */
+  mergeOwnedNavSkinsFromServer: (ids: readonly string[]) => void;
 };
 
 const SettingsContext = createContext<Settings | null>(null);
@@ -103,6 +152,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       return FONT_MODE_SCALE[fontMode];
     }
   });
+  const [ownedNavSkinIds, setOwnedNavSkinIds] = useState<string[]>(() => readOwnedNavSkinIds());
+
+  const [navSkinId, setNavSkinIdState] = useState<string>(() => {
+    const owned = readOwnedNavSkinIds();
+    const raw = readPersistedNavSkinId();
+    return resolveEffectiveNavSkinId(raw, owned);
+  });
+
   const [fixedCostsByMonth, setFixedCostsByMonth] = useState<Record<string, FixedCostItem[]>>(() => {
     try {
       const raw = localStorage.getItem(FIXED_COSTS_KEY);
@@ -175,6 +232,54 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [fixedCostsByMonth]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(OWNED_NAV_SKINS_KEY, JSON.stringify(ownedNavSkinIds));
+    } catch {
+      /* ignore */
+    }
+  }, [ownedNavSkinIds]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(NAV_SKIN_KEY, navSkinId);
+    } catch {
+      /* ignore */
+    }
+  }, [navSkinId]);
+
+  const setNavSkinId = useCallback(
+    (id: string) => {
+      if (!isKnownNavSkinId(id)) return false;
+      if (!isNavSkinUnlocked(id, ownedNavSkinIds)) return false;
+      setNavSkinIdState(id);
+      return true;
+    },
+    [ownedNavSkinIds],
+  );
+
+  const mergeOwnedNavSkinsFromServer = useCallback((ids: readonly string[]) => {
+    if (!ids.length) return;
+    setOwnedNavSkinIds((prev) => {
+      const next = [...new Set([...prev, ...ids.filter((x) => typeof x === "string" && x.length > 0)])];
+      return next.length === prev.length && next.every((x) => prev.includes(x)) ? prev : next;
+    });
+  }, []);
+
+  const navIconPaths = useMemo(() => buildNavIconPaths(navSkinId), [navSkinId]);
+
+  const navSkinOptions = useMemo<NavSkinOptionView[]>(
+    () =>
+      NAV_SKIN_CATALOG.map((s) => ({
+        id: s.id,
+        label: s.label,
+        description: s.description,
+        unlocked: isNavSkinUnlocked(s.id, ownedNavSkinIds),
+        selected: s.id === navSkinId,
+      })),
+    [ownedNavSkinIds, navSkinId],
+  );
+
   const setFontScale = (n: number) => {
     const clamped = Math.min(1.2, Math.max(0.85, n));
     setFontScaleState(clamped);
@@ -215,12 +320,27 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       fontMode,
       themeMode,
       fixedCostsByMonth,
+      navSkinId,
+      navIconPaths,
+      navSkinOptions,
       setFontScale,
       setFontMode,
       setThemeMode,
       setFixedCostsForMonth,
+      setNavSkinId,
+      mergeOwnedNavSkinsFromServer,
     }),
-    [fontScale, fontMode, themeMode, fixedCostsByMonth],
+    [
+      fontScale,
+      fontMode,
+      themeMode,
+      fixedCostsByMonth,
+      navSkinId,
+      navIconPaths,
+      navSkinOptions,
+      setNavSkinId,
+      mergeOwnedNavSkinsFromServer,
+    ],
   );
 
   return (

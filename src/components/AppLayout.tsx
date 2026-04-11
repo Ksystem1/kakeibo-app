@@ -7,9 +7,9 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useSettings } from "../context/SettingsContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { getAuthMe, normalizeAuthContextUser } from "../lib/api";
-import { ICON_PATHS } from "../config/navSkin";
 import "./AppLayout.nav.css";
 import { AdSlot } from "./AdSlot";
 import { AiAdvisorChat } from "./AiAdvisorChat";
@@ -63,6 +63,7 @@ function MobileInlineOutlet(props: {
 
 export function AppLayout() {
   const { token, user, setUser, logout } = useAuth();
+  const { navIconPaths } = useSettings();
   const navigate = useNavigate();
   const mobile = useIsMobile();
   const location = useLocation();
@@ -258,7 +259,7 @@ export function AppLayout() {
                     aria-label="ダッシュボード"
                     onClick={onMobileIconNavClick("/dashboard")}
                   >
-                    <img className="nav-icon-img" src={ICON_PATHS.dashboard} alt="" aria-hidden="true" />
+                    <img className="nav-icon-img" src={navIconPaths.dashboard} alt="" aria-hidden="true" />
                   </NavLink>
                   {useMobileInlineOutlet ? (
                     <MobileInlineOutlet
@@ -276,7 +277,7 @@ export function AppLayout() {
                 aria-label="家計簿"
                 onClick={onMobileIconNavClick("/", true)}
               >
-                <img className="nav-icon-img" src={ICON_PATHS.kakeibo} alt="" aria-hidden="true" />
+                <img className="nav-icon-img" src={navIconPaths.kakeibo} alt="" aria-hidden="true" />
               </NavLink>
               {useMobileInlineOutlet ? (
                 <MobileInlineOutlet
@@ -292,7 +293,7 @@ export function AppLayout() {
                 aria-label="レシート"
                 onClick={onMobileIconNavClick("/receipt")}
               >
-                <img className="nav-icon-img" src={ICON_PATHS.receipt} alt="" aria-hidden="true" />
+                <img className="nav-icon-img" src={navIconPaths.receipt} alt="" aria-hidden="true" />
               </NavLink>
               {useMobileInlineOutlet ? (
                 <MobileInlineOutlet
@@ -303,7 +304,7 @@ export function AppLayout() {
               ) : null}
               {!mobile ? (
                 <NavLink to="/import" className={navIconLinkClassName} aria-label="CSV取込（PC）">
-                  <img className="nav-icon-img" src={ICON_PATHS.csvPc} alt="" aria-hidden="true" />
+                  <img className="nav-icon-img" src={navIconPaths.csvPc} alt="" aria-hidden="true" />
                 </NavLink>
               ) : null}
               {useMobileInlineOutlet ? (
@@ -319,7 +320,7 @@ export function AppLayout() {
                 aria-label="設定"
                 onClick={onMobileIconNavClick("/settings")}
               >
-                <img className="nav-icon-img" src={ICON_PATHS.settings} alt="" aria-hidden="true" />
+                <img className="nav-icon-img" src={navIconPaths.settings} alt="" aria-hidden="true" />
               </NavLink>
               {useMobileInlineOutlet ? (
                 <MobileInlineOutlet
@@ -337,7 +338,7 @@ export function AppLayout() {
                   aria-label="管理"
                   onClick={onMobileIconNavClick("/admin")}
                 >
-                  <img className="nav-icon-img" src={ICON_PATHS.admin} alt="" aria-hidden="true" />
+                  <img className="nav-icon-img" src={navIconPaths.admin} alt="" aria-hidden="true" />
                 </NavLink>
               ) : null}
               {useMobileInlineOutlet &&

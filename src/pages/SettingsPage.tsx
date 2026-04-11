@@ -70,6 +70,8 @@ export function SettingsPage() {
     setThemeMode,
     fixedCostsByMonth,
     setFixedCostsForMonth,
+    navSkinOptions,
+    setNavSkinId,
   } = useSettings();
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyResult, setReclassifyResult] = useState<string | null>(null);
@@ -168,6 +170,45 @@ export function SettingsPage() {
           onChange={(e) => setFontScale(Number.parseFloat(e.target.value))}
           className={styles.settingsRange}
         />
+      </div>
+
+      <div className={styles.settingsPanel} style={{ marginTop: "1.25rem", maxWidth: 820 }}>
+        <h2 className={styles.sectionTitle}>ナビアイコンのスキン</h2>
+        <p className={styles.reclassifyHint}>
+          下部タブのアイコン画像のセットです。未購入のスキンは鍵付きで選べません。
+        </p>
+        <div
+          className={styles.modeRow}
+          style={{ marginTop: "0.5rem", flexWrap: "wrap", gap: "0.4rem" }}
+        >
+          {navSkinOptions.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              disabled={!opt.unlocked}
+              className={`${styles.btn} ${opt.selected ? styles.btnPrimary : ""}`}
+              aria-pressed={opt.selected}
+              aria-label={
+                opt.unlocked
+                  ? `${opt.label}に切り替え`
+                  : `${opt.label}（未購入のため選択できません）`
+              }
+              onClick={() => setNavSkinId(opt.id)}
+            >
+              {opt.unlocked ? "" : "🔒 "}
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {navSkinOptions.some((o) => !o.unlocked) ? (
+          <p className={styles.sub} style={{ margin: "0.6rem 0 0", fontSize: "0.78rem" }}>
+            購入後はアカウントに紐づけて解放する想定です（開発確認は localStorage の
+            <code style={{ margin: "0 0.2rem" }}>kakeibo_owned_nav_skins</code>
+            に
+            <code style={{ margin: "0 0.2rem" }}>[&quot;Tmp02&quot;]</code>
+            などの JSON 配列）。
+          </p>
+        ) : null}
       </div>
 
       {pwaTarget ? (
