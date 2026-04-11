@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { getAuthMe, normalizeAuthContextUser } from "../lib/api";
 import { ICON_PATHS } from "../config/navSkin";
+import "./AppLayout.nav.css";
 import { AdSlot } from "./AdSlot";
 import { AiAdvisorChat } from "./AiAdvisorChat";
 import { MobileAccessQr } from "./MobileAccessQr";
@@ -49,47 +50,13 @@ function linkStyle(
   };
 }
 
-/**
- * 透過 PNG ナビ用。背景・枠・影は付けない（アクティブ時の水色の丸枠も出さない）。
- * 選択中はわずかに強調するだけ。
- */
-function navIconLinkStyle(
-  _mobile: boolean,
-  { isActive }: { isActive: boolean },
-) {
-  return {
-    textDecoration: "none",
-    padding: "0.12rem",
-    border: "none",
-    background: "transparent",
-    boxShadow: "none",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    lineHeight: 0,
-    opacity: isActive ? 1 : 0.9,
-    transform: isActive ? "scale(1.03)" : "none",
-    transition: "opacity 0.15s ease, transform 0.15s ease",
-  };
-}
-
-/** スキン外の共通アイコン（インストール・CSV 等） */
+/** スキン外の共通アイコン（インストール・ホーム追加など） */
 function navIconSrc(file: string) {
   return `${import.meta.env.BASE_URL}png-icons/${file}`;
 }
 
-/** 同一ボックス内に収めて高さ・見た目のスケールを揃える（画像のアスペクトは維持） */
-function navIconStyle(mobile: boolean) {
-  const w = mobile ? 112 : 138;
-  const h = mobile ? 46 : 54;
-  return {
-    display: "block",
-    width: w,
-    height: h,
-    maxWidth: "100%",
-    objectFit: "contain" as const,
-    objectPosition: "center",
-  };
+function navIconLinkClassName({ isActive }: { isActive: boolean }) {
+  return `nav-icon-link${isActive ? " is-active" : ""}`;
 }
 
 export function AppLayout() {
@@ -299,49 +266,63 @@ export function AppLayout() {
               {showChromiumInstall ? (
                 <button
                   type="button"
+                  className="nav-icon-link"
                   onClick={() => void handleChromiumInstallClick()}
-                  style={navIconLinkStyle(mobile, { isActive: false })}
                   aria-label="アプリをインストール / 再読込"
                 >
-                  <img src={navIconSrc("install-reload.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                  <img
+                    className="nav-icon-img"
+                    src={navIconSrc("install-reload.png")}
+                    alt=""
+                    aria-hidden="true"
+                  />
                 </button>
               ) : null}
               {showIosAddToHome ? (
                 <button
                   type="button"
+                  className="nav-icon-link"
                   onClick={() => setIosPwaHintOpen(true)}
-                  style={navIconLinkStyle(mobile, { isActive: false })}
                   aria-label="ホーム画面に追加"
                 >
-                  <img src={navIconSrc("homeadd.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                  <img
+                    className="nav-icon-img"
+                    src={navIconSrc("homeadd.png")}
+                    alt=""
+                    aria-hidden="true"
+                  />
                 </button>
               ) : null}
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <NavLink to="/dashboard" style={(p) => navIconLinkStyle(mobile, p)} aria-label="ダッシュボード">
-                  <img src={ICON_PATHS.dashboard} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                <NavLink
+                  to="/dashboard"
+                  className={navIconLinkClassName}
+                  aria-label="ダッシュボード"
+                >
+                  <img className="nav-icon-img" src={ICON_PATHS.dashboard} alt="" aria-hidden="true" />
                 </NavLink>
               ) : null}
-              <NavLink to="/" style={(p) => navIconLinkStyle(mobile, p)} end aria-label="家計簿">
-                <img src={ICON_PATHS.kakeibo} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+              <NavLink to="/" className={navIconLinkClassName} end aria-label="家計簿">
+                <img className="nav-icon-img" src={ICON_PATHS.kakeibo} alt="" aria-hidden="true" />
               </NavLink>
               {!mobile ? (
-                <NavLink to="/import" style={(p) => navIconLinkStyle(mobile, p)} aria-label="CSV取込（PC）">
-                  <img src={ICON_PATHS.csvPc} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                <NavLink to="/import" className={navIconLinkClassName} aria-label="CSV取込（PC）">
+                  <img className="nav-icon-img" src={ICON_PATHS.csvPc} alt="" aria-hidden="true" />
                 </NavLink>
               ) : null}
-              <NavLink to="/receipt" style={(p) => navIconLinkStyle(mobile, p)} aria-label="レシート">
-                <img src={ICON_PATHS.receipt} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+              <NavLink to="/receipt" className={navIconLinkClassName} aria-label="レシート">
+                <img className="nav-icon-img" src={ICON_PATHS.receipt} alt="" aria-hidden="true" />
               </NavLink>
-              <NavLink to="/settings" style={(p) => navIconLinkStyle(mobile, p)} aria-label="設定">
-                <img src={ICON_PATHS.settings} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+              <NavLink to="/settings" className={navIconLinkClassName} aria-label="設定">
+                <img className="nav-icon-img" src={ICON_PATHS.settings} alt="" aria-hidden="true" />
               </NavLink>
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <NavLink to="/admin" style={(p) => navIconLinkStyle(mobile, p)} aria-label="管理">
-                  <img src={ICON_PATHS.admin} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                <NavLink to="/admin" className={navIconLinkClassName} aria-label="管理">
+                  <img className="nav-icon-img" src={ICON_PATHS.admin} alt="" aria-hidden="true" />
                 </NavLink>
               ) : null}
             </>

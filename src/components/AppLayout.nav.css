@@ -1,0 +1,47 @@
+/**
+ * ログイン後の PNG ナビ。アイコン追加時は親に .nav-icon-link、img に .nav-icon-img を付与。
+ * ブレークポイントは useIsMobile（max-width: 768px）と揃える。
+ */
+
+.nav-icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  padding: 0.12rem;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  line-height: 0;
+  cursor: pointer;
+  font: inherit;
+  opacity: 0.9;
+  transform: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.nav-icon-link.is-active {
+  opacity: 1;
+  transform: scale(1.03);
+}
+
+.nav-icon-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.nav-icon-img {
+  display: block;
+  height: 38px;
+  width: auto;
+  max-width: min(148px, 100%);
+  object-fit: contain;
+  object-position: center;
+}
+
+@media (min-width: 769px) {
+  .nav-icon-img {
+    height: 42px;
+    max-width: min(172px, 100%);
+  }
+}
