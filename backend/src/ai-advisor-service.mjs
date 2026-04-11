@@ -9,8 +9,18 @@ const logger = createLogger("bedrock");
 
 const DEFAULT_REGION = "ap-northeast-1";
 
-/** Bedrock で使用する基盤モデル ID（文字列はこの定数のみをソースとする） */
-const BEDROCK_CLAUDE_35_SONNET_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0";
+/**
+ * Bedrock 公式のモデル ID（model-ids / コンソールのプロバイダー詳細の表記に準拠）。
+ * 試行優先順: Claude Sonnet 4.6 → 3.7 Sonnet → 3.5 Sonnet v1。
+ *
+ * 指示にあった `anthropic.claude-4-6-sonnet-20260301-v1:0` および
+ * `anthropic.claude-3-7-sonnet-20251101-v1:0` は公式一覧に無いため、
+ * Sonnet 4.6 は `anthropic.claude-sonnet-4-6`、3.7 は `20250219` の ID を使用する。
+ * @see https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html
+ */
+const BEDROCK_MODEL_ID_SONNET_4_6 = "anthropic.claude-sonnet-4-6";
+const BEDROCK_MODEL_ID_SONNET_3_7 = "anthropic.claude-3-7-sonnet-20250219-v1:0";
+const BEDROCK_MODEL_ID_SONNET_3_5_V1 = "anthropic.claude-3-5-sonnet-20240620-v1:0";
 
 /** Bedrock コンソールのモデル ID と完全一致させる（余計な空白・囲みクォートは除去） */
 function sanitizeBedrockModelId(raw) {
@@ -24,19 +34,30 @@ function sanitizeBedrockModelId(raw) {
   return s.replace(/\s+/g, "");
 }
 
+function geoInferencePrefixForRegion(region) {
+  const r = String(region || DEFAULT_REGION).toLowerCase().trim() || DEFAULT_REGION;
+  if (r.startsWith("eu-")) return "eu";
+  if (r.startsWith("ap-")) return "apac";
+  if (r.startsWith("us-") || r.startsWith("ca-") || r.startsWith("mx-")) return "us";
+  if (r.startsWith("sa-")) return "us";
+  return "us";
+}
+
 /**
- * 同一モデルのクロスリージョン推論プロファイル（オンデマンドで基盤 ID が拒否される場合用）。
- * ベース ID は {@link BEDROCK_CLAUDE_35_SONNET_MODEL_ID} のみ。
+ * 上から順に試行。各モデルは global → 地域推論プロファイル → 基盤 ID。
  * @see https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
  */
-function inferenceProfileIdForRegion(region) {
-  const r = String(region || DEFAULT_REGION).toLowerCase().trim() || DEFAULT_REGION;
-  let geo = "us";
-  if (r.startsWith("eu-")) geo = "eu";
-  else if (r.startsWith("ap-")) geo = "apac";
-  else if (r.startsWith("us-") || r.startsWith("ca-") || r.startsWith("mx-")) geo = "us";
-  else if (r.startsWith("sa-")) geo = "us";
-  return `${geo}.${BEDROCK_CLAUDE_35_SONNET_MODEL_ID}`;
+function defaultBedrockModelCandidates(region) {
+  const geo = geoInferencePrefixForRegion(region);
+  return [
+    `global.${BEDROCK_MODEL_ID_SONNET_4_6}`,
+    `${geo}.${BEDROCK_MODEL_ID_SONNET_4_6}`,
+    BEDROCK_MODEL_ID_SONNET_4_6,
+    `${geo}.${BEDROCK_MODEL_ID_SONNET_3_7}`,
+    BEDROCK_MODEL_ID_SONNET_3_7,
+    `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V1}`,
+    BEDROCK_MODEL_ID_SONNET_3_5_V1,
+  ].filter((x, i, arr) => arr.indexOf(x) === i);
 }
 
 function getBedrockConfig() {
@@ -44,12 +65,12 @@ function getBedrockConfig() {
     String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() ||
     DEFAULT_REGION;
   const explicit = sanitizeBedrockModelId(process.env.BEDROCK_MODEL_ID);
-  const profileId = inferenceProfileIdForRegion(region);
-  const candidates = [...(explicit ? [explicit] : []), BEDROCK_CLAUDE_35_SONNET_MODEL_ID, profileId]
+  const defaults = defaultBedrockModelCandidates(region);
+  const candidates = [...(explicit ? [explicit] : []), ...defaults]
     .map((x) => sanitizeBedrockModelId(x))
     .filter(Boolean)
     .filter((x, i, arr) => arr.indexOf(x) === i);
-  const modelId = explicit || BEDROCK_CLAUDE_35_SONNET_MODEL_ID;
+  const modelId = explicit || defaults[0];
   return { region, modelId, candidates };
 }
 
