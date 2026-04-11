@@ -44,6 +44,23 @@ function navIconLinkClassName({ isActive }: { isActive: boolean }) {
   return `nav-icon-link${isActive ? " is-active" : ""}`;
 }
 
+/** スマホ: 対応するナビ行の直下にだけ子ルートを描画（PC は main の Outlet のみ） */
+function MobileInlineOutlet(props: {
+  path: string;
+  end?: boolean;
+  pathname: string;
+  visible: boolean;
+}) {
+  const { path, end, pathname, visible } = props;
+  if (!visible) return null;
+  if (!matchPath({ path, end: end ?? false }, pathname)) return null;
+  return (
+    <div className="app-mobile-route-panel">
+      <Outlet />
+    </div>
+  );
+}
+
 export function AppLayout() {
   const { token, user, setUser, logout } = useAuth();
   const navigate = useNavigate();
@@ -99,6 +116,11 @@ export function AppLayout() {
       cancelled = true;
     };
   }, [token, setUser]);
+
+  const showMobileInlineOutlet = Boolean(
+    mobile && token && !mobileMainHidden,
+  );
+  const useMobileInlineOutlet = Boolean(mobile && token);
 
   return (
     <>
@@ -229,14 +251,23 @@ export function AppLayout() {
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <NavLink
-                  to="/dashboard"
-                  className={navIconLinkClassName}
-                  aria-label="ダッシュボード"
-                  onClick={onMobileIconNavClick("/dashboard")}
-                >
-                  <img className="nav-icon-img" src={ICON_PATHS.dashboard} alt="" aria-hidden="true" />
-                </NavLink>
+                <>
+                  <NavLink
+                    to="/dashboard"
+                    className={navIconLinkClassName}
+                    aria-label="ダッシュボード"
+                    onClick={onMobileIconNavClick("/dashboard")}
+                  >
+                    <img className="nav-icon-img" src={ICON_PATHS.dashboard} alt="" aria-hidden="true" />
+                  </NavLink>
+                  {useMobileInlineOutlet ? (
+                    <MobileInlineOutlet
+                      path="/dashboard"
+                      pathname={location.pathname}
+                      visible={showMobileInlineOutlet}
+                    />
+                  ) : null}
+                </>
               ) : null}
               <NavLink
                 to="/"
@@ -247,6 +278,14 @@ export function AppLayout() {
               >
                 <img className="nav-icon-img" src={ICON_PATHS.kakeibo} alt="" aria-hidden="true" />
               </NavLink>
+              {useMobileInlineOutlet ? (
+                <MobileInlineOutlet
+                  path="/"
+                  end
+                  pathname={location.pathname}
+                  visible={showMobileInlineOutlet}
+                />
+              ) : null}
               <NavLink
                 to="/receipt"
                 className={navIconLinkClassName}
@@ -255,10 +294,24 @@ export function AppLayout() {
               >
                 <img className="nav-icon-img" src={ICON_PATHS.receipt} alt="" aria-hidden="true" />
               </NavLink>
+              {useMobileInlineOutlet ? (
+                <MobileInlineOutlet
+                  path="/receipt"
+                  pathname={location.pathname}
+                  visible={showMobileInlineOutlet}
+                />
+              ) : null}
               {!mobile ? (
                 <NavLink to="/import" className={navIconLinkClassName} aria-label="CSV取込（PC）">
                   <img className="nav-icon-img" src={ICON_PATHS.csvPc} alt="" aria-hidden="true" />
                 </NavLink>
+              ) : null}
+              {useMobileInlineOutlet ? (
+                <MobileInlineOutlet
+                  path="/import"
+                  pathname={location.pathname}
+                  visible={showMobileInlineOutlet}
+                />
               ) : null}
               <NavLink
                 to="/settings"
@@ -268,6 +321,13 @@ export function AppLayout() {
               >
                 <img className="nav-icon-img" src={ICON_PATHS.settings} alt="" aria-hidden="true" />
               </NavLink>
+              {useMobileInlineOutlet ? (
+                <MobileInlineOutlet
+                  path="/settings"
+                  pathname={location.pathname}
+                  visible={showMobileInlineOutlet}
+                />
+              ) : null}
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
@@ -279,6 +339,16 @@ export function AppLayout() {
                 >
                   <img className="nav-icon-img" src={ICON_PATHS.admin} alt="" aria-hidden="true" />
                 </NavLink>
+              ) : null}
+              {useMobileInlineOutlet &&
+              user &&
+              (user.isAdmin ||
+                user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
+                <MobileInlineOutlet
+                  path="/admin"
+                  pathname={location.pathname}
+                  visible={showMobileInlineOutlet}
+                />
               ) : null}
             </>
           ) : (
@@ -292,18 +362,25 @@ export function AppLayout() {
             </>
           )}
         </nav>
+        {mobile && token && mobileMainHidden ? (
+          <div hidden aria-hidden>
+            <Outlet />
+          </div>
+        ) : null}
       </header>
-      <main style={{ flex: 1, minHeight: 0 }}>
-        <div
-          style={
-            mobile && token && mobileMainHidden
-              ? { display: "none" }
-              : { display: "block", minHeight: "100%" }
-          }
-          aria-hidden={mobile && token && mobileMainHidden ? true : undefined}
-        >
-          <Outlet />
-        </div>
+      <main
+        style={{
+          flex: mobile && token ? 0 : 1,
+          minHeight: 0,
+          display: mobile && token ? "none" : undefined,
+        }}
+        aria-hidden={mobile && token ? true : undefined}
+      >
+        {!(mobile && token) ? (
+          <div style={{ display: "block", minHeight: "100%" }}>
+            <Outlet />
+          </div>
+        ) : null}
       </main>
       {token ? <AiAdvisorChat /> : null}
       <AdSlot placement="footer" />

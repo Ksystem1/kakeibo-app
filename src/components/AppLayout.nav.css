@@ -78,3 +78,15 @@
     max-height: none;
   }
 }
+
+/* スマホ: 押したナビの直下に表示するページ領域 */
+.app-mobile-route-panel {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  padding: 0.5rem 0.35rem 0.85rem;
+  min-height: 0;
+}
