@@ -3,7 +3,15 @@ import {
   useSettings,
 } from "../context/SettingsContext";
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
 import { reclassifyUncategorizedReceipts } from "../lib/api";
+import {
+  clearPwaInstallBannerHidden,
+  isPwaInstallBannerHidden,
+  setPwaInstallBannerHidden,
+  subscribePwaInstallPrefs,
+} from "../lib/pwaInstallPrefs";
 import styles from "../components/KakeiboDashboard.module.css";
 import { CategoriesPage } from "./CategoriesPage";
 import { MembersPage } from "./MembersPage";
@@ -31,6 +39,28 @@ function itemsForFixedCostEditor(
 }
 
 export function SettingsPage() {
+  const location = useLocation();
+  const pwaTarget = usePwaTargetDevice();
+  const [pwaBannerHidden, setPwaBannerHidden] = useState(isPwaInstallBannerHidden);
+  const settingsBookmarkUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "") || "";
+    return `${window.location.origin}${base}/settings`;
+  }, []);
+
+  useEffect(() => subscribePwaInstallPrefs(() => setPwaBannerHidden(isPwaInstallBannerHidden())), []);
+
+  useEffect(() => {
+    const h = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
+    if (location.pathname !== "/settings" || h !== "pwa-install-help") return;
+    requestAnimationFrame(() => {
+      document.getElementById("pwa-install-help")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [location.hash, location.pathname]);
+
   const {
     fontScale,
     setFontScale,
@@ -139,6 +169,56 @@ export function SettingsPage() {
           className={styles.settingsRange}
         />
       </div>
+
+      {pwaTarget ? (
+        <div
+          id="pwa-install-help"
+          className={styles.settingsPanel}
+          style={{ marginTop: "1.5rem", maxWidth: 720 }}
+        >
+          <h2 className={styles.sectionTitle}>ホーム画面に追加（アプリのように使う）</h2>
+          <p className={styles.reclassifyHint}>
+            スマホ・タブレットでは、ブラウザを開かずに起動できるようにできます。下のリンクをブックマークしたり、ホームに追加した場合は、画面下の案内は表示しなくて構いません。
+          </p>
+          <ul className={styles.reclassifyHint} style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
+            <li>
+              <strong>Android（Chrome）</strong>: メニュー（⋮）の「アプリをインストール」または「ホーム画面に追加」、または画面下の「ホームに追加」から追加できます。
+            </li>
+            <li>
+              <strong>iPhone / iPad（Safari）</strong>: 共有ボタンから「ホーム画面に追加」を選びます。
+            </li>
+          </ul>
+          <p className={styles.reclassifyHint} style={{ marginTop: "0.5rem" }}>
+            この設定ページへのリンク:{" "}
+            <a href={settingsBookmarkUrl} style={{ wordBreak: "break-all" }}>
+              {settingsBookmarkUrl || "（読み込み中）"}
+            </a>
+          </p>
+          <div className={styles.modeRow} style={{ marginTop: "0.65rem", flexWrap: "wrap" }}>
+            {pwaBannerHidden ? (
+              <button
+                type="button"
+                className={styles.btn}
+                onClick={() => {
+                  clearPwaInstallBannerHidden();
+                }}
+              >
+                下の案内バーを再表示する
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnPrimary}`}
+                onClick={() => {
+                  setPwaInstallBannerHidden();
+                }}
+              >
+                追加済み・ショートカット利用中（案内を出さない）
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 720 }}>
         <h2 className={styles.sectionTitle}>固定費設定（全月共通）</h2>

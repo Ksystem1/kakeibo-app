@@ -1,4 +1,11 @@
 /// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/vanillajs" />
+
+interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: string[];
+  prompt(): Promise<void>;
+  readonly userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
 
 interface ImportMetaEnv {
   /** 開発時のみ vite.config が参照（既定 http://127.0.0.1:3456） */

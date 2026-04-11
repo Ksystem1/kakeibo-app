@@ -102,6 +102,10 @@ body {
   overflow-x: clip;
 }
 
+html[data-pwa-install-bar="1"] #root {
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
 .appNav {
   display: flex;
   align-items: center;

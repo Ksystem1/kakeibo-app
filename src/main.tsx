@@ -1,10 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import { registerSW } from "virtual:pwa-register";
 import App from "./App.tsx";
 import { AuthProvider } from "./context/AuthContext";
 import { SettingsProvider } from "./context/SettingsContext";
 import "./index.css";
+
+registerSW({ immediate: true });
 
 const routerBasename =
   import.meta.env.BASE_URL.replace(/\/$/, "") || "/";

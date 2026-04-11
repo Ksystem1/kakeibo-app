@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { PwaInstallBar } from "./components/PwaInstallBar";
 import { AppLayout } from "./components/AppLayout";
 import { AdminRoute } from "./components/AdminRoute";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -16,6 +17,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 
 export default function App() {
   return (
+    <>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
@@ -38,5 +40,7 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    <PwaInstallBar />
+    </>
   );
 }
