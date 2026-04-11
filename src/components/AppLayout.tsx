@@ -49,26 +49,27 @@ function linkStyle(
   };
 }
 
-/** 透過 PNG ナビ用。白いカード背景を付けずヘッダー（panel-bg）がそのまま見えるようにする */
+/**
+ * 透過 PNG ナビ用。背景・枠・影は付けない（アクティブ時の水色の丸枠も出さない）。
+ * 選択中はわずかに強調するだけ。
+ */
 function navIconLinkStyle(
-  mobile: boolean,
+  _mobile: boolean,
   { isActive }: { isActive: boolean },
 ) {
   return {
-    fontWeight: isActive ? 700 : 600,
-    color: isActive ? "var(--text)" : "var(--text-muted)",
     textDecoration: "none",
-    padding: mobile ? "0.35rem 0.5rem" : "0.42rem 0.55rem",
-    fontSize: mobile ? "0.8rem" : undefined,
-    borderRadius: 12,
-    border: isActive ? "1px solid var(--accent)" : "1px solid transparent",
-    background: isActive ? "var(--accent-dim)" : "transparent",
-    boxShadow: isActive ? "0 2px 10px rgba(22, 108, 182, 0.12)" : "none",
-    whiteSpace: "nowrap" as const,
-    minHeight: mobile ? 54 : 62,
+    padding: "0.12rem",
+    border: "none",
+    background: "transparent",
+    boxShadow: "none",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
+    lineHeight: 0,
+    opacity: isActive ? 1 : 0.9,
+    transform: isActive ? "scale(1.03)" : "none",
+    transition: "opacity 0.15s ease, transform 0.15s ease",
   };
 }
 
@@ -77,13 +78,17 @@ function navIconSrc(file: string) {
   return `${import.meta.env.BASE_URL}png-icons/${file}`;
 }
 
+/** 同一ボックス内に収めて高さ・見た目のスケールを揃える（画像のアスペクトは維持） */
 function navIconStyle(mobile: boolean) {
+  const w = mobile ? 112 : 138;
+  const h = mobile ? 46 : 54;
   return {
     display: "block",
-    width: mobile ? 116 : 146,
+    width: w,
+    height: h,
     maxWidth: "100%",
-    height: "auto",
     objectFit: "contain" as const,
+    objectPosition: "center",
   };
 }
 
@@ -281,7 +286,7 @@ export function AppLayout() {
             display: "flex",
             flexWrap: "wrap",
             alignItems: "center",
-            gap: mobile ? "0.28rem" : "0.35rem",
+            gap: mobile ? "0.2rem" : "0.28rem",
             width: "100%",
             minWidth: 0,
             paddingTop: "0.4rem",
