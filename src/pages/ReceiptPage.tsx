@@ -207,6 +207,13 @@ export function ReceiptPage() {
     summary: Record<string, unknown>;
     items: Array<{ name: string; amount: number | null; confidence?: number }>;
   } | null>(null);
+  /** 解析直後にフォームへ入れたメモ（店名）・カテゴリ。これと異なる内容で登録したときだけ学習する */
+  const [loadedReceiptBaseline, setLoadedReceiptBaseline] = useState<{
+    memo: string;
+    categoryId: number | null;
+  } | null>(null);
+  /** true のときはカテゴリ変更をユーザー操作とみなし、baseline を自動追従しない */
+  const categoryTouchedByUserRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [registering, setRegistering] = useState(false);
 
@@ -240,6 +247,17 @@ export function ReceiptPage() {
     const suggested = suggestExpenseCategoryId(categories, ocrVendor, items);
     if (suggested != null) setDraftCategoryId(suggested);
   }, [categories, ocrVendor, items, draftCategoryId]);
+
+  /** 解析時は categories が遅れて届くと keyword 提案が後から入る。baseline.categoryId が null のままだと誤学習するため、ユーザー未操作時だけ追従する */
+  useEffect(() => {
+    setLoadedReceiptBaseline((b) => {
+      if (!b) return b;
+      if (categoryTouchedByUserRef.current) return b;
+      if (b.categoryId != null) return b;
+      if (draftCategoryId == null) return b;
+      return { ...b, categoryId: draftCategoryId };
+    });
+  }, [draftCategoryId]);
 
   useEffect(() => {
     if (!touchUi || !loading) return;
@@ -284,6 +302,8 @@ export function ReceiptPage() {
     setCategorySuggestSource(null);
     setItems([]);
     setLastOcrForLearn(null);
+    setLoadedReceiptBaseline(null);
+    categoryTouchedByUserRef.current = false;
     try {
       const b64 = await prepareReceiptImageForApi(f);
       const r = await parseReceiptImage(b64);
@@ -329,13 +349,23 @@ export function ReceiptPage() {
         r.suggestedCategoryId == null
           ? pickCategoryIdByName(categories, r.suggestedCategoryName)
           : null;
-      setDraftCategoryId(r.suggestedCategoryId ?? aiNameMatchedId ?? localSuggested);
+      const initialCategoryId =
+        r.suggestedCategoryId ?? aiNameMatchedId ?? localSuggested ?? null;
+      setDraftCategoryId(initialCategoryId);
       setCategorySuggestSource(
         r.suggestedCategorySource ??
           (r.suggestedCategoryId == null && aiNameMatchedId == null && localSuggested != null
             ? "keywords"
             : null),
       );
+      const initialMemo =
+        r.learnCorrectionHit && r.suggestedMemo !== undefined
+          ? String(r.suggestedMemo).trim()
+          : vendorTrim;
+      setLoadedReceiptBaseline({
+        memo: initialMemo,
+        categoryId: initialCategoryId,
+      });
       {
         const parts: string[] = [];
         if (r.duplicateWarning) parts.push(r.duplicateWarning);
@@ -473,9 +503,10 @@ export function ReceiptPage() {
           <select
             id={categoryFieldId}
             value={draftCategoryId ?? ""}
-            onChange={(e) =>
-              setDraftCategoryId(e.target.value ? Number(e.target.value) : null)
-            }
+            onChange={(e) => {
+              categoryTouchedByUserRef.current = true;
+              setDraftCategoryId(e.target.value ? Number(e.target.value) : null);
+            }}
             disabled={loading}
           >
             <option value="">なし</option>
@@ -569,13 +600,19 @@ export function ReceiptPage() {
                 category_id: draftCategoryId,
                 from_receipt: true,
               });
-              if (lastOcrForLearn?.summary) {
-                void saveReceiptOcrCorrection({
-                  summary: lastOcrForLearn.summary,
-                  items: lastOcrForLearn.items,
-                  category_id: draftCategoryId,
-                  memo: draftMemo.trim() || null,
-                }).catch(() => {});
+              if (lastOcrForLearn?.summary && loadedReceiptBaseline) {
+                const submittedMemo = draftMemo.trim();
+                const submittedCat = draftCategoryId ?? null;
+                const memoChanged = submittedMemo !== loadedReceiptBaseline.memo;
+                const categoryChanged = submittedCat !== loadedReceiptBaseline.categoryId;
+                if (memoChanged || categoryChanged) {
+                  void saveReceiptOcrCorrection({
+                    summary: lastOcrForLearn.summary,
+                    items: lastOcrForLearn.items,
+                    category_id: draftCategoryId,
+                    memo: submittedMemo || null,
+                  }).catch(() => {});
+                }
               }
               const month = dateField.value.slice(0, 7);
               navigate(`/?month=${encodeURIComponent(month)}`, { replace: true });
