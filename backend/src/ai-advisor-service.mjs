@@ -641,37 +641,70 @@ function normalizeReceiptAiPayload(data) {
 }
 
 /**
- * @param {object} input
- * @param {Record<string, unknown>} [input.summary]
- * @param {unknown[]} [input.items]
- * @param {string[]} [input.ocrLines]
- * @param {string[]} [input.categoryCandidates] 登録済み支出カテゴリ名（このいずれかに最も近い名前を categoryName で返す）
- * @param {string} [input.imageBase64] 画像の生 base64（data URL 可）。付与時は画像＋テキストで解析。
- * @param {string} [input.imageMediaType] image/jpeg | image/png | image/webp
+ * @param {object} opts
+ * @param {boolean} opts.subscriptionActive
+ * @param {Record<string, unknown>} opts.summary
+ * @param {unknown[]} opts.items
+ * @param {string[]} opts.ocrLines
+ * @param {string[]} opts.categoryCandidates
+ * @param {object[]} opts.historyHints
+ * @param {object|null} [opts.heuristicCategorySuggestion]
  */
-export async function askBedrockReceiptAssistant(input = {}) {
-  const summary = input?.summary && typeof input.summary === "object" ? input.summary : {};
-  const items = Array.isArray(input?.items) ? input.items : [];
-  const ocrLines = Array.isArray(input?.ocrLines) ? input.ocrLines : [];
-  const categoryCandidates = Array.isArray(input?.categoryCandidates)
-    ? input.categoryCandidates.map((x) => String(x ?? "").trim()).filter(Boolean)
-    : [];
-  const imageBase64 = input?.imageBase64 != null ? String(input.imageBase64) : "";
-  const imageMediaType =
-    input?.imageMediaType != null ? String(input.imageMediaType).toLowerCase() : "image/jpeg";
+function buildReceiptAiPromptBundle(opts) {
+  const subscriptionActive = Boolean(opts.subscriptionActive);
+  const summary = opts.summary;
+  const items = opts.items;
+  const ocrLines = opts.ocrLines;
+  const categoryCandidates = opts.categoryCandidates;
+  const historyHints = opts.historyHints;
+  const heuristic = opts.heuristicCategorySuggestion ?? null;
 
   const catList =
     categoryCandidates.length > 0
       ? categoryCandidates.join("、")
       : "（カテゴリ一覧なし。一般的な日本の家計簿名で推定）";
 
+  if (!subscriptionActive) {
+    const systemPrompt = [
+      "あなたは家計簿アプリのレシート読取AI（無料プラン用）です。",
+      "店名 vendorName は、添付画像に写っている文字、または補助JSONの ocrLines に文字として明確に現れる店舗名に限り出力してください。",
+      "一般知識・連想・住所からの推測で店名を補完・捏造しないでください。該当が無ければ vendorName は null。",
+      "totalAmount と date も、画像または ocrLines に読み取り根拠がある場合に限り出力してください。",
+      "明細の合算は、画像または ocrLines に明細金額が列挙されているときに限り可。",
+      "補助JSONには ocrLines のみ含まれます（Textract の構造化 summary/items は渡しません）。それ以外の情報は参照しないでください。",
+      `categoryName は画像・ocrLines の語から推測しつつ、次の登録名のいずれかに最も近い1つ。明確でなければ null: ${catList}`,
+      "必ず1つのJSONオブジェクトのみを返す。前後に説明文やマークダウンを付けない。",
+    ].join("\n");
+
+    const auxPayload = {
+      ocrLines,
+      note: "ocrLines のみが構造化テキストです（画像由来の生行）。",
+    };
+
+    const userTextPrompt = [
+      "無料プラン: 画像と ocrLines に現れた文字・数字のみを根拠に JSON を出力してください。",
+      "出力キー: vendorName, date, totalAmount, categoryName, reason",
+      "- vendorName: 上記根拠で特定できる店名のみ。なければ null",
+      "- date: YYYY-MM-DD、根拠なしなら null",
+      "- totalAmount: 根拠ある数値のみ。なければ null",
+      "- categoryName: 登録カテゴリ一覧に最も近い1語、なければ null",
+      "- reason: 根拠を1文（日本語）。どの文字を見たか簡潔に",
+      "",
+      "補助JSON:",
+      JSON.stringify(auxPayload),
+    ].join("\n");
+
+    return { systemPrompt, userTextPrompt, receiptAiTier: "free" };
+  }
+
   const systemPrompt = [
-    "あなたは家計簿アプリのレシート読取AIです。日本語レシートに強く、店舗名・合計・日付・支出カテゴリを推定します。",
-    "添付画像がある場合は画像の文字・レイアウトを最優先し、次に補助情報（Textractのsummary/items/ocrLines）を参照してください。",
-    `支出カテゴリは、次の登録済み名のいずれかに「最も近い」ものを1つだけ選び、categoryName にはその名前をできるだけそのまま出力してください: ${catList}`,
-    "店舗名・明細キーワードから推定してください（例: マクドナルド・スタバ・スーパー名→食費寄り、ドラッグストア→日用品、電車IC→交通費）。",
-    "店舗名が読めない場合は vendorName を null。合計金額が印字不明でも、明細行の金額から合理的に合計を推定できる場合は totalAmount に数値を入れてよい。どうしても無理なら totalAmount は null。",
-    "日付は YYYY-MM-DD のみ。読めなければ null。",
+    "あなたは家計簿アプリのレシート読取AI（サブスクリプション有効ユーザー向け）です。",
+    "添付画像の文字・レイアウトを最優先し、補助JSONの Textract summary/items/ocrLines を積極的に参照してください。",
+    "利用履歴ヒント historyHints は同一家族の過去支出（メモ・金額・日付・カテゴリ）です。画像上の店名が不完全でも、履歴と突き合わせて最も妥当な vendorName を推定してよい。",
+    "履歴と矛盾しない範囲で、定番チェーン店・屋号の正規化（略称→正式名称など）を行ってよい。",
+    `categoryName は次の登録済み名のいずれかに最も近い1つ: ${catList}`,
+    "合計が印字不明でも、明細が読めれば足し合わせて totalAmount を埋めてよい。",
+    "日付は YYYY-MM-DD。読めなければ null。",
     "必ず1つのJSONオブジェクトのみを返す。前後に説明文やマークダウンを付けない。",
   ].join("\n");
 
@@ -680,20 +713,65 @@ export async function askBedrockReceiptAssistant(input = {}) {
     items,
     ocrLines,
     categoryCandidates,
+    historyHints,
+    heuristicCategorySuggestion: heuristic,
   };
 
   const userTextPrompt = [
-    "添付レシート画像（ある場合）と、次の補助JSONを踏まえて抽出・補正してください。",
-    "出力は次のキーのみを持つJSON: vendorName, date, totalAmount, categoryName, reason",
-    "- vendorName: 店舗名。読取不可なら null",
+    "添付レシート画像（ある場合）と、補助JSON全体（履歴・ヒューリスティック候補を含む）を踏まえて抽出・補正してください。",
+    "出力キー: vendorName, date, totalAmount, categoryName, reason",
+    "- vendorName: 店舗名（履歴ヒントで特定を強力にサポートしてよい）。困難なら null",
     "- date: YYYY-MM-DD または null",
-    "- totalAmount: 税込合計の数値（円）。不明なら明細から足し合わせて推定を試み、だめなら null",
-    "- categoryName: 上記カテゴリ一覧のいずれかに最も近い文字列、または null",
-    "- reason: 1文で判断根拠（日本語）",
+    "- totalAmount: 税込合計（円）。明細からの合算可。だめなら null",
+    "- categoryName: 登録カテゴリ一覧に最も近い文字列、または null",
+    "- reason: 判断根拠を1文（日本語）。画像・履歴・補助JSONのどれを重視したか分かるように",
     "",
     "補助JSON:",
     JSON.stringify(auxPayload),
   ].join("\n");
+
+  return { systemPrompt, userTextPrompt, receiptAiTier: "subscribed" };
+}
+
+/**
+ * @param {object} input
+ * @param {boolean} [input.subscriptionActive] true のとき有料プロンプト（履歴ヒント・全補助JSON）
+ * @param {object[]} [input.historyHints] { date, memo, amount, categoryName }
+ * @param {object|null} [input.heuristicCategorySuggestion] { name, source }
+ * @param {Record<string, unknown>} [input.summary]
+ * @param {unknown[]} [input.items]
+ * @param {string[]} [input.ocrLines]
+ * @param {string[]} [input.categoryCandidates]
+ * @param {string} [input.imageBase64]
+ * @param {string} [input.imageMediaType]
+ */
+export async function askBedrockReceiptAssistant(input = {}) {
+  const summary = input?.summary && typeof input.summary === "object" ? input.summary : {};
+  const items = Array.isArray(input?.items) ? input.items : [];
+  const ocrLines = Array.isArray(input?.ocrLines) ? input.ocrLines : [];
+  const categoryCandidates = Array.isArray(input?.categoryCandidates)
+    ? input.categoryCandidates.map((x) => String(x ?? "").trim()).filter(Boolean)
+    : [];
+  const historyHints = Array.isArray(input?.historyHints) ? input.historyHints : [];
+  const heuristicCategorySuggestion =
+    input?.heuristicCategorySuggestion &&
+    typeof input.heuristicCategorySuggestion === "object"
+      ? input.heuristicCategorySuggestion
+      : null;
+  const subscriptionActive = Boolean(input?.subscriptionActive);
+  const imageBase64 = input?.imageBase64 != null ? String(input.imageBase64) : "";
+  const imageMediaType =
+    input?.imageMediaType != null ? String(input.imageMediaType).toLowerCase() : "image/jpeg";
+
+  const { systemPrompt, userTextPrompt, receiptAiTier } = buildReceiptAiPromptBundle({
+    subscriptionActive,
+    summary,
+    items,
+    ocrLines,
+    categoryCandidates,
+    historyHints,
+    heuristicCategorySuggestion,
+  });
 
   let rawReply = "";
   let receiptAiSource = "text";
@@ -734,5 +812,5 @@ export async function askBedrockReceiptAssistant(input = {}) {
   if (!data) {
     return { ok: false, code: "InvalidModelJson", message: "Receipt AI JSON parse failed" };
   }
-  return { ok: true, data, receiptAiSource };
+  return { ok: true, data, receiptAiSource, receiptAiTier };
 }

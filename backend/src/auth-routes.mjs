@@ -319,7 +319,13 @@ export async function tryAuthRoutes(req, ctx) {
           201,
           {
             token,
-            user: { id: userId, email, familyId, isAdmin: false },
+            user: {
+              id: userId,
+              email,
+              familyId,
+              isAdmin: false,
+              subscriptionStatus: "inactive",
+            },
           },
           hdrs,
           skipCors,
@@ -346,7 +352,7 @@ export async function tryAuthRoutes(req, ctx) {
         "auth.login.queryUser",
         () =>
           pool.query(
-          `SELECT id, email, password_hash, is_admin FROM users
+          `SELECT id, email, password_hash, is_admin, subscription_status FROM users
            WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`,
           [login, login],
         ),
@@ -374,7 +380,16 @@ export async function tryAuthRoutes(req, ctx) {
       const familyId = await getDefaultFamilyId(pool, u.id);
       return json(
         200,
-        { token, user: { id: u.id, email: u.email, familyId, isAdmin: Number(u.is_admin) === 1 } },
+        {
+          token,
+          user: {
+            id: u.id,
+            email: u.email,
+            familyId,
+            isAdmin: Number(u.is_admin) === 1,
+            subscriptionStatus: String(u.subscription_status ?? "inactive"),
+          },
+        },
         hdrs,
         skipCors,
       );
@@ -465,7 +480,7 @@ export async function tryAuthRoutes(req, ctx) {
         return json(401, { error: "認証が必要です" }, hdrs, skipCors);
       }
       const [rows] = await pool.query(
-        `SELECT id, email, login_name, display_name, default_family_id, is_admin FROM users WHERE id = ?`,
+        `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status FROM users WHERE id = ?`,
         [uid],
       );
       if (rows.length === 0) {
@@ -473,7 +488,7 @@ export async function tryAuthRoutes(req, ctx) {
       }
       const familyId = await getDefaultFamilyId(pool, uid);
       const row = rows[0] || {};
-      const { is_admin: isAdminRaw, ...safeUser } = row;
+      const { is_admin: isAdminRaw, subscription_status: subRaw, ...safeUser } = row;
       return json(
         200,
         {
@@ -481,6 +496,7 @@ export async function tryAuthRoutes(req, ctx) {
             ...safeUser,
             isAdmin: Number(isAdminRaw) === 1,
             familyId,
+            subscriptionStatus: String(subRaw ?? "inactive"),
           },
         },
         hdrs,

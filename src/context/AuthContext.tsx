@@ -14,6 +14,8 @@ type User = {
   email: string;
   familyId?: number | null;
   isAdmin?: boolean;
+  /** サーバ users.subscription_status（例: active / inactive） */
+  subscriptionStatus?: string;
 };
 
 type AuthState = {

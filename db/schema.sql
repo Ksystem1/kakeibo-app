@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   cognito_sub     CHAR(36) NULL COMMENT 'Cognito Username (sub) — UNIQUE 制約は下記',
   email           VARCHAR(255) NOT NULL,
   is_admin        TINYINT(1) NOT NULL DEFAULT 0 COMMENT '管理者フラグ（1=true）',
+  subscription_status VARCHAR(32) NOT NULL DEFAULT 'inactive' COMMENT 'inactive | active',
   display_name    VARCHAR(100) NULL,
   timezone        VARCHAR(64) NOT NULL DEFAULT 'Asia/Tokyo',
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

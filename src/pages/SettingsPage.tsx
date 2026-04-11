@@ -3,7 +3,6 @@ import {
   useSettings,
 } from "../context/SettingsContext";
 import { useAuth } from "../context/AuthContext";
-import { useFirebaseShop } from "../context/FirebaseShopContext";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
@@ -67,20 +66,7 @@ export function SettingsPage() {
     });
   }, [location.hash, location.pathname]);
 
-  const { token } = useAuth();
-  const {
-    enabled: firebaseShopEnabled,
-    authLoading: firebaseAuthLoading,
-    user: firebaseUser,
-    firestoreOwnedNavSkins,
-    signInWithGoogle,
-    signOutFirebase,
-  } = useFirebaseShop();
-  const stripeCheckoutUrl =
-    import.meta.env.VITE_STRIPE_CHECKOUT_URL?.trim() ?? "";
-  const [firebaseShopError, setFirebaseShopError] = useState<string | null>(
-    null,
-  );
+  const { token, user: authUser } = useAuth();
   const {
     fontScale,
     setFontScale,
@@ -197,7 +183,7 @@ export function SettingsPage() {
       <div className={styles.settingsPanel} style={{ marginTop: "1.25rem", maxWidth: 820 }}>
         <h2 className={styles.sectionTitle}>ナビアイコンのスキン</h2>
         <p className={styles.reclassifyHint}>
-          下部タブのアイコン画像のセットです。未購入のスキンは鍵付きで選べません。
+          下部タブのアイコン画像のセットです。
         </p>
         <div
           className={styles.modeRow}
@@ -222,104 +208,18 @@ export function SettingsPage() {
             </button>
           ))}
         </div>
-        {firebaseShopEnabled ? (
-          <div style={{ marginTop: "0.75rem" }}>
-            <p className={styles.sub} style={{ margin: "0 0 0.5rem", fontSize: "0.78rem" }}>
-              プレミアム（Tmp02）: Google ログイン後、Firestore の{" "}
-              <code style={{ margin: "0 0.15rem" }}>users/&lt;uid&gt;</code>{" "}
-              ドキュメントの{" "}
-              <code style={{ margin: "0 0.15rem" }}>owned_nav_skins</code>{" "}
-              配列に <code style={{ margin: "0 0.15rem" }}>&quot;Tmp02&quot;</code>{" "}
-              が含まれるとボタンが有効になります。
-            </p>
-            {firebaseAuthLoading ? (
-              <p className={styles.infoText}>Firebase 認証を確認しています…</p>
-            ) : firebaseUser ? (
-              <>
-                <p className={styles.infoText} style={{ wordBreak: "break-all" }}>
-                  {firebaseUser.email ?? firebaseUser.uid}
-                </p>
-                <p className={styles.infoText}>
-                  Firestore{" "}
-                  <code style={{ margin: "0 0.15rem" }}>owned_nav_skins</code>:{" "}
-                  {firestoreOwnedNavSkins.length > 0
-                    ? firestoreOwnedNavSkins.join(", ")
-                    : "（なし）"}
-                </p>
-                <div
-                  className={styles.modeRow}
-                  style={{ marginTop: "0.4rem", flexWrap: "wrap", gap: "0.4rem" }}
-                >
-                  <button
-                    type="button"
-                    className={styles.btn}
-                    onClick={() => {
-                      setFirebaseShopError(null);
-                      void signOutFirebase().catch((e) => {
-                        setFirebaseShopError(
-                          e instanceof Error ? e.message : String(e),
-                        );
-                      });
-                    }}
-                  >
-                    Google からログアウト
-                  </button>
-                  {stripeCheckoutUrl ? (
-                    <button
-                      type="button"
-                      className={`${styles.btn} ${styles.btnPrimary}`}
-                      onClick={() => {
-                        window.location.assign(stripeCheckoutUrl);
-                      }}
-                    >
-                      プレミアムを購入（Checkout）
-                    </button>
-                  ) : null}
-                </div>
-              </>
-            ) : (
-              <div
-                className={styles.modeRow}
-                style={{ marginTop: "0.4rem", flexWrap: "wrap", gap: "0.4rem" }}
-              >
-                <button
-                  type="button"
-                  className={`${styles.btn} ${styles.btnPrimary}`}
-                  onClick={() => {
-                    setFirebaseShopError(null);
-                    void signInWithGoogle().catch((e) => {
-                      setFirebaseShopError(
-                        e instanceof Error ? e.message : String(e),
-                      );
-                    });
-                  }}
-                >
-                  Google でログイン（スキン購入用）
-                </button>
-                {stripeCheckoutUrl ? (
-                  <button
-                    type="button"
-                    className={styles.btn}
-                    onClick={() => {
-                      window.location.assign(stripeCheckoutUrl);
-                    }}
-                  >
-                    購入ページへ
-                  </button>
-                ) : null}
-              </div>
-            )}
-            {firebaseShopError ? (
-              <p className={styles.infoText}>{firebaseShopError}</p>
-            ) : null}
-          </div>
-        ) : navSkinOptions.some((o) => !o.unlocked) ? (
+        {navSkinOptions.some((o) => !o.unlocked) ? (
           <p className={styles.sub} style={{ margin: "0.6rem 0 0", fontSize: "0.78rem" }}>
-            Firebase 未設定時の開発確認: localStorage の
+            開発用: localStorage の
             <code style={{ margin: "0 0.2rem" }}>kakeibo_owned_nav_skins</code>
-            に
-            <code style={{ margin: "0 0.2rem" }}>[&quot;Tmp02&quot;]</code>
-            などの JSON 配列。
+            にスキンIDの JSON 配列で解放を試せます。
+          </p>
+        ) : null}
+        {token && authUser ? (
+          <p className={styles.sub} style={{ margin: "0.5rem 0 0", fontSize: "0.78rem" }}>
+            サブスクリプション:{" "}
+            <strong>{authUser.subscriptionStatus ?? "inactive"}</strong>
+            （active のときレシートAIが履歴ヒント込みの高精度モード）
           </p>
         ) : null}
       </div>

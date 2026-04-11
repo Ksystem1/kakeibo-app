@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "./AuthContext";
-import { useFirebaseShop } from "./FirebaseShopContext";
 import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
@@ -20,7 +19,7 @@ import {
   type NavIconPaths,
   buildNavIconPaths,
   resolveEffectiveNavSkinId,
-  isNavSkinEntitled,
+  isNavSkinUnlocked,
   isKnownNavSkinId,
   DEFAULT_NAV_SKIN_ID,
 } from "../config/navSkins";
@@ -179,9 +178,6 @@ const SettingsContext = createContext<Settings | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
-  const { enabled: firebaseShopEnabled, user: firebaseUser, firestoreOwnedNavSkins } =
-    useFirebaseShop();
-  const firebaseSignedInForPaidSkins = Boolean(firebaseShopEnabled && firebaseUser);
   const apiBase = getApiBaseUrl();
 
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
@@ -323,46 +319,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     };
   }, [token, apiBase]);
 
-  useEffect(() => {
-    const entitled = (skinId: string) =>
-      isNavSkinEntitled(
-        skinId,
-        ownedNavSkinIds,
-        firestoreOwnedNavSkins,
-        firebaseSignedInForPaidSkins,
-      );
-    if (entitled(navSkinId)) return;
-    const fallback =
-      NAV_SKIN_CATALOG.find((s) => entitled(s.id))?.id ?? DEFAULT_NAV_SKIN_ID;
-    setNavSkinIdState(fallback);
-  }, [
-    ownedNavSkinIds,
-    firestoreOwnedNavSkins,
-    firebaseSignedInForPaidSkins,
-    navSkinId,
-  ]);
-
   const setNavSkinId = useCallback(
     (id: string) => {
       if (!isKnownNavSkinId(id)) return false;
-      if (
-        !isNavSkinEntitled(
-          id,
-          ownedNavSkinIds,
-          firestoreOwnedNavSkins,
-          firebaseSignedInForPaidSkins,
-        )
-      ) {
-        return false;
-      }
+      if (!isNavSkinUnlocked(id, ownedNavSkinIds)) return false;
       setNavSkinIdState(id);
       return true;
     },
-    [
-      ownedNavSkinIds,
-      firestoreOwnedNavSkins,
-      firebaseSignedInForPaidSkins,
-    ],
+    [ownedNavSkinIds],
   );
 
   const mergeOwnedNavSkinsFromServer = useCallback((ids: readonly string[]) => {
@@ -381,20 +345,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         id: s.id,
         label: s.label,
         description: s.description,
-        unlocked: isNavSkinEntitled(
-          s.id,
-          ownedNavSkinIds,
-          firestoreOwnedNavSkins,
-          firebaseSignedInForPaidSkins,
-        ),
+        unlocked: isNavSkinUnlocked(s.id, ownedNavSkinIds),
         selected: s.id === navSkinId,
       })),
-    [
-      ownedNavSkinIds,
-      firestoreOwnedNavSkins,
-      firebaseSignedInForPaidSkins,
-      navSkinId,
-    ],
+    [ownedNavSkinIds, navSkinId],
   );
 
   const setFontScale = (n: number) => {

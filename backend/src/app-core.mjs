@@ -26,6 +26,7 @@ import {
   askBedrockReceiptAssistant,
   inferReceiptImageMediaTypeFromBuffer,
 } from "./ai-advisor-service.mjs";
+import { isSubscriptionActive } from "./subscription-logic.mjs";
 
 const logger = createLogger("api");
 
@@ -444,6 +445,52 @@ async function suggestExpenseCategoryForReceipt(pool, userId, catWhere, txWhere,
   }
   if (!best || best.score <= 0) return null;
   return { id: best.id, name: best.name, source: "keywords" };
+}
+
+async function loadUserSubscriptionStatus(pool, userId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT subscription_status FROM users WHERE id = ? LIMIT 1`,
+      [userId],
+    );
+    if (!Array.isArray(rows) || rows.length === 0) return "inactive";
+    return String(rows[0].subscription_status ?? "inactive");
+  } catch (e) {
+    const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+    if (code === "ER_BAD_FIELD_ERROR") {
+      logger.warn("subscription_status column missing; defaulting to inactive", {
+        userId,
+      });
+      return "inactive";
+    }
+    throw e;
+  }
+}
+
+/**
+ * サブスク有料レシートAI向け: 家族スコープの最近の支出メモをヒントに渡す。
+ */
+async function fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere, limit = 48) {
+  const lim = Math.min(80, Math.max(8, Number(limit) || 48));
+  const [rows] = await pool.query(
+    `SELECT t.transaction_date AS d, t.memo, t.amount, c.name AS category_name
+     FROM transactions t
+     LEFT JOIN categories c ON c.id = t.category_id
+     WHERE ${txWhere}
+       AND t.kind = 'expense'
+       AND TRIM(COALESCE(t.memo, '')) <> ''
+     ORDER BY t.transaction_date DESC, t.id DESC
+     LIMIT ?`,
+    [userId, userId, lim],
+  );
+  if (!Array.isArray(rows)) return [];
+  return rows.map((r) => ({
+    date: r.d ? String(r.d).slice(0, 10) : "",
+    memo: r.memo != null ? String(r.memo).trim().slice(0, 200) : "",
+    amount: r.amount != null ? String(r.amount) : "",
+    categoryName:
+      r.category_name != null ? String(r.category_name).trim().slice(0, 100) : null,
+  }));
 }
 
 function tokenizeMemo(text) {
@@ -1937,9 +1984,22 @@ export async function handleApiRequest(req, options = {}) {
             result?.summary?.vendorName ?? "",
             result?.items ?? [],
           );
+          const subscriptionStatus = await loadUserSubscriptionStatus(pool, userId);
+          const subscriptionActive = isSubscriptionActive(subscriptionStatus);
+          const historyHints = subscriptionActive
+            ? await fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere)
+            : [];
           let aiReceipt = null;
           try {
             aiReceipt = await askBedrockReceiptAssistant({
+              subscriptionActive,
+              historyHints,
+              heuristicCategorySuggestion: suggestedCategory
+                ? {
+                    name: suggestedCategory.name,
+                    source: suggestedCategory.source,
+                  }
+                : null,
               summary: result?.summary ?? {},
               items: result?.items ?? [],
               ocrLines: result?.ocrLines ?? [],
@@ -2104,6 +2164,8 @@ export async function handleApiRequest(req, options = {}) {
             suggestedCategoryName: finalSuggestedName ?? null,
             suggestedCategorySource: finalSource,
             suggestedCategoryCorrectionMode: learnedMode,
+            subscriptionActive,
+            receiptAiTier: aiReceipt?.receiptAiTier ?? null,
           };
           if (learnCorrectionHit && learnedMemoPresent) {
             body.suggestedMemo = learnedMemoValue;

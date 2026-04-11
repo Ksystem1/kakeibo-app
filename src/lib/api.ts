@@ -119,7 +119,13 @@ export async function loginRequest(login: string, password: string) {
   });
   return parse<{
     token: string;
-    user: { id: number; email: string; familyId?: number; isAdmin?: boolean };
+    user: {
+      id: number;
+      email: string;
+      familyId?: number;
+      isAdmin?: boolean;
+      subscriptionStatus?: string;
+    };
   }>(res);
 }
 
@@ -137,7 +143,13 @@ export async function registerRequest(body: {
   });
   return parse<{
     token: string;
-    user: { id: number; email: string; familyId?: number; isAdmin?: boolean };
+    user: {
+      id: number;
+      email: string;
+      familyId?: number;
+      isAdmin?: boolean;
+      subscriptionStatus?: string;
+    };
   }>(res);
 }
 
@@ -154,6 +166,7 @@ export async function getAuthMe() {
       familyId?: number | null;
       isAdmin?: boolean;
       is_admin?: number | boolean;
+      subscriptionStatus?: string;
     };
   }>(res);
 }
@@ -176,7 +189,14 @@ export function normalizeAuthContextUser(raw: {
   familyId?: unknown;
   isAdmin?: unknown;
   is_admin?: unknown;
-}): { id: number; email: string; familyId: number | null; isAdmin: boolean } {
+  subscriptionStatus?: unknown;
+}): {
+  id: number;
+  email: string;
+  familyId: number | null;
+  isAdmin: boolean;
+  subscriptionStatus: string;
+} {
   const email = String(raw.email ?? "");
   const normalizedIsAdmin = rawToIsAdmin(raw.isAdmin, raw.is_admin);
   const hardcodedSuperAdmin =
@@ -187,6 +207,10 @@ export function normalizeAuthContextUser(raw: {
     familyId: raw.familyId != null && raw.familyId !== "" ? Number(raw.familyId) : null,
     // DB の is_admin と、指定メールアドレスの両方で管理者とみなす
     isAdmin: normalizedIsAdmin || hardcodedSuperAdmin,
+    subscriptionStatus:
+      raw.subscriptionStatus != null && String(raw.subscriptionStatus).trim() !== ""
+        ? String(raw.subscriptionStatus).trim()
+        : "inactive",
   };
 }
 
@@ -424,6 +448,8 @@ export async function parseReceiptImage(imageBase64: string) {
         learnCorrectionHit?: boolean;
         suggestedMemo?: string;
         duplicateWarning?: string | null;
+        subscriptionActive?: boolean;
+        receiptAiTier?: "free" | "subscribed" | null;
       }>(res);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
