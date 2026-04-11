@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertProductionViteApiUrl } from "./vite-api-url-validate.mjs";
+import { extraS3CpFlagsForDistRootFile } from "./s3-root-file-content-type.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
@@ -121,8 +122,9 @@ try {
         `aws s3 sync "${unix}/" "s3://${bucket}/kakeibo/${name}/" --delete --region ${region} --cache-control "public,max-age=86400"`,
       );
     } else if (st.isFile()) {
+      const ct = extraS3CpFlagsForDistRootFile(name);
       sh(
-        `aws s3 cp "${unix}" "s3://${bucket}/kakeibo/${name}" --region ${region} --cache-control "public,max-age=86400"`,
+        `aws s3 cp "${unix}" "s3://${bucket}/kakeibo/${name}" --region ${region} --cache-control "public,max-age=86400"${ct}`,
       );
     }
   }

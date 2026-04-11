@@ -7,7 +7,16 @@ import { AuthProvider } from "./context/AuthContext";
 import { SettingsProvider } from "./context/SettingsContext";
 import "./index.css";
 
-registerSW({ immediate: true });
+registerSW({
+  immediate: true,
+  onRegisteredSW(_swUrl, registration) {
+    if (!registration) return;
+    const hour = 60 * 60 * 1000;
+    setInterval(() => {
+      void registration.update();
+    }, hour);
+  },
+});
 
 const routerBasename =
   import.meta.env.BASE_URL.replace(/\/$/, "") || "/";

@@ -7,11 +7,9 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget =
     env.VITE_API_PROXY_TARGET?.replace(/\/$/, "") || "http://127.0.0.1:3456";
 
-  const pwaCanon = env.VITE_PWA_CANONICAL_ORIGIN?.replace(/\/$/, "").trim() || "";
-  const pwaManifestBase = pwaCanon ? `${pwaCanon}/kakeibo/` : "/kakeibo/";
-  const pwaIconSrc = pwaCanon
-    ? `${pwaCanon}/kakeibo/brand-kakeibo-2.png`
-    : "/kakeibo/brand-kakeibo-2.png";
+  /** マニフェストの start_url / scope / id はパス形式に統一（絶対URLは iOS のスタンドアロン起動で不具合報告あり） */
+  const pwaScope = "/kakeibo/";
+  const pwaIcon = "/kakeibo/brand-kakeibo-2.png";
 
   return {
     // 本番: https://ksystemapp.com/kakeibo/（CloudFront+S3）。ローカルは http://localhost:5173/kakeibo/
@@ -22,34 +20,40 @@ export default defineConfig(({ mode }) => {
         registerType: "autoUpdate",
         includeAssets: ["robots.txt", "og-image.png", "top-hero.png"],
         manifest: {
+          id: pwaScope,
           name: "Kakeibo 家計簿",
           short_name: "Kakeibo",
           description: "家族で共有できる家計簿アプリ",
-          ...(pwaCanon
-            ? {
-                id: pwaManifestBase,
-                start_url: pwaManifestBase,
-                scope: pwaManifestBase,
-              }
-            : {
-                start_url: "/kakeibo/",
-                scope: "/kakeibo/",
-              }),
+          lang: "ja",
+          start_url: pwaScope,
+          scope: pwaScope,
           display: "standalone",
+          display_override: ["standalone", "browser"],
           orientation: "portrait",
           background_color: "#f5f8fc",
           theme_color: "#ffd166",
           icons: [
             {
-              src: pwaIconSrc,
+              src: pwaIcon,
               sizes: "1024x1024",
               type: "image/png",
-              purpose: "any maskable",
+              purpose: "any",
+            },
+            {
+              src: pwaIcon,
+              sizes: "1024x1024",
+              type: "image/png",
+              purpose: "maskable",
             },
           ],
         },
         workbox: {
           navigateFallback: "/kakeibo/index.html",
+          navigateFallbackDenylist: [
+            /^\/kakeibo\/sw\.js$/,
+            /^\/kakeibo\/workbox-[^/]+\.js$/i,
+            /\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|json|webmanifest|map|txt|xml|woff2?)$/i,
+          ],
           globPatterns: ["**/*.{js,css,html,ico,png,svg,webp}"],
           runtimeCaching: [
             {
