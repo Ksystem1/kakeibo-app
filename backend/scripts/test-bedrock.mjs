@@ -3,11 +3,8 @@ import { askBedrockAdvisor } from "../src/ai-advisor-service.mjs";
 
 async function main() {
   const region = String(process.env.BEDROCK_REGION || "").trim();
-  const modelId = String(process.env.BEDROCK_MODEL_ID || "").trim();
-  if (!region || !modelId) {
-    console.error(
-      "Missing required envs. Set BEDROCK_REGION and BEDROCK_MODEL_ID in backend/.env first.",
-    );
+  if (!region) {
+    console.error("Missing BEDROCK_REGION. Set it in backend/.env (e.g. ap-northeast-1).");
     process.exit(1);
   }
 
@@ -24,7 +21,7 @@ async function main() {
   }
 
   console.log("Bedrock connection OK");
-  console.log("Model:", modelId);
+  console.log("Model used:", out.modelId ?? "(see logs)");
   console.log("Reply:", out.reply);
 }
 

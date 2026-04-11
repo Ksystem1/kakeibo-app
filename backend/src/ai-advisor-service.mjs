@@ -8,9 +8,28 @@ import { createLogger } from "./logger.mjs";
 const logger = createLogger("bedrock");
 
 const DEFAULT_REGION = "ap-northeast-1";
-const DEFAULT_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0";
-/** 実在IDのみ。誤った推論プロファイル ID や未サフィックス ID は ValidationException の原因になる */
-const FALLBACK_MODEL_IDS = [
+/**
+ * オンデマンドで基盤モデル ID 直指定が拒否されるリージョンでは、
+ * システム定義の推論プロファイル ID（地域プレフィックス付き）が必要。
+ * @see https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
+ */
+function inferenceProfileCandidatesForRegion(region) {
+  const r = String(region || DEFAULT_REGION).toLowerCase().trim() || DEFAULT_REGION;
+  let geo = "us";
+  if (r.startsWith("eu-")) geo = "eu";
+  else if (r.startsWith("ap-")) geo = "apac";
+  else if (r.startsWith("us-") || r.startsWith("ca-") || r.startsWith("mx-")) geo = "us";
+  else if (r.startsWith("sa-")) geo = "us";
+
+  return [
+    `${geo}.anthropic.claude-3-5-sonnet-20240620-v1:0`,
+    `${geo}.anthropic.claude-3-5-haiku-20241022-v1:0`,
+    "global.anthropic.claude-sonnet-4-20250514-v1:0",
+  ];
+}
+
+/** レガシー: まだオンデマンド直指定が効く環境向け（失敗時は上記プロファイルで再試行済み） */
+const LEGACY_FOUNDATION_MODEL_IDS = [
   "anthropic.claude-3-5-sonnet-20240620-v1:0",
   "anthropic.claude-3-5-haiku-20241022-v1:0",
   "anthropic.claude-sonnet-4-20250514-v1:0",
@@ -20,11 +39,13 @@ function getBedrockConfig() {
   const region =
     String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() ||
     DEFAULT_REGION;
-  const modelId = String(process.env.BEDROCK_MODEL_ID || DEFAULT_MODEL_ID).trim();
-  const candidates = [modelId, ...FALLBACK_MODEL_IDS]
+  const explicit = String(process.env.BEDROCK_MODEL_ID || "").trim();
+  const profiles = inferenceProfileCandidatesForRegion(region);
+  const candidates = [...(explicit ? [explicit] : []), ...profiles, ...LEGACY_FOUNDATION_MODEL_IDS]
     .map((x) => String(x || "").trim())
     .filter(Boolean)
     .filter((x, i, arr) => arr.indexOf(x) === i);
+  const modelId = explicit || profiles[0] || LEGACY_FOUNDATION_MODEL_IDS[0];
   return { region, modelId, candidates };
 }
 
@@ -297,7 +318,7 @@ async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, te
     return {
       ok: false,
       code: "NoBedrockConfig",
-      message: "BEDROCK_MODEL_ID is empty",
+      message: "No Bedrock model candidates (region misconfigured?)",
       authFailed: false,
       throttled: false,
       validationFailed: false,
