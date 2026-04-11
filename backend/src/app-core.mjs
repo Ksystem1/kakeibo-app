@@ -34,6 +34,13 @@ function logError(event, e, extra = {}) {
   logger.error(event, e, extra);
 }
 
+/** クライアントの debugForceReceiptTier を受け付けるか（本番は既定オフ） */
+function isReceiptSubscriptionDebugAllowed() {
+  const flag = String(process.env.RECEIPT_DEBUG_SUBSCRIPTION_TIER ?? "").trim();
+  if (flag === "1" || flag.toLowerCase() === "true") return true;
+  return String(process.env.NODE_ENV).toLowerCase() !== "production";
+}
+
 function json(statusCode, body, reqHeaders, skipCors) {
   const cors = skipCors ? {} : buildCorsHeaders(reqHeaders);
   return {
@@ -1985,7 +1992,18 @@ export async function handleApiRequest(req, options = {}) {
             result?.items ?? [],
           );
           const subscriptionStatus = await loadUserSubscriptionStatus(pool, userId);
-          const subscriptionActive = isSubscriptionActive(subscriptionStatus);
+          let subscriptionActive = isSubscriptionActive(subscriptionStatus);
+          let debugReceiptTierOverride = null;
+          if (isReceiptSubscriptionDebugAllowed()) {
+            const raw =
+              b.debugForceReceiptTier != null
+                ? String(b.debugForceReceiptTier).trim().toLowerCase()
+                : "";
+            if (raw === "free" || raw === "subscribed") {
+              debugReceiptTierOverride = raw;
+              subscriptionActive = raw === "subscribed";
+            }
+          }
           const historyHints = subscriptionActive
             ? await fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere)
             : [];
@@ -2166,6 +2184,7 @@ export async function handleApiRequest(req, options = {}) {
             suggestedCategoryCorrectionMode: learnedMode,
             subscriptionActive,
             receiptAiTier: aiReceipt?.receiptAiTier ?? null,
+            debugReceiptTierOverride,
           };
           if (learnCorrectionHit && learnedMemoPresent) {
             body.suggestedMemo = learnedMemoValue;

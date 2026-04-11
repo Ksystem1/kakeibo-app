@@ -9,6 +9,7 @@ import {
 } from "../lib/api";
 import { normalizeReceiptDateToYmd } from "../lib/receiptDate";
 import { prepareReceiptImageForApi } from "../lib/receiptImage";
+import { getReceiptDebugTier } from "../lib/receiptDebugTier";
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
 
@@ -216,6 +217,19 @@ export function ReceiptPage() {
   const categoryTouchedByUserRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [receiptDebugTier, setReceiptDebugTierState] = useState(() =>
+    getReceiptDebugTier(),
+  );
+
+  useEffect(() => {
+    const sync = () => setReceiptDebugTierState(getReceiptDebugTier());
+    window.addEventListener("kakeibo-receipt-debug-tier", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("kakeibo-receipt-debug-tier", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -306,7 +320,9 @@ export function ReceiptPage() {
     categoryTouchedByUserRef.current = false;
     try {
       const b64 = await prepareReceiptImageForApi(f);
-      const r = await parseReceiptImage(b64);
+      const r = await parseReceiptImage(b64, {
+        debugForceReceiptTier: receiptDebugTier,
+      });
       setItems(r.items ?? []);
       const s = r.summary;
       if (s && typeof s === "object") {
@@ -421,6 +437,16 @@ export function ReceiptPage() {
     <div className={styles.wrap}>
       {loading ? loadingUi : null}
       <h1 className={styles.title}>レシート読取</h1>
+      {receiptDebugTier !== "server" ? (
+        <p
+          className={styles.infoText}
+          style={{ marginTop: "0.35rem", maxWidth: 640 }}
+        >
+          開発: レシートAIは「
+          {receiptDebugTier === "free" ? "無料（厳密）" : "有料（履歴ヒントあり）"}
+          」プロンプトを強制中。設定画面のボタンで切り替えられます。
+        </p>
+      ) : null}
 
       {/* file input は flex 行の外に置き、一部モバイル WebView でレイアウトに影響しないようにする */}
       {touchUi ? (

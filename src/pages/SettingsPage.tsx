@@ -12,6 +12,11 @@ import {
   reclassifyUncategorizedReceipts,
 } from "../lib/api";
 import {
+  getReceiptDebugTier,
+  setReceiptDebugTier,
+  type ReceiptDebugTier,
+} from "../lib/receiptDebugTier";
+import {
   clearPwaInstallBannerHidden,
   isPwaInstallBannerHidden,
   setPwaInstallBannerHidden,
@@ -83,6 +88,19 @@ export function SettingsPage() {
   const [reclassifyResult, setReclassifyResult] = useState<string | null>(null);
   const [fixedSaveBusy, setFixedSaveBusy] = useState(false);
   const [fixedSaveMessage, setFixedSaveMessage] = useState<string | null>(null);
+  const [receiptDebugTier, setReceiptDebugTierState] = useState<ReceiptDebugTier>(() =>
+    typeof window !== "undefined" ? getReceiptDebugTier() : "server",
+  );
+
+  useEffect(() => {
+    const sync = () => setReceiptDebugTierState(getReceiptDebugTier());
+    window.addEventListener("kakeibo-receipt-debug-tier", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("kakeibo-receipt-debug-tier", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
     itemsForFixedCostEditor(fixedCostsByMonth),
   );
@@ -222,6 +240,65 @@ export function SettingsPage() {
             （active のときレシートAIが履歴ヒント込みの高精度モード）
           </p>
         ) : null}
+      </div>
+
+      <div className={styles.settingsPanel} style={{ marginTop: "1.25rem", maxWidth: 820 }}>
+        <h2 className={styles.sectionTitle}>開発用: レシートAI プロンプトの強制切替</h2>
+        <p className={styles.reclassifyHint}>
+          一時的なテスト用です。DB のサブスク状態に関係なく、無料版・有料版の Bedrock
+          プロンプトを切り替えて比較できます。値はこのブラウザの localStorage に保存されます。
+        </p>
+        <p className={styles.sub} style={{ margin: "0.35rem 0 0.5rem", fontSize: "0.78rem" }}>
+          本番 API（NODE_ENV=production）では、サーバに{" "}
+          <code style={{ margin: "0 0.15rem" }}>RECEIPT_DEBUG_SUBSCRIPTION_TIER=1</code>{" "}
+          が無いとリクエストの強制は無視されます。ローカル <code>npm run dev:api</code>{" "}
+          では通常そのまま有効です。
+        </p>
+        <div
+          className={styles.modeRow}
+          style={{ marginTop: "0.5rem", flexWrap: "wrap", gap: "0.4rem" }}
+        >
+          <button
+            type="button"
+            className={`${styles.btn} ${receiptDebugTier === "server" ? styles.btnPrimary : ""}`}
+            onClick={() => {
+              setReceiptDebugTier("server");
+              setReceiptDebugTierState("server");
+            }}
+          >
+            サーバのサブスクに従う
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${receiptDebugTier === "free" ? styles.btnPrimary : ""}`}
+            onClick={() => {
+              setReceiptDebugTier("free");
+              setReceiptDebugTierState("free");
+            }}
+          >
+            無料プロンプトを強制
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${receiptDebugTier === "subscribed" ? styles.btnPrimary : ""}`}
+            onClick={() => {
+              setReceiptDebugTier("subscribed");
+              setReceiptDebugTierState("subscribed");
+            }}
+          >
+            有料プロンプトを強制
+          </button>
+        </div>
+        <p className={styles.infoText} style={{ marginTop: "0.45rem" }}>
+          現在:{" "}
+          <strong>
+            {receiptDebugTier === "server"
+              ? "サーバ準拠"
+              : receiptDebugTier === "free"
+                ? "無料（厳密）強制"
+                : "有料（履歴ヒント）強制"}
+          </strong>
+        </p>
       </div>
 
       {pwaTarget ? (

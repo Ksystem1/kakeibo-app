@@ -418,7 +418,17 @@ export async function importCsvText(csvText: string) {
   }>(res);
 }
 
-export async function parseReceiptImage(imageBase64: string) {
+export type ParseReceiptDebugTier = "server" | "free" | "subscribed";
+
+export async function parseReceiptImage(
+  imageBase64: string,
+  options?: { debugForceReceiptTier?: ParseReceiptDebugTier },
+) {
+  const tier = options?.debugForceReceiptTier ?? "server";
+  const body: Record<string, unknown> = { imageBase64 };
+  if (tier === "free" || tier === "subscribed") {
+    body.debugForceReceiptTier = tier;
+  }
   for (let attempt = 1; attempt <= RECEIPT_PARSE_MAX_RETRIES; attempt += 1) {
     try {
       const res = await apiFetch(
@@ -426,7 +436,7 @@ export async function parseReceiptImage(imageBase64: string) {
         {
           method: "POST",
           headers: buildHeaders(),
-          body: JSON.stringify({ imageBase64 }),
+          body: JSON.stringify(body),
         },
         RECEIPT_PARSE_TIMEOUT_MS,
       );
@@ -450,6 +460,7 @@ export async function parseReceiptImage(imageBase64: string) {
         duplicateWarning?: string | null;
         subscriptionActive?: boolean;
         receiptAiTier?: "free" | "subscribed" | null;
+        debugReceiptTierOverride?: "free" | "subscribed" | null;
       }>(res);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
