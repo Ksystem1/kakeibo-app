@@ -21,18 +21,18 @@ function inferenceProfileCandidatesForRegion(region) {
   else if (r.startsWith("us-") || r.startsWith("ca-") || r.startsWith("mx-")) geo = "us";
   else if (r.startsWith("sa-")) geo = "us";
 
+  // Claude 3.5 はクロスリージョン推論プロファイル（東京=apac.*）がオンデマンドで安定。
+  // anthropic.claude-sonnet-4-* の基盤モデル ID 直指定は多くのリージョンで on-demand 非対応のため候補に含めない。
   return [
     `${geo}.anthropic.claude-3-5-sonnet-20240620-v1:0`,
     `${geo}.anthropic.claude-3-5-haiku-20241022-v1:0`,
-    "global.anthropic.claude-sonnet-4-20250514-v1:0",
   ];
 }
 
-/** レガシー: まだオンデマンド直指定が効く環境向け（失敗時は上記プロファイルで再試行済み） */
+/** レガシー: まだ基盤モデル ID のオンデマンドが通る環境向け（3.5系のみ） */
 const LEGACY_FOUNDATION_MODEL_IDS = [
   "anthropic.claude-3-5-sonnet-20240620-v1:0",
   "anthropic.claude-3-5-haiku-20241022-v1:0",
-  "anthropic.claude-sonnet-4-20250514-v1:0",
 ];
 
 function getBedrockConfig() {
