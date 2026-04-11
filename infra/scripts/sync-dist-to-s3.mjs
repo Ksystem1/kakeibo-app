@@ -43,8 +43,13 @@ try {
   for (const name of fs.readdirSync(distPath)) {
     if (name === "assets" || name === "index.html") continue;
     const full = path.join(distPath, name);
-    if (fs.statSync(full).isFile()) {
-      const unix = full.replace(/\\/g, "/");
+    const unix = full.replace(/\\/g, "/");
+    const st = fs.statSync(full);
+    if (st.isDirectory()) {
+      sh(
+        `aws s3 sync "${unix}/" "s3://${bucket}/kakeibo/${name}/" --delete --region ${region} --cache-control "public,max-age=86400"`,
+      );
+    } else if (st.isFile()) {
       sh(
         `aws s3 cp "${unix}" "s3://${bucket}/kakeibo/${name}" --region ${region} --cache-control "public,max-age=86400"`,
       );

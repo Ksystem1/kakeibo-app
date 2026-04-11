@@ -109,11 +109,18 @@ try {
   sh(
     `aws s3 cp "${distDir}/index.html" "s3://${bucket}/kakeibo/index.html" --region ${region} --cache-control "max-age=0,no-cache,no-store,must-revalidate" --content-type "text/html; charset=utf-8"`,
   );
+  // public/ 配下のサブディレクトリ（skins/, png-icons/ 等）は dist にディレクトリとして出る。
+  // トップ階のみ cp すると未アップロードになりナビ画像が常に 404 になるため、ディレクトリは sync する。
   for (const name of fs.readdirSync(distPath)) {
     if (name === "assets" || name === "index.html") continue;
     const full = path.join(distPath, name);
-    if (fs.statSync(full).isFile()) {
-      const unix = full.replace(/\\/g, "/");
+    const unix = full.replace(/\\/g, "/");
+    const st = fs.statSync(full);
+    if (st.isDirectory()) {
+      sh(
+        `aws s3 sync "${unix}/" "s3://${bucket}/kakeibo/${name}/" --delete --region ${region} --cache-control "public,max-age=86400"`,
+      );
+    } else if (st.isFile()) {
       sh(
         `aws s3 cp "${unix}" "s3://${bucket}/kakeibo/${name}" --region ${region} --cache-control "public,max-age=86400"`,
       );
