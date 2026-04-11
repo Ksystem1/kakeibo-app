@@ -18,6 +18,7 @@
   opacity: 0.9;
   transform: none;
   transition: opacity 0.15s ease, transform 0.15s ease;
+  flex-shrink: 0;
 }
 
 .nav-icon-link.is-active {
@@ -30,18 +31,26 @@
   outline-offset: 3px;
 }
 
+/**
+ * 参照 PNG と同一の表示枠（214×66px、約 3.24:1）。
+ * 狭いビューでは同じ比率のまま幅だけ抑えて折り返し。
+ */
 .nav-icon-img {
   display: block;
-  height: 38px;
-  width: auto;
-  max-width: min(148px, 100%);
+  width: min(214px, calc((100vw - 2.5rem) / 2));
+  height: calc(min(214px, calc((100vw - 2.5rem) / 2)) * 66 / 214);
+  max-width: 214px;
+  max-height: 66px;
   object-fit: contain;
   object-position: center;
+  box-sizing: border-box;
 }
 
 @media (min-width: 769px) {
   .nav-icon-img {
-    height: 42px;
-    max-width: min(172px, 100%);
+    width: 214px;
+    height: 66px;
+    max-width: none;
+    max-height: none;
   }
 }
