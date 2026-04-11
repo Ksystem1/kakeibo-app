@@ -22,6 +22,7 @@
     "backup:release": "node scripts/backup-release.mjs"
   },
   "dependencies": {
+    "firebase": "^12.12.0",
     "lucide-react": "^1.7.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App.tsx";
 import { AuthProvider } from "./context/AuthContext";
+import { FirebaseShopProvider } from "./context/FirebaseShopContext";
 import { SettingsProvider } from "./context/SettingsContext";
 import "./index.css";
 
@@ -25,9 +26,11 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter basename={routerBasename}>
       <AuthProvider>
-        <SettingsProvider>
-          <App />
-        </SettingsProvider>
+        <FirebaseShopProvider>
+          <SettingsProvider>
+            <App />
+          </SettingsProvider>
+        </FirebaseShopProvider>
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,
