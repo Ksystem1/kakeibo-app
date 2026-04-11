@@ -8,9 +8,30 @@ import { createLogger } from "./logger.mjs";
 const logger = createLogger("bedrock");
 
 const DEFAULT_REGION = "ap-northeast-1";
+
+/** Bedrock コンソールのモデル ID と完全一致させる（余計な空白・囲みクォートは除去） */
+function sanitizeBedrockModelId(raw) {
+  let s = String(raw ?? "").trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  return s.replace(/\s+/g, "");
+}
+
 /**
- * オンデマンドで基盤モデル ID 直指定が拒否されるリージョンでは、
- * システム定義の推論プロファイル ID（地域プレフィックス付き）が必要。
+ * 基盤モデル ID（オンデマンドで通るリージョン向け）。推奨は Claude 3.5 Sonnet。
+ */
+const FOUNDATION_MODEL_IDS = [
+  "anthropic.claude-3-5-sonnet-20240620-v1:0",
+  "anthropic.claude-3-sonnet-20240229-v1:0",
+  "anthropic.claude-3-5-haiku-20241022-v1:0",
+];
+
+/**
+ * オンデマンドで基盤モデル ID が拒否されるリージョン用の推論プロファイル（us./eu./apac.）。
  * @see https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
  */
 function inferenceProfileCandidatesForRegion(region) {
@@ -21,31 +42,28 @@ function inferenceProfileCandidatesForRegion(region) {
   else if (r.startsWith("us-") || r.startsWith("ca-") || r.startsWith("mx-")) geo = "us";
   else if (r.startsWith("sa-")) geo = "us";
 
-  // Claude 3.5 はクロスリージョン推論プロファイル（東京=apac.*）がオンデマンドで安定。
-  // anthropic.claude-sonnet-4-* の基盤モデル ID 直指定は多くのリージョンで on-demand 非対応のため候補に含めない。
   return [
     `${geo}.anthropic.claude-3-5-sonnet-20240620-v1:0`,
+    `${geo}.anthropic.claude-3-sonnet-20240229-v1:0`,
     `${geo}.anthropic.claude-3-5-haiku-20241022-v1:0`,
   ];
 }
-
-/** レガシー: まだ基盤モデル ID のオンデマンドが通る環境向け（3.5系のみ） */
-const LEGACY_FOUNDATION_MODEL_IDS = [
-  "anthropic.claude-3-5-sonnet-20240620-v1:0",
-  "anthropic.claude-3-5-haiku-20241022-v1:0",
-];
 
 function getBedrockConfig() {
   const region =
     String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() ||
     DEFAULT_REGION;
-  const explicit = String(process.env.BEDROCK_MODEL_ID || "").trim();
+  const explicit = sanitizeBedrockModelId(process.env.BEDROCK_MODEL_ID);
   const profiles = inferenceProfileCandidatesForRegion(region);
-  const candidates = [...(explicit ? [explicit] : []), ...profiles, ...LEGACY_FOUNDATION_MODEL_IDS]
-    .map((x) => String(x || "").trim())
+  const candidates = [
+    ...(explicit ? [explicit] : []),
+    ...FOUNDATION_MODEL_IDS,
+    ...profiles,
+  ]
+    .map((x) => sanitizeBedrockModelId(x))
     .filter(Boolean)
     .filter((x, i, arr) => arr.indexOf(x) === i);
-  const modelId = explicit || profiles[0] || LEGACY_FOUNDATION_MODEL_IDS[0];
+  const modelId = explicit || FOUNDATION_MODEL_IDS[0];
   return { region, modelId, candidates };
 }
 
