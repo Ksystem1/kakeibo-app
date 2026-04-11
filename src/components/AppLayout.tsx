@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
@@ -8,22 +8,6 @@ import "./AppLayout.nav.css";
 import { AdSlot } from "./AdSlot";
 import { AiAdvisorChat } from "./AiAdvisorChat";
 import { MobileAccessQr } from "./MobileAccessQr";
-
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-};
-
-/** iPhone / iPad（iPadOS のデスクトップ UA 含む）。Android は除外。 */
-function isLikelyIos(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent;
-  if (/Android/i.test(ua)) return false;
-  return (
-    /iPad|iPhone|iPod/i.test(ua) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
-  );
-}
 
 /** テキストナビ（未ログインのログイン・新規登録など） */
 function linkStyle(
@@ -50,11 +34,6 @@ function linkStyle(
   };
 }
 
-/** スキン外の共通アイコン（インストール・ホーム追加など） */
-function navIconSrc(file: string) {
-  return `${import.meta.env.BASE_URL}png-icons/${file}`;
-}
-
 function navIconLinkClassName({ isActive }: { isActive: boolean }) {
   return `nav-icon-link${isActive ? " is-active" : ""}`;
 }
@@ -63,46 +42,6 @@ export function AppLayout() {
   const { token, user, setUser, logout } = useAuth();
   const navigate = useNavigate();
   const mobile = useIsMobile();
-  const [installPromptEvent, setInstallPromptEvent] =
-    useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [iosPwaHintOpen, setIosPwaHintOpen] = useState(false);
-
-  useEffect(() => {
-    const checkInstalled = () => {
-      const standalone =
-        window.matchMedia?.("(display-mode: standalone)")?.matches === true;
-      const iosStandalone =
-        (window.navigator as Navigator & { standalone?: boolean })
-          .standalone === true;
-      setIsInstalled(standalone || iosStandalone);
-    };
-    checkInstalled();
-    window.addEventListener("appinstalled", checkInstalled);
-    return () => {
-      window.removeEventListener("appinstalled", checkInstalled);
-    };
-  }, []);
-
-  useEffect(() => {
-    const onBeforeInstallPrompt = (ev: Event) => {
-      ev.preventDefault();
-      setInstallPromptEvent(ev as BeforeInstallPromptEvent);
-    };
-    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    };
-  }, []);
-
-  const handleChromiumInstallClick = useCallback(async () => {
-    if (!installPromptEvent) return;
-    await installPromptEvent.prompt();
-    const result = await installPromptEvent.userChoice;
-    if (result.outcome === "accepted") {
-      setInstallPromptEvent(null);
-    }
-  }, [installPromptEvent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,19 +63,6 @@ export function AppLayout() {
       cancelled = true;
     };
   }, [token, setUser]);
-
-  useEffect(() => {
-    if (!iosPwaHintOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIosPwaHintOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [iosPwaHintOpen]);
-
-  const showChromiumInstall = mobile && !isInstalled && installPromptEvent != null;
-  const showIosAddToHome =
-    mobile && !isInstalled && isLikelyIos() && installPromptEvent == null;
 
   return (
     <>
@@ -263,36 +189,6 @@ export function AppLayout() {
         >
           {token ? (
             <>
-              {showChromiumInstall ? (
-                <button
-                  type="button"
-                  className="nav-icon-link"
-                  onClick={() => void handleChromiumInstallClick()}
-                  aria-label="アプリをインストール / 再読込"
-                >
-                  <img
-                    className="nav-icon-img"
-                    src={navIconSrc("install-reload.png")}
-                    alt=""
-                    aria-hidden="true"
-                  />
-                </button>
-              ) : null}
-              {showIosAddToHome ? (
-                <button
-                  type="button"
-                  className="nav-icon-link"
-                  onClick={() => setIosPwaHintOpen(true)}
-                  aria-label="ホーム画面に追加"
-                >
-                  <img
-                    className="nav-icon-img"
-                    src={navIconSrc("homeadd.png")}
-                    alt=""
-                    aria-hidden="true"
-                  />
-                </button>
-              ) : null}
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
@@ -307,14 +203,14 @@ export function AppLayout() {
               <NavLink to="/" className={navIconLinkClassName} end aria-label="家計簿">
                 <img className="nav-icon-img" src={ICON_PATHS.kakeibo} alt="" aria-hidden="true" />
               </NavLink>
+              <NavLink to="/receipt" className={navIconLinkClassName} aria-label="レシート">
+                <img className="nav-icon-img" src={ICON_PATHS.receipt} alt="" aria-hidden="true" />
+              </NavLink>
               {!mobile ? (
                 <NavLink to="/import" className={navIconLinkClassName} aria-label="CSV取込（PC）">
                   <img className="nav-icon-img" src={ICON_PATHS.csvPc} alt="" aria-hidden="true" />
                 </NavLink>
               ) : null}
-              <NavLink to="/receipt" className={navIconLinkClassName} aria-label="レシート">
-                <img className="nav-icon-img" src={ICON_PATHS.receipt} alt="" aria-hidden="true" />
-              </NavLink>
               <NavLink to="/settings" className={navIconLinkClassName} aria-label="設定">
                 <img className="nav-icon-img" src={ICON_PATHS.settings} alt="" aria-hidden="true" />
               </NavLink>
@@ -328,24 +224,6 @@ export function AppLayout() {
             </>
           ) : (
             <>
-              {showChromiumInstall ? (
-                <button
-                  type="button"
-                  onClick={() => void handleChromiumInstallClick()}
-                  style={linkStyle(mobile, { isActive: false })}
-                >
-                  📲 アプリをインストール
-                </button>
-              ) : null}
-              {showIosAddToHome ? (
-                <button
-                  type="button"
-                  onClick={() => setIosPwaHintOpen(true)}
-                  style={linkStyle(mobile, { isActive: false })}
-                >
-                  📲 ホーム画面に追加
-                </button>
-              ) : null}
               <NavLink to="/login" style={(p) => linkStyle(mobile, p)}>
                 🔐 ログイン
               </NavLink>
@@ -362,85 +240,6 @@ export function AppLayout() {
       {token ? <AiAdvisorChat /> : null}
       <AdSlot placement="footer" />
     </div>
-    {iosPwaHintOpen ? (
-      <div
-        role="presentation"
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 10050,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "1rem",
-          background: "rgba(15, 43, 71, 0.45)",
-          boxSizing: "border-box",
-        }}
-        onClick={() => setIosPwaHintOpen(false)}
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ios-pwa-hint-title"
-          style={{
-            maxWidth: 440,
-            width: "100%",
-            background: "var(--bg-card)",
-            borderRadius: 12,
-            border: "1px solid var(--border)",
-            padding: "1.25rem",
-            boxShadow: "0 12px 40px rgba(15, 43, 71, 0.22)",
-            color: "var(--text)",
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h2
-            id="ios-pwa-hint-title"
-            style={{ margin: "0 0 0.75rem", fontSize: "1.05rem", lineHeight: 1.35 }}
-          >
-            ホーム画面に追加（iPhone / iPad）
-          </h2>
-          <ol
-            style={{
-              margin: "0 0 1rem",
-              paddingLeft: "1.25rem",
-              lineHeight: 1.65,
-              fontSize: "0.95rem",
-            }}
-          >
-            <li>画面下の「共有」ボタンをタップ</li>
-            <li>「ホーム画面に追加」を選ぶ</li>
-            <li>「追加」をタップして完了</li>
-          </ol>
-          <p
-            style={{
-              margin: "0 0 1rem",
-              fontSize: "0.88rem",
-              lineHeight: 1.55,
-              color: "var(--text-muted)",
-            }}
-          >
-            Safari で開いているときの手順です。Chrome など他ブラウザでは共有メニューに同様の項目がある場合があります。
-          </p>
-          <button
-            type="button"
-            onClick={() => setIosPwaHintOpen(false)}
-            style={{
-              font: "inherit",
-              fontWeight: 700,
-              cursor: "pointer",
-              borderRadius: 10,
-              border: "1px solid var(--accent)",
-              background: "var(--accent)",
-              color: "#fff",
-              padding: "0.5rem 1.1rem",
-            }}
-          >
-            閉じる
-          </button>
-        </div>
-      </div>
-    ) : null}
     </>
   );
 }
