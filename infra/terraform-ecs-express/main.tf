@@ -268,6 +268,45 @@ resource "aws_iam_role_policy_attachment" "task_textract_full" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonTextractFullAccess"
 }
 
+# AI 家計アドバイザー（POST /ai/advisor）・レシート補助で Bedrock Runtime を使用。
+# foundation-model: arn:aws:bedrock:<region>::foundation-model/<model-id>
+# inference-profile: arn:aws:bedrock:<region>:<account>:inference-profile/<id>（us.xxx 等）
+data "aws_iam_policy_document" "task_bedrock" {
+  statement {
+    sid    = "BedrockFoundationModels"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+      "bedrock:Converse",
+      "bedrock:ConverseStream",
+    ]
+    resources = [
+      "arn:aws:bedrock:*::foundation-model/*",
+    ]
+  }
+
+  statement {
+    sid    = "BedrockInferenceProfiles"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+      "bedrock:Converse",
+      "bedrock:ConverseStream",
+    ]
+    resources = [
+      "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "task_bedrock" {
+  name   = "${local.app_name}-task-bedrock"
+  role   = aws_iam_role.task.id
+  policy = data.aws_iam_policy_document.task_bedrock.json
+}
+
 data "aws_iam_policy_document" "github_actions_assume_role" {
   statement {
     effect  = "Allow"
