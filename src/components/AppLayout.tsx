@@ -299,20 +299,20 @@ export function AppLayout() {
               </NavLink>
               {!mobile ? (
                 <NavLink to="/import" style={(p) => linkStyle(mobile, p)} aria-label="CSV取込（PC）">
-                  <img src={navIconSrc("csv-pc.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                  <img src={ICON_PATHS.csvPc} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </NavLink>
               ) : null}
               <NavLink to="/receipt" style={(p) => linkStyle(mobile, p)} aria-label="レシート">
-                <img src={navIconSrc("receipt.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                <img src={ICON_PATHS.receipt} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
               </NavLink>
               <NavLink to="/settings" style={(p) => linkStyle(mobile, p)} aria-label="設定">
-                <img src={navIconSrc("settings.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                <img src={ICON_PATHS.settings} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
               </NavLink>
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
                 <NavLink to="/admin" style={(p) => linkStyle(mobile, p)} aria-label="管理">
-                  <img src={navIconSrc("admin.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                  <img src={ICON_PATHS.admin} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </NavLink>
               ) : null}
             </>
