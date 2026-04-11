@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { getAuthMe, normalizeAuthContextUser } from "../lib/api";
+import { ICON_PATHS } from "../config/navSkin";
 import { AdSlot } from "./AdSlot";
 import { AiAdvisorChat } from "./AiAdvisorChat";
 import { MobileAccessQr } from "./MobileAccessQr";
@@ -47,6 +48,7 @@ function linkStyle(
   };
 }
 
+/** スキン外の共通アイコン（インストール・CSV 等） */
 function navIconSrc(file: string) {
   return `${import.meta.env.BASE_URL}png-icons/${file}`;
 }
@@ -289,11 +291,11 @@ export function AppLayout() {
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
                 <NavLink to="/dashboard" style={(p) => linkStyle(mobile, p)} aria-label="ダッシュボード">
-                  <img src={navIconSrc("dashboard.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                  <img src={ICON_PATHS.dashboard} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </NavLink>
               ) : null}
               <NavLink to="/" style={(p) => linkStyle(mobile, p)} end aria-label="家計簿">
-                <img src={navIconSrc("change.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
+                <img src={ICON_PATHS.kakeibo} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
               </NavLink>
               {!mobile ? (
                 <NavLink to="/import" style={(p) => linkStyle(mobile, p)} aria-label="CSV取込（PC）">
