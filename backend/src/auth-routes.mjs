@@ -9,6 +9,10 @@ import {
 } from "./auth-logic.mjs";
 import { getPool } from "./db.mjs";
 import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
+import {
+  deriveSubscriptionStatusFromDbRow,
+  getEffectiveSubscriptionStatus,
+} from "./subscription-logic.mjs";
 
 /** このモジュールが処理するパス（ここに無いリクエストは getPool せず null を返す） */
 const AUTH_ROUTE_KEYS = new Set([
@@ -108,6 +112,17 @@ function isUnknownSubscriptionColumnError(e) {
   );
 }
 
+function isUnknownIsPremiumColumnError(e) {
+  if (!e || typeof e !== "object") return false;
+  const code = e.code ? String(e.code) : "";
+  const errno = Number(e.errno);
+  const msg = String(e.message || "");
+  return (
+    (code === "ER_BAD_FIELD_ERROR" || errno === 1054) &&
+    msg.includes("is_premium")
+  );
+}
+
 let warnedSubscriptionColumnMissing = false;
 function warnSubscriptionColumnMissingOnce() {
   if (warnedSubscriptionColumnMissing) return;
@@ -127,14 +142,29 @@ function warnSubscriptionColumnMissingOnce() {
  */
 async function queryLoginUserRow(pool, login) {
   const params = [login, login];
-  const sqlWithSub = `SELECT id, email, password_hash, is_admin, subscription_status FROM users
+  const sqlFull = `SELECT id, email, password_hash, is_admin, subscription_status, is_premium FROM users
+           WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`;
+  const sqlSub = `SELECT id, email, password_hash, is_admin, subscription_status FROM users
            WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`;
   const sqlBase = `SELECT id, email, password_hash, is_admin FROM users
            WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`;
   try {
-    const [rows] = await pool.query(sqlWithSub, params);
+    const [rows] = await pool.query(sqlFull, params);
     return { rows };
   } catch (e) {
+    if (isUnknownIsPremiumColumnError(e)) {
+      try {
+        const [rows] = await pool.query(sqlSub, params);
+        return { rows };
+      } catch (e2) {
+        if (isUnknownSubscriptionColumnError(e2)) {
+          warnSubscriptionColumnMissingOnce();
+          const [rows] = await pool.query(sqlBase, params);
+          return { rows };
+        }
+        throw e2;
+      }
+    }
     if (isUnknownSubscriptionColumnError(e)) {
       warnSubscriptionColumnMissingOnce();
       const [rows] = await pool.query(sqlBase, params);
@@ -148,12 +178,26 @@ async function queryLoginUserRow(pool, login) {
  * @returns {Promise<{ rows: unknown[] }>}
  */
 async function queryMeUserRow(pool, uid) {
-  const sqlWithSub = `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status FROM users WHERE id = ?`;
+  const sqlFull = `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status, is_premium FROM users WHERE id = ?`;
+  const sqlSub = `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status FROM users WHERE id = ?`;
   const sqlBase = `SELECT id, email, login_name, display_name, default_family_id, is_admin FROM users WHERE id = ?`;
   try {
-    const [rows] = await pool.query(sqlWithSub, [uid]);
+    const [rows] = await pool.query(sqlFull, [uid]);
     return { rows };
   } catch (e) {
+    if (isUnknownIsPremiumColumnError(e)) {
+      try {
+        const [rows] = await pool.query(sqlSub, [uid]);
+        return { rows };
+      } catch (e2) {
+        if (isUnknownSubscriptionColumnError(e2)) {
+          warnSubscriptionColumnMissingOnce();
+          const [rows] = await pool.query(sqlBase, [uid]);
+          return { rows };
+        }
+        throw e2;
+      }
+    }
     if (isUnknownSubscriptionColumnError(e)) {
       warnSubscriptionColumnMissingOnce();
       const [rows] = await pool.query(sqlBase, [uid]);
@@ -449,7 +493,10 @@ export async function tryAuthRoutes(req, ctx) {
             email: u.email,
             familyId,
             isAdmin: Number(u.is_admin) === 1,
-            subscriptionStatus: String(u.subscription_status ?? "inactive"),
+            subscriptionStatus: getEffectiveSubscriptionStatus(
+              deriveSubscriptionStatusFromDbRow(u),
+              u.id,
+            ),
           },
         },
         hdrs,
@@ -547,7 +594,12 @@ export async function tryAuthRoutes(req, ctx) {
       }
       const familyId = await getDefaultFamilyId(pool, uid);
       const row = rows[0] || {};
-      const { is_admin: isAdminRaw, subscription_status: subRaw, ...safeUser } = row;
+      const {
+        is_admin: isAdminRaw,
+        subscription_status: _sub,
+        is_premium: _prem,
+        ...safeUser
+      } = row;
       return json(
         200,
         {
@@ -555,7 +607,10 @@ export async function tryAuthRoutes(req, ctx) {
             ...safeUser,
             isAdmin: Number(isAdminRaw) === 1,
             familyId,
-            subscriptionStatus: String(subRaw ?? "inactive"),
+            subscriptionStatus: getEffectiveSubscriptionStatus(
+              deriveSubscriptionStatusFromDbRow(row),
+              row.id,
+            ),
           },
         },
         hdrs,

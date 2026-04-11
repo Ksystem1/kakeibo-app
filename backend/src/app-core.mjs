@@ -26,7 +26,12 @@ import {
   askBedrockReceiptAssistant,
   inferReceiptImageMediaTypeFromBuffer,
 } from "./ai-advisor-service.mjs";
-import { isSubscriptionActive } from "./subscription-logic.mjs";
+import {
+  deriveSubscriptionStatusFromDbRow,
+  getEffectiveSubscriptionStatus,
+  isSubscriptionActive,
+  isUserIdForcedPremiumByEnv,
+} from "./subscription-logic.mjs";
 
 const logger = createLogger("api");
 
@@ -454,24 +459,62 @@ async function suggestExpenseCategoryForReceipt(pool, userId, catWhere, txWhere,
   return { id: best.id, name: best.name, source: "keywords" };
 }
 
-async function loadUserSubscriptionStatus(pool, userId) {
+function isUnknownIsPremiumColumnError(e) {
+  if (!e || typeof e !== "object") return false;
+  const code = e.code ? String(e.code) : "";
+  const errno = Number(e.errno);
+  const msg = String(e.message || "");
+  return (
+    (code === "ER_BAD_FIELD_ERROR" || errno === 1054) &&
+    msg.includes("is_premium")
+  );
+}
+
+async function loadUserSubscriptionRowFull(pool, userId) {
   try {
     const [rows] = await pool.query(
-      `SELECT subscription_status FROM users WHERE id = ? LIMIT 1`,
+      `SELECT subscription_status, is_premium FROM users WHERE id = ? LIMIT 1`,
       [userId],
     );
-    if (!Array.isArray(rows) || rows.length === 0) return "inactive";
-    return String(rows[0].subscription_status ?? "inactive");
+    if (!Array.isArray(rows) || rows.length === 0) return {};
+    return rows[0];
   } catch (e) {
+    if (isUnknownIsPremiumColumnError(e)) {
+      try {
+        const [rows] = await pool.query(
+          `SELECT subscription_status FROM users WHERE id = ? LIMIT 1`,
+          [userId],
+        );
+        if (!Array.isArray(rows) || rows.length === 0) return {};
+        return rows[0];
+      } catch (e2) {
+        const c2 = e2 && typeof e2 === "object" && "code" in e2 ? String(e2.code) : "";
+        const m2 = String(e2?.message || "");
+        if (c2 === "ER_BAD_FIELD_ERROR" && m2.includes("subscription_status")) {
+          logger.warn("subscription_status column missing; defaulting to inactive", {
+            userId,
+          });
+          return {};
+        }
+        throw e2;
+      }
+    }
     const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
-    if (code === "ER_BAD_FIELD_ERROR") {
+    const msg = String(e?.message || "");
+    if (code === "ER_BAD_FIELD_ERROR" && msg.includes("subscription_status")) {
       logger.warn("subscription_status column missing; defaulting to inactive", {
         userId,
       });
-      return "inactive";
+      return {};
     }
     throw e;
   }
+}
+
+async function loadUserSubscriptionStatus(pool, userId) {
+  const row = await loadUserSubscriptionRowFull(pool, userId);
+  const derived = deriveSubscriptionStatusFromDbRow(row);
+  return getEffectiveSubscriptionStatus(derived, userId);
 }
 
 /**
@@ -2034,11 +2077,16 @@ export async function handleApiRequest(req, options = {}) {
           let aiCategoryName = null;
           if (aiReceipt?.ok && aiReceipt.data) {
             const d = aiReceipt.data;
+            if (!subscriptionActive) {
+              d.vendorName = null;
+              d.categoryName = null;
+            }
             const aiVendor = String(d.vendorName ?? "").trim();
             const aiDate = String(d.date ?? "").trim();
             const aiTotal = Number(d.totalAmount ?? NaN);
             const aiCat = String(d.categoryName ?? "").trim();
             if (
+              subscriptionActive &&
               aiVendor &&
               (!adjustedSummary.vendorName ||
                 String(adjustedSummary.vendorName).trim().length < 2 ||
@@ -2055,7 +2103,7 @@ export async function handleApiRequest(req, options = {}) {
                 adjustedSummary.totalAmount = Math.round(aiTotal);
               }
             }
-            if (aiCat) {
+            if (subscriptionActive && aiCat) {
               aiCategoryId = pickCategoryIdByAiName(aiCat, expenseCatRows);
               if (aiCategoryId != null) {
                 const hit = expenseCatRows.find((x) => Number(x.id) === Number(aiCategoryId));
@@ -2063,6 +2111,7 @@ export async function handleApiRequest(req, options = {}) {
               }
             }
             if (
+              subscriptionActive &&
               aiReceipt.receiptAiSource === "vision" &&
               (d.vendorName == null || String(d.vendorName).trim() === "")
             ) {
@@ -2185,6 +2234,7 @@ export async function handleApiRequest(req, options = {}) {
             subscriptionActive,
             receiptAiTier: aiReceipt?.receiptAiTier ?? null,
             debugReceiptTierOverride,
+            subscriptionMockedByEnv: isUserIdForcedPremiumByEnv(userId),
           };
           if (learnCorrectionHit && learnedMemoPresent) {
             body.suggestedMemo = learnedMemoValue;

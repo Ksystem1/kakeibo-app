@@ -1,5 +1,6 @@
 -- v8: サブスクリプション状態（レシート AI の精度ティア等に使用）
 -- RDS: mysql ... < db/migration_v8_users_subscription_status.sql
+-- 任意: 真偽フラグは v9（is_premium）を参照。
 
 SET NAMES utf8mb4;
 

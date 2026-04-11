@@ -659,36 +659,31 @@ function buildReceiptAiPromptBundle(opts) {
   const historyHints = opts.historyHints;
   const heuristic = opts.heuristicCategorySuggestion ?? null;
 
-  const catList =
-    categoryCandidates.length > 0
-      ? categoryCandidates.join("、")
-      : "（カテゴリ一覧なし。一般的な日本の家計簿名で推定）";
-
   if (!subscriptionActive) {
     const systemPrompt = [
       "あなたは家計簿アプリのレシート読取AI（無料プラン用）です。",
-      "店名 vendorName は、添付画像に写っている文字、または補助JSONの ocrLines に文字として明確に現れる店舗名に限り出力してください。",
-      "一般知識・連想・住所からの推測で店名を補完・捏造しないでください。該当が無ければ vendorName は null。",
-      "totalAmount と date も、画像または ocrLines に読み取り根拠がある場合に限り出力してください。",
-      "明細の合算は、画像または ocrLines に明細金額が列挙されているときに限り可。",
-      "補助JSONには ocrLines のみ含まれます（Textract の構造化 summary/items は渡しません）。それ以外の情報は参照しないでください。",
-      `categoryName は画像・ocrLines の語から推測しつつ、次の登録名のいずれかに最も近い1つ。明確でなければ null: ${catList}`,
+      "無料プランでは日付（date）と税込合計（totalAmount）の抽出に専念してください。",
+      "vendorName と categoryName は常に null を返してください（店名・カテゴリ推定は行わない）。",
+      "totalAmount と date は、添付画像に写っている文字、または補助JSONの ocrLines に読み取り根拠がある場合に限り出力してください。",
+      "合計はレシートに印字された「合計」「お支払額」等に対応する数値のみ。明細行の足し合わせは、画像または ocrLines に明細金額が列挙されているときに限り可。",
+      "一般知識・履歴・推測で店名やカテゴリを補完しないでください。",
+      "補助JSONには ocrLines のみ含まれます。Textract の構造化 summary/items は渡しません。",
       "必ず1つのJSONオブジェクトのみを返す。前後に説明文やマークダウンを付けない。",
     ].join("\n");
 
     const auxPayload = {
       ocrLines,
-      note: "ocrLines のみが構造化テキストです（画像由来の生行）。",
+      note: "ocrLines のみ（画像由来の生テキスト行）。",
     };
 
     const userTextPrompt = [
-      "無料プラン: 画像と ocrLines に現れた文字・数字のみを根拠に JSON を出力してください。",
-      "出力キー: vendorName, date, totalAmount, categoryName, reason",
-      "- vendorName: 上記根拠で特定できる店名のみ。なければ null",
+      "無料プラン: 画像と ocrLines の根拠のみで、date と totalAmount を埋めてください。",
+      "出力キー: vendorName, date, totalAmount, categoryName, reason（キーはすべて必須）",
+      "- vendorName: 必ず null",
       "- date: YYYY-MM-DD、根拠なしなら null",
-      "- totalAmount: 根拠ある数値のみ。なければ null",
-      "- categoryName: 登録カテゴリ一覧に最も近い1語、なければ null",
-      "- reason: 根拠を1文（日本語）。どの文字を見たか簡潔に",
+      "- totalAmount: 根拠ある税込合計（円の数値）、なければ null",
+      "- categoryName: 必ず null",
+      "- reason: 日付・合計をどの文字から読んだか1文（日本語）",
       "",
       "補助JSON:",
       JSON.stringify(auxPayload),
@@ -696,6 +691,11 @@ function buildReceiptAiPromptBundle(opts) {
 
     return { systemPrompt, userTextPrompt, receiptAiTier: "free" };
   }
+
+  const catList =
+    categoryCandidates.length > 0
+      ? categoryCandidates.join("、")
+      : "（カテゴリ一覧なし。一般的な日本の家計簿名で推定）";
 
   const systemPrompt = [
     "あなたは家計簿アプリのレシート読取AI（サブスクリプション有効ユーザー向け）です。",

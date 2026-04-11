@@ -254,6 +254,12 @@ export function SettingsPage() {
           が無いとリクエストの強制は無視されます。ローカル <code>npm run dev:api</code>{" "}
           では通常そのまま有効です。
         </p>
+        <p className={styles.sub} style={{ margin: "0 0 0.5rem", fontSize: "0.78rem" }}>
+          サーバ側モック: バックエンドの環境変数{" "}
+          <code style={{ margin: "0 0.15rem" }}>SUBSCRIPTION_FORCE_ACTIVE_USER_IDS</code>
+          に <code style={{ margin: "0 0.15rem" }}>users.id</code>（カンマ区切り）を入れると、
+          ログイン・レシートAPI とも常に active 扱いになります（VERIFY_LOGIN ユーザの id を調べて指定）。
+        </p>
         <div
           className={styles.modeRow}
           style={{ marginTop: "0.5rem", flexWrap: "wrap", gap: "0.4rem" }}

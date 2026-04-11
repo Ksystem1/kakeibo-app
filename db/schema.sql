@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   email           VARCHAR(255) NOT NULL,
   is_admin        TINYINT(1) NOT NULL DEFAULT 0 COMMENT '管理者フラグ（1=true）',
   subscription_status VARCHAR(32) NOT NULL DEFAULT 'inactive' COMMENT 'inactive | active',
+  is_premium      TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=プレミアム（任意。active と併用可）',
   display_name    VARCHAR(100) NULL,
   timezone        VARCHAR(64) NOT NULL DEFAULT 'Asia/Tokyo',
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
