@@ -422,10 +422,6 @@ export function ReceiptPage() {
       {loading ? loadingUi : null}
       <h1 className={styles.title}>レシート読取</h1>
 
-      <p className={styles.sub}>
-        レシート画像を選ぶと、Textract と AWS Bedrock（画像＋テキスト）で合計・日付・カテゴリ・店舗名を推定します。店舗名が読めない場合はメモは空のままにできます。内容を確認してから「登録」してください。
-        合計欄が読み取れない場合は明細から推定することがあります。
-      </p>
       {/* file input は flex 行の外に置き、一部モバイル WebView でレイアウトに影響しないようにする */}
       {touchUi ? (
         <input
