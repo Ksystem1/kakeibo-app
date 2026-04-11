@@ -9,6 +9,9 @@ const logger = createLogger("bedrock");
 
 const DEFAULT_REGION = "ap-northeast-1";
 
+/** Bedrock で使用する基盤モデル ID（文字列はこの定数のみをソースとする） */
+const BEDROCK_CLAUDE_35_SONNET_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0";
+
 /** Bedrock コンソールのモデル ID と完全一致させる（余計な空白・囲みクォートは除去） */
 function sanitizeBedrockModelId(raw) {
   let s = String(raw ?? "").trim();
@@ -22,31 +25,18 @@ function sanitizeBedrockModelId(raw) {
 }
 
 /**
- * 基盤モデル ID（オンデマンドで通るリージョン向け）。推奨は Claude 3.5 Sonnet。
- */
-const FOUNDATION_MODEL_IDS = [
-  "anthropic.claude-3-5-sonnet-20240620-v1:0",
-  "anthropic.claude-3-sonnet-20240229-v1:0",
-  "anthropic.claude-3-5-haiku-20241022-v1:0",
-];
-
-/**
- * オンデマンドで基盤モデル ID が拒否されるリージョン用の推論プロファイル（us./eu./apac.）。
+ * 同一モデルのクロスリージョン推論プロファイル（オンデマンドで基盤 ID が拒否される場合用）。
+ * ベース ID は {@link BEDROCK_CLAUDE_35_SONNET_MODEL_ID} のみ。
  * @see https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
  */
-function inferenceProfileCandidatesForRegion(region) {
+function inferenceProfileIdForRegion(region) {
   const r = String(region || DEFAULT_REGION).toLowerCase().trim() || DEFAULT_REGION;
   let geo = "us";
   if (r.startsWith("eu-")) geo = "eu";
   else if (r.startsWith("ap-")) geo = "apac";
   else if (r.startsWith("us-") || r.startsWith("ca-") || r.startsWith("mx-")) geo = "us";
   else if (r.startsWith("sa-")) geo = "us";
-
-  return [
-    `${geo}.anthropic.claude-3-5-sonnet-20240620-v1:0`,
-    `${geo}.anthropic.claude-3-sonnet-20240229-v1:0`,
-    `${geo}.anthropic.claude-3-5-haiku-20241022-v1:0`,
-  ];
+  return `${geo}.${BEDROCK_CLAUDE_35_SONNET_MODEL_ID}`;
 }
 
 function getBedrockConfig() {
@@ -54,16 +44,12 @@ function getBedrockConfig() {
     String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() ||
     DEFAULT_REGION;
   const explicit = sanitizeBedrockModelId(process.env.BEDROCK_MODEL_ID);
-  const profiles = inferenceProfileCandidatesForRegion(region);
-  const candidates = [
-    ...(explicit ? [explicit] : []),
-    ...FOUNDATION_MODEL_IDS,
-    ...profiles,
-  ]
+  const profileId = inferenceProfileIdForRegion(region);
+  const candidates = [...(explicit ? [explicit] : []), BEDROCK_CLAUDE_35_SONNET_MODEL_ID, profileId]
     .map((x) => sanitizeBedrockModelId(x))
     .filter(Boolean)
     .filter((x, i, arr) => arr.indexOf(x) === i);
-  const modelId = explicit || FOUNDATION_MODEL_IDS[0];
+  const modelId = explicit || BEDROCK_CLAUDE_35_SONNET_MODEL_ID;
   return { region, modelId, candidates };
 }
 
@@ -221,6 +207,17 @@ function buildInvokeBodyStringContent(systemPrompt, userPrompt, maxTokens, tempe
 
 async function tryInvokeModel(client, modelId, body, label) {
   return withThrottleRetry(async () => {
+    const params = {
+      modelId,
+      contentType: "application/json",
+      accept: "application/json",
+      bodyLength: typeof body === "string" ? body.length : 0,
+      label,
+    };
+    logger.info("bedrock_invoke_model_params", params);
+    if (process.env.BEDROCK_DEBUG_LOG === "1") {
+      console.log("[bedrock] InvokeModel params:", JSON.stringify(params));
+    }
     const cmd = new InvokeModelCommand({
       modelId,
       contentType: "application/json",
@@ -236,6 +233,17 @@ async function tryInvokeModel(client, modelId, body, label) {
 
 async function tryConverse(client, modelId, systemPrompt, userPrompt, maxTokens, temperature) {
   return withThrottleRetry(async () => {
+    const params = {
+      modelId,
+      maxTokens,
+      temperature,
+      systemLen: systemPrompt.length,
+      userLen: userPrompt.length,
+    };
+    logger.info("bedrock_converse_params", params);
+    if (process.env.BEDROCK_DEBUG_LOG === "1") {
+      console.log("[bedrock] Converse params:", JSON.stringify(params));
+    }
     const cmd = new ConverseCommand({
       modelId,
       system: [{ text: systemPrompt }],
