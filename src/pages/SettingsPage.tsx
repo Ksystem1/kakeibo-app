@@ -271,12 +271,11 @@ export function SettingsPage() {
 
       <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 720 }}>
         <h2 className={styles.sectionTitle}>固定費設定（全月共通）</h2>
-        <p className={styles.reclassifyHint}>
-          ここで保存した固定費はすべての月に適用されます。ログイン済みの場合は家族単位でサーバに保存され、同じ家族のメンバーがどの端末からでも同じ内容を参照できます。
-          {!getApiBaseUrl() || !canSendAuthenticatedRequest(token)
-            ? " API に接続できない、またはログイン・開発用ユーザー設定がない場合は、この端末の画面にのみ反映されます。"
-            : null}
-        </p>
+        {!getApiBaseUrl() || !canSendAuthenticatedRequest(token) ? (
+          <p className={styles.reclassifyHint}>
+            API に接続できない、またはログイン・開発用ユーザー設定がない場合は、この端末の画面にのみ反映されます。
+          </p>
+        ) : null}
         <div className={styles.form} style={{ marginTop: "0.5rem" }}>
           <div className={styles.field} style={{ gridColumn: "1 / -1" }}>
             <label>固定費入力（1行 = カテゴリ + 金額 / カテゴリは自由入力）</label>
