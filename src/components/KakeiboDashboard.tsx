@@ -580,42 +580,45 @@ export function KakeiboDashboard() {
               </tbody>
             </table>
           </div>
-          {fixedCostItemsForMonth.length > 0 ? (
-            <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>固定費明細</th>
-                    <th>金額</th>
+        </>
+      ) : null}
+      {fixedCostItemsForMonth.length > 0 ? (
+        <>
+          <h2 className={styles.sectionTitle}>固定費明細</h2>
+          <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>項目</th>
+                  <th>金額</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleFixedCostItems.map((item, i) => (
+                  <tr key={`${item.id}-${i}`}>
+                    <td style={{ whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }}>
+                      {item.category || "固定費"}
+                    </td>
+                    <td>{yen.format(numAmount(item.amount))}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {visibleFixedCostItems.map((item, i) => (
-                    <tr key={`${item.id}-${i}`}>
-                      <td style={{ whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }}>
-                        {item.category || "固定費"}
-                      </td>
-                      <td>{yen.format(numAmount(item.amount))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {txMobileNarrow && fixedCostItemsForMonth.length > mobileFixedCostInitialRows ? (
-                <div style={{ padding: "0.45rem 0.55rem", borderTop: "1px solid var(--border)" }}>
-                  <button
-                    type="button"
-                    className={styles.btn}
-                    style={{ width: "100%" }}
-                    onClick={() => setFixedCostExpanded((v) => !v)}
-                  >
-                    {fixedCostExpanded
-                      ? "固定費明細を折りたたむ"
-                      : `固定費明細をすべて表示（全${fixedCostItemsForMonth.length}件）`}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+                ))}
+              </tbody>
+            </table>
+            {txMobileNarrow && fixedCostItemsForMonth.length > mobileFixedCostInitialRows ? (
+              <div style={{ padding: "0.45rem 0.55rem", borderTop: "1px solid var(--border)" }}>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  style={{ width: "100%" }}
+                  onClick={() => setFixedCostExpanded((v) => !v)}
+                >
+                  {fixedCostExpanded
+                    ? "固定費明細を折りたたむ"
+                    : `固定費明細をすべて表示（全${fixedCostItemsForMonth.length}件）`}
+                </button>
+              </div>
+            ) : null}
+          </div>
         </>
       ) : null}
       {summary && summary.incomesByCategory.length > 0 ? (

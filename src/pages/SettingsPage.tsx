@@ -265,6 +265,7 @@ export function SettingsPage() {
         <h2 className={styles.sectionTitle}>固定費設定（全月共通）</h2>
         <p className={styles.reclassifyHint}>
           ここで保存した固定費はすべての月に適用されます。保存時は既存の月別設定を上書きします。
+          データはこのブラウザ（端末）の localStorage にあるため、パソコンとスマホでは共有されません。スマホの家計簿にも反映させる場合は、スマホで同じ内容を保存してください。
         </p>
         <div className={styles.form} style={{ marginTop: "0.5rem" }}>
           <div className={styles.field} style={{ gridColumn: "1 / -1" }}>
