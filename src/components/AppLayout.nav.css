@@ -54,3 +54,27 @@
     max-height: none;
   }
 }
+
+/* スマホ: アイコンを縦一列・幅いっぱい（PC ナビとは別レイアウト） */
+@media (max-width: 768px) {
+  .app-nav--mobile-column {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 0.35rem;
+  }
+
+  .app-nav--mobile-column .nav-icon-link {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .app-nav--mobile-column .nav-icon-img {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    aspect-ratio: 214 / 66;
+    max-height: none;
+  }
+}

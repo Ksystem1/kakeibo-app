@@ -1,5 +1,11 @@
-import { useEffect } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
+import {
+  Outlet,
+  NavLink,
+  matchPath,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { getAuthMe, normalizeAuthContextUser } from "../lib/api";
@@ -42,6 +48,36 @@ export function AppLayout() {
   const { token, user, setUser, logout } = useAuth();
   const navigate = useNavigate();
   const mobile = useIsMobile();
+  const location = useLocation();
+  const [mobileMainHidden, setMobileMainHidden] = useState(false);
+  const prevPathnameRef = useRef<string | null>(null);
+
+  /** スマホで別ルートへ移ったらメインを再表示（同一ルート再タップでの閉じるはトグルで維持） */
+  useEffect(() => {
+    if (!mobile) {
+      setMobileMainHidden(false);
+      prevPathnameRef.current = null;
+      return;
+    }
+    const prev = prevPathnameRef.current;
+    prevPathnameRef.current = location.pathname;
+    if (prev !== null && prev !== location.pathname) {
+      setMobileMainHidden(false);
+    }
+  }, [location.pathname, mobile]);
+
+  const onMobileIconNavClick =
+    (to: string, end?: boolean) => (e: MouseEvent<HTMLAnchorElement>) => {
+      if (!mobile) return;
+      const active =
+        matchPath({ path: to, end: end ?? false }, location.pathname) != null;
+      if (active) {
+        e.preventDefault();
+        setMobileMainHidden((h) => !h);
+      } else {
+        setMobileMainHidden(false);
+      }
+    };
 
   useEffect(() => {
     let cancelled = false;
@@ -175,10 +211,11 @@ export function AppLayout() {
         </div>
         {/* 2段目: ナビゲーション */}
         <nav
+          className={token && mobile ? "app-nav--mobile-column" : undefined}
           style={{
             display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
+            flexWrap: mobile && token ? "nowrap" : "wrap",
+            alignItems: mobile && token ? "stretch" : "center",
             gap: mobile ? "0.2rem" : "0.28rem",
             width: "100%",
             minWidth: 0,
@@ -196,14 +233,26 @@ export function AppLayout() {
                   to="/dashboard"
                   className={navIconLinkClassName}
                   aria-label="ダッシュボード"
+                  onClick={onMobileIconNavClick("/dashboard")}
                 >
                   <img className="nav-icon-img" src={ICON_PATHS.dashboard} alt="" aria-hidden="true" />
                 </NavLink>
               ) : null}
-              <NavLink to="/" className={navIconLinkClassName} end aria-label="家計簿">
+              <NavLink
+                to="/"
+                className={navIconLinkClassName}
+                end
+                aria-label="家計簿"
+                onClick={onMobileIconNavClick("/", true)}
+              >
                 <img className="nav-icon-img" src={ICON_PATHS.kakeibo} alt="" aria-hidden="true" />
               </NavLink>
-              <NavLink to="/receipt" className={navIconLinkClassName} aria-label="レシート">
+              <NavLink
+                to="/receipt"
+                className={navIconLinkClassName}
+                aria-label="レシート"
+                onClick={onMobileIconNavClick("/receipt")}
+              >
                 <img className="nav-icon-img" src={ICON_PATHS.receipt} alt="" aria-hidden="true" />
               </NavLink>
               {!mobile ? (
@@ -211,13 +260,23 @@ export function AppLayout() {
                   <img className="nav-icon-img" src={ICON_PATHS.csvPc} alt="" aria-hidden="true" />
                 </NavLink>
               ) : null}
-              <NavLink to="/settings" className={navIconLinkClassName} aria-label="設定">
+              <NavLink
+                to="/settings"
+                className={navIconLinkClassName}
+                aria-label="設定"
+                onClick={onMobileIconNavClick("/settings")}
+              >
                 <img className="nav-icon-img" src={ICON_PATHS.settings} alt="" aria-hidden="true" />
               </NavLink>
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <NavLink to="/admin" className={navIconLinkClassName} aria-label="管理">
+                <NavLink
+                  to="/admin"
+                  className={navIconLinkClassName}
+                  aria-label="管理"
+                  onClick={onMobileIconNavClick("/admin")}
+                >
                   <img className="nav-icon-img" src={ICON_PATHS.admin} alt="" aria-hidden="true" />
                 </NavLink>
               ) : null}
@@ -234,8 +293,17 @@ export function AppLayout() {
           )}
         </nav>
       </header>
-      <main style={{ flex: 1 }}>
-        <Outlet />
+      <main style={{ flex: 1, minHeight: 0 }}>
+        <div
+          style={
+            mobile && token && mobileMainHidden
+              ? { display: "none" }
+              : { display: "block", minHeight: "100%" }
+          }
+          aria-hidden={mobile && token && mobileMainHidden ? true : undefined}
+        >
+          <Outlet />
+        </div>
       </main>
       {token ? <AiAdvisorChat /> : null}
       <AdSlot placement="footer" />
