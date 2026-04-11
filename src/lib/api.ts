@@ -389,6 +389,7 @@ export async function parseReceiptImage(imageBase64: string) {
         suggestedCategorySource?: "history" | "keywords" | "correction" | "ai" | null;
         learnCorrectionHit?: boolean;
         suggestedMemo?: string;
+        duplicateWarning?: string | null;
       }>(res);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

@@ -101,6 +101,16 @@ function normalizeTxMemo(raw) {
   return s === "" ? null : s;
 }
 
+/** レシート summary.date 等を SQL DATE 比較用 YYYY-MM-DD に寄せる */
+function normalizeReceiptDateForSql(raw) {
+  const t = String(raw ?? "")
+    .trim()
+    .replace(/\//g, "-");
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t);
+  if (!m) return "";
+  return `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
+}
+
 const RECEIPT_CATEGORY_KEYWORDS = {
   food: [
     "りんご",
@@ -1332,6 +1342,30 @@ export async function handleApiRequest(req, options = {}) {
           }
         }
         const memo = normalizeTxMemo(b.memo);
+        const fromReceipt = b.from_receipt === true || b.from_receipt === "true";
+        if (fromReceipt) {
+          const [exactRows] = await pool.query(
+            `SELECT t.id FROM transactions t
+             WHERE t.user_id = ?
+               AND t.kind = ?
+               AND t.transaction_date = ?
+               AND t.amount = ?
+               AND (t.memo <=> ?)
+             LIMIT 1`,
+            [userId, kind, txDate, amt, memo],
+          );
+          if (Array.isArray(exactRows) && exactRows.length > 0) {
+            return json(
+              409,
+              {
+                error: "AlreadyRegistered",
+                detail: "既に登録済です",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+        }
         const [dupRows] = await pool.query(
           `SELECT t.id, t.amount
            FROM transactions t
@@ -1937,6 +1971,34 @@ export async function handleApiRequest(req, options = {}) {
                 ? "ai"
                 : suggestedCategory?.source ?? null;
 
+          let duplicateWarning = null;
+          try {
+            const ymd = normalizeReceiptDateForSql(adjustedSummary?.date);
+            const tot = Number(adjustedSummary?.totalAmount ?? NaN);
+            const memoForDup =
+              learnCorrectionHit && learnedMemoPresent
+                ? normalizeTxMemo(learnedMemoValue)
+                : normalizeTxMemo(adjustedSummary?.vendorName);
+            if (ymd && Number.isFinite(tot) && tot > 0) {
+              const [exRows] = await pool.query(
+                `SELECT t.id FROM transactions t
+                 WHERE t.user_id = ?
+                   AND t.kind = 'expense'
+                   AND t.transaction_date = ?
+                   AND t.amount = ?
+                   AND (t.memo <=> ?)
+                 LIMIT 1`,
+                [userId, ymd, tot, memoForDup],
+              );
+              if (Array.isArray(exRows) && exRows.length > 0) {
+                duplicateWarning =
+                  "既に登録済です（同じお店・日付・金額の取引が登録されています）";
+              }
+            }
+          } catch (eDup) {
+            logError("receipts.parse.duplicate_check", eDup);
+          }
+
           const body = {
             ok: true,
             demo: false,
@@ -1952,6 +2014,9 @@ export async function handleApiRequest(req, options = {}) {
           };
           if (learnCorrectionHit && learnedMemoPresent) {
             body.suggestedMemo = learnedMemoValue;
+          }
+          if (duplicateWarning) {
+            body.duplicateWarning = duplicateWarning;
           }
           return json(200, body, hdrs, skipCors);
         } catch (e) {

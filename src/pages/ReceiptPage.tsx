@@ -336,7 +336,12 @@ export function ReceiptPage() {
             ? "keywords"
             : null),
       );
-      setNotice(r.notice ?? null);
+      {
+        const parts: string[] = [];
+        if (r.duplicateWarning) parts.push(r.duplicateWarning);
+        if (r.notice) parts.push(r.notice);
+        setNotice(parts.length ? parts.join(" ") : null);
+      }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
       setItems([]);
@@ -562,6 +567,7 @@ export function ReceiptPage() {
                 transaction_date: dateField.value,
                 memo: draftMemo.trim() || null,
                 category_id: draftCategoryId,
+                from_receipt: true,
               });
               if (lastOcrForLearn?.summary) {
                 void saveReceiptOcrCorrection({
