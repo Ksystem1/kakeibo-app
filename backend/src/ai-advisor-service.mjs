@@ -241,6 +241,128 @@ function buildInvokeBodyStringContent(systemPrompt, userPrompt, maxTokens, tempe
   });
 }
 
+/** Bedrock Claude メッセージ API: レシート画像（base64）＋テキスト指示 */
+function buildReceiptVisionInvokeBody(
+  systemPrompt,
+  textPrompt,
+  imageBase64,
+  mediaType,
+  maxTokens,
+  temperature,
+) {
+  const mt =
+    mediaType === "image/png"
+      ? "image/png"
+      : mediaType === "image/webp"
+        ? "image/webp"
+        : "image/jpeg";
+  return JSON.stringify({
+    anthropic_version: "bedrock-2023-05-31",
+    max_tokens: maxTokens,
+    temperature,
+    system: systemPrompt,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: mt,
+              data: imageBase64,
+            },
+          },
+          { type: "text", text: textPrompt },
+        ],
+      },
+    ],
+  });
+}
+
+/** 推定バイナリ長の目安（約 4.5MB base64 ≒ 3.4MB 画像） */
+const MAX_RECEIPT_VISION_BASE64_CHARS = 4_500_000;
+
+/**
+ * レシート画像を直接モデルへ送り JSON テキストを得る。失敗時は呼び出し元でテキストのみ経路へフォールバック。
+ */
+async function invokeBedrockReceiptVision({
+  systemPrompt,
+  textPrompt,
+  imageBase64,
+  mediaType,
+  maxTokens = 900,
+  temperature = 0.15,
+}) {
+  const raw = String(imageBase64 ?? "").replace(/\s/g, "");
+  if (!raw || raw.length > MAX_RECEIPT_VISION_BASE64_CHARS) {
+    logger.warn("receipt_vision_skip", {
+      reason: !raw ? "empty" : "too_large",
+      len: raw.length,
+    });
+    return { ok: false, code: "VisionSkipped", message: "No image or too large for vision" };
+  }
+
+  const { region, candidates } = getBedrockConfig();
+  if (!candidates.length) {
+    return { ok: false, code: "NoBedrockConfig", message: "No model candidates" };
+  }
+
+  const client = new BedrockRuntimeClient({ region });
+  let lastErr = null;
+
+  for (const mid of candidates) {
+    const body = buildReceiptVisionInvokeBody(
+      systemPrompt,
+      textPrompt,
+      raw,
+      mediaType,
+      maxTokens,
+      temperature,
+    );
+    try {
+      logger.info("receipt_vision_try", { modelId: mid, region, b64Chars: raw.length });
+      const reply = await tryInvokeModel(client, mid, body, "receipt_vision");
+      if (reply && String(reply).trim()) {
+        logger.info("receipt_vision_ok", { modelId: mid });
+        return { ok: true, reply: String(reply).trim(), modelId: mid };
+      }
+    } catch (e) {
+      lastErr = e;
+      logger.warn("receipt_vision_model_failed", {
+        modelId: mid,
+        ...serializeAwsError(e),
+      });
+    }
+  }
+
+  return {
+    ok: false,
+    code: "VisionAllModelsFailed",
+    message: lastErr instanceof Error ? lastErr.message : String(lastErr ?? "vision failed"),
+    ...mapAwsError(lastErr),
+  };
+}
+
+export function inferReceiptImageMediaTypeFromBuffer(buf) {
+  if (!buf || buf.length < 4) return "image/jpeg";
+  if (buf[0] === 0xff && buf[1] === 0xd8) return "image/jpeg";
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
+  if (
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return "image/jpeg";
+}
+
 async function tryInvokeModel(client, modelId, body, label) {
   return withThrottleRetry(async () => {
     const params = {
@@ -494,29 +616,123 @@ function parseJsonBlock(raw) {
   }
 }
 
-export async function askBedrockReceiptAssistant(input) {
+function normalizeReceiptAiPayload(data) {
+  if (!data || typeof data !== "object") return null;
+  let vendorName = data.vendorName;
+  if (vendorName != null) {
+    const v = String(vendorName).trim();
+    vendorName = v === "" || /^不明$/u.test(v) ? null : v.slice(0, 120);
+  } else {
+    vendorName = null;
+  }
+  let date = data.date != null ? String(data.date).trim() : null;
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) date = null;
+  let totalAmount = data.totalAmount;
+  if (totalAmount != null) {
+    const n = Number(totalAmount);
+    totalAmount = Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+  } else {
+    totalAmount = null;
+  }
+  let categoryName = data.categoryName != null ? String(data.categoryName).trim() : null;
+  if (categoryName === "" || /^不明$/u.test(categoryName)) categoryName = null;
+  const reason = data.reason != null ? String(data.reason).trim().slice(0, 500) : "";
+  return { vendorName, date, totalAmount, categoryName, reason };
+}
+
+/**
+ * @param {object} input
+ * @param {Record<string, unknown>} [input.summary]
+ * @param {unknown[]} [input.items]
+ * @param {string[]} [input.ocrLines]
+ * @param {string[]} [input.categoryCandidates] 登録済み支出カテゴリ名（このいずれかに最も近い名前を categoryName で返す）
+ * @param {string} [input.imageBase64] 画像の生 base64（data URL 可）。付与時は画像＋テキストで解析。
+ * @param {string} [input.imageMediaType] image/jpeg | image/png | image/webp
+ */
+export async function askBedrockReceiptAssistant(input = {}) {
+  const summary = input?.summary && typeof input.summary === "object" ? input.summary : {};
+  const items = Array.isArray(input?.items) ? input.items : [];
+  const ocrLines = Array.isArray(input?.ocrLines) ? input.ocrLines : [];
+  const categoryCandidates = Array.isArray(input?.categoryCandidates)
+    ? input.categoryCandidates.map((x) => String(x ?? "").trim()).filter(Boolean)
+    : [];
+  const imageBase64 = input?.imageBase64 != null ? String(input.imageBase64) : "";
+  const imageMediaType =
+    input?.imageMediaType != null ? String(input.imageMediaType).toLowerCase() : "image/jpeg";
+
+  const catList =
+    categoryCandidates.length > 0
+      ? categoryCandidates.join("、")
+      : "（カテゴリ一覧なし。一般的な日本の家計簿名で推定）";
+
   const systemPrompt = [
-    "あなたは家計簿アプリのレシート読取補助AIです。",
-    "OCRで崩れた店舗名・日付・合計金額を補正し、最適な支出カテゴリを提案してください。",
-    "必ずJSONのみを返してください。説明文は不要です。",
+    "あなたは家計簿アプリのレシート読取AIです。日本語レシートに強く、店舗名・合計・日付・支出カテゴリを推定します。",
+    "添付画像がある場合は画像の文字・レイアウトを最優先し、次に補助情報（Textractのsummary/items/ocrLines）を参照してください。",
+    `支出カテゴリは、次の登録済み名のいずれかに「最も近い」ものを1つだけ選び、categoryName にはその名前をできるだけそのまま出力してください: ${catList}`,
+    "店舗名・明細キーワードから推定してください（例: マクドナルド・スタバ・スーパー名→食費寄り、ドラッグストア→日用品、電車IC→交通費）。",
+    "店舗名が読めない場合は vendorName を null。合計金額が印字不明でも、明細行の金額から合理的に合計を推定できる場合は totalAmount に数値を入れてよい。どうしても無理なら totalAmount は null。",
+    "日付は YYYY-MM-DD のみ。読めなければ null。",
+    "必ず1つのJSONオブジェクトのみを返す。前後に説明文やマークダウンを付けない。",
   ].join("\n");
-  const userPrompt = [
-    "次の情報から補正してください。",
-    "ocrLines にはレシートから抽出した生テキスト行が含まれます。summary/itemsより優先して文脈判断に使ってください。",
-    JSON.stringify(input),
-    "出力JSONスキーマ:",
-    '{"vendorName":"string|null","date":"YYYY-MM-DD|null","totalAmount":number|null,"categoryName":"string|null","reason":"string"}',
+
+  const auxPayload = {
+    summary,
+    items,
+    ocrLines,
+    categoryCandidates,
+  };
+
+  const userTextPrompt = [
+    "添付レシート画像（ある場合）と、次の補助JSONを踏まえて抽出・補正してください。",
+    "出力は次のキーのみを持つJSON: vendorName, date, totalAmount, categoryName, reason",
+    "- vendorName: 店舗名。読取不可なら null",
+    "- date: YYYY-MM-DD または null",
+    "- totalAmount: 税込合計の数値（円）。不明なら明細から足し合わせて推定を試み、だめなら null",
+    "- categoryName: 上記カテゴリ一覧のいずれかに最も近い文字列、または null",
+    "- reason: 1文で判断根拠（日本語）",
+    "",
+    "補助JSON:",
+    JSON.stringify(auxPayload),
   ].join("\n");
-  const out = await invokeBedrockText({
-    systemPrompt,
-    userPrompt,
-    maxTokens: 260,
-    temperature: 0.2,
-  });
-  if (!out?.ok) return out;
-  const data = parseJsonBlock(out.reply);
-  if (!data || typeof data !== "object") {
+
+  let rawReply = "";
+  let receiptAiSource = "text";
+
+  if (imageBase64 && imageBase64.trim()) {
+    const vis = await invokeBedrockReceiptVision({
+      systemPrompt,
+      textPrompt: userTextPrompt,
+      imageBase64,
+      mediaType: imageMediaType,
+      maxTokens: 900,
+      temperature: 0.15,
+    });
+    if (vis.ok && vis.reply) {
+      rawReply = vis.reply;
+      receiptAiSource = "vision";
+    }
+  }
+
+  if (!rawReply) {
+    const textOnlyPrompt = [
+      userTextPrompt,
+      "",
+      "※画像は利用できないため、次のテキスト情報のみから推定してください。",
+    ].join("\n");
+    const out = await invokeBedrockText({
+      systemPrompt,
+      userPrompt: textOnlyPrompt,
+      maxTokens: 700,
+      temperature: 0.2,
+    });
+    if (!out?.ok) return out;
+    rawReply = out.reply;
+  }
+
+  const parsed = parseJsonBlock(rawReply);
+  const data = normalizeReceiptAiPayload(parsed);
+  if (!data) {
     return { ok: false, code: "InvalidModelJson", message: "Receipt AI JSON parse failed" };
   }
-  return { ok: true, data };
+  return { ok: true, data, receiptAiSource };
 }

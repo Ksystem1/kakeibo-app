@@ -21,7 +21,11 @@ import {
   mergeDuplicateCategories,
   normalizeCategoryNameKey,
 } from "./category-utils.mjs";
-import { askBedrockAdvisor, askBedrockReceiptAssistant } from "./ai-advisor-service.mjs";
+import {
+  askBedrockAdvisor,
+  askBedrockReceiptAssistant,
+  inferReceiptImageMediaTypeFromBuffer,
+} from "./ai-advisor-service.mjs";
 
 const logger = createLogger("api");
 
@@ -1813,6 +1817,8 @@ export async function handleApiRequest(req, options = {}) {
               items: result?.items ?? [],
               ocrLines: result?.ocrLines ?? [],
               categoryCandidates: expenseCatRows.map((c) => c.name),
+              imageBase64: buf.toString("base64"),
+              imageMediaType: inferReceiptImageMediaTypeFromBuffer(buf),
             });
           } catch (e) {
             logError("receipts.parse.ai_assist", e);
@@ -1849,6 +1855,20 @@ export async function handleApiRequest(req, options = {}) {
               if (aiCategoryId != null) {
                 const hit = expenseCatRows.find((x) => Number(x.id) === Number(aiCategoryId));
                 aiCategoryName = hit?.name ? String(hit.name) : aiCat;
+              }
+            }
+            if (
+              aiReceipt.receiptAiSource === "vision" &&
+              (d.vendorName == null || String(d.vendorName).trim() === "")
+            ) {
+              const cur = String(adjustedSummary.vendorName ?? "").trim();
+              if (
+                !cur ||
+                cur.length < 2 ||
+                /^(不明|unknown|不詳)$/i.test(cur) ||
+                /^[-_/|\s・。]+$/.test(cur)
+              ) {
+                adjustedSummary.vendorName = null;
               }
             }
           }
