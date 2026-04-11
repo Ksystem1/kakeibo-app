@@ -24,6 +24,7 @@ function isLikelyIos(): boolean {
   );
 }
 
+/** テキストナビ（未ログインのログイン・新規登録など） */
 function linkStyle(
   mobile: boolean,
   { isActive }: { isActive: boolean },
@@ -40,6 +41,29 @@ function linkStyle(
     boxShadow: isActive
       ? "0 3px 8px rgba(22, 108, 182, 0.18)"
       : "0 1px 4px rgba(15, 43, 71, 0.08)",
+    whiteSpace: "nowrap" as const,
+    minHeight: mobile ? 54 : 62,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+}
+
+/** 透過 PNG ナビ用。白いカード背景を付けずヘッダー（panel-bg）がそのまま見えるようにする */
+function navIconLinkStyle(
+  mobile: boolean,
+  { isActive }: { isActive: boolean },
+) {
+  return {
+    fontWeight: isActive ? 700 : 600,
+    color: isActive ? "var(--text)" : "var(--text-muted)",
+    textDecoration: "none",
+    padding: mobile ? "0.35rem 0.5rem" : "0.42rem 0.55rem",
+    fontSize: mobile ? "0.8rem" : undefined,
+    borderRadius: 12,
+    border: isActive ? "1px solid var(--accent)" : "1px solid transparent",
+    background: isActive ? "var(--accent-dim)" : "transparent",
+    boxShadow: isActive ? "0 2px 10px rgba(22, 108, 182, 0.12)" : "none",
     whiteSpace: "nowrap" as const,
     minHeight: mobile ? 54 : 62,
     display: "inline-flex",
@@ -271,7 +295,7 @@ export function AppLayout() {
                 <button
                   type="button"
                   onClick={() => void handleChromiumInstallClick()}
-                  style={linkStyle(mobile, { isActive: false })}
+                  style={navIconLinkStyle(mobile, { isActive: false })}
                   aria-label="アプリをインストール / 再読込"
                 >
                   <img src={navIconSrc("install-reload.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
@@ -281,7 +305,7 @@ export function AppLayout() {
                 <button
                   type="button"
                   onClick={() => setIosPwaHintOpen(true)}
-                  style={linkStyle(mobile, { isActive: false })}
+                  style={navIconLinkStyle(mobile, { isActive: false })}
                   aria-label="ホーム画面に追加"
                 >
                   <img src={navIconSrc("homeadd.png")} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
@@ -290,28 +314,28 @@ export function AppLayout() {
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <NavLink to="/dashboard" style={(p) => linkStyle(mobile, p)} aria-label="ダッシュボード">
+                <NavLink to="/dashboard" style={(p) => navIconLinkStyle(mobile, p)} aria-label="ダッシュボード">
                   <img src={ICON_PATHS.dashboard} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </NavLink>
               ) : null}
-              <NavLink to="/" style={(p) => linkStyle(mobile, p)} end aria-label="家計簿">
+              <NavLink to="/" style={(p) => navIconLinkStyle(mobile, p)} end aria-label="家計簿">
                 <img src={ICON_PATHS.kakeibo} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
               </NavLink>
               {!mobile ? (
-                <NavLink to="/import" style={(p) => linkStyle(mobile, p)} aria-label="CSV取込（PC）">
+                <NavLink to="/import" style={(p) => navIconLinkStyle(mobile, p)} aria-label="CSV取込（PC）">
                   <img src={ICON_PATHS.csvPc} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </NavLink>
               ) : null}
-              <NavLink to="/receipt" style={(p) => linkStyle(mobile, p)} aria-label="レシート">
+              <NavLink to="/receipt" style={(p) => navIconLinkStyle(mobile, p)} aria-label="レシート">
                 <img src={ICON_PATHS.receipt} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
               </NavLink>
-              <NavLink to="/settings" style={(p) => linkStyle(mobile, p)} aria-label="設定">
+              <NavLink to="/settings" style={(p) => navIconLinkStyle(mobile, p)} aria-label="設定">
                 <img src={ICON_PATHS.settings} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
               </NavLink>
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <NavLink to="/admin" style={(p) => linkStyle(mobile, p)} aria-label="管理">
+                <NavLink to="/admin" style={(p) => navIconLinkStyle(mobile, p)} aria-label="管理">
                   <img src={ICON_PATHS.admin} alt="" aria-hidden="true" style={navIconStyle(mobile)} />
                 </NavLink>
               ) : null}
