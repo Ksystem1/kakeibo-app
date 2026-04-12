@@ -1,25 +1,14 @@
 import { getStoredToken } from "../context/AuthContext";
 
 /**
- * 本番: .env.production の VITE_API_URL。
- * 開発: 既定で **http://localhost:3456/api** に固定（誤った VITE_API_URL や古いプロキシ先を避ける）。
- *   Vite プロキシ経由に戻す: VITE_API_USE_VITE_PROXY=1
- *   別ポート: VITE_API_DEV_BASE_URL=http://127.0.0.1:9999/api
+ * 開発（import.meta.env.DEV）では環境変数を使わず、API を常にこのオリジンに固定する。
+ * 本番は VITE_API_URL 等を使用。
  */
+const DEV_FORCED_API_BASE = "http://localhost:3456/api";
+
 function resolveApiBase(): string {
   if (import.meta.env.DEV) {
-    if (String(import.meta.env.VITE_API_USE_VITE_PROXY ?? "").trim() === "1") {
-      return "/api";
-    }
-    const custom = String(import.meta.env.VITE_API_DEV_BASE_URL ?? "").trim();
-    if (custom) {
-      let u = custom.replace(/\/$/, "");
-      if (String(import.meta.env.VITE_API_APPEND_PREFIX ?? "").trim() === "1" && !/\/api$/i.test(u)) {
-        u = `${u}/api`;
-      }
-      return u;
-    }
-    return "http://localhost:3456/api";
+    return DEV_FORCED_API_BASE;
   }
   const raw = import.meta.env.VITE_API_URL;
   if (raw != null && String(raw).trim() !== "") {
@@ -32,14 +21,17 @@ function resolveApiBase(): string {
   return "";
 }
 
-/** GET /config 用。未設定時は `${BASE}/config` */
+/** GET /config（開発は固定 URL、本番は VITE_STRIPE_CONFIG_URL または BASE/config） */
 function resolveStripeConfigUrl(): string {
+  if (import.meta.env.DEV) {
+    return `${DEV_FORCED_API_BASE}/config`;
+  }
   const full = String(import.meta.env.VITE_STRIPE_CONFIG_URL ?? "").trim();
   if (full) return full;
   return `${resolveApiBase()}/config`;
 }
 
-/** ブラウザ・プロキシのキャッシュを避けるためクエリを付与 */
+/** 必ず `?t=` でキャッシュ無効化（本番も同様） */
 function resolveStripeConfigUrlForFetch(): string {
   const u = resolveStripeConfigUrl();
   const sep = u.includes("?") ? "&" : "?";
@@ -51,19 +43,13 @@ function resolveStripeConfigUrlForFetch(): string {
  */
 export function logStripeConfigRequestPlan(): void {
   if (!import.meta.env.DEV || typeof console === "undefined" || !console.debug) return;
-  const base = resolveApiBase();
-  const full = resolveStripeConfigUrl();
-  console.debug("[api] Stripe config: resolveApiBase() =", JSON.stringify(base), "→ GET", full);
-  if (base === "/api") {
-    console.debug(
-      "[api] Vite プロキシモード: /api →",
-      import.meta.env.VITE_API_PROXY_TARGET || "http://127.0.0.1:3456",
-    );
-  } else if (String(base).startsWith("http://localhost:3456") || String(base).includes("127.0.0.1:3456")) {
-    console.debug(
-      "[api] 開発既定: バックエンド直結（CORS は backend CORS_ORIGIN に http://localhost:5173 を含める）",
-    );
-  }
+  console.debug(
+    "[api] DEV 固定:",
+    DEV_FORCED_API_BASE,
+    "→ GET",
+    resolveStripeConfigUrl(),
+    "+ ?t=（キャッシュ無効）",
+  );
 }
 
 /** 設定画面のボタン活性: Checkout 可能または Price ID がサーバーで取れているとき */
