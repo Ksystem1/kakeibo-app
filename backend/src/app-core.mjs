@@ -510,7 +510,36 @@ function isMissingSubscriptionStatusColumnError(e) {
   return msg.includes("subscription_status");
 }
 
+/**
+ * 実 DB に subscription_status 列があるか（一覧用の誤検知を防ぐ）
+ */
+async function probeUsersSubscriptionStatusColumnPresent(pool) {
+  try {
+    await pool.query(`SELECT subscription_status FROM users WHERE 1=0`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 管理一覧と同じ並び・件数で subscription_status のみ取得してマップ化
+ */
+async function fetchAdminUsersSubscriptionStatusMap(pool) {
+  const [subRows] = await pool.query(
+    `SELECT id, subscription_status FROM users ORDER BY id ASC LIMIT 1000`,
+  );
+  const map = new Map();
+  if (Array.isArray(subRows)) {
+    for (const r of subRows) {
+      map.set(Number(r.id), r.subscription_status);
+    }
+  }
+  return map;
+}
+
 let warnedAdminUsersListSubscriptionColumnMissing = false;
+let warnedAdminUsersListDecomposed = false;
 
 const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
            u.id,
@@ -583,21 +612,48 @@ async function fetchAdminUsersListRows(pool) {
       subscriptionStatusWritable: true,
     };
   } catch (e) {
-    if (isMissingSubscriptionStatusColumnError(e)) {
-      if (!warnedAdminUsersListSubscriptionColumnMissing) {
-        warnedAdminUsersListSubscriptionColumnMissing = true;
+    if (!isMissingSubscriptionStatusColumnError(e)) throw e;
+
+    const columnPresent = await probeUsersSubscriptionStatusColumnPresent(pool);
+    if (columnPresent) {
+      if (!warnedAdminUsersListDecomposed) {
+        warnedAdminUsersListDecomposed = true;
         logger.warn(
-          "admin.users: subscription_status column missing; apply db/migration_v8_users_subscription_status.sql",
-          { event: "admin.users.subscription_column_missing" },
+          "admin.users: primary list query failed but subscription_status column exists; using decomposed query",
+          {
+            event: "admin.users.list_decomposed_after_sub_error",
+            message: String(e?.message || e),
+            code: e?.code,
+            errno: e?.errno,
+          },
         );
       }
       const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITHOUT_SUB);
+      const list = Array.isArray(rows) ? rows : [];
+      const subMap = await fetchAdminUsersSubscriptionStatusMap(pool);
+      const merged = list.map((r) => ({
+        ...r,
+        subscription_status:
+          subMap.get(Number(r.id)) != null ? subMap.get(Number(r.id)) : null,
+      }));
       return {
-        rows: Array.isArray(rows) ? rows : [],
-        subscriptionStatusWritable: false,
+        rows: merged,
+        subscriptionStatusWritable: true,
       };
     }
-    throw e;
+
+    if (!warnedAdminUsersListSubscriptionColumnMissing) {
+      warnedAdminUsersListSubscriptionColumnMissing = true;
+      logger.warn(
+        "admin.users: subscription_status column missing; apply db/migration_v8_users_subscription_status.sql",
+        { event: "admin.users.subscription_column_missing" },
+      );
+    }
+    const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITHOUT_SUB);
+    return {
+      rows: Array.isArray(rows) ? rows : [],
+      subscriptionStatusWritable: false,
+    };
   }
 }
 
