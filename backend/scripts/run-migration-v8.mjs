@@ -1,6 +1,7 @@
 /**
  * RDS に db/migration_v8_users_subscription_status.sql を適用する。
  * 実行: cd backend && npm run db:migrate-v8
+ * SQL は冪等（subscription_status 列が既にあればスキップ）。
  */
 import "dotenv/config";
 import fs from "node:fs";

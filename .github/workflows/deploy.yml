@@ -1,3 +1,5 @@
+# RDS の DDL（db/migration_*.sql）はこのワークフローでは実行しません。
+# 本番適用はスナップショット取得のうえ、手元から npm run db:migrate-v8 等、または mysql で流し込んでください。
 name: Deploy backend (ECS Fargate + Terraform)
 
 on:
