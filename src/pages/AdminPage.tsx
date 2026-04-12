@@ -84,6 +84,8 @@ export function AdminPage() {
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newIsAdmin, setNewIsAdmin] = useState(false);
+  /** RDS に users.subscription_status が無いとき false（一覧は表示、プルダウンは無効） */
+  const [subscriptionStatusWritable, setSubscriptionStatusWritable] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,6 +94,7 @@ export function AdminPage() {
       const res = await getAdminUsers();
       const list = Array.isArray(res.items) ? res.items : [];
       setItems(list);
+      setSubscriptionStatusWritable(res.meta?.subscriptionStatusWritable !== false);
       setDisplayNameDrafts(
         Object.fromEntries(
           list.map((u) => [u.id, u.display_name ?? ""]),
@@ -349,6 +352,23 @@ export function AdminPage() {
         )}
       </div>
       {error ? <p style={{ color: "#b42318", fontWeight: 600 }}>{error}</p> : null}
+      {!subscriptionStatusWritable ? (
+        <p
+          style={{
+            margin: "0 0 0.65rem",
+            padding: "0.55rem 0.75rem",
+            borderRadius: 8,
+            background: "var(--panel-bg)",
+            border: "1px solid var(--border)",
+            fontSize: "0.88rem",
+            color: "var(--text-muted)",
+          }}
+        >
+          <strong>サブスク状態の手動変更は利用できません。</strong>
+          RDS の <code>users</code> に <code>subscription_status</code> 列がありません。{" "}
+          <code>db/migration_v8_users_subscription_status.sql</code> を適用すると、一覧のプルダウンから変更できます。
+        </p>
+      ) : null}
       <button
         type="button"
         onClick={() => {
@@ -420,11 +440,16 @@ export function AdminPage() {
                 <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
                   <select
                     value={u.subscriptionStatus ?? "inactive"}
-                    disabled={savingUserId === u.id}
+                    disabled={savingUserId === u.id || !subscriptionStatusWritable}
                     onChange={(e) => {
                       void onSetSubscriptionStatus(u.id, e.target.value);
                     }}
                     style={{ minWidth: 120, maxWidth: 200 }}
+                    title={
+                      !subscriptionStatusWritable
+                        ? "subscription_status 列が無いため変更できません（v8 マイグレーションを適用してください）"
+                        : undefined
+                    }
                   >
                     {Array.from(
                       new Set([...ADMIN_SUBSCRIPTION_STATUSES, u.subscriptionStatus ?? "inactive"]),

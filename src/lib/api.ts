@@ -557,6 +557,7 @@ export async function getAdminUsers() {
       default_family_id: number | null;
       family_peers: string | null;
     }>;
+    meta?: { subscriptionStatusWritable?: boolean };
   }>(res);
 }
 

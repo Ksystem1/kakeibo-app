@@ -486,6 +486,108 @@ function isUnknownIsPremiumColumnError(e) {
   );
 }
 
+function isUnknownSubscriptionColumnError(e) {
+  if (!e || typeof e !== "object") return false;
+  const code = e.code ? String(e.code) : "";
+  const errno = Number(e.errno);
+  const msg = String(e.message || "");
+  return (
+    (code === "ER_BAD_FIELD_ERROR" || errno === 1054) &&
+    msg.includes("subscription_status")
+  );
+}
+
+let warnedAdminUsersListSubscriptionColumnMissing = false;
+
+const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
+           u.id,
+           u.email,
+           u.login_name,
+           u.display_name,
+           u.is_admin,
+           u.subscription_status,
+           u.created_at,
+           u.updated_at,
+           u.last_login_at,
+           u.default_family_id,
+           (
+             SELECT GROUP_CONCAT(
+               CONCAT(
+                 COALESCE(NULLIF(TRIM(u2.display_name), ''), u2.email),
+                 ' (', fm2.role, ')'
+               )
+               ORDER BY fm2.id
+               SEPARATOR ' / '
+             )
+             FROM family_members fm2
+             JOIN users u2 ON u2.id = fm2.user_id
+             WHERE u.default_family_id IS NOT NULL
+               AND fm2.family_id = u.default_family_id
+           ) AS family_peers
+         FROM users u
+         LEFT JOIN families f ON f.id = u.default_family_id
+         ORDER BY u.id ASC
+         LIMIT 1000`;
+
+const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
+           u.id,
+           u.email,
+           u.login_name,
+           u.display_name,
+           u.is_admin,
+           u.created_at,
+           u.updated_at,
+           u.last_login_at,
+           u.default_family_id,
+           (
+             SELECT GROUP_CONCAT(
+               CONCAT(
+                 COALESCE(NULLIF(TRIM(u2.display_name), ''), u2.email),
+                 ' (', fm2.role, ')'
+               )
+               ORDER BY fm2.id
+               SEPARATOR ' / '
+             )
+             FROM family_members fm2
+             JOIN users u2 ON u2.id = fm2.user_id
+             WHERE u.default_family_id IS NOT NULL
+               AND fm2.family_id = u.default_family_id
+           ) AS family_peers
+         FROM users u
+         LEFT JOIN families f ON f.id = u.default_family_id
+         ORDER BY u.id ASC
+         LIMIT 1000`;
+
+/**
+ * migration v8 未適用時は subscription_status なしで一覧取得する。
+ * @returns {Promise<{ rows: unknown[]; subscriptionStatusWritable: boolean }>}
+ */
+async function queryAdminUsersListRows(pool) {
+  try {
+    const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITH_SUB);
+    return {
+      rows: Array.isArray(rows) ? rows : [],
+      subscriptionStatusWritable: true,
+    };
+  } catch (e) {
+    if (isUnknownSubscriptionColumnError(e)) {
+      if (!warnedAdminUsersListSubscriptionColumnMissing) {
+        warnedAdminUsersListSubscriptionColumnMissing = true;
+        logger.warn(
+          "admin.users: subscription_status column missing; listing without it (apply db/migration_v8_users_subscription_status.sql)",
+          { event: "admin.users.subscription_column_missing" },
+        );
+      }
+      const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITHOUT_SUB);
+      return {
+        rows: Array.isArray(rows) ? rows : [],
+        subscriptionStatusWritable: false,
+      };
+    }
+    throw e;
+  }
+}
+
 async function loadUserSubscriptionRowFull(pool, userId) {
   try {
     const [rows] = await pool.query(
@@ -967,38 +1069,8 @@ export async function handleApiRequest(req, options = {}) {
     if (routeKey(method, path) === "GET /admin/users") {
       const admin = await ensureAdmin(pool, userId);
       if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
-      const [rows] = await pool.query(
-        `SELECT
-           u.id,
-           u.email,
-           u.login_name,
-           u.display_name,
-           u.is_admin,
-           u.subscription_status,
-           u.created_at,
-           u.updated_at,
-           u.last_login_at,
-           u.default_family_id,
-           (
-             SELECT GROUP_CONCAT(
-               CONCAT(
-                 COALESCE(NULLIF(TRIM(u2.display_name), ''), u2.email),
-                 ' (', fm2.role, ')'
-               )
-               ORDER BY fm2.id
-               SEPARATOR ' / '
-             )
-             FROM family_members fm2
-             JOIN users u2 ON u2.id = fm2.user_id
-             WHERE u.default_family_id IS NOT NULL
-               AND fm2.family_id = u.default_family_id
-           ) AS family_peers
-         FROM users u
-         LEFT JOIN families f ON f.id = u.default_family_id
-         ORDER BY u.id ASC
-         LIMIT 1000`,
-      );
-      const items = (Array.isArray(rows) ? rows : []).map((r) => ({
+      const { rows, subscriptionStatusWritable } = await queryAdminUsersListRows(pool);
+      const items = rows.map((r) => ({
         id: Number(r.id),
         email: String(r.email ?? ""),
         login_name: r.login_name == null ? null : String(r.login_name),
@@ -1014,7 +1086,15 @@ export async function handleApiRequest(req, options = {}) {
         default_family_id: r.default_family_id ?? null,
         family_peers: r.family_peers == null || r.family_peers === "" ? null : String(r.family_peers),
       }));
-      return json(200, { items }, hdrs, skipCors);
+      return json(
+        200,
+        {
+          items,
+          meta: { subscriptionStatusWritable },
+        },
+        hdrs,
+        skipCors,
+      );
     }
 
     if (routeKey(method, path) === "POST /admin/users") {
@@ -1183,10 +1263,26 @@ export async function handleApiRequest(req, options = {}) {
           return json(400, { error: "最後の管理者の権限は外せません" }, hdrs, skipCors);
         }
       }
-      await pool.query(
-        `UPDATE users SET ${updates.join(", ")}, updated_at = NOW() WHERE id = ?`,
-        [...params, targetUserId],
-      );
+      try {
+        await pool.query(
+          `UPDATE users SET ${updates.join(", ")}, updated_at = NOW() WHERE id = ?`,
+          [...params, targetUserId],
+        );
+      } catch (e) {
+        if (isUnknownSubscriptionColumnError(e)) {
+          return json(
+            503,
+            {
+              error: "SubscriptionColumnMissing",
+              detail:
+                "users.subscription_status 列がありません。RDS に db/migration_v8_users_subscription_status.sql を適用してから、サブスク状態を変更してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        throw e;
+      }
       return json(200, { ok: true }, hdrs, skipCors);
     }
 
