@@ -29,11 +29,12 @@ import {
 import {
   deriveSubscriptionStatusFromDbRow,
   getEffectiveSubscriptionStatus,
-  isSubscriptionActive,
   isUserIdForcedPremiumByEnv,
   normalizeAdminSettableSubscriptionStatus,
   bodyContainsSubscriptionMutationFields,
+  userHasPremiumSubscriptionAccess,
 } from "./subscription-logic.mjs";
+import { cancelUserSubscriptionAtPeriodEnd } from "./stripe-billing-cancel.mjs";
 import { createBillingCheckoutSession } from "./stripe-checkout.mjs";
 import { processStripeWebhook } from "./stripe-webhook.mjs";
 
@@ -644,47 +645,35 @@ async function fetchAdminUsersListRows(pool) {
   };
 }
 
-async function loadUserSubscriptionRowFull(pool, userId) {
-  try {
-    const [rows] = await pool.query(
-      `SELECT subscription_status, is_premium FROM users WHERE id = ? LIMIT 1`,
-      [userId],
-    );
-    if (!Array.isArray(rows) || rows.length === 0) return {};
-    return rows[0];
-  } catch (e) {
-    if (isUnknownIsPremiumColumnError(e)) {
-      try {
-        const [rows] = await pool.query(
-          `SELECT subscription_status FROM users WHERE id = ? LIMIT 1`,
-          [userId],
-        );
-        if (!Array.isArray(rows) || rows.length === 0) return {};
-        return rows[0];
-      } catch (e2) {
-        if (isUnknownSubscriptionColumnError(e2)) {
-          logger.warn("subscription_status column missing; defaulting to inactive", {
-            userId,
-          });
-          return {};
-        }
-        throw e2;
-      }
-    }
-    if (isUnknownSubscriptionColumnError(e)) {
-      logger.warn("subscription_status column missing; defaulting to inactive", {
-        userId,
-      });
-      return {};
-    }
-    throw e;
-  }
+function isErBadFieldErrorAppCore(e) {
+  if (!e || typeof e !== "object") return false;
+  const code = String(e.code || "");
+  const errno = Number(e.errno);
+  return code === "ER_BAD_FIELD_ERROR" || errno === 1054;
 }
 
-async function loadUserSubscriptionStatus(pool, userId) {
-  const row = await loadUserSubscriptionRowFull(pool, userId);
-  const derived = deriveSubscriptionStatusFromDbRow(row);
-  return getEffectiveSubscriptionStatus(derived, userId);
+async function loadUserSubscriptionRowFull(pool, userId) {
+  const queries = [
+    `SELECT subscription_status, is_premium, subscription_period_end_at, subscription_cancel_at_period_end FROM users WHERE id = ? LIMIT 1`,
+    `SELECT subscription_status, is_premium FROM users WHERE id = ? LIMIT 1`,
+    `SELECT subscription_status FROM users WHERE id = ? LIMIT 1`,
+  ];
+  let lastErr;
+  for (const sql of queries) {
+    try {
+      const [rows] = await pool.query(sql, [userId]);
+      if (!Array.isArray(rows) || rows.length === 0) return {};
+      return rows[0];
+    } catch (e) {
+      lastErr = e;
+      if (!isErBadFieldErrorAppCore(e)) throw e;
+    }
+  }
+  logger.warn("subscription_status column missing; defaulting to inactive", {
+    userId,
+    lastErr: String(lastErr?.message || lastErr),
+  });
+  return {};
 }
 
 /**
@@ -876,6 +865,7 @@ export async function handleApiRequest(req, options = {}) {
             stripeWebhook: "/webhooks/stripe",
             stripeWebhookApiPrefixed: "/api/webhooks/stripe",
             billingCheckoutSession: "/billing/checkout-session",
+            billingCancelSubscription: "/billing/cancel-subscription",
           },
         },
         hdrs,
@@ -1608,6 +1598,45 @@ export async function handleApiRequest(req, options = {}) {
         }
       }
 
+      case "POST /billing/cancel-subscription": {
+        const b = JSON.parse(req.body || "{}");
+        const canSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (canSubRej) return canSubRej;
+        try {
+          const r = await cancelUserSubscriptionAtPeriodEnd(pool, userId);
+          return json(200, r, hdrs, skipCors);
+        } catch (e) {
+          const msg = String(e?.message || e);
+          if (
+            msg.includes("未登録") ||
+            msg.includes("対象") ||
+            msg.includes("ありません")
+          ) {
+            return json(
+              400,
+              { error: "BillingCancelUnavailable", detail: msg },
+              hdrs,
+              skipCors,
+            );
+          }
+          if (msg.includes("STRIPE_") || msg.includes("設定")) {
+            return json(
+              503,
+              { error: "StripeUnavailable", detail: msg },
+              hdrs,
+              skipCors,
+            );
+          }
+          logError("billing.cancel_subscription", e);
+          return json(
+            500,
+            { error: "InternalError", detail: msg },
+            hdrs,
+            skipCors,
+          );
+        }
+      }
+
       case "POST /categories": {
         const b = JSON.parse(req.body || "{}");
         const catSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
@@ -2304,8 +2333,8 @@ export async function handleApiRequest(req, options = {}) {
             result?.summary?.vendorName ?? "",
             result?.items ?? [],
           );
-          const subscriptionStatus = await loadUserSubscriptionStatus(pool, userId);
-          let subscriptionActive = isSubscriptionActive(subscriptionStatus);
+          const subRow = await loadUserSubscriptionRowFull(pool, userId);
+          let subscriptionActive = userHasPremiumSubscriptionAccess(subRow, userId);
           let debugReceiptTierOverride = null;
           if (isReceiptSubscriptionDebugAllowed()) {
             const raw =

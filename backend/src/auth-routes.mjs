@@ -11,6 +11,7 @@ import { getPool } from "./db.mjs";
 import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
 import {
   bodyContainsSubscriptionMutationFields,
+  buildUserSubscriptionApiFields,
   deriveSubscriptionStatusFromDbRow,
   getEffectiveSubscriptionStatus,
 } from "./subscription-logic.mjs";
@@ -101,27 +102,30 @@ function routeKey(method, path) {
   return `${method} ${p}`;
 }
 
-/** migration_v8 未適用（subscription_status 列なし）時の Unknown column エラー */
-function isUnknownSubscriptionColumnError(e) {
+function isErBadFieldError(e) {
   if (!e || typeof e !== "object") return false;
-  const code = e.code ? String(e.code) : "";
+  const code = String(e.code || "");
   const errno = Number(e.errno);
-  const msg = String(e.message || "");
-  const okCode = code === "ER_BAD_FIELD_ERROR" || errno === 1054;
-  if (!okCode) return false;
-  if (!/unknown column/i.test(msg)) return false;
-  return msg.includes("subscription_status");
+  return code === "ER_BAD_FIELD_ERROR" || errno === 1054;
 }
 
-function isUnknownIsPremiumColumnError(e) {
-  if (!e || typeof e !== "object") return false;
-  const code = e.code ? String(e.code) : "";
-  const errno = Number(e.errno);
-  const msg = String(e.message || "");
-  return (
-    (code === "ER_BAD_FIELD_ERROR" || errno === 1054) &&
-    msg.includes("is_premium")
-  );
+/**
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {string[]} queries
+ * @param {unknown[]} params
+ */
+async function queryWithColumnFallback(pool, queries, params) {
+  let lastErr;
+  for (const sql of queries) {
+    try {
+      const [rows] = await pool.query(sql, params);
+      return { rows };
+    } catch (e) {
+      lastErr = e;
+      if (!isErBadFieldError(e)) throw e;
+    }
+  }
+  throw lastErr;
 }
 
 let warnedSubscriptionColumnMissing = false;
@@ -143,69 +147,51 @@ function warnSubscriptionColumnMissingOnce() {
  */
 async function queryLoginUserRow(pool, login) {
   const params = [login, login];
-  const sqlFull = `SELECT id, email, password_hash, is_admin, subscription_status, is_premium FROM users
-           WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`;
-  const sqlSub = `SELECT id, email, password_hash, is_admin, subscription_status FROM users
-           WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`;
-  const sqlBase = `SELECT id, email, password_hash, is_admin FROM users
-           WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`;
-  try {
-    const [rows] = await pool.query(sqlFull, params);
-    return { rows };
-  } catch (e) {
-    if (isUnknownIsPremiumColumnError(e)) {
-      try {
-        const [rows] = await pool.query(sqlSub, params);
-        return { rows };
-      } catch (e2) {
-        if (isUnknownSubscriptionColumnError(e2)) {
-          warnSubscriptionColumnMissingOnce();
-          const [rows] = await pool.query(sqlBase, params);
-          return { rows };
-        }
-        throw e2;
-      }
-    }
-    if (isUnknownSubscriptionColumnError(e)) {
-      warnSubscriptionColumnMissingOnce();
-      const [rows] = await pool.query(sqlBase, params);
-      return { rows };
-    }
-    throw e;
+  const w = `WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`;
+  const { rows } = await queryWithColumnFallback(
+    pool,
+    [
+      `SELECT id, email, password_hash, is_admin, subscription_status, is_premium, subscription_period_end_at, subscription_cancel_at_period_end, stripe_subscription_id FROM users ${w}`,
+      `SELECT id, email, password_hash, is_admin, subscription_status, is_premium FROM users ${w}`,
+      `SELECT id, email, password_hash, is_admin, subscription_status FROM users ${w}`,
+      `SELECT id, email, password_hash, is_admin FROM users ${w}`,
+    ],
+    params,
+  );
+  if (
+    rows.length > 0 &&
+    rows[0] &&
+    typeof rows[0] === "object" &&
+    !Object.prototype.hasOwnProperty.call(rows[0], "subscription_status")
+  ) {
+    warnSubscriptionColumnMissingOnce();
   }
+  return { rows };
 }
 
 /**
  * @returns {Promise<{ rows: unknown[] }>}
  */
 async function queryMeUserRow(pool, uid) {
-  const sqlFull = `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status, is_premium FROM users WHERE id = ?`;
-  const sqlSub = `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status FROM users WHERE id = ?`;
-  const sqlBase = `SELECT id, email, login_name, display_name, default_family_id, is_admin FROM users WHERE id = ?`;
-  try {
-    const [rows] = await pool.query(sqlFull, [uid]);
-    return { rows };
-  } catch (e) {
-    if (isUnknownIsPremiumColumnError(e)) {
-      try {
-        const [rows] = await pool.query(sqlSub, [uid]);
-        return { rows };
-      } catch (e2) {
-        if (isUnknownSubscriptionColumnError(e2)) {
-          warnSubscriptionColumnMissingOnce();
-          const [rows] = await pool.query(sqlBase, [uid]);
-          return { rows };
-        }
-        throw e2;
-      }
-    }
-    if (isUnknownSubscriptionColumnError(e)) {
-      warnSubscriptionColumnMissingOnce();
-      const [rows] = await pool.query(sqlBase, [uid]);
-      return { rows };
-    }
-    throw e;
+  const { rows } = await queryWithColumnFallback(
+    pool,
+    [
+      `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status, is_premium, subscription_period_end_at, subscription_cancel_at_period_end, stripe_subscription_id FROM users WHERE id = ?`,
+      `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status, is_premium FROM users WHERE id = ?`,
+      `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status FROM users WHERE id = ?`,
+      `SELECT id, email, login_name, display_name, default_family_id, is_admin FROM users WHERE id = ?`,
+    ],
+    [uid],
+  );
+  if (
+    rows.length > 0 &&
+    rows[0] &&
+    typeof rows[0] === "object" &&
+    !Object.prototype.hasOwnProperty.call(rows[0], "subscription_status")
+  ) {
+    warnSubscriptionColumnMissingOnce();
   }
+  return { rows };
 }
 
 export async function getDefaultFamilyId(pool, userId) {
@@ -520,6 +506,7 @@ export async function tryAuthRoutes(req, ctx) {
               deriveSubscriptionStatusFromDbRow(u),
               u.id,
             ),
+            ...buildUserSubscriptionApiFields(u),
           },
         },
         hdrs,
@@ -643,6 +630,9 @@ export async function tryAuthRoutes(req, ctx) {
         is_admin: isAdminRaw,
         subscription_status: _sub,
         is_premium: _prem,
+        subscription_period_end_at: _pe,
+        subscription_cancel_at_period_end: _ce,
+        stripe_subscription_id: _ssid,
         ...safeUser
       } = row;
       return json(
@@ -656,6 +646,7 @@ export async function tryAuthRoutes(req, ctx) {
               deriveSubscriptionStatusFromDbRow(row),
               row.id,
             ),
+            ...buildUserSubscriptionApiFields(row),
           },
         },
         hdrs,

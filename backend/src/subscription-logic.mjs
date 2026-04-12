@@ -46,6 +46,44 @@ export function isSubscriptionActive(subscriptionStatus) {
 }
 
 /**
+ * プレミアム機能（ナビスキン・レシート AI 等）の利用可否。
+ * - active / trialing は利用可（解約予定で期間内のケースも Stripe 上は多くは active のまま）
+ * - canceled でも請求期間終了日時まで利用可（即時解約などの稀なケース）
+ * @param {Record<string, unknown>} row users の一部（subscription_period_end_at 任意）
+ * @param {number} userId
+ */
+export function userHasPremiumSubscriptionAccess(row, userId) {
+  const status = getEffectiveSubscriptionStatus(deriveSubscriptionStatusFromDbRow(row), userId);
+  if (isSubscriptionActive(status)) return true;
+  const s = String(status ?? "").trim().toLowerCase();
+  if (s === "past_due") return true;
+  if (s === "canceled") {
+    const raw = row?.subscription_period_end_at;
+    if (raw == null || raw === "") return false;
+    const end = raw instanceof Date ? raw : new Date(raw);
+    if (!Number.isFinite(end.getTime())) return false;
+    return Date.now() <= end.getTime();
+  }
+  return false;
+}
+
+/**
+ * API 応答用: 期間終了・解約予定フラグ
+ * @param {Record<string, unknown>} row
+ */
+export function buildUserSubscriptionApiFields(row) {
+  const raw = row?.subscription_period_end_at;
+  let subscriptionPeriodEndAt = null;
+  if (raw != null && raw !== "") {
+    const d = raw instanceof Date ? raw : new Date(raw);
+    if (Number.isFinite(d.getTime())) subscriptionPeriodEndAt = d.toISOString();
+  }
+  const subscriptionCancelAtPeriodEnd =
+    Number(row?.subscription_cancel_at_period_end) === 1;
+  return { subscriptionPeriodEndAt, subscriptionCancelAtPeriodEnd };
+}
+
+/**
  * Stripe Subscription.status → users.subscription_status（32 文字以内）
  * @see https://docs.stripe.com/api/subscriptions/object#subscription_object-status
  */

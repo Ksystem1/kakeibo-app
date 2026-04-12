@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "./AuthContext";
+import { hasPremiumNavAccess } from "../lib/subscriptionAccess";
 import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
@@ -22,6 +23,7 @@ import {
   isNavSkinUnlocked,
   isKnownNavSkinId,
   DEFAULT_NAV_SKIN_ID,
+  PREMIUM_NAV_SKIN_ID,
 } from "../config/navSkins";
 
 const KEY = "kakeibo_font_scale";
@@ -164,6 +166,8 @@ type Settings = {
   navSkinId: string;
   navIconPaths: NavIconPaths;
   navSkinOptions: NavSkinOptionView[];
+  /** Stripe サブスク等でプレミアムナビスキンが選べるか */
+  premiumNavUnlocked: boolean;
   setFontScale: (n: number) => void;
   setFontMode: (m: FontMode) => void;
   setThemeMode: (m: ThemeMode) => void;
@@ -177,8 +181,9 @@ type Settings = {
 const SettingsContext = createContext<Settings | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const { token } = useAuth();
+  const { token, user: authUser } = useAuth();
   const apiBase = getApiBaseUrl();
+  const premiumNavUnlocked = hasPremiumNavAccess(authUser);
 
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
     try {
@@ -266,6 +271,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [navSkinId]);
 
   useEffect(() => {
+    if (!premiumNavUnlocked && navSkinId === PREMIUM_NAV_SKIN_ID) {
+      setNavSkinIdState(DEFAULT_NAV_SKIN_ID);
+    }
+  }, [premiumNavUnlocked, navSkinId]);
+
+  useEffect(() => {
     if (!apiBase || !canSendAuthenticatedRequest(token)) {
       setFixedCostsByMonth(legacyFixedCostsRecord());
       return;
@@ -322,11 +333,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setNavSkinId = useCallback(
     (id: string) => {
       if (!isKnownNavSkinId(id)) return false;
-      if (!isNavSkinUnlocked(id, ownedNavSkinIds)) return false;
+      const unlocked =
+        isNavSkinUnlocked(id, ownedNavSkinIds) ||
+        (id === PREMIUM_NAV_SKIN_ID && premiumNavUnlocked);
+      if (!unlocked) return false;
       setNavSkinIdState(id);
       return true;
     },
-    [ownedNavSkinIds],
+    [ownedNavSkinIds, premiumNavUnlocked],
   );
 
   const mergeOwnedNavSkinsFromServer = useCallback((ids: readonly string[]) => {
@@ -345,10 +359,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         id: s.id,
         label: s.label,
         description: s.description,
-        unlocked: isNavSkinUnlocked(s.id, ownedNavSkinIds),
+        unlocked:
+          isNavSkinUnlocked(s.id, ownedNavSkinIds) ||
+          (s.id === PREMIUM_NAV_SKIN_ID && premiumNavUnlocked),
         selected: s.id === navSkinId,
       })),
-    [ownedNavSkinIds, navSkinId],
+    [ownedNavSkinIds, navSkinId, premiumNavUnlocked],
   );
 
   const setFontScale = (n: number) => {
@@ -411,6 +427,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       navSkinId,
       navIconPaths,
       navSkinOptions,
+      premiumNavUnlocked,
       setFontScale,
       setFontMode,
       setThemeMode,
@@ -426,6 +443,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       navSkinId,
       navIconPaths,
       navSkinOptions,
+      premiumNavUnlocked,
       setFixedCostsForMonth,
       setNavSkinId,
       mergeOwnedNavSkinsFromServer,

@@ -105,9 +105,24 @@ async function syncSubscriptionToUser(pool, subscription, deleted) {
     ? "canceled"
     : mapStripeSubscriptionStatusToDb(subscription.status);
 
+  const periodEndUnix = deleted
+    ? Number(subscription.ended_at ?? subscription.current_period_end ?? 0) || null
+    : Number(subscription.current_period_end ?? 0) || null;
+  const periodEndDate =
+    periodEndUnix != null && periodEndUnix > 0
+      ? new Date(periodEndUnix * 1000)
+      : null;
+  const cancelAtEnd = deleted ? 0 : subscription.cancel_at_period_end ? 1 : 0;
+  const subId =
+    typeof subscription.id === "string"
+      ? subscription.id
+      : subscription.id != null
+        ? String(subscription.id)
+        : null;
+
   const [res] = await pool.query(
-    `UPDATE users SET subscription_status = ?, updated_at = NOW() WHERE stripe_customer_id = ?`,
-    [dbStatus, customerId],
+    `UPDATE users SET subscription_status = ?, subscription_period_end_at = ?, subscription_cancel_at_period_end = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE stripe_customer_id = ?`,
+    [dbStatus, periodEndDate, cancelAtEnd, subId, customerId],
   );
   if (!res.affectedRows) {
     logger.warn("stripe.subscription_no_user_for_customer", {
@@ -148,15 +163,24 @@ async function linkStripeCustomerFromCheckout(pool, session) {
     }
   }
 
+  const subId =
+    typeof session.subscription === "string"
+      ? session.subscription
+      : session.subscription && typeof session.subscription === "object"
+        ? session.subscription.id
+        : null;
+  const subIdStr =
+    subId != null && String(subId).trim() !== "" ? String(subId).trim() : null;
+
   if (setSubscriptionStatus) {
     await pool.query(
-      `UPDATE users SET stripe_customer_id = ?, subscription_status = ?, updated_at = NOW() WHERE id = ?`,
-      [customerId, dbStatus, userId],
+      `UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), subscription_status = ?, updated_at = NOW() WHERE id = ?`,
+      [customerId, subIdStr, dbStatus, userId],
     );
   } else {
     await pool.query(
-      `UPDATE users SET stripe_customer_id = ?, updated_at = NOW() WHERE id = ?`,
-      [customerId, userId],
+      `UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE id = ?`,
+      [customerId, subIdStr, userId],
     );
   }
 }

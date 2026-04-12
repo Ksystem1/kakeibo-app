@@ -16,6 +16,9 @@ type User = {
   isAdmin?: boolean;
   /** サーバ users.subscription_status（例: active / inactive） */
   subscriptionStatus?: string;
+  /** ISO 8601（Stripe current_period_end） */
+  subscriptionPeriodEndAt?: string | null;
+  subscriptionCancelAtPeriodEnd?: boolean;
 };
 
 type AuthState = {

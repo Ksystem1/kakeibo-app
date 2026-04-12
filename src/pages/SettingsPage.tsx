@@ -6,15 +6,19 @@ import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
+import { PREMIUM_NAV_SKIN_ID } from "../config/navSkins";
 import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
   getAuthMe,
   normalizeAuthContextUser,
+  postBillingCancelSubscription,
   postBillingCheckoutSession,
   reclassifyUncategorizedReceipts,
 } from "../lib/api";
+import { hasPremiumNavAccess } from "../lib/subscriptionAccess";
 import { subscriptionStatusLabelJa } from "../lib/subscriptionStatusLabels";
+import { formatSettingsSubscriptionSummary } from "../lib/subscriptionStatusUi";
 import {
   clearPwaInstallBannerHidden,
   isPwaInstallBannerHidden,
@@ -82,6 +86,7 @@ export function SettingsPage() {
     setFixedCostsForMonth,
     navSkinOptions,
     setNavSkinId,
+    premiumNavUnlocked,
   } = useSettings();
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyResult, setReclassifyResult] = useState<string | null>(null);
@@ -97,6 +102,9 @@ export function SettingsPage() {
     String(import.meta.env.VITE_STRIPE_TEST_CHECKOUT ?? "").trim() === "1";
   const [stripeCheckoutBusy, setStripeCheckoutBusy] = useState(false);
   const [stripeCheckoutMessage, setStripeCheckoutMessage] = useState<string | null>(null);
+  const [premiumContractOpen, setPremiumContractOpen] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelMessage, setCancelMessage] = useState<string | null>(null);
 
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
     itemsForFixedCostEditor(fixedCostsByMonth),
@@ -117,6 +125,7 @@ export function SettingsPage() {
     void getAuthMe()
       .then((res) => {
         if (res?.user) setUser(normalizeAuthContextUser(res.user));
+        setPremiumContractOpen(false);
       })
       .catch(() => {
         /* オフライン時は無視 */
@@ -216,24 +225,39 @@ export function SettingsPage() {
           className={styles.modeRow}
           style={{ marginTop: "0.5rem", flexWrap: "wrap", gap: "0.4rem" }}
         >
-          {navSkinOptions.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              disabled={!opt.unlocked}
-              className={`${styles.btn} ${opt.selected ? styles.btnPrimary : ""}`}
-              aria-pressed={opt.selected}
-              aria-label={
-                opt.unlocked
-                  ? `${opt.label}に切り替え`
-                  : `${opt.label}（未購入のため選択できません）`
-              }
-              onClick={() => setNavSkinId(opt.id)}
-            >
-              {opt.unlocked ? "" : "🔒 "}
-              {opt.label}
-            </button>
-          ))}
+          {navSkinOptions.map((opt) => {
+            const isPremiumSkin = opt.id === PREMIUM_NAV_SKIN_ID;
+            const locked = !opt.unlocked;
+            const premiumLocked = isPremiumSkin && locked;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                disabled={locked && !isPremiumSkin}
+                className={`${styles.btn} ${opt.selected ? styles.btnPrimary : ""}`}
+                aria-pressed={opt.selected}
+                aria-label={
+                  premiumLocked
+                    ? `${opt.label}（タップで契約・プランの案内を表示）`
+                    : opt.unlocked
+                      ? `${opt.label}に切り替え`
+                      : `${opt.label}（未購入のため選択できません）`
+                }
+                onClick={() => {
+                  if (premiumLocked) {
+                    setPremiumContractOpen(true);
+                    setCancelMessage(null);
+                    setStripeCheckoutMessage(null);
+                    return;
+                  }
+                  setNavSkinId(opt.id);
+                }}
+              >
+                {opt.unlocked ? "" : "🔒 "}
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
         {token && authUser ? (
           <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
@@ -243,6 +267,107 @@ export function SettingsPage() {
                 {subscriptionStatusLabelJa(authUser.subscriptionStatus ?? "inactive")}
               </strong>
             </p>
+            <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+              {formatSettingsSubscriptionSummary(authUser)}
+            </p>
+            {premiumContractOpen &&
+            stripeCheckoutEnabled &&
+            getApiBaseUrl() &&
+            canSendAuthenticatedRequest(token) ? (
+              <div
+                className={styles.settingsPanel}
+                style={{
+                  marginTop: "0.5rem",
+                  padding: "0.75rem",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  background: "var(--panel-bg)",
+                }}
+              >
+                <p style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>プレミアム契約</p>
+                <p className={styles.reclassifyHint} style={{ margin: "0 0 0.65rem" }}>
+                  Stripe でサブスクリプションに申し込むと、プレミアムナビスキンやレシート関連の機能がご利用いただけます。解約はいつでも可能で、
+                  <strong> 請求期間の終了日までは利用を継続</strong>できます（Stripe の請求サイクルに準じます）。
+                </p>
+                <div className={styles.modeRow} style={{ flexWrap: "wrap", gap: "0.4rem" }}>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnPrimary}`}
+                    disabled={stripeCheckoutBusy}
+                    onClick={async () => {
+                      setStripeCheckoutMessage(null);
+                      setStripeCheckoutBusy(true);
+                      try {
+                        const base =
+                          typeof window !== "undefined"
+                            ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "") || ""}`
+                            : "";
+                        const { url } = await postBillingCheckoutSession({
+                          successUrl: `${base}/settings?checkout=success`,
+                          cancelUrl: `${base}/settings?checkout=cancel`,
+                        });
+                        window.location.assign(url);
+                      } catch (e) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        setStripeCheckoutMessage(msg);
+                      } finally {
+                        setStripeCheckoutBusy(false);
+                      }
+                    }}
+                  >
+                    {stripeCheckoutBusy ? "準備中…" : "プレミアムに申し込む（Stripe Checkout）"}
+                  </button>
+                  {hasPremiumNavAccess(authUser) &&
+                  !authUser.subscriptionCancelAtPeriodEnd &&
+                  ["active", "trialing", "past_due"].includes(
+                    String(authUser.subscriptionStatus ?? "").toLowerCase(),
+                  ) ? (
+                    <button
+                      type="button"
+                      className={styles.btn}
+                      disabled={cancelBusy}
+                      onClick={async () => {
+                        setCancelMessage(null);
+                        setCancelBusy(true);
+                        try {
+                          await postBillingCancelSubscription();
+                          const res = await getAuthMe();
+                          if (res?.user) setUser(normalizeAuthContextUser(res.user));
+                        } catch (e) {
+                          setCancelMessage(e instanceof Error ? e.message : String(e));
+                        } finally {
+                          setCancelBusy(false);
+                        }
+                      }}
+                    >
+                      {cancelBusy ? "処理中…" : "解約する（期間終了まで利用可）"}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={styles.btn}
+                    onClick={() => setPremiumContractOpen(false)}
+                  >
+                    閉じる
+                  </button>
+                </div>
+                {stripeCheckoutMessage ? (
+                  <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+                    {stripeCheckoutMessage}
+                  </p>
+                ) : null}
+                {cancelMessage ? (
+                  <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+                    {cancelMessage}
+                  </p>
+                ) : null}
+                <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+                  テストカード例: 4242 4242 4242 4242。ローカルで{" "}
+                  <code>stripe listen</code> 中は <code>whsec_...</code> を{" "}
+                  <code>STRIPE_WEBHOOK_SECRET</code> に合わせてください。
+                </p>
+              </div>
+            ) : null}
             {premiumPurchaseUrl ? (
               <p style={{ margin: "0.45rem 0 0" }}>
                 <a href={premiumPurchaseUrl} target="_blank" rel="noopener noreferrer">
@@ -250,46 +375,14 @@ export function SettingsPage() {
                 </a>
               </p>
             ) : null}
-            {stripeCheckoutEnabled && getApiBaseUrl() && canSendAuthenticatedRequest(token) ? (
-              <div style={{ margin: "0.55rem 0 0" }}>
-                <button
-                  type="button"
-                  className={`${styles.btn} ${styles.btnPrimary}`}
-                  disabled={stripeCheckoutBusy}
-                  onClick={async () => {
-                    setStripeCheckoutMessage(null);
-                    setStripeCheckoutBusy(true);
-                    try {
-                      const base =
-                        typeof window !== "undefined"
-                          ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "") || ""}`
-                          : "";
-                      const { url } = await postBillingCheckoutSession({
-                        successUrl: `${base}/settings?checkout=success`,
-                        cancelUrl: `${base}/settings?checkout=cancel`,
-                      });
-                      window.location.assign(url);
-                    } catch (e) {
-                      const msg = e instanceof Error ? e.message : String(e);
-                      setStripeCheckoutMessage(msg);
-                    } finally {
-                      setStripeCheckoutBusy(false);
-                    }
-                  }}
-                >
-                  {stripeCheckoutBusy ? "準備中…" : "プレミアムに申し込む（Stripe Checkout）"}
-                </button>
-                {stripeCheckoutMessage ? (
-                  <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
-                    {stripeCheckoutMessage}
-                  </p>
-                ) : null}
-                <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
-                  Stripe テストモード想定。カード番号 4242 4242 4242 4242 などで完了できます。ローカルで{" "}
-                  <code>stripe listen</code> 中は、CLI が表示する <code>whsec_...</code> を{" "}
-                  <code>backend/.env</code> の <code>STRIPE_WEBHOOK_SECRET</code> に合わせてください。
-                </p>
-              </div>
+            {stripeCheckoutEnabled &&
+            getApiBaseUrl() &&
+            canSendAuthenticatedRequest(token) &&
+            premiumNavUnlocked &&
+            !premiumContractOpen ? (
+              <p className={styles.reclassifyHint} style={{ margin: "0.45rem 0 0" }}>
+                プレミアム未契約のときは「プレミアム」スキンボタンを押すと、契約・お申し込みのパネルを表示します。
+              </p>
             ) : null}
           </div>
         ) : null}

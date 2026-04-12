@@ -167,6 +167,8 @@ export async function getAuthMe() {
       isAdmin?: boolean;
       is_admin?: number | boolean;
       subscriptionStatus?: string;
+      subscriptionPeriodEndAt?: string | null;
+      subscriptionCancelAtPeriodEnd?: boolean;
     };
   }>(res);
 }
@@ -181,6 +183,15 @@ export async function postBillingCheckoutSession(body: {
     body: JSON.stringify(body),
   });
   return parse<{ url: string }>(res);
+}
+
+export async function postBillingCancelSubscription() {
+  const res = await apiFetch(`${BASE}/billing/cancel-subscription`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: "{}",
+  });
+  return parse<{ ok: boolean; subscriptionId?: string }>(res);
 }
 
 function rawToIsAdmin(isAdmin: unknown, is_admin: unknown): boolean {
@@ -202,17 +213,24 @@ export function normalizeAuthContextUser(raw: {
   isAdmin?: unknown;
   is_admin?: unknown;
   subscriptionStatus?: unknown;
+  subscriptionPeriodEndAt?: unknown;
+  subscriptionCancelAtPeriodEnd?: unknown;
 }): {
   id: number;
   email: string;
   familyId: number | null;
   isAdmin: boolean;
   subscriptionStatus: string;
+  subscriptionPeriodEndAt: string | null;
+  subscriptionCancelAtPeriodEnd: boolean;
 } {
   const email = String(raw.email ?? "");
   const normalizedIsAdmin = rawToIsAdmin(raw.isAdmin, raw.is_admin);
   const hardcodedSuperAdmin =
     email.toLowerCase() === "script_00123@yahoo.co.jp";
+  const pe = raw.subscriptionPeriodEndAt;
+  const subscriptionPeriodEndAt =
+    pe != null && String(pe).trim() !== "" ? String(pe) : null;
   return {
     id: Number(raw.id),
     email,
@@ -223,6 +241,8 @@ export function normalizeAuthContextUser(raw: {
       raw.subscriptionStatus != null && String(raw.subscriptionStatus).trim() !== ""
         ? String(raw.subscriptionStatus).trim()
         : "inactive",
+    subscriptionPeriodEndAt,
+    subscriptionCancelAtPeriodEnd: raw.subscriptionCancelAtPeriodEnd === true,
   };
 }
 

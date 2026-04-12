@@ -8,6 +8,9 @@
 
 export const DEFAULT_NAV_SKIN_ID = "Tmp01";
 
+/** プレミアム契約が必要なスキン（subscription 連携で解放） */
+export const PREMIUM_NAV_SKIN_ID = "Tmp02";
+
 export type NavSkinDefinition = {
   id: string;
   label: string;
@@ -26,8 +29,8 @@ export const NAV_SKIN_CATALOG: readonly NavSkinDefinition[] = [
   {
     id: "Tmp02",
     label: "プレミアム",
-    free: true,
-    description: "別デザインのナビアイコン",
+    free: false,
+    description: "別デザインのナビアイコン（プレミアム契約で利用）",
   },
 ] as const;
 
