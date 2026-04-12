@@ -173,20 +173,59 @@ export async function getAuthMe() {
   }>(res);
 }
 
-/** サーバーに Checkout 用の Price ID・Stripe 秘密鍵が揃っているか。stripeTestPriceId は API が読んだ STRIPE_TEST_PRICE_ID（検証用） */
-export async function getBillingStripeStatus() {
+/** GET /config の stripe オブジェクト（正規化前） */
+export type BillingStripeStatus = {
+  checkoutReady: boolean;
+  priceIdConfigured: boolean;
+  secretKeyConfigured: boolean;
+  stripeTestPriceId?: string;
+};
+
+/**
+ * API のフラグと stripeTestPriceId を突き合わせ、Price ID 有無をフロントでも一貫させる。
+ * （バックエンドのみ Price ID が取れている場合に priceIdConfigured が false になるずれを吸収）
+ */
+export function normalizeBillingStripeStatus(
+  raw: Partial<BillingStripeStatus> | null | undefined,
+): BillingStripeStatus {
+  const stripeTestPriceId = String(raw?.stripeTestPriceId ?? "").trim();
+  const priceIdConfigured =
+    Boolean(raw?.priceIdConfigured) || stripeTestPriceId.length > 0;
+  const secretKeyConfigured = Boolean(raw?.secretKeyConfigured);
+  const checkoutReady =
+    Boolean(raw?.checkoutReady) || (priceIdConfigured && secretKeyConfigured);
+  return {
+    checkoutReady,
+    priceIdConfigured,
+    secretKeyConfigured,
+    stripeTestPriceId,
+  };
+}
+
+/** サーバーに Checkout 用の Price ID・Stripe 秘密鍵が揃っているか。stripeTestPriceId は検証用 */
+export async function getBillingStripeStatus(): Promise<BillingStripeStatus> {
   const res = await apiFetch(`${BASE}/config`, {
     headers: buildHeaders(),
   });
-  const data = await parse<{
-    stripe: {
-      checkoutReady: boolean;
-      priceIdConfigured: boolean;
-      secretKeyConfigured: boolean;
-      stripeTestPriceId?: string;
-    };
-  }>(res);
-  return data.stripe;
+  const text = await res.text();
+  let data: unknown = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("config の応答が JSON ではありません");
+  }
+  if (!res.ok) {
+    const err = data as { error?: string; detail?: string; message?: string };
+    const detail = String(err.detail ?? err.message ?? "").trim();
+    const code = String(err.error ?? "").trim();
+    throw new Error(detail || code || res.statusText);
+  }
+  const body = data as {
+    stripe?: Partial<BillingStripeStatus>;
+  } & Partial<BillingStripeStatus>;
+  const rawStripe = body.stripe ?? body;
+  console.log("Stripe Config received:", data);
+  return normalizeBillingStripeStatus(rawStripe);
 }
 
 export async function postBillingCheckoutSession(body: {
