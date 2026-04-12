@@ -34,6 +34,7 @@ import {
   normalizeAdminSettableSubscriptionStatus,
   bodyContainsSubscriptionMutationFields,
 } from "./subscription-logic.mjs";
+import { processStripeWebhook } from "./stripe-webhook.mjs";
 
 const logger = createLogger("api");
 
@@ -570,23 +571,10 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
          LIMIT 1000`;
 
 /**
- * users.subscription_status が実在するか（information_schema はスキーマ名・権限で誤判定しうるため実 SELECT で確認）
- */
-async function usersTableHasSubscriptionStatusColumn(pool) {
-  try {
-    await pool.query("SELECT `subscription_status` FROM `users` LIMIT 0");
-    return true;
-  } catch (e) {
-    if (isMissingSubscriptionStatusColumnError(e)) return false;
-    throw e;
-  }
-}
-
-/**
- * プローブ失敗時（information_schema 非参照権限など）のみ従来の Unknown column 検知にフォールバック。
+ * 管理者一覧: 実際に subscription_status 付き SELECT が成功すれば meta は true（別プローブと矛盾しない）。
  * @returns {Promise<{ rows: unknown[]; subscriptionStatusWritable: boolean }>}
  */
-async function queryAdminUsersListRowsFallbackTryCatch(pool) {
+async function fetchAdminUsersListRows(pool) {
   try {
     const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITH_SUB);
     return {
@@ -598,7 +586,7 @@ async function queryAdminUsersListRowsFallbackTryCatch(pool) {
       if (!warnedAdminUsersListSubscriptionColumnMissing) {
         warnedAdminUsersListSubscriptionColumnMissing = true;
         logger.warn(
-          "admin.users: subscription_status column missing (fallback path); apply db/migration_v8_users_subscription_status.sql",
+          "admin.users: subscription_status column missing; apply db/migration_v8_users_subscription_status.sql",
           { event: "admin.users.subscription_column_missing" },
         );
       }
@@ -609,35 +597,6 @@ async function queryAdminUsersListRowsFallbackTryCatch(pool) {
       };
     }
     throw e;
-  }
-}
-
-/**
- * @returns {Promise<{ rows: unknown[]; subscriptionStatusWritable: boolean }>}
- */
-async function fetchAdminUsersListRows(pool) {
-  try {
-    const hasSubCol = await usersTableHasSubscriptionStatusColumn(pool);
-    if (!hasSubCol) {
-      if (!warnedAdminUsersListSubscriptionColumnMissing) {
-        warnedAdminUsersListSubscriptionColumnMissing = true;
-        logger.warn(
-          "admin.users: information_schema reports no users.subscription_status (apply db/migration_v8_users_subscription_status.sql)",
-          { event: "admin.users.subscription_column_missing" },
-        );
-      }
-    }
-    const sql = hasSubCol ? ADMIN_USERS_LIST_SQL_WITH_SUB : ADMIN_USERS_LIST_SQL_WITHOUT_SUB;
-    const [rows] = await pool.query(sql);
-    return {
-      rows: Array.isArray(rows) ? rows : [],
-      subscriptionStatusWritable: hasSubCol,
-    };
-  } catch (e) {
-    logger.warn("admin.users: schema probe or list query failed; using try/catch fallback", {
-      message: String(e?.message || e),
-    });
-    return queryAdminUsersListRowsFallbackTryCatch(pool);
   }
 }
 
@@ -870,6 +829,7 @@ export async function handleApiRequest(req, options = {}) {
             transactions: "/transactions",
             summary: "/summary/month",
             fixedCosts: "/settings/fixed-costs",
+            stripeWebhook: "/webhooks/stripe",
           },
         },
         hdrs,
@@ -951,6 +911,21 @@ export async function handleApiRequest(req, options = {}) {
     }
 
     const pool = getPool();
+
+    if (routeKey(method, path) === "POST /webhooks/stripe") {
+      const sigHeader =
+        hdrs["stripe-signature"] ??
+        hdrs["Stripe-Signature"] ??
+        hdrs["STRIPE-SIGNATURE"];
+      const rawPayload =
+        req.stripeRawPayload != null
+          ? req.stripeRawPayload
+          : typeof req.body === "string"
+            ? req.body
+            : "";
+      const wh = await processStripeWebhook(rawPayload, sigHeader, pool);
+      return json(wh.statusCode, wh.body, hdrs, skipCors);
+    }
 
     const userId = resolveUserId(hdrs);
     if (!userId) {
@@ -1281,7 +1256,7 @@ export async function handleApiRequest(req, options = {}) {
             400,
             {
               error:
-                "subscriptionStatus は inactive / active / past_due / canceled / trialing のいずれかで指定してください",
+                "subscriptionStatus は inactive / active / past_due / canceled / trialing / unpaid / paused のいずれかで指定してください",
             },
             hdrs,
             skipCors,

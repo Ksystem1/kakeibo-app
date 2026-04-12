@@ -13,6 +13,8 @@ const ADMIN_SUBSCRIPTION_STATUSES = [
   "past_due",
   "canceled",
   "trialing",
+  "unpaid",
+  "paused",
 ] as const;
 
 type AdminUser = {

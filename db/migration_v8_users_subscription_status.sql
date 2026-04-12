@@ -9,7 +9,8 @@
 --
 -- 再実行: 列が既に存在する場合は ALTER をスキップします（冪等）。
 --
--- 任意: 真偽フラグは v9（is_premium）を参照。
+-- 保存例（小文字）: inactive, active, trialing, past_due, canceled, unpaid, paused（Stripe Subscription.status と整合。incomplete は inactive に正規化）
+-- 任意: 真偽フラグは v9（is_premium）を参照。Stripe の cus_ は v10 stripe_customer_id。
 
 SET NAMES utf8mb4;
 
@@ -24,7 +25,7 @@ SET @v8_col_exists := (
 
 SET @v8_sql := IF(
   @v8_col_exists = 0,
-  'ALTER TABLE users ADD COLUMN subscription_status VARCHAR(32) NOT NULL DEFAULT ''inactive'' COMMENT ''inactive | active（Stripe Webhook 等で更新）''',
+  'ALTER TABLE users ADD COLUMN subscription_status VARCHAR(32) NOT NULL DEFAULT ''inactive'' COMMENT ''Stripe/admin: active trialing past_due canceled unpaid paused inactive''',
   'SELECT 1 AS migration_v8_subscription_status_already_applied'
 );
 

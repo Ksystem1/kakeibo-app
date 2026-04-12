@@ -1,6 +1,7 @@
 /**
- * Stripe 等で更新する users.subscription_status / is_premium と連携。
- * DB 値は小文字推奨（'active' のみ有効扱い）。is_premium=1 も active と同等。
+ * Stripe Webhook / 管理者 PATCH で更新する users.subscription_status / is_premium と連携。
+ * DB: VARCHAR(32)（migration v8）。Stripe Subscription.status を小文字で保存（incomplete 系は inactive に正規化）。
+ * is_premium=1 もレシートAI 等では active と同等。
  */
 
 /** カンマ・セミコロン・空白区切りの users.id。Stripe 前のローカル検証用。 */
@@ -40,16 +41,35 @@ export function deriveSubscriptionStatusFromDbRow(row) {
 }
 
 export function isSubscriptionActive(subscriptionStatus) {
-  return String(subscriptionStatus ?? "").trim().toLowerCase() === "active";
+  const s = String(subscriptionStatus ?? "").trim().toLowerCase();
+  return s === "active" || s === "trialing";
 }
 
-/** 管理者が PATCH /admin/users/:id で設定可能な subscription_status（VARCHAR(32) 内） */
+/**
+ * Stripe Subscription.status → users.subscription_status（32 文字以内）
+ * @see https://docs.stripe.com/api/subscriptions/object#subscription_object-status
+ */
+export function mapStripeSubscriptionStatusToDb(stripeStatus) {
+  const s = String(stripeStatus || "").trim().toLowerCase();
+  if (s === "incomplete" || s === "incomplete_expired") return "inactive";
+  if (s === "active") return "active";
+  if (s === "trialing") return "trialing";
+  if (s === "past_due") return "past_due";
+  if (s === "canceled") return "canceled";
+  if (s === "unpaid") return "unpaid";
+  if (s === "paused") return "paused";
+  return "inactive";
+}
+
+/** 管理者が PATCH /admin/users/:id で設定可能（Stripe と整合） */
 export const ADMIN_SETTABLE_SUBSCRIPTION_STATUSES = new Set([
   "inactive",
   "active",
   "past_due",
   "canceled",
   "trialing",
+  "unpaid",
+  "paused",
 ]);
 
 /**
