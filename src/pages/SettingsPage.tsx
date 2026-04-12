@@ -12,6 +12,7 @@ import {
   getApiBaseUrl,
   getAuthMe,
   getBillingStripeStatus,
+  isStripeCheckoutUiReady,
   normalizeAuthContextUser,
   postBillingCheckoutSession,
   postBillingPortalSession,
@@ -144,20 +145,30 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (!premiumContractOpen || !getApiBaseUrl()) return;
+    if (!canSendAuthenticatedRequest(token)) return;
     setStripeCheckoutReady(null);
     let cancelled = false;
     void getBillingStripeStatus()
       .then((r) => {
-        if (!cancelled) setStripeCheckoutReady(r.checkoutReady);
+        if (!cancelled) {
+          setStripeCheckoutReady(isStripeCheckoutUiReady(r));
+          console.log("Stripe Config received:", {
+            checkoutReady: r.checkoutReady,
+            priceIdConfigured: r.priceIdConfigured,
+            secretKeyConfigured: r.secretKeyConfigured,
+            uiReady: isStripeCheckoutUiReady(r),
+          });
+        }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn("Stripe config fetch failed:", err);
         /* ステータス取得に失敗しても Checkout 自体は試せるようにする */
         if (!cancelled) setStripeCheckoutReady(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [premiumContractOpen]);
+  }, [premiumContractOpen, token]);
 
   return (
     <div className={styles.wrap}>

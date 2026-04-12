@@ -28,6 +28,35 @@ function resolveStripeConfigUrl(): string {
   return `${resolveApiBase()}/config`;
 }
 
+/** ブラウザ・CDN キャッシュを避けるためクエリを付与 */
+function resolveStripeConfigUrlForFetch(): string {
+  const u = resolveStripeConfigUrl();
+  const sep = u.includes("?") ? "&" : "?";
+  return `${u}${sep}_cb=${Date.now()}`;
+}
+
+/**
+ * 開発時: 実際に叩く URL をコンソールに出す（Vite 未設定時は相対 /api → プロキシで 127.0.0.1:3456）
+ */
+export function logStripeConfigRequestPlan(): void {
+  if (!import.meta.env.DEV || typeof console === "undefined" || !console.debug) return;
+  const base = resolveApiBase();
+  const full = resolveStripeConfigUrl();
+  console.debug("[api] Stripe config: resolveApiBase() =", JSON.stringify(base), "→ GET", full);
+  if (base === "/api") {
+    console.debug(
+      "[api] ブラウザ上は同一オリジン + /api 。Vite が",
+      import.meta.env.VITE_API_PROXY_TARGET || "http://127.0.0.1:3456",
+      "へプロキシします（vite.config proxy /api）。",
+    );
+  }
+}
+
+/** 設定画面のボタン活性: Checkout 可能または Price ID がサーバーで取れているとき */
+export function isStripeCheckoutUiReady(status: BillingStripeStatus): boolean {
+  return Boolean(status.checkoutReady || status.priceIdConfigured);
+}
+
 const BASE = resolveApiBase();
 
 const FETCH_TIMEOUT_MS = 25_000;
@@ -229,8 +258,18 @@ export function normalizeBillingStripeStatus(
 
 /** サーバーに Checkout 用の Price ID・Stripe 秘密鍵が揃っているか。stripeTestPriceId は検証用 */
 export async function getBillingStripeStatus(): Promise<BillingStripeStatus> {
-  const res = await apiFetch(resolveStripeConfigUrl(), {
-    headers: buildHeaders(),
+  logStripeConfigRequestPlan();
+  const url = resolveStripeConfigUrlForFetch();
+  if (import.meta.env.DEV && typeof console !== "undefined") {
+    console.debug("[api] Stripe config: GET (no-store)", url);
+  }
+  const res = await apiFetch(url, {
+    cache: "no-store",
+    headers: {
+      ...buildHeaders(),
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+    },
   });
   const text = await res.text();
   let data: unknown = {};
@@ -249,7 +288,6 @@ export async function getBillingStripeStatus(): Promise<BillingStripeStatus> {
     stripe?: Partial<BillingStripeStatus>;
   } & Partial<BillingStripeStatus>;
   const rawStripe = body.stripe ?? body;
-  console.log("Stripe Config received:", data);
   return normalizeBillingStripeStatus(rawStripe);
 }
 

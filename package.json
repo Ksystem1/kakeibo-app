@@ -20,6 +20,7 @@
     "verify:connectivity": "node infra/scripts/verify-connectivity.mjs",
     "verify:git-sync": "node infra/scripts/verify-git-sync.mjs",
     "verify:stripe-config": "node scripts/verify-stripe-config.mjs",
+    "verify:frontend-api": "node scripts/verify-frontend-api-fetch.mjs",
     "backup:release": "node scripts/backup-release.mjs"
   },
   "dependencies": {
