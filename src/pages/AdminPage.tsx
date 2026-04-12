@@ -17,6 +17,22 @@ const ADMIN_SUBSCRIPTION_STATUSES = [
   "paused",
 ] as const;
 
+/** DB / API は英語のまま。画面表示のみ日本語（Stripe Subscription.status 相当） */
+const ADMIN_SUBSCRIPTION_STATUS_LABEL_JA: Record<string, string> = {
+  inactive: "未契約",
+  active: "有効",
+  past_due: "支払い遅延",
+  canceled: "解約済み",
+  trialing: "トライアル中",
+  unpaid: "未払い",
+  paused: "一時停止",
+};
+
+function adminSubscriptionStatusLabelJa(value: string): string {
+  const v = String(value ?? "").trim();
+  return ADMIN_SUBSCRIPTION_STATUS_LABEL_JA[v] ?? v;
+}
+
 type AdminUser = {
   id: number;
   email: string;
@@ -458,10 +474,15 @@ export function AdminPage() {
                       new Set([...ADMIN_SUBSCRIPTION_STATUSES, u.subscriptionStatus ?? "inactive"]),
                     )
                       .filter((s) => s.length > 0)
-                      .sort((a, b) => a.localeCompare(b))
+                      .sort((a, b) =>
+                        adminSubscriptionStatusLabelJa(a).localeCompare(
+                          adminSubscriptionStatusLabelJa(b),
+                          "ja",
+                        ),
+                      )
                       .map((s) => (
                         <option key={s} value={s}>
-                          {s}
+                          {adminSubscriptionStatusLabelJa(s)}
                         </option>
                       ))}
                   </select>
