@@ -18,7 +18,8 @@
     "test:bedrock": "node scripts/test-bedrock.mjs",
     "test:bedrock:lucky": "node scripts/test-bedrock-lucky-food.mjs",
     "dev:api": "node src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "verify:admin-meta": "node scripts/verify-admin-subscription-meta.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1026.0",

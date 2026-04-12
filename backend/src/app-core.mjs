@@ -500,16 +500,6 @@ function isUnknownSubscriptionColumnError(e) {
   return msg.includes("subscription_status");
 }
 
-/** users.subscription_status 欠如（日本語エラー等で "Unknown column" が無い場合も errno で検知） */
-function isMissingSubscriptionStatusColumnError(e) {
-  if (!e || typeof e !== "object") return false;
-  const code = e.code ? String(e.code) : "";
-  const errno = Number(e.errno);
-  const msg = String(e.message || "");
-  if (code !== "ER_BAD_FIELD_ERROR" && errno !== 1054) return false;
-  return msg.includes("subscription_status");
-}
-
 /**
  * 実 DB に subscription_status 列があるか（一覧用の誤検知を防ぐ）
  */
@@ -539,7 +529,6 @@ async function fetchAdminUsersSubscriptionStatusMap(pool) {
 }
 
 let warnedAdminUsersListSubscriptionColumnMissing = false;
-let warnedAdminUsersListDecomposed = false;
 
 const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
            u.id,
@@ -601,47 +590,14 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
          LIMIT 1000`;
 
 /**
- * 管理者一覧: 実際に subscription_status 付き SELECT が成功すれば meta は true（別プローブと矛盾しない）。
+ * 管理者一覧: subscription_status 列の有無はプローブで決め、列があるときは常に 2 クエリで取得する。
+ * （1 本の複合 SELECT だけが環境依存で失敗し meta が誤って false になるのを防ぐ）
  * @returns {Promise<{ rows: unknown[]; subscriptionStatusWritable: boolean }>}
  */
 async function fetchAdminUsersListRows(pool) {
-  try {
-    const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITH_SUB);
-    return {
-      rows: Array.isArray(rows) ? rows : [],
-      subscriptionStatusWritable: true,
-    };
-  } catch (e) {
-    if (!isMissingSubscriptionStatusColumnError(e)) throw e;
+  const columnPresent = await probeUsersSubscriptionStatusColumnPresent(pool);
 
-    const columnPresent = await probeUsersSubscriptionStatusColumnPresent(pool);
-    if (columnPresent) {
-      if (!warnedAdminUsersListDecomposed) {
-        warnedAdminUsersListDecomposed = true;
-        logger.warn(
-          "admin.users: primary list query failed but subscription_status column exists; using decomposed query",
-          {
-            event: "admin.users.list_decomposed_after_sub_error",
-            message: String(e?.message || e),
-            code: e?.code,
-            errno: e?.errno,
-          },
-        );
-      }
-      const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITHOUT_SUB);
-      const list = Array.isArray(rows) ? rows : [];
-      const subMap = await fetchAdminUsersSubscriptionStatusMap(pool);
-      const merged = list.map((r) => ({
-        ...r,
-        subscription_status:
-          subMap.get(Number(r.id)) != null ? subMap.get(Number(r.id)) : null,
-      }));
-      return {
-        rows: merged,
-        subscriptionStatusWritable: true,
-      };
-    }
-
+  if (!columnPresent) {
     if (!warnedAdminUsersListSubscriptionColumnMissing) {
       warnedAdminUsersListSubscriptionColumnMissing = true;
       logger.warn(
@@ -655,6 +611,37 @@ async function fetchAdminUsersListRows(pool) {
       subscriptionStatusWritable: false,
     };
   }
+
+  const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITHOUT_SUB);
+  const list = Array.isArray(rows) ? rows : [];
+  let subMap;
+  try {
+    subMap = await fetchAdminUsersSubscriptionStatusMap(pool);
+  } catch (e) {
+    logger.warn("admin.users: subscription_status map query failed; falling back to combined SELECT", {
+      message: String(e?.message || e),
+      code: e?.code,
+      errno: e?.errno,
+    });
+    const [rowsWith] = await pool.query(ADMIN_USERS_LIST_SQL_WITH_SUB);
+    return {
+      rows: Array.isArray(rowsWith) ? rowsWith : [],
+      subscriptionStatusWritable: true,
+    };
+  }
+
+  const merged = list.map((r) => {
+    const sid = Number(r.id);
+    if (!subMap.has(sid)) {
+      return { ...r, subscription_status: null };
+    }
+    return { ...r, subscription_status: subMap.get(sid) };
+  });
+
+  return {
+    rows: merged,
+    subscriptionStatusWritable: true,
+  };
 }
 
 async function loadUserSubscriptionRowFull(pool, userId) {
