@@ -14,6 +14,7 @@ import {
   postBillingCheckoutSession,
   reclassifyUncategorizedReceipts,
 } from "../lib/api";
+import { subscriptionStatusLabelJa } from "../lib/subscriptionStatusLabels";
 import {
   clearPwaInstallBannerHidden,
   isPwaInstallBannerHidden,
@@ -89,7 +90,10 @@ export function SettingsPage() {
   const premiumPurchaseUrl = String(
     import.meta.env.VITE_PREMIUM_PURCHASE_URL ?? "",
   ).trim();
-  const stripeTestCheckoutEnabled =
+  /** ローカル `npm run dev` では常に表示。本番ビルドでは VITE_STRIPE_CHECKOUT=1 または VITE_STRIPE_TEST_CHECKOUT=1 が必要 */
+  const stripeCheckoutEnabled =
+    import.meta.env.DEV ||
+    String(import.meta.env.VITE_STRIPE_CHECKOUT ?? "").trim() === "1" ||
     String(import.meta.env.VITE_STRIPE_TEST_CHECKOUT ?? "").trim() === "1";
   const [stripeCheckoutBusy, setStripeCheckoutBusy] = useState(false);
   const [stripeCheckoutMessage, setStripeCheckoutMessage] = useState<string | null>(null);
@@ -235,7 +239,9 @@ export function SettingsPage() {
           <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
             <p style={{ margin: 0 }}>
               プレミアム（サブスクリプション）状態:{" "}
-              <strong>{authUser.subscriptionStatus ?? "inactive"}</strong>
+              <strong>
+                {subscriptionStatusLabelJa(authUser.subscriptionStatus ?? "inactive")}
+              </strong>
             </p>
             {premiumPurchaseUrl ? (
               <p style={{ margin: "0.45rem 0 0" }}>
@@ -244,11 +250,11 @@ export function SettingsPage() {
                 </a>
               </p>
             ) : null}
-            {stripeTestCheckoutEnabled && getApiBaseUrl() && canSendAuthenticatedRequest(token) ? (
+            {stripeCheckoutEnabled && getApiBaseUrl() && canSendAuthenticatedRequest(token) ? (
               <div style={{ margin: "0.55rem 0 0" }}>
                 <button
                   type="button"
-                  className={styles.btn}
+                  className={`${styles.btn} ${styles.btnPrimary}`}
                   disabled={stripeCheckoutBusy}
                   onClick={async () => {
                     setStripeCheckoutMessage(null);
@@ -271,7 +277,7 @@ export function SettingsPage() {
                     }
                   }}
                 >
-                  {stripeCheckoutBusy ? "準備中…" : "Stripe テストで課金（Checkout）"}
+                  {stripeCheckoutBusy ? "準備中…" : "プレミアムに申し込む（Stripe Checkout）"}
                 </button>
                 {stripeCheckoutMessage ? (
                   <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
@@ -279,7 +285,9 @@ export function SettingsPage() {
                   </p>
                 ) : null}
                 <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
-                  Test mode 用。カードは 4242… などダッシュボードのテスト番号を使ってください。
+                  Stripe テストモード想定。カード番号 4242 4242 4242 4242 などで完了できます。ローカルで{" "}
+                  <code>stripe listen</code> 中は、CLI が表示する <code>whsec_...</code> を{" "}
+                  <code>backend/.env</code> の <code>STRIPE_WEBHOOK_SECRET</code> に合わせてください。
                 </p>
               </div>
             ) : null}

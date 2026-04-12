@@ -50,11 +50,11 @@ function assertAllowedRedirectUrl(urlStr, allowedOrigins) {
  */
 export async function createBillingCheckoutSession(pool, userId, body) {
   const priceId = String(
-    process.env.STRIPE_TEST_PRICE_ID ?? process.env.STRIPE_PRICE_ID ?? "",
+    process.env.STRIPE_PRICE_ID ?? process.env.STRIPE_TEST_PRICE_ID ?? "",
   ).trim();
   if (!priceId) {
     throw new Error(
-      "STRIPE_TEST_PRICE_ID（または STRIPE_PRICE_ID）を設定してください",
+      "STRIPE_PRICE_ID（または STRIPE_TEST_PRICE_ID）を設定してください",
     );
   }
 

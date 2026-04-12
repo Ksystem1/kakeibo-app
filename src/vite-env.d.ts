@@ -15,5 +15,7 @@ interface ImportMetaEnv {
   readonly VITE_DEV_USER_ID?: string;
   readonly VITE_DEFAULT_USER_ID?: string;
   readonly VITE_STRIPE_TEST_PUBLIC_KEY?: string;
+  /** 本番ビルドで設定画面の Stripe Checkout ボタンを出す（ローカル dev は未設定でも表示） */
+  readonly VITE_STRIPE_CHECKOUT?: string;
   readonly VITE_STRIPE_TEST_CHECKOUT?: string;
 }
