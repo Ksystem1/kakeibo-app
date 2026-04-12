@@ -498,6 +498,16 @@ function isUnknownSubscriptionColumnError(e) {
   return msg.includes("subscription_status");
 }
 
+/** users.subscription_status 欠如（日本語エラー等で "Unknown column" が無い場合も errno で検知） */
+function isMissingSubscriptionStatusColumnError(e) {
+  if (!e || typeof e !== "object") return false;
+  const code = e.code ? String(e.code) : "";
+  const errno = Number(e.errno);
+  const msg = String(e.message || "");
+  if (code !== "ER_BAD_FIELD_ERROR" && errno !== 1054) return false;
+  return msg.includes("subscription_status");
+}
+
 let warnedAdminUsersListSubscriptionColumnMissing = false;
 
 const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
@@ -560,22 +570,16 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
          LIMIT 1000`;
 
 /**
- * 接続中 DB（DATABASE()）の users に subscription_status があるか。
- * meta はこれを真実とする（try/catch のエラーメッセージ解釈に依存しない）。
+ * users.subscription_status が実在するか（information_schema はスキーマ名・権限で誤判定しうるため実 SELECT で確認）
  */
 async function usersTableHasSubscriptionStatusColumn(pool) {
-  const schemaFallback =
-    String(process.env.RDS_DATABASE || "").trim() || null;
-  const [rows] = await pool.query(
-    `SELECT COUNT(*) AS c
-     FROM information_schema.COLUMNS
-     WHERE TABLE_SCHEMA = COALESCE(DATABASE(), ?)
-       AND TABLE_NAME = 'users'
-       AND COLUMN_NAME = 'subscription_status'`,
-    [schemaFallback],
-  );
-  if (!Array.isArray(rows) || rows.length === 0) return false;
-  return Number(rows[0]?.c) > 0;
+  try {
+    await pool.query("SELECT `subscription_status` FROM `users` LIMIT 0");
+    return true;
+  } catch (e) {
+    if (isMissingSubscriptionStatusColumnError(e)) return false;
+    throw e;
+  }
 }
 
 /**
@@ -590,7 +594,7 @@ async function queryAdminUsersListRowsFallbackTryCatch(pool) {
       subscriptionStatusWritable: true,
     };
   } catch (e) {
-    if (isUnknownSubscriptionColumnError(e)) {
+    if (isMissingSubscriptionStatusColumnError(e)) {
       if (!warnedAdminUsersListSubscriptionColumnMissing) {
         warnedAdminUsersListSubscriptionColumnMissing = true;
         logger.warn(
