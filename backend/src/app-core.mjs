@@ -35,6 +35,7 @@ import {
   userHasPremiumSubscriptionAccess,
 } from "./subscription-logic.mjs";
 import { cancelUserSubscriptionAtPeriodEnd } from "./stripe-billing-cancel.mjs";
+import { createBillingPortalSession } from "./stripe-billing-portal.mjs";
 import { createBillingCheckoutSession } from "./stripe-checkout.mjs";
 import { processStripeWebhook } from "./stripe-webhook.mjs";
 
@@ -865,6 +866,7 @@ export async function handleApiRequest(req, options = {}) {
             stripeWebhook: "/webhooks/stripe",
             stripeWebhookApiPrefixed: "/api/webhooks/stripe",
             billingCheckoutSession: "/billing/checkout-session",
+            billingPortalSession: "/billing/portal-session",
             billingCancelSubscription: "/billing/cancel-subscription",
           },
         },
@@ -1589,6 +1591,54 @@ export async function handleApiRequest(req, options = {}) {
             );
           }
           logError("billing.checkout_session", e);
+          return json(
+            500,
+            { error: "InternalError", detail: msg },
+            hdrs,
+            skipCors,
+          );
+        }
+      }
+
+      case "POST /billing/portal-session": {
+        const b = JSON.parse(req.body || "{}");
+        const portalSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (portalSubRej) return portalSubRej;
+        try {
+          const url = await createBillingPortalSession(pool, userId, b);
+          return json(200, { url }, hdrs, skipCors);
+        } catch (e) {
+          const msg = String(e?.message || e);
+          if (
+            msg.includes("未登録") ||
+            msg.includes("顧客") ||
+            msg.includes("契約") ||
+            msg.includes("returnUrl")
+          ) {
+            return json(
+              400,
+              { error: "BillingPortalUnavailable", detail: msg },
+              hdrs,
+              skipCors,
+            );
+          }
+          if (msg.includes("許可リスト") || msg.includes("URL")) {
+            return json(
+              400,
+              { error: "InvalidRequest", detail: msg },
+              hdrs,
+              skipCors,
+            );
+          }
+          if (msg.includes("STRIPE_") || msg.includes("設定")) {
+            return json(
+              503,
+              { error: "StripeUnavailable", detail: msg },
+              hdrs,
+              skipCors,
+            );
+          }
+          logError("billing.portal_session", e);
           return json(
             500,
             { error: "InternalError", detail: msg },

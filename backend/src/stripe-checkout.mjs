@@ -7,7 +7,7 @@ import { requireStripeSecretKey } from "./stripe-config.mjs";
 const DEFAULT_ALLOWED_ORIGINS =
   "http://localhost:5173,http://127.0.0.1:5173,https://ksystemapp.com";
 
-function parseAllowedOrigins() {
+export function parseAllowedOrigins() {
   const raw = String(
     process.env.STRIPE_CHECKOUT_ALLOWED_ORIGINS ?? DEFAULT_ALLOWED_ORIGINS,
   ).trim();
@@ -25,7 +25,7 @@ function parseAllowedOrigins() {
   return out;
 }
 
-function assertAllowedRedirectUrl(urlStr, allowedOrigins) {
+export function assertAllowedRedirectUrl(urlStr, allowedOrigins) {
   let u;
   try {
     u = new URL(urlStr);

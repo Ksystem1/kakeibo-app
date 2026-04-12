@@ -8,7 +8,7 @@
  */
 import Stripe from "stripe";
 import { createLogger } from "./logger.mjs";
-import { getStripeWebhookSecret } from "./stripe-config.mjs";
+import { getStripeWebhookSecret, requireStripeSecretKey } from "./stripe-config.mjs";
 import { mapStripeSubscriptionStatusToDb } from "./subscription-logic.mjs";
 
 const logger = createLogger("stripe-webhook");
@@ -153,16 +153,6 @@ async function linkStripeCustomerFromCheckout(pool, session) {
     return;
   }
 
-  let setSubscriptionStatus = false;
-  let dbStatus = "inactive";
-  if (session.mode === "subscription" && session.status === "complete") {
-    const ps = String(session.payment_status || "");
-    if (ps === "paid" || ps === "no_payment_required") {
-      setSubscriptionStatus = true;
-      dbStatus = "active";
-    }
-  }
-
   const subId =
     typeof session.subscription === "string"
       ? session.subscription
@@ -172,15 +162,37 @@ async function linkStripeCustomerFromCheckout(pool, session) {
   const subIdStr =
     subId != null && String(subId).trim() !== "" ? String(subId).trim() : null;
 
-  if (setSubscriptionStatus) {
+  const ps = String(session.payment_status || "");
+  const paidComplete =
+    session.mode === "subscription" &&
+    session.status === "complete" &&
+    (ps === "paid" || ps === "no_payment_required");
+
+  await pool.query(
+    `UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE id = ?`,
+    [customerId, subIdStr, userId],
+  );
+
+  if (paidComplete && subIdStr) {
+    try {
+      const stripe = new Stripe(requireStripeSecretKey());
+      const sub = await stripe.subscriptions.retrieve(subIdStr);
+      await syncSubscriptionToUser(pool, sub, false);
+    } catch (e) {
+      logger.warn("stripe.checkout_subscription_sync_failed", {
+        message: String(e?.message || e),
+        userId,
+        subIdStr,
+      });
+      await pool.query(
+        `UPDATE users SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
+        [userId],
+      );
+    }
+  } else if (paidComplete) {
     await pool.query(
-      `UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), subscription_status = ?, updated_at = NOW() WHERE id = ?`,
-      [customerId, subIdStr, dbStatus, userId],
-    );
-  } else {
-    await pool.query(
-      `UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE id = ?`,
-      [customerId, subIdStr, userId],
+      `UPDATE users SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
+      [userId],
     );
   }
 }

@@ -12,7 +12,7 @@ export const ADMIN_SUBSCRIPTION_STATUSES = [
 
 const SUBSCRIPTION_STATUS_LABEL_JA: Record<string, string> = {
   inactive: "未契約",
-  active: "有効",
+  active: "契約中",
   past_due: "支払い遅延",
   canceled: "解約済み",
   trialing: "トライアル中",

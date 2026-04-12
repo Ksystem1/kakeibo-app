@@ -194,6 +194,15 @@ export async function postBillingCancelSubscription() {
   return parse<{ ok: boolean; subscriptionId?: string }>(res);
 }
 
+export async function postBillingPortalSession(body: { returnUrl: string }) {
+  const res = await apiFetch(`${BASE}/billing/portal-session`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ url: string }>(res);
+}
+
 function rawToIsAdmin(isAdmin: unknown, is_admin: unknown): boolean {
   if (typeof isAdmin === "boolean") return isAdmin;
   if (typeof isAdmin === "number") return isAdmin === 1;

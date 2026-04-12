@@ -12,11 +12,10 @@ import {
   getApiBaseUrl,
   getAuthMe,
   normalizeAuthContextUser,
-  postBillingCancelSubscription,
   postBillingCheckoutSession,
+  postBillingPortalSession,
   reclassifyUncategorizedReceipts,
 } from "../lib/api";
-import { hasPremiumNavAccess } from "../lib/subscriptionAccess";
 import { subscriptionStatusLabelJa } from "../lib/subscriptionStatusLabels";
 import { formatSettingsSubscriptionSummary } from "../lib/subscriptionStatusUi";
 import {
@@ -49,6 +48,13 @@ function itemsForFixedCostEditor(
     }));
   }
   return [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }];
+}
+
+/** Stripe 上で契約が継続しているときのみプラン管理（ポータル）を出す */
+function shouldShowSubscriptionManage(user: { subscriptionStatus?: string } | null | undefined): boolean {
+  if (!user) return false;
+  const s = String(user.subscriptionStatus ?? "").trim().toLowerCase();
+  return s === "active" || s === "trialing" || s === "past_due";
 }
 
 export function SettingsPage() {
@@ -95,16 +101,15 @@ export function SettingsPage() {
   const premiumPurchaseUrl = String(
     import.meta.env.VITE_PREMIUM_PURCHASE_URL ?? "",
   ).trim();
-  /** ローカル `npm run dev` では常に表示。本番ビルドでは VITE_STRIPE_CHECKOUT=1 または VITE_STRIPE_TEST_CHECKOUT=1 が必要 */
-  const stripeCheckoutEnabled =
-    import.meta.env.DEV ||
-    String(import.meta.env.VITE_STRIPE_CHECKOUT ?? "").trim() === "1" ||
-    String(import.meta.env.VITE_STRIPE_TEST_CHECKOUT ?? "").trim() === "1";
+  /** 本番でも既定で Checkout を表示。無効化するときのみ VITE_STRIPE_CHECKOUT=0 */
+  const stripeCheckoutDisabled =
+    String(import.meta.env.VITE_STRIPE_CHECKOUT ?? "").trim() === "0";
+  const stripeCheckoutEnabled = import.meta.env.DEV || !stripeCheckoutDisabled;
   const [stripeCheckoutBusy, setStripeCheckoutBusy] = useState(false);
   const [stripeCheckoutMessage, setStripeCheckoutMessage] = useState<string | null>(null);
   const [premiumContractOpen, setPremiumContractOpen] = useState(false);
-  const [cancelBusy, setCancelBusy] = useState(false);
-  const [cancelMessage, setCancelMessage] = useState<string | null>(null);
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [portalMessage, setPortalMessage] = useState<string | null>(null);
 
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
     itemsForFixedCostEditor(fixedCostsByMonth),
@@ -121,7 +126,9 @@ export function SettingsPage() {
 
   useEffect(() => {
     const sp = new URLSearchParams(location.search);
-    if (sp.get("checkout") !== "success" || !token) return;
+    const ok =
+      (sp.get("checkout") === "success" || sp.get("portal") === "return") && token;
+    if (!ok) return;
     void getAuthMe()
       .then((res) => {
         if (res?.user) setUser(normalizeAuthContextUser(res.user));
@@ -246,8 +253,8 @@ export function SettingsPage() {
                 onClick={() => {
                   if (premiumLocked) {
                     setPremiumContractOpen(true);
-                    setCancelMessage(null);
                     setStripeCheckoutMessage(null);
+                    setPortalMessage(null);
                     return;
                   }
                   setNavSkinId(opt.id);
@@ -270,6 +277,42 @@ export function SettingsPage() {
             <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
               {formatSettingsSubscriptionSummary(authUser)}
             </p>
+            {shouldShowSubscriptionManage(authUser) &&
+            getApiBaseUrl() &&
+            canSendAuthenticatedRequest(token) ? (
+              <div className={styles.modeRow} style={{ marginTop: "0.45rem", flexWrap: "wrap", gap: "0.4rem" }}>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  disabled={portalBusy}
+                  onClick={async () => {
+                    setPortalMessage(null);
+                    setPortalBusy(true);
+                    try {
+                      const base =
+                        typeof window !== "undefined"
+                          ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "") || ""}`
+                          : "";
+                      const { url } = await postBillingPortalSession({
+                        returnUrl: `${base}/settings?portal=return`,
+                      });
+                      window.location.assign(url);
+                    } catch (e) {
+                      setPortalMessage(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setPortalBusy(false);
+                    }
+                  }}
+                >
+                  {portalBusy ? "準備中…" : "解約（プラン管理）"}
+                </button>
+                {portalMessage ? (
+                  <p className={styles.reclassifyHint} style={{ margin: 0 }}>
+                    {portalMessage}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             {premiumContractOpen &&
             stripeCheckoutEnabled &&
             getApiBaseUrl() &&
@@ -315,34 +358,8 @@ export function SettingsPage() {
                       }
                     }}
                   >
-                    {stripeCheckoutBusy ? "準備中…" : "プレミアムに申し込む（Stripe Checkout）"}
+                    {stripeCheckoutBusy ? "準備中…" : "契約する（Stripe Checkout）"}
                   </button>
-                  {hasPremiumNavAccess(authUser) &&
-                  !authUser.subscriptionCancelAtPeriodEnd &&
-                  ["active", "trialing", "past_due"].includes(
-                    String(authUser.subscriptionStatus ?? "").toLowerCase(),
-                  ) ? (
-                    <button
-                      type="button"
-                      className={styles.btn}
-                      disabled={cancelBusy}
-                      onClick={async () => {
-                        setCancelMessage(null);
-                        setCancelBusy(true);
-                        try {
-                          await postBillingCancelSubscription();
-                          const res = await getAuthMe();
-                          if (res?.user) setUser(normalizeAuthContextUser(res.user));
-                        } catch (e) {
-                          setCancelMessage(e instanceof Error ? e.message : String(e));
-                        } finally {
-                          setCancelBusy(false);
-                        }
-                      }}
-                    >
-                      {cancelBusy ? "処理中…" : "解約する（期間終了まで利用可）"}
-                    </button>
-                  ) : null}
                   <button
                     type="button"
                     className={styles.btn}
@@ -356,16 +373,13 @@ export function SettingsPage() {
                     {stripeCheckoutMessage}
                   </p>
                 ) : null}
-                {cancelMessage ? (
+                {import.meta.env.DEV ? (
                   <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
-                    {cancelMessage}
+                    テストカード例: 4242 4242 4242 4242。ローカルで{" "}
+                    <code>stripe listen</code> 中は <code>whsec_...</code> を{" "}
+                    <code>STRIPE_WEBHOOK_SECRET</code> に合わせてください。
                   </p>
                 ) : null}
-                <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
-                  テストカード例: 4242 4242 4242 4242。ローカルで{" "}
-                  <code>stripe listen</code> 中は <code>whsec_...</code> を{" "}
-                  <code>STRIPE_WEBHOOK_SECRET</code> に合わせてください。
-                </p>
               </div>
             ) : null}
             {premiumPurchaseUrl ? (
