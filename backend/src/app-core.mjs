@@ -31,12 +31,28 @@ import {
   getEffectiveSubscriptionStatus,
   isSubscriptionActive,
   isUserIdForcedPremiumByEnv,
+  normalizeAdminSettableSubscriptionStatus,
+  bodyContainsSubscriptionMutationFields,
 } from "./subscription-logic.mjs";
 
 const logger = createLogger("api");
 
 function logError(event, e, extra = {}) {
   logger.error(event, e, extra);
+}
+
+/** 一般ユーザー向け API では DB の subscription を書き換えられない（管理者 PATCH のみ可） */
+function rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors) {
+  if (!bodyContainsSubscriptionMutationFields(b)) return null;
+  return json(
+    400,
+    {
+      error: "InvalidRequest",
+      detail: "サブスクリプション状態は管理者のみが変更できます",
+    },
+    hdrs,
+    skipCors,
+  );
 }
 
 /** クライアントの debugForceReceiptTier を受け付けるか（本番は既定オフ） */
@@ -814,6 +830,8 @@ export async function handleApiRequest(req, options = {}) {
     if (txOneMatch && method === "PATCH") {
       const txId = Number(txOneMatch[1], 10);
       const b = JSON.parse(req.body || "{}");
+      const txPatchSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+      if (txPatchSubRej) return txPatchSubRej;
       const [[existing]] = await pool.query(
         `SELECT id, user_id, family_id, kind, amount, transaction_date, memo, category_id
          FROM transactions t WHERE t.id = ? AND (${txWhere})`,
@@ -956,6 +974,7 @@ export async function handleApiRequest(req, options = {}) {
            u.login_name,
            u.display_name,
            u.is_admin,
+           u.subscription_status,
            u.created_at,
            u.updated_at,
            u.last_login_at,
@@ -985,6 +1004,10 @@ export async function handleApiRequest(req, options = {}) {
         login_name: r.login_name == null ? null : String(r.login_name),
         display_name: r.display_name == null ? null : String(r.display_name),
         isAdmin: Number(r.is_admin) === 1,
+        subscriptionStatus:
+          r.subscription_status != null && String(r.subscription_status).trim() !== ""
+            ? String(r.subscription_status).trim()
+            : "inactive",
         created_at: r.created_at ?? null,
         updated_at: r.updated_at ?? null,
         last_login_at: r.last_login_at ?? null,
@@ -1122,6 +1145,22 @@ export async function handleApiRequest(req, options = {}) {
         updates.push("display_name = ?");
         params.push(normalized);
       }
+      if (Object.prototype.hasOwnProperty.call(b, "subscriptionStatus")) {
+        const normalizedSub = normalizeAdminSettableSubscriptionStatus(b.subscriptionStatus);
+        if (normalizedSub == null) {
+          return json(
+            400,
+            {
+              error:
+                "subscriptionStatus は inactive / active / past_due / canceled / trialing のいずれかで指定してください",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        updates.push("subscription_status = ?");
+        params.push(normalizedSub);
+      }
       if (updates.length === 0) {
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
       }
@@ -1221,6 +1260,8 @@ export async function handleApiRequest(req, options = {}) {
         return json(400, { error: "カテゴリIDが不正です" }, hdrs, skipCors);
       }
       const b = JSON.parse(req.body || "{}");
+      const catPatchSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+      if (catPatchSubRej) return catPatchSubRej;
       const [[cur]] = await pool.query(
         `SELECT c.name, c.kind FROM categories c
          WHERE c.id = ? AND (${catWhere}) AND c.is_archived = 0 LIMIT 1`,
@@ -1356,6 +1397,8 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /categories": {
         const b = JSON.parse(req.body || "{}");
+        const catSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (catSubRej) return catSubRej;
         const rawName = b.name == null ? "" : String(b.name).trim();
         if (rawName.length < 1 || rawName.length > 100) {
           return json(400, { error: "name は1〜100文字で指定してください" }, hdrs, skipCors);
@@ -1431,6 +1474,8 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /transactions": {
         const b = JSON.parse(req.body || "{}");
+        const txSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (txSubRej) return txSubRej;
         const kind = b.kind === "income" ? "income" : "expense";
         const amt = Number(b.amount);
         const v = validateTransactionAmount(kind, amt);
@@ -1521,6 +1566,8 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /transactions/delete": {
         const b = JSON.parse(req.body || "{}");
+        const txDelSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (txDelSubRej) return txDelSubRej;
         const txId = Number(b.id);
         if (!Number.isFinite(txId) || txId <= 0) {
           return json(400, { error: "id が不正です" }, hdrs, skipCors);
@@ -1642,6 +1689,8 @@ export async function handleApiRequest(req, options = {}) {
         } catch {
           return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
         }
+        const fixedSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (fixedSubRej) return fixedSubRej;
         const rawItems = Array.isArray(b.items) ? b.items : [];
         if (rawItems.length > 200) {
           return json(400, { error: "固定費は200行までです" }, hdrs, skipCors);
@@ -1685,6 +1734,8 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /ai/advisor": {
         const b = JSON.parse(req.body || "{}");
+        const advSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (advSubRej) return advSubRej;
         const message = String(b.message ?? "").trim();
         if (!message) {
           return json(400, { error: "message が必要です" }, hdrs, skipCors);
@@ -1795,6 +1846,8 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /import/csv": {
         const b = JSON.parse(req.body || "{}");
+        const csvSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (csvSubRej) return csvSubRej;
         const text = String(b.csvText || "");
         const lines = text.split(/\r?\n/).filter((l) => l.trim());
         /** @type {Array<{ dateStr: string; categoryRaw: string; amount: number; memoVal: string | null }>} */
@@ -1917,6 +1970,8 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /receipts/learn": {
         const b = JSON.parse(req.body || "{}");
+        const learnSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (learnSubRej) return learnSubRej;
         const summary = b.summary;
         const items = Array.isArray(b.items) ? b.items : [];
         if (summary == null || typeof summary !== "object") {
@@ -2003,6 +2058,8 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /receipts/parse": {
         const b = JSON.parse(req.body || "{}");
+        const subRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (subRej) return subRej;
         if (b.imageBase64 == null || typeof b.imageBase64 !== "string") {
           return json(
             400,
@@ -2298,6 +2355,8 @@ export async function handleApiRequest(req, options = {}) {
 
       case "POST /receipts/reclassify-uncategorized": {
         const b = JSON.parse(req.body || "{}");
+        const subRej2 = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (subRej2) return subRej2;
         const batchSizeRaw = Number.parseInt(String(b.batchSize ?? "100"), 10);
         const batchSize =
           Number.isFinite(batchSizeRaw) && batchSizeRaw > 0

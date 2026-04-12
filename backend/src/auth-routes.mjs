@@ -10,6 +10,7 @@ import {
 import { getPool } from "./db.mjs";
 import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
 import {
+  bodyContainsSubscriptionMutationFields,
   deriveSubscriptionStatusFromDbRow,
   getEffectiveSubscriptionStatus,
 } from "./subscription-logic.mjs";
@@ -249,6 +250,17 @@ export async function tryAuthRoutes(req, ctx) {
     const pool = getPool();
     if (key === "POST /auth/register") {
       const b = JSON.parse(req.body || "{}");
+      if (bodyContainsSubscriptionMutationFields(b)) {
+        return json(
+          400,
+          {
+            error: "InvalidRequest",
+            detail: "サブスクリプション状態は管理者のみが変更できます",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
       const email = String(b.email || "")
         .trim()
         .toLowerCase();
@@ -451,6 +463,17 @@ export async function tryAuthRoutes(req, ctx) {
 
     if (key === "POST /auth/login") {
       const b = JSON.parse(req.body || "{}");
+      if (bodyContainsSubscriptionMutationFields(b)) {
+        return json(
+          400,
+          {
+            error: "InvalidRequest",
+            detail: "サブスクリプション状態は管理者のみが変更できます",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
       const login = String(b.login || b.email || "")
         .trim()
         .toLowerCase();
@@ -506,6 +529,17 @@ export async function tryAuthRoutes(req, ctx) {
 
     if (key === "POST /auth/forgot-password") {
       const b = JSON.parse(req.body || "{}");
+      if (bodyContainsSubscriptionMutationFields(b)) {
+        return json(
+          400,
+          {
+            error: "InvalidRequest",
+            detail: "サブスクリプション状態は管理者のみが変更できます",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
       const email = String(b.email || "")
         .trim()
         .toLowerCase();
@@ -553,6 +587,17 @@ export async function tryAuthRoutes(req, ctx) {
 
     if (key === "POST /auth/reset-password") {
       const b = JSON.parse(req.body || "{}");
+      if (bodyContainsSubscriptionMutationFields(b)) {
+        return json(
+          400,
+          {
+            error: "InvalidRequest",
+            detail: "サブスクリプション状態は管理者のみが変更できます",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
       const token = String(b.token || "").trim();
       const password = String(b.password || "");
       if (!token || !validatePassword(password)) {
@@ -644,6 +689,17 @@ export async function tryAuthRoutes(req, ctx) {
         return json(401, { error: "認証が必要です" }, hdrs, skipCors);
       }
       const b = JSON.parse(req.body || "{}");
+      if (bodyContainsSubscriptionMutationFields(b)) {
+        return json(
+          400,
+          {
+            error: "InvalidRequest",
+            detail: "サブスクリプション状態は管理者のみが変更できます",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
       const inviteEmail = String(b.email || "")
         .trim()
         .toLowerCase();

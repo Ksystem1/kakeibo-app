@@ -7,12 +7,21 @@ import {
   updateAdminUser,
 } from "../lib/api";
 
+const ADMIN_SUBSCRIPTION_STATUSES = [
+  "inactive",
+  "active",
+  "past_due",
+  "canceled",
+  "trialing",
+] as const;
+
 type AdminUser = {
   id: number;
   email: string;
   login_name: string | null;
   display_name: string | null;
   isAdmin: boolean;
+  subscriptionStatus: string;
   created_at: string | null;
   updated_at: string | null;
   last_login_at: string | null;
@@ -112,6 +121,26 @@ export function AdminPage() {
         );
       } catch (e) {
         setError(e instanceof Error ? e.message : "ユーザー更新に失敗しました");
+      } finally {
+        setSavingUserId(null);
+      }
+    },
+    [],
+  );
+
+  const onSetSubscriptionStatus = useCallback(
+    async (userId: number, nextStatus: string) => {
+      setSavingUserId(userId);
+      setError(null);
+      try {
+        await updateAdminUser(userId, { subscriptionStatus: nextStatus });
+        setItems((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, subscriptionStatus: nextStatus } : u)),
+        );
+      } catch (e) {
+        setError(
+          e instanceof Error ? e.message : "サブスクリプション状態の更新に失敗しました",
+        );
       } finally {
         setSavingUserId(null);
       }
@@ -331,7 +360,7 @@ export function AdminPage() {
         {loading ? "読み込み中..." : "再読み込み"}
       </button>
       <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1380 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1520 }}>
           <thead>
             <tr style={{ background: "var(--panel-bg)" }}>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>ID</th>
@@ -342,6 +371,7 @@ export function AdminPage() {
               <th style={{ textAlign: "left", padding: "0.7rem" }}>家族メンバー</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>表示名</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>ログイン名</th>
+              <th style={{ textAlign: "left", padding: "0.7rem" }}>サブスク</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>管理者</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>パスワード</th>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>削除</th>
@@ -387,6 +417,27 @@ export function AdminPage() {
                   </div>
                 </td>
                 <td style={{ padding: "0.7rem" }}>{u.login_name ?? "-"}</td>
+                <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
+                  <select
+                    value={u.subscriptionStatus ?? "inactive"}
+                    disabled={savingUserId === u.id}
+                    onChange={(e) => {
+                      void onSetSubscriptionStatus(u.id, e.target.value);
+                    }}
+                    style={{ minWidth: 120, maxWidth: 200 }}
+                  >
+                    {Array.from(
+                      new Set([...ADMIN_SUBSCRIPTION_STATUSES, u.subscriptionStatus ?? "inactive"]),
+                    )
+                      .filter((s) => s.length > 0)
+                      .sort((a, b) => a.localeCompare(b))
+                      .map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                  </select>
+                </td>
                 <td style={{ padding: "0.7rem" }}>
                   <label style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
                     <input
@@ -432,7 +483,7 @@ export function AdminPage() {
             ))}
             {!loading && items.length === 0 ? (
               <tr>
-                <td colSpan={11} style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                <td colSpan={12} style={{ padding: "1rem", color: "var(--text-muted)" }}>
                   ユーザーが見つかりません
                 </td>
               </tr>

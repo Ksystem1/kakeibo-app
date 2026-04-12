@@ -42,3 +42,31 @@ export function deriveSubscriptionStatusFromDbRow(row) {
 export function isSubscriptionActive(subscriptionStatus) {
   return String(subscriptionStatus ?? "").trim().toLowerCase() === "active";
 }
+
+/** 管理者が PATCH /admin/users/:id で設定可能な subscription_status（VARCHAR(32) 内） */
+export const ADMIN_SETTABLE_SUBSCRIPTION_STATUSES = new Set([
+  "inactive",
+  "active",
+  "past_due",
+  "canceled",
+  "trialing",
+]);
+
+/**
+ * @param {unknown} raw
+ * @returns {string | null} 正規化済み値、または不正なら null
+ */
+export function normalizeAdminSettableSubscriptionStatus(raw) {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s || s.length > 32) return null;
+  return ADMIN_SETTABLE_SUBSCRIPTION_STATUSES.has(s) ? s : null;
+}
+
+/** クライアントが users.subscription_status を書き換えようとしている疑いがある JSON ボディか */
+export function bodyContainsSubscriptionMutationFields(b) {
+  if (!b || typeof b !== "object") return false;
+  return (
+    Object.prototype.hasOwnProperty.call(b, "subscriptionStatus") ||
+    Object.prototype.hasOwnProperty.call(b, "subscription_status")
+  );
+}

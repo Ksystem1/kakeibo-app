@@ -12,11 +12,6 @@ import {
   reclassifyUncategorizedReceipts,
 } from "../lib/api";
 import {
-  getReceiptDebugTier,
-  setReceiptDebugTier,
-  type ReceiptDebugTier,
-} from "../lib/receiptDebugTier";
-import {
   clearPwaInstallBannerHidden,
   isPwaInstallBannerHidden,
   setPwaInstallBannerHidden,
@@ -88,19 +83,10 @@ export function SettingsPage() {
   const [reclassifyResult, setReclassifyResult] = useState<string | null>(null);
   const [fixedSaveBusy, setFixedSaveBusy] = useState(false);
   const [fixedSaveMessage, setFixedSaveMessage] = useState<string | null>(null);
-  const [receiptDebugTier, setReceiptDebugTierState] = useState<ReceiptDebugTier>(() =>
-    typeof window !== "undefined" ? getReceiptDebugTier() : "server",
-  );
+  const premiumPurchaseUrl = String(
+    import.meta.env.VITE_PREMIUM_PURCHASE_URL ?? "",
+  ).trim();
 
-  useEffect(() => {
-    const sync = () => setReceiptDebugTierState(getReceiptDebugTier());
-    window.addEventListener("kakeibo-receipt-debug-tier", sync);
-    window.addEventListener("storage", sync);
-    return () => {
-      window.removeEventListener("kakeibo-receipt-debug-tier", sync);
-      window.removeEventListener("storage", sync);
-    };
-  }, []);
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
     itemsForFixedCostEditor(fixedCostsByMonth),
   );
@@ -226,85 +212,21 @@ export function SettingsPage() {
             </button>
           ))}
         </div>
-        {navSkinOptions.some((o) => !o.unlocked) ? (
-          <p className={styles.sub} style={{ margin: "0.6rem 0 0", fontSize: "0.78rem" }}>
-            開発用: localStorage の
-            <code style={{ margin: "0 0.2rem" }}>kakeibo_owned_nav_skins</code>
-            にスキンIDの JSON 配列で解放を試せます。
-          </p>
-        ) : null}
         {token && authUser ? (
-          <p className={styles.sub} style={{ margin: "0.5rem 0 0", fontSize: "0.78rem" }}>
-            サブスクリプション:{" "}
-            <strong>{authUser.subscriptionStatus ?? "inactive"}</strong>
-            （active のときレシートAIが履歴ヒント込みの高精度モード）
-          </p>
+          <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
+            <p style={{ margin: 0 }}>
+              プレミアム（サブスクリプション）状態:{" "}
+              <strong>{authUser.subscriptionStatus ?? "inactive"}</strong>
+            </p>
+            {premiumPurchaseUrl ? (
+              <p style={{ margin: "0.45rem 0 0" }}>
+                <a href={premiumPurchaseUrl} target="_blank" rel="noopener noreferrer">
+                  プレミアムの案内・お申し込み（外部サイト）
+                </a>
+              </p>
+            ) : null}
+          </div>
         ) : null}
-      </div>
-
-      <div className={styles.settingsPanel} style={{ marginTop: "1.25rem", maxWidth: 820 }}>
-        <h2 className={styles.sectionTitle}>開発用: レシートAI プロンプトの強制切替</h2>
-        <p className={styles.reclassifyHint}>
-          一時的なテスト用です。DB のサブスク状態に関係なく、無料版・有料版の Bedrock
-          プロンプトを切り替えて比較できます。値はこのブラウザの localStorage に保存されます。
-        </p>
-        <p className={styles.sub} style={{ margin: "0.35rem 0 0.5rem", fontSize: "0.78rem" }}>
-          本番 API（NODE_ENV=production）では、サーバに{" "}
-          <code style={{ margin: "0 0.15rem" }}>RECEIPT_DEBUG_SUBSCRIPTION_TIER=1</code>{" "}
-          が無いとリクエストの強制は無視されます。ローカル <code>npm run dev:api</code>{" "}
-          では通常そのまま有効です。
-        </p>
-        <p className={styles.sub} style={{ margin: "0 0 0.5rem", fontSize: "0.78rem" }}>
-          サーバ側モック: バックエンドの環境変数{" "}
-          <code style={{ margin: "0 0.15rem" }}>SUBSCRIPTION_FORCE_ACTIVE_USER_IDS</code>
-          に <code style={{ margin: "0 0.15rem" }}>users.id</code>（カンマ区切り）を入れると、
-          ログイン・レシートAPI とも常に active 扱いになります（VERIFY_LOGIN ユーザの id を調べて指定）。
-        </p>
-        <div
-          className={styles.modeRow}
-          style={{ marginTop: "0.5rem", flexWrap: "wrap", gap: "0.4rem" }}
-        >
-          <button
-            type="button"
-            className={`${styles.btn} ${receiptDebugTier === "server" ? styles.btnPrimary : ""}`}
-            onClick={() => {
-              setReceiptDebugTier("server");
-              setReceiptDebugTierState("server");
-            }}
-          >
-            サーバのサブスクに従う
-          </button>
-          <button
-            type="button"
-            className={`${styles.btn} ${receiptDebugTier === "free" ? styles.btnPrimary : ""}`}
-            onClick={() => {
-              setReceiptDebugTier("free");
-              setReceiptDebugTierState("free");
-            }}
-          >
-            無料プロンプトを強制
-          </button>
-          <button
-            type="button"
-            className={`${styles.btn} ${receiptDebugTier === "subscribed" ? styles.btnPrimary : ""}`}
-            onClick={() => {
-              setReceiptDebugTier("subscribed");
-              setReceiptDebugTierState("subscribed");
-            }}
-          >
-            有料プロンプトを強制
-          </button>
-        </div>
-        <p className={styles.infoText} style={{ marginTop: "0.45rem" }}>
-          現在:{" "}
-          <strong>
-            {receiptDebugTier === "server"
-              ? "サーバ準拠"
-              : receiptDebugTier === "free"
-                ? "無料（厳密）強制"
-                : "有料（履歴ヒント）強制"}
-          </strong>
-        </p>
       </div>
 
       {pwaTarget ? (

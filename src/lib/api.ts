@@ -550,6 +550,7 @@ export async function getAdminUsers() {
       login_name: string | null;
       display_name: string | null;
       isAdmin: boolean;
+      subscriptionStatus: string;
       created_at: string | null;
       updated_at: string | null;
       last_login_at: string | null;
@@ -576,7 +577,11 @@ export async function createAdminUser(body: {
 
 export async function updateAdminUser(
   userId: number,
-  body: { isAdmin?: boolean; displayName?: string | null },
+  body: {
+    isAdmin?: boolean;
+    displayName?: string | null;
+    subscriptionStatus?: string;
+  },
 ) {
   const res = await apiFetch(`${BASE}/admin/users/${userId}`, {
     method: "PATCH",
