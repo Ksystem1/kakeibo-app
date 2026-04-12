@@ -23,8 +23,7 @@ export async function createBillingPortalSession(pool, userId, body) {
   assertAllowedRedirectUrl(returnUrl, allowedOrigins);
 
   const [[user]] = await pool.query(
-    `SELECT u.id,
-      COALESCE(f.stripe_customer_id, u.stripe_customer_id) AS stripe_customer_id
+    `SELECT u.id, f.stripe_customer_id AS stripe_customer_id
      FROM users u
      LEFT JOIN families f ON f.id = ${FAM_JOIN_U}
      WHERE u.id = ? LIMIT 1`,

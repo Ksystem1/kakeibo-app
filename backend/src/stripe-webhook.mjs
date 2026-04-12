@@ -126,12 +126,20 @@ async function syncSubscriptionToFamily(pool, subscription, deleted) {
   );
   if (res.affectedRows) return;
 
-  const [[legacy]] = await pool.query(
-    `SELECT COALESCE(u.default_family_id, (SELECT fm.family_id FROM family_members fm WHERE fm.user_id = u.id ORDER BY fm.id LIMIT 1)) AS fid
-     FROM users u WHERE u.stripe_customer_id = ? LIMIT 1`,
-    [customerId],
-  );
-  const fid = legacy?.fid != null ? Number(legacy.fid) : null;
+  /** users.stripe_customer_id を削除済みの DB では ER_BAD_FIELD になるためスキップ */
+  let fid = null;
+  try {
+    const [[legacy]] = await pool.query(
+      `SELECT COALESCE(u.default_family_id, (SELECT fm.family_id FROM family_members fm WHERE fm.user_id = u.id ORDER BY fm.id LIMIT 1)) AS fid
+       FROM users u WHERE u.stripe_customer_id = ? LIMIT 1`,
+      [customerId],
+    );
+    fid = legacy?.fid != null ? Number(legacy.fid) : null;
+  } catch (e) {
+    const code = String(e?.code || "");
+    const errno = Number(e?.errno);
+    if (code !== "ER_BAD_FIELD_ERROR" && errno !== 1054) throw e;
+  }
   if (fid && Number.isFinite(fid) && fid > 0) {
     await pool.query(
       `UPDATE families SET
@@ -227,31 +235,45 @@ async function linkStripeCustomerFromCheckout(pool, session) {
     return;
   }
 
-  await pool.query(
-    `UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE id = ?`,
-    [customerId, subIdStr, userId],
-  );
+  /** 家族未設定かつ users に Stripe 列が無い環境ではここは失敗する（通常は default_family あり） */
+  try {
+    await pool.query(
+      `UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE id = ?`,
+      [customerId, subIdStr, userId],
+    );
 
-  if (paidComplete && subIdStr) {
-    try {
-      const stripe = new Stripe(requireStripeSecretKey());
-      const sub = await stripe.subscriptions.retrieve(subIdStr);
-      await syncSubscriptionToFamily(pool, sub, false);
-    } catch (e) {
-      logger.warn("stripe.checkout_subscription_sync_failed", {
-        message: String(e?.message || e),
-        userId,
-        subIdStr,
-      });
+    if (paidComplete && subIdStr) {
+      try {
+        const stripe = new Stripe(requireStripeSecretKey());
+        const sub = await stripe.subscriptions.retrieve(subIdStr);
+        await syncSubscriptionToFamily(pool, sub, false);
+      } catch (e) {
+        logger.warn("stripe.checkout_subscription_sync_failed", {
+          message: String(e?.message || e),
+          userId,
+          subIdStr,
+        });
+        await pool.query(
+          `UPDATE users SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
+          [userId],
+        );
+      }
+    } else if (paidComplete) {
       await pool.query(
         `UPDATE users SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
         [userId],
       );
     }
-  } else if (paidComplete) {
-    await pool.query(
-      `UPDATE users SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
-      [userId],
-    );
+  } catch (e) {
+    const errno = Number(e?.errno);
+    if (errno === 1054) {
+      logger.warn("stripe.checkout_users_columns_missing_or_no_family", {
+        userId,
+        detail:
+          "所属家族が無いか、users から Stripe 列を削除済みです。families への紐付けを確認してください。",
+      });
+      return;
+    }
+    throw e;
   }
 }

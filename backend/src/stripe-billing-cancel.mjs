@@ -12,30 +12,15 @@ const FAM_JOIN_U = sqlUserFamilyIdExpr("u");
  * @param {number} userId
  */
 export async function cancelUserSubscriptionAtPeriodEnd(pool, userId) {
-  let rows;
-  try {
-    [rows] = await pool.query(
-      `SELECT u.id,
-        COALESCE(f.stripe_customer_id, u.stripe_customer_id) AS stripe_customer_id,
-        COALESCE(f.stripe_subscription_id, u.stripe_subscription_id) AS stripe_subscription_id
-       FROM users u
-       LEFT JOIN families f ON f.id = ${FAM_JOIN_U}
-       WHERE u.id = ? LIMIT 1`,
-      [userId],
-    );
-  } catch {
-    try {
-      [rows] = await pool.query(
-        `SELECT id, stripe_customer_id, stripe_subscription_id FROM users WHERE id = ? LIMIT 1`,
-        [userId],
-      );
-    } catch {
-      [rows] = await pool.query(
-        `SELECT id, stripe_customer_id FROM users WHERE id = ? LIMIT 1`,
-        [userId],
-      );
-    }
-  }
+  const [rows] = await pool.query(
+    `SELECT u.id,
+      f.stripe_customer_id AS stripe_customer_id,
+      f.stripe_subscription_id AS stripe_subscription_id
+     FROM users u
+     LEFT JOIN families f ON f.id = ${FAM_JOIN_U}
+     WHERE u.id = ? LIMIT 1`,
+    [userId],
+  );
   const user = Array.isArray(rows) && rows[0] ? rows[0] : null;
   if (!user) {
     throw new Error("ユーザーが見つかりません");

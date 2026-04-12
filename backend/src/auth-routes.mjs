@@ -160,7 +160,7 @@ async function queryLoginUserRow(pool, login) {
         u.is_premium,
         COALESCE(f.subscription_period_end_at, u.subscription_period_end_at) AS subscription_period_end_at,
         COALESCE(f.subscription_cancel_at_period_end, u.subscription_cancel_at_period_end) AS subscription_cancel_at_period_end,
-        COALESCE(f.stripe_subscription_id, u.stripe_subscription_id) AS stripe_subscription_id
+        f.stripe_subscription_id AS stripe_subscription_id
        FROM users u
        LEFT JOIN families f ON f.id = ${FAM_JOIN_ON_U}
        ${wAliased}`,
@@ -194,7 +194,7 @@ async function queryMeUserRow(pool, uid) {
         u.is_premium,
         COALESCE(f.subscription_period_end_at, u.subscription_period_end_at) AS subscription_period_end_at,
         COALESCE(f.subscription_cancel_at_period_end, u.subscription_cancel_at_period_end) AS subscription_cancel_at_period_end,
-        COALESCE(f.stripe_subscription_id, u.stripe_subscription_id) AS stripe_subscription_id
+        f.stripe_subscription_id AS stripe_subscription_id
        FROM users u
        LEFT JOIN families f ON f.id = ${FAM_JOIN_ON_U}
        WHERE u.id = ?`,
