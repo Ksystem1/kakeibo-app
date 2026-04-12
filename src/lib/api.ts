@@ -173,12 +173,19 @@ export async function getAuthMe() {
   }>(res);
 }
 
-/** サーバーに Checkout 用の Price ID・Stripe 秘密鍵が揃っているか（秘密は返さない） */
+/** サーバーに Checkout 用の Price ID・Stripe 秘密鍵が揃っているか（秘密・Price ID 文字列は返さない） */
 export async function getBillingStripeStatus() {
-  const res = await apiFetch(`${BASE}/billing/stripe-status`, {
+  const res = await apiFetch(`${BASE}/config`, {
     headers: buildHeaders(),
   });
-  return parse<{ checkoutReady: boolean }>(res);
+  const data = await parse<{
+    stripe: {
+      checkoutReady: boolean;
+      priceIdConfigured: boolean;
+      secretKeyConfigured: boolean;
+    };
+  }>(res);
+  return data.stripe;
 }
 
 export async function postBillingCheckoutSession(body: {

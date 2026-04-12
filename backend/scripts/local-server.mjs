@@ -4,15 +4,9 @@
  * 起動: cd backend && npm run dev:api  （または npm start）
  * 既定ポート: API_PORT / PORT / 3456
  *
- * dotenv: プロジェクトルートから `npm run dev` しても backend/.env を読む（cwd に依存しない）。
+ * .env は src/load-env.mjs で読み込み（index.js 経由で先に実行。本ファイル単体起動時も下記 import で読む）。
  */
-import dotenv from "dotenv";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: join(__dirname, "..", ".env") });
-dotenv.config({ path: join(__dirname, "..", "..", ".env") });
+import "../src/load-env.mjs";
 import cors from "cors";
 import express from "express";
 import { expressCorsOptions } from "../src/cors-config.mjs";

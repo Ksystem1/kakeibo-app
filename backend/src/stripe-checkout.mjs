@@ -58,6 +58,15 @@ export function isStripeCheckoutConfigured() {
   return Boolean(getStripeSecretKey());
 }
 
+/** GET /config 用。Price ID 文字列・秘密鍵は含めない */
+export function getStripeCheckoutPublicConfig() {
+  return {
+    checkoutReady: isStripeCheckoutConfigured(),
+    priceIdConfigured: Boolean(getSubscriptionPriceId()),
+    secretKeyConfigured: Boolean(getStripeSecretKey()),
+  };
+}
+
 /**
  * @param {import("mysql2/promise").Pool} pool
  * @param {number} userId

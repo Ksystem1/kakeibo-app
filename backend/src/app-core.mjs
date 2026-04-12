@@ -39,7 +39,7 @@ import { cancelUserSubscriptionAtPeriodEnd } from "./stripe-billing-cancel.mjs";
 import { createBillingPortalSession } from "./stripe-billing-portal.mjs";
 import {
   createBillingCheckoutSession,
-  isStripeCheckoutConfigured,
+  getStripeCheckoutPublicConfig,
 } from "./stripe-checkout.mjs";
 import { processStripeWebhook } from "./stripe-webhook.mjs";
 
@@ -941,6 +941,7 @@ export async function handleApiRequest(req, options = {}) {
             stripeWebhookApiPrefixed: "/api/webhooks/stripe",
             billingCheckoutSession: "/billing/checkout-session",
             billingStripeStatus: "/billing/stripe-status",
+            publicConfig: "/config",
             billingPortalSession: "/billing/portal-session",
             billingCancelSubscription: "/billing/cancel-subscription",
           },
@@ -948,6 +949,18 @@ export async function handleApiRequest(req, options = {}) {
         hdrs,
         skipCors,
       );
+    }
+
+    {
+      const rk = routeKey(method, path);
+      if (rk === "GET /config" || rk === "GET /api/config") {
+        return json(
+          200,
+          { stripe: getStripeCheckoutPublicConfig() },
+          hdrs,
+          skipCors,
+        );
+      }
     }
 
     {
@@ -1042,14 +1055,7 @@ export async function handleApiRequest(req, options = {}) {
         return json(wh.statusCode, wh.body, hdrs, skipCors);
       }
       if (rk === "GET /billing/stripe-status") {
-        return json(
-          200,
-          {
-            checkoutReady: isStripeCheckoutConfigured(),
-          },
-          hdrs,
-          skipCors,
-        );
+        return json(200, getStripeCheckoutPublicConfig(), hdrs, skipCors);
       }
     }
 
