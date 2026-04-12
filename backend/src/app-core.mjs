@@ -560,34 +560,80 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
          LIMIT 1000`;
 
 /**
- * migration v8 未適用時は subscription_status なしで一覧取得する。
- * meta.subscriptionStatusWritable は「本当にフォールバック SQL に落ちたか」で決める。
- * （mysql2 の RowDataPacket は hasOwnProperty で列が見えないことがあり、行のキー検査は信頼できない）
- * @returns {Promise<{ rows: unknown[]; usedSubscriptionFallback: boolean }>}
+ * 接続中 DB（DATABASE()）の users に subscription_status があるか。
+ * meta はこれを真実とする（try/catch のエラーメッセージ解釈に依存しない）。
  */
-async function queryAdminUsersListRows(pool) {
+async function usersTableHasSubscriptionStatusColumn(pool) {
+  const schemaFallback =
+    String(process.env.RDS_DATABASE || "").trim() || null;
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS c
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = COALESCE(DATABASE(), ?)
+       AND TABLE_NAME = 'users'
+       AND COLUMN_NAME = 'subscription_status'`,
+    [schemaFallback],
+  );
+  if (!Array.isArray(rows) || rows.length === 0) return false;
+  return Number(rows[0]?.c) > 0;
+}
+
+/**
+ * プローブ失敗時（information_schema 非参照権限など）のみ従来の Unknown column 検知にフォールバック。
+ * @returns {Promise<{ rows: unknown[]; subscriptionStatusWritable: boolean }>}
+ */
+async function queryAdminUsersListRowsFallbackTryCatch(pool) {
   try {
     const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITH_SUB);
     return {
       rows: Array.isArray(rows) ? rows : [],
-      usedSubscriptionFallback: false,
+      subscriptionStatusWritable: true,
     };
   } catch (e) {
     if (isUnknownSubscriptionColumnError(e)) {
       if (!warnedAdminUsersListSubscriptionColumnMissing) {
         warnedAdminUsersListSubscriptionColumnMissing = true;
         logger.warn(
-          "admin.users: subscription_status column missing; listing without it (apply db/migration_v8_users_subscription_status.sql)",
+          "admin.users: subscription_status column missing (fallback path); apply db/migration_v8_users_subscription_status.sql",
           { event: "admin.users.subscription_column_missing" },
         );
       }
       const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITHOUT_SUB);
       return {
         rows: Array.isArray(rows) ? rows : [],
-        usedSubscriptionFallback: true,
+        subscriptionStatusWritable: false,
       };
     }
     throw e;
+  }
+}
+
+/**
+ * @returns {Promise<{ rows: unknown[]; subscriptionStatusWritable: boolean }>}
+ */
+async function fetchAdminUsersListRows(pool) {
+  try {
+    const hasSubCol = await usersTableHasSubscriptionStatusColumn(pool);
+    if (!hasSubCol) {
+      if (!warnedAdminUsersListSubscriptionColumnMissing) {
+        warnedAdminUsersListSubscriptionColumnMissing = true;
+        logger.warn(
+          "admin.users: information_schema reports no users.subscription_status (apply db/migration_v8_users_subscription_status.sql)",
+          { event: "admin.users.subscription_column_missing" },
+        );
+      }
+    }
+    const sql = hasSubCol ? ADMIN_USERS_LIST_SQL_WITH_SUB : ADMIN_USERS_LIST_SQL_WITHOUT_SUB;
+    const [rows] = await pool.query(sql);
+    return {
+      rows: Array.isArray(rows) ? rows : [],
+      subscriptionStatusWritable: hasSubCol,
+    };
+  } catch (e) {
+    logger.warn("admin.users: schema probe or list query failed; using try/catch fallback", {
+      message: String(e?.message || e),
+    });
+    return queryAdminUsersListRowsFallbackTryCatch(pool);
   }
 }
 
@@ -1068,8 +1114,7 @@ export async function handleApiRequest(req, options = {}) {
     if (routeKey(method, path) === "GET /admin/users") {
       const admin = await ensureAdmin(pool, userId);
       if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
-      const { rows, usedSubscriptionFallback } = await queryAdminUsersListRows(pool);
-      const subscriptionStatusWritable = !usedSubscriptionFallback;
+      const { rows, subscriptionStatusWritable } = await fetchAdminUsersListRows(pool);
       const items = rows.map((r) => ({
         id: Number(r.id),
         email: String(r.email ?? ""),
