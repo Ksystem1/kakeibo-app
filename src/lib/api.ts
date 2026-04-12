@@ -1,14 +1,26 @@
 import { getStoredToken } from "../context/AuthContext";
 
 /**
- * 本番は .env.production の VITE_API_URL。
- * 開発で未設定のときは Vite プロキシ `/api`（→ backend:3456）。
- *
- * バックエンドを直接叩く例（API_PATH_PREFIX=/api のとき）:
- *   VITE_API_URL=http://127.0.0.1:3456/api
- * ホストだけのときは VITE_API_APPEND_PREFIX=1 で末尾に /api を付与。
+ * 本番: .env.production の VITE_API_URL。
+ * 開発: 既定で **http://localhost:3456/api** に固定（誤った VITE_API_URL や古いプロキシ先を避ける）。
+ *   Vite プロキシ経由に戻す: VITE_API_USE_VITE_PROXY=1
+ *   別ポート: VITE_API_DEV_BASE_URL=http://127.0.0.1:9999/api
  */
 function resolveApiBase(): string {
+  if (import.meta.env.DEV) {
+    if (String(import.meta.env.VITE_API_USE_VITE_PROXY ?? "").trim() === "1") {
+      return "/api";
+    }
+    const custom = String(import.meta.env.VITE_API_DEV_BASE_URL ?? "").trim();
+    if (custom) {
+      let u = custom.replace(/\/$/, "");
+      if (String(import.meta.env.VITE_API_APPEND_PREFIX ?? "").trim() === "1" && !/\/api$/i.test(u)) {
+        u = `${u}/api`;
+      }
+      return u;
+    }
+    return "http://localhost:3456/api";
+  }
   const raw = import.meta.env.VITE_API_URL;
   if (raw != null && String(raw).trim() !== "") {
     let u = String(raw).replace(/\/$/, "");
@@ -17,7 +29,6 @@ function resolveApiBase(): string {
     }
     return u;
   }
-  if (import.meta.env.DEV) return "/api";
   return "";
 }
 
@@ -28,11 +39,11 @@ function resolveStripeConfigUrl(): string {
   return `${resolveApiBase()}/config`;
 }
 
-/** ブラウザ・CDN キャッシュを避けるためクエリを付与 */
+/** ブラウザ・プロキシのキャッシュを避けるためクエリを付与 */
 function resolveStripeConfigUrlForFetch(): string {
   const u = resolveStripeConfigUrl();
   const sep = u.includes("?") ? "&" : "?";
-  return `${u}${sep}_cb=${Date.now()}`;
+  return `${u}${sep}t=${Date.now()}`;
 }
 
 /**
@@ -45,9 +56,12 @@ export function logStripeConfigRequestPlan(): void {
   console.debug("[api] Stripe config: resolveApiBase() =", JSON.stringify(base), "→ GET", full);
   if (base === "/api") {
     console.debug(
-      "[api] ブラウザ上は同一オリジン + /api 。Vite が",
+      "[api] Vite プロキシモード: /api →",
       import.meta.env.VITE_API_PROXY_TARGET || "http://127.0.0.1:3456",
-      "へプロキシします（vite.config proxy /api）。",
+    );
+  } else if (String(base).startsWith("http://localhost:3456") || String(base).includes("127.0.0.1:3456")) {
+    console.debug(
+      "[api] 開発既定: バックエンド直結（CORS は backend CORS_ORIGIN に http://localhost:5173 を含める）",
     );
   }
 }
