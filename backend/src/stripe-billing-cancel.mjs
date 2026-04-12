@@ -2,7 +2,10 @@
  * サブスクを「請求期間終了時に解約」（Stripe cancel_at_period_end）
  */
 import Stripe from "stripe";
+import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { requireStripeSecretKey } from "./stripe-config.mjs";
+
+const FAM_JOIN_U = sqlUserFamilyIdExpr("u");
 
 /**
  * @param {import("mysql2/promise").Pool} pool
@@ -12,14 +15,26 @@ export async function cancelUserSubscriptionAtPeriodEnd(pool, userId) {
   let rows;
   try {
     [rows] = await pool.query(
-      `SELECT id, stripe_customer_id, stripe_subscription_id FROM users WHERE id = ? LIMIT 1`,
+      `SELECT u.id,
+        COALESCE(f.stripe_customer_id, u.stripe_customer_id) AS stripe_customer_id,
+        COALESCE(f.stripe_subscription_id, u.stripe_subscription_id) AS stripe_subscription_id
+       FROM users u
+       LEFT JOIN families f ON f.id = ${FAM_JOIN_U}
+       WHERE u.id = ? LIMIT 1`,
       [userId],
     );
   } catch {
-    [rows] = await pool.query(
-      `SELECT id, stripe_customer_id FROM users WHERE id = ? LIMIT 1`,
-      [userId],
-    );
+    try {
+      [rows] = await pool.query(
+        `SELECT id, stripe_customer_id, stripe_subscription_id FROM users WHERE id = ? LIMIT 1`,
+        [userId],
+      );
+    } catch {
+      [rows] = await pool.query(
+        `SELECT id, stripe_customer_id FROM users WHERE id = ? LIMIT 1`,
+        [userId],
+      );
+    }
   }
   const user = Array.isArray(rows) && rows[0] ? rows[0] : null;
   if (!user) {

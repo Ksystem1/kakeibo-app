@@ -1,7 +1,8 @@
 /**
- * Stripe Webhook / 管理者 PATCH で更新する users.subscription_status / is_premium と連携。
- * DB: VARCHAR(32)（migration v8）。Stripe Subscription.status を小文字で保存（incomplete 系は inactive に正規化）。
- * is_premium=1 もレシートAI 等では active と同等。
+ * Stripe Webhook / 管理者 PATCH で更新するサブスク状態と is_premium の連携。
+ * v12 以降: 主に families（家族単位）。API の user 行は JOIN 済みの subscription_* を参照。
+ * DB: VARCHAR(32)（migration v8 users / v12 families）。Stripe Subscription.status を小文字で保存。
+ * is_premium=1（users）はレシートAI 等では active と同等。
  */
 
 /** カンマ・セミコロン・空白区切りの users.id。Stripe 前のローカル検証用。 */
@@ -30,7 +31,7 @@ export function getEffectiveSubscriptionStatus(subscriptionStatus, userId) {
 }
 
 /**
- * @param {Record<string, unknown> | null | undefined} row users 行の一部
+ * @param {Record<string, unknown> | null | undefined} row users 行（ログイン・/auth/me は families と JOIN 済みの subscription_*）
  */
 export function deriveSubscriptionStatusFromDbRow(row) {
   if (!row || typeof row !== "object") return "inactive";

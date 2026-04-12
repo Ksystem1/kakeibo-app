@@ -1,10 +1,10 @@
 /**
- * Stripe Webhook: users.subscription_status / stripe_customer_id を同期
+ * Stripe Webhook: families（家族単位）の subscription_status / stripe_customer_id を同期
  *
  * 処理イベント:
- * - customer.subscription.created / updated → Stripe Subscription.status を DB に反映
- * - customer.subscription.deleted → subscription_status = canceled（管理画面では「解約済み」）
- * - checkout.session.completed → metadata / client_reference_id でユーザと cus_ を紐付け
+ * - customer.subscription.created / updated → Stripe Subscription.status を DB に反映（同じ family の全員が参照）
+ * - customer.subscription.deleted → subscription_status = canceled
+ * - checkout.session.completed → metadata / client_reference_id でユーザを特定し、その家族に cus_ を紐付け
  */
 import Stripe from "stripe";
 import { createLogger } from "./logger.mjs";
@@ -65,7 +65,7 @@ export async function processStripeWebhook(payload, sigHeader, pool) {
       case "customer.subscription.created":
       case "customer.subscription.deleted": {
         const sub = event.data.object;
-        await syncSubscriptionToUser(pool, sub, event.type === "customer.subscription.deleted");
+        await syncSubscriptionToFamily(pool, sub, event.type === "customer.subscription.deleted");
         break;
       }
       case "checkout.session.completed": {
@@ -89,7 +89,7 @@ export async function processStripeWebhook(payload, sigHeader, pool) {
 }
 
 /** @param {Record<string, unknown>} subscription */
-async function syncSubscriptionToUser(pool, subscription, deleted) {
+async function syncSubscriptionToFamily(pool, subscription, deleted) {
   const customerId =
     typeof subscription.customer === "string"
       ? subscription.customer
@@ -121,18 +121,39 @@ async function syncSubscriptionToUser(pool, subscription, deleted) {
         : null;
 
   const [res] = await pool.query(
-    `UPDATE users SET subscription_status = ?, subscription_period_end_at = ?, subscription_cancel_at_period_end = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE stripe_customer_id = ?`,
+    `UPDATE families SET subscription_status = ?, subscription_period_end_at = ?, subscription_cancel_at_period_end = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE stripe_customer_id = ?`,
     [dbStatus, periodEndDate, cancelAtEnd, subId, customerId],
   );
-  if (!res.affectedRows) {
-    logger.warn("stripe.subscription_no_user_for_customer", {
-      customerId,
-      subscriptionId: subscription.id,
-    });
+  if (res.affectedRows) return;
+
+  const [[legacy]] = await pool.query(
+    `SELECT COALESCE(u.default_family_id, (SELECT fm.family_id FROM family_members fm WHERE fm.user_id = u.id ORDER BY fm.id LIMIT 1)) AS fid
+     FROM users u WHERE u.stripe_customer_id = ? LIMIT 1`,
+    [customerId],
+  );
+  const fid = legacy?.fid != null ? Number(legacy.fid) : null;
+  if (fid && Number.isFinite(fid) && fid > 0) {
+    await pool.query(
+      `UPDATE families SET
+         subscription_status = ?,
+         subscription_period_end_at = ?,
+         subscription_cancel_at_period_end = ?,
+         stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+         stripe_customer_id = COALESCE(stripe_customer_id, ?),
+         updated_at = NOW()
+       WHERE id = ?`,
+      [dbStatus, periodEndDate, cancelAtEnd, subId, customerId, fid],
+    );
+    return;
   }
+
+  logger.warn("stripe.subscription_no_family_for_customer", {
+    customerId,
+    subscriptionId: subscription.id,
+  });
 }
 
-/** Checkout 完了時: metadata.kakeibo_user_id または client_reference_id でユーザーを特定し cus_ を保存 */
+/** Checkout 完了時: metadata.kakeibo_user_id または client_reference_id でユーザーを特定し、その家族に cus_ を保存 */
 async function linkStripeCustomerFromCheckout(pool, session) {
   const meta = session.metadata && typeof session.metadata === "object" ? session.metadata : {};
   const rawId = meta.kakeibo_user_id ?? meta.user_id ?? session.client_reference_id;
@@ -168,6 +189,44 @@ async function linkStripeCustomerFromCheckout(pool, session) {
     session.status === "complete" &&
     (ps === "paid" || ps === "no_payment_required");
 
+  const [[ur]] = await pool.query(
+    `SELECT COALESCE(u.default_family_id, (SELECT fm.family_id FROM family_members fm WHERE fm.user_id = u.id ORDER BY fm.id LIMIT 1)) AS fid
+     FROM users u WHERE u.id = ?`,
+    [userId],
+  );
+  const fid = ur?.fid != null ? Number(ur.fid) : null;
+
+  if (fid && Number.isFinite(fid) && fid > 0) {
+    await pool.query(
+      `UPDATE families SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE id = ?`,
+      [customerId, subIdStr, fid],
+    );
+
+    if (paidComplete && subIdStr) {
+      try {
+        const stripe = new Stripe(requireStripeSecretKey());
+        const sub = await stripe.subscriptions.retrieve(subIdStr);
+        await syncSubscriptionToFamily(pool, sub, false);
+      } catch (e) {
+        logger.warn("stripe.checkout_subscription_sync_failed", {
+          message: String(e?.message || e),
+          userId,
+          subIdStr,
+        });
+        await pool.query(
+          `UPDATE families SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
+          [fid],
+        );
+      }
+    } else if (paidComplete) {
+      await pool.query(
+        `UPDATE families SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
+        [fid],
+      );
+    }
+    return;
+  }
+
   await pool.query(
     `UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE id = ?`,
     [customerId, subIdStr, userId],
@@ -177,7 +236,7 @@ async function linkStripeCustomerFromCheckout(pool, session) {
     try {
       const stripe = new Stripe(requireStripeSecretKey());
       const sub = await stripe.subscriptions.retrieve(subIdStr);
-      await syncSubscriptionToUser(pool, sub, false);
+      await syncSubscriptionToFamily(pool, sub, false);
     } catch (e) {
       logger.warn("stripe.checkout_subscription_sync_failed", {
         message: String(e?.message || e),

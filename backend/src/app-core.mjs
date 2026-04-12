@@ -4,6 +4,7 @@
 import crypto from "node:crypto";
 import { stripApiPathPrefix } from "./api-path.mjs";
 import { tryAuthRoutes, getDefaultFamilyId } from "./auth-routes.mjs";
+import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { hashPassword, resolveUserId } from "./auth-logic.mjs";
 import { buildCorsHeaders } from "./cors-config.mjs";
 import { getPool, isRdsConfigured, pingDatabase } from "./db.mjs";
@@ -514,13 +515,39 @@ async function probeUsersSubscriptionStatusColumnPresent(pool) {
   }
 }
 
+async function probeFamiliesSubscriptionColumnsPresent(pool) {
+  try {
+    await pool.query(
+      `SELECT subscription_status, stripe_customer_id FROM families WHERE 1=0`,
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 管理一覧と同じ並び・件数で subscription_status のみ取得してマップ化
  */
 async function fetchAdminUsersSubscriptionStatusMap(pool) {
-  const [subRows] = await pool.query(
-    `SELECT id, subscription_status FROM users ORDER BY id ASC LIMIT 1000`,
-  );
+  const useFamily = await probeFamiliesSubscriptionColumnsPresent(pool);
+  let subRows;
+  if (useFamily) {
+    const [rows] = await pool.query(
+      `SELECT u.id,
+        COALESCE(f.subscription_status, u.subscription_status) AS subscription_status
+       FROM users u
+       LEFT JOIN families f ON f.id = ${FAM_JOIN_ADMIN}
+       ORDER BY u.id ASC
+       LIMIT 1000`,
+    );
+    subRows = rows;
+  } else {
+    const [rows] = await pool.query(
+      `SELECT id, subscription_status FROM users ORDER BY id ASC LIMIT 1000`,
+    );
+    subRows = rows;
+  }
   const map = new Map();
   if (Array.isArray(subRows)) {
     for (const r of subRows) {
@@ -532,7 +559,10 @@ async function fetchAdminUsersSubscriptionStatusMap(pool) {
 
 let warnedAdminUsersListSubscriptionColumnMissing = false;
 
-const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
+const FAM_JOIN_ADMIN = sqlUserFamilyIdExpr("u");
+
+/** v12 未適用時のフォールバック（users.subscription_status のみ） */
+const ADMIN_USERS_LIST_SQL_WITH_SUB_LEGACY = `SELECT
            u.id,
            u.email,
            u.login_name,
@@ -562,6 +592,36 @@ const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
          ORDER BY u.id ASC
          LIMIT 1000`;
 
+const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
+           u.id,
+           u.email,
+           u.login_name,
+           u.display_name,
+           u.is_admin,
+           COALESCE(f.subscription_status, u.subscription_status) AS subscription_status,
+           u.created_at,
+           u.updated_at,
+           u.last_login_at,
+           u.default_family_id,
+           (
+             SELECT GROUP_CONCAT(
+               CONCAT(
+                 COALESCE(NULLIF(TRIM(u2.display_name), ''), u2.email),
+                 ' (', fm2.role, ')'
+               )
+               ORDER BY fm2.id
+               SEPARATOR ' / '
+             )
+             FROM family_members fm2
+             JOIN users u2 ON u2.id = fm2.user_id
+             WHERE u.default_family_id IS NOT NULL
+               AND fm2.family_id = u.default_family_id
+           ) AS family_peers
+         FROM users u
+         LEFT JOIN families f ON f.id = ${FAM_JOIN_ADMIN}
+         ORDER BY u.id ASC
+         LIMIT 1000`;
+
 const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
            u.id,
            u.email,
@@ -587,7 +647,7 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
                AND fm2.family_id = u.default_family_id
            ) AS family_peers
          FROM users u
-         LEFT JOIN families f ON f.id = u.default_family_id
+         LEFT JOIN families f ON f.id = ${FAM_JOIN_ADMIN}
          ORDER BY u.id ASC
          LIMIT 1000`;
 
@@ -625,7 +685,10 @@ async function fetchAdminUsersListRows(pool) {
       code: e?.code,
       errno: e?.errno,
     });
-    const [rowsWith] = await pool.query(ADMIN_USERS_LIST_SQL_WITH_SUB);
+    const useFamSub = await probeFamiliesSubscriptionColumnsPresent(pool);
+    const [rowsWith] = await pool.query(
+      useFamSub ? ADMIN_USERS_LIST_SQL_WITH_SUB : ADMIN_USERS_LIST_SQL_WITH_SUB_LEGACY,
+    );
     return {
       rows: Array.isArray(rowsWith) ? rowsWith : [],
       subscriptionStatusWritable: true,
@@ -655,6 +718,14 @@ function isErBadFieldErrorAppCore(e) {
 
 async function loadUserSubscriptionRowFull(pool, userId) {
   const queries = [
+    `SELECT
+      COALESCE(f.subscription_status, u.subscription_status) AS subscription_status,
+      u.is_premium,
+      COALESCE(f.subscription_period_end_at, u.subscription_period_end_at) AS subscription_period_end_at,
+      COALESCE(f.subscription_cancel_at_period_end, u.subscription_cancel_at_period_end) AS subscription_cancel_at_period_end
+     FROM users u
+     LEFT JOIN families f ON f.id = ${FAM_JOIN_ADMIN}
+     WHERE u.id = ? LIMIT 1`,
     `SELECT subscription_status, is_premium, subscription_period_end_at, subscription_cancel_at_period_end FROM users WHERE id = ? LIMIT 1`,
     `SELECT subscription_status, is_premium FROM users WHERE id = ? LIMIT 1`,
     `SELECT subscription_status FROM users WHERE id = ? LIMIT 1`,
@@ -1303,8 +1374,23 @@ export async function handleApiRequest(req, options = {}) {
             skipCors,
           );
         }
-        updates.push("subscription_status = ?");
-        params.push(normalizedSub);
+        const targetFamilyId = await getDefaultFamilyId(pool, targetUserId);
+        let appliedFamilySub = false;
+        if (targetFamilyId) {
+          try {
+            await pool.query(
+              `UPDATE families SET subscription_status = ?, updated_at = NOW() WHERE id = ?`,
+              [normalizedSub, targetFamilyId],
+            );
+            appliedFamilySub = true;
+          } catch (e) {
+            if (!isErBadFieldErrorAppCore(e)) throw e;
+          }
+        }
+        if (!appliedFamilySub) {
+          updates.push("subscription_status = ?");
+          params.push(normalizedSub);
+        }
       }
       if (updates.length === 0) {
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);

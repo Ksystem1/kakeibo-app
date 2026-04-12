@@ -2,7 +2,10 @@
  * Stripe Checkout Session（サブスク課金・Test mode 想定）
  */
 import Stripe from "stripe";
+import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { requireStripeSecretKey } from "./stripe-config.mjs";
+
+const FAM_JOIN_U = sqlUserFamilyIdExpr("u");
 
 const DEFAULT_ALLOWED_ORIGINS =
   "http://localhost:5173,http://127.0.0.1:5173,https://ksystemapp.com";
@@ -77,7 +80,11 @@ export async function createBillingCheckoutSession(pool, userId, body) {
   assertAllowedRedirectUrl(cancelUrl, allowedOrigins);
 
   const [[user]] = await pool.query(
-    `SELECT id, email, stripe_customer_id FROM users WHERE id = ? LIMIT 1`,
+    `SELECT u.id, u.email,
+      COALESCE(f.stripe_customer_id, u.stripe_customer_id) AS stripe_customer_id
+     FROM users u
+     LEFT JOIN families f ON f.id = ${FAM_JOIN_U}
+     WHERE u.id = ? LIMIT 1`,
     [userId],
   );
   if (!user) {

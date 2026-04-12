@@ -9,12 +9,15 @@ import {
 } from "./auth-logic.mjs";
 import { getPool } from "./db.mjs";
 import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
+import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import {
   bodyContainsSubscriptionMutationFields,
   buildUserSubscriptionApiFields,
   deriveSubscriptionStatusFromDbRow,
   getEffectiveSubscriptionStatus,
 } from "./subscription-logic.mjs";
+
+const FAM_JOIN_ON_U = sqlUserFamilyIdExpr("u");
 
 /** このモジュールが処理するパス（ここに無いリクエストは getPool せず null を返す） */
 const AUTH_ROUTE_KEYS = new Set([
@@ -148,9 +151,19 @@ function warnSubscriptionColumnMissingOnce() {
 async function queryLoginUserRow(pool, login) {
   const params = [login, login];
   const w = `WHERE LOWER(email) = ? OR (login_name IS NOT NULL AND LOWER(login_name) = ?)`;
+  const wAliased = `WHERE (LOWER(u.email) = ? OR (u.login_name IS NOT NULL AND LOWER(u.login_name) = ?))`;
   const { rows } = await queryWithColumnFallback(
     pool,
     [
+      `SELECT u.id, u.email, u.password_hash, u.is_admin,
+        COALESCE(f.subscription_status, u.subscription_status) AS subscription_status,
+        u.is_premium,
+        COALESCE(f.subscription_period_end_at, u.subscription_period_end_at) AS subscription_period_end_at,
+        COALESCE(f.subscription_cancel_at_period_end, u.subscription_cancel_at_period_end) AS subscription_cancel_at_period_end,
+        COALESCE(f.stripe_subscription_id, u.stripe_subscription_id) AS stripe_subscription_id
+       FROM users u
+       LEFT JOIN families f ON f.id = ${FAM_JOIN_ON_U}
+       ${wAliased}`,
       `SELECT id, email, password_hash, is_admin, subscription_status, is_premium, subscription_period_end_at, subscription_cancel_at_period_end, stripe_subscription_id FROM users ${w}`,
       `SELECT id, email, password_hash, is_admin, subscription_status, is_premium FROM users ${w}`,
       `SELECT id, email, password_hash, is_admin, subscription_status FROM users ${w}`,
@@ -176,6 +189,15 @@ async function queryMeUserRow(pool, uid) {
   const { rows } = await queryWithColumnFallback(
     pool,
     [
+      `SELECT u.id, u.email, u.login_name, u.display_name, u.default_family_id, u.is_admin,
+        COALESCE(f.subscription_status, u.subscription_status) AS subscription_status,
+        u.is_premium,
+        COALESCE(f.subscription_period_end_at, u.subscription_period_end_at) AS subscription_period_end_at,
+        COALESCE(f.subscription_cancel_at_period_end, u.subscription_cancel_at_period_end) AS subscription_cancel_at_period_end,
+        COALESCE(f.stripe_subscription_id, u.stripe_subscription_id) AS stripe_subscription_id
+       FROM users u
+       LEFT JOIN families f ON f.id = ${FAM_JOIN_ON_U}
+       WHERE u.id = ?`,
       `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status, is_premium, subscription_period_end_at, subscription_cancel_at_period_end, stripe_subscription_id FROM users WHERE id = ?`,
       `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status, is_premium FROM users WHERE id = ?`,
       `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status FROM users WHERE id = ?`,

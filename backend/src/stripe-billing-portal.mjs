@@ -2,8 +2,11 @@
  * Stripe Customer Billing Portal（プラン管理・解約はポータルで行う）
  */
 import Stripe from "stripe";
+import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { assertAllowedRedirectUrl, parseAllowedOrigins } from "./stripe-checkout.mjs";
 import { requireStripeSecretKey } from "./stripe-config.mjs";
+
+const FAM_JOIN_U = sqlUserFamilyIdExpr("u");
 
 /**
  * @param {import("mysql2/promise").Pool} pool
@@ -20,7 +23,11 @@ export async function createBillingPortalSession(pool, userId, body) {
   assertAllowedRedirectUrl(returnUrl, allowedOrigins);
 
   const [[user]] = await pool.query(
-    `SELECT id, stripe_customer_id FROM users WHERE id = ? LIMIT 1`,
+    `SELECT u.id,
+      COALESCE(f.stripe_customer_id, u.stripe_customer_id) AS stripe_customer_id
+     FROM users u
+     LEFT JOIN families f ON f.id = ${FAM_JOIN_U}
+     WHERE u.id = ? LIMIT 1`,
     [userId],
   );
   if (!user) {

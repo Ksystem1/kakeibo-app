@@ -15,6 +15,7 @@
     "db:migrate-v9": "node scripts/run-migration-v9.mjs",
     "db:migrate-v10": "node scripts/run-migration-v10.mjs",
     "db:migrate-v11": "node scripts/run-migration-v11.mjs",
+    "db:migrate-v12": "node scripts/run-migration-v12.mjs",
     "db:dev-user": "node scripts/ensure-dev-user.mjs",
     "test:bedrock": "node scripts/test-bedrock.mjs",
     "test:bedrock:lucky": "node scripts/test-bedrock-lucky-food.mjs",
