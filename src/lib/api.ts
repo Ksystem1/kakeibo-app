@@ -173,6 +173,14 @@ export async function getAuthMe() {
   }>(res);
 }
 
+/** サーバーに Checkout 用の Price ID・Stripe 秘密鍵が揃っているか（秘密は返さない） */
+export async function getBillingStripeStatus() {
+  const res = await apiFetch(`${BASE}/billing/stripe-status`, {
+    headers: buildHeaders(),
+  });
+  return parse<{ checkoutReady: boolean }>(res);
+}
+
 export async function postBillingCheckoutSession(body: {
   successUrl: string;
   cancelUrl: string;

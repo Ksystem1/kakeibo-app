@@ -3,7 +3,7 @@
  */
 import Stripe from "stripe";
 import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
-import { requireStripeSecretKey } from "./stripe-config.mjs";
+import { getStripeSecretKey, requireStripeSecretKey } from "./stripe-config.mjs";
 
 const FAM_JOIN_U = sqlUserFamilyIdExpr("u");
 
@@ -45,6 +45,19 @@ export function assertAllowedRedirectUrl(urlStr, allowedOrigins) {
   }
 }
 
+/** Checkout 用 Price ID（STRIPE_TEST_PRICE_ID を STRIPE_PRICE_ID より優先） */
+export function getSubscriptionPriceId() {
+  const testPrice = String(process.env.STRIPE_TEST_PRICE_ID ?? "").trim();
+  const livePrice = String(process.env.STRIPE_PRICE_ID ?? "").trim();
+  return testPrice || livePrice;
+}
+
+/** Price ID と秘密鍵が揃っているか（フロント向けステータス用。秘密は返さない） */
+export function isStripeCheckoutConfigured() {
+  if (!getSubscriptionPriceId()) return false;
+  return Boolean(getStripeSecretKey());
+}
+
 /**
  * @param {import("mysql2/promise").Pool} pool
  * @param {number} userId
@@ -52,9 +65,7 @@ export function assertAllowedRedirectUrl(urlStr, allowedOrigins) {
  * @returns {Promise<string>} Checkout URL
  */
 export async function createBillingCheckoutSession(pool, userId, body) {
-  const testPrice = String(process.env.STRIPE_TEST_PRICE_ID ?? "").trim();
-  const livePrice = String(process.env.STRIPE_PRICE_ID ?? "").trim();
-  const priceId = testPrice || livePrice;
+  const priceId = getSubscriptionPriceId();
   if (!priceId) {
     throw new Error(
       "STRIPE_TEST_PRICE_ID または STRIPE_PRICE_ID を設定してください",

@@ -37,7 +37,10 @@ import {
 } from "./subscription-logic.mjs";
 import { cancelUserSubscriptionAtPeriodEnd } from "./stripe-billing-cancel.mjs";
 import { createBillingPortalSession } from "./stripe-billing-portal.mjs";
-import { createBillingCheckoutSession } from "./stripe-checkout.mjs";
+import {
+  createBillingCheckoutSession,
+  isStripeCheckoutConfigured,
+} from "./stripe-checkout.mjs";
 import { processStripeWebhook } from "./stripe-webhook.mjs";
 
 const logger = createLogger("api");
@@ -937,6 +940,7 @@ export async function handleApiRequest(req, options = {}) {
             stripeWebhook: "/webhooks/stripe",
             stripeWebhookApiPrefixed: "/api/webhooks/stripe",
             billingCheckoutSession: "/billing/checkout-session",
+            billingStripeStatus: "/billing/stripe-status",
             billingPortalSession: "/billing/portal-session",
             billingCancelSubscription: "/billing/cancel-subscription",
           },
@@ -1036,6 +1040,16 @@ export async function handleApiRequest(req, options = {}) {
               : "";
         const wh = await processStripeWebhook(rawPayload, sigHeader, pool);
         return json(wh.statusCode, wh.body, hdrs, skipCors);
+      }
+      if (rk === "GET /billing/stripe-status") {
+        return json(
+          200,
+          {
+            checkoutReady: isStripeCheckoutConfigured(),
+          },
+          hdrs,
+          skipCors,
+        );
       }
     }
 

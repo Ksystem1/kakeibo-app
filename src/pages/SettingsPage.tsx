@@ -11,6 +11,7 @@ import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
   getAuthMe,
+  getBillingStripeStatus,
   normalizeAuthContextUser,
   postBillingCheckoutSession,
   postBillingPortalSession,
@@ -107,6 +108,8 @@ export function SettingsPage() {
   const stripeCheckoutEnabled = import.meta.env.DEV || !stripeCheckoutDisabled;
   const [stripeCheckoutBusy, setStripeCheckoutBusy] = useState(false);
   const [stripeCheckoutMessage, setStripeCheckoutMessage] = useState<string | null>(null);
+  /** null: 未確認 / true: サーバーで Price ID と秘密鍵が揃っている */
+  const [stripeCheckoutReady, setStripeCheckoutReady] = useState<boolean | null>(null);
   const [premiumContractOpen, setPremiumContractOpen] = useState(false);
   const [portalBusy, setPortalBusy] = useState(false);
   const [portalMessage, setPortalMessage] = useState<string | null>(null);
@@ -138,6 +141,23 @@ export function SettingsPage() {
         /* オフライン時は無視 */
       });
   }, [location.search, token, setUser]);
+
+  useEffect(() => {
+    if (!premiumContractOpen || !getApiBaseUrl()) return;
+    setStripeCheckoutReady(null);
+    let cancelled = false;
+    void getBillingStripeStatus()
+      .then((r) => {
+        if (!cancelled) setStripeCheckoutReady(r.checkoutReady);
+      })
+      .catch(() => {
+        /* ステータス取得に失敗しても Checkout 自体は試せるようにする */
+        if (!cancelled) setStripeCheckoutReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [premiumContractOpen]);
 
   return (
     <div className={styles.wrap}>
@@ -332,11 +352,26 @@ export function SettingsPage() {
                   Stripe でサブスクリプションに申し込むと、プレミアムナビスキンやレシート関連の機能がご利用いただけます。解約はいつでも可能で、
                   <strong> 請求期間の終了日までは利用を継続</strong>できます（Stripe の請求サイクルに準じます）。
                 </p>
+                {stripeCheckoutReady === null ? (
+                  <p className={styles.reclassifyHint} style={{ margin: "0 0 0.5rem" }}>
+                    決済設定を確認しています…
+                  </p>
+                ) : null}
+                {stripeCheckoutReady === false ? (
+                  <p className={styles.reclassifyHint} style={{ margin: "0 0 0.65rem" }}>
+                    サーバー側の決済設定が未完了です。API ホストにサブスク用の Price ID（例:{" "}
+                    <code>STRIPE_TEST_PRICE_ID</code>）と Stripe 秘密鍵が読み込まれているか確認してください。プロジェクトルートで{" "}
+                    <code>npm run dev</code> を使う場合は <code>backend/.env</code> に記載し、Vite 経由なら{" "}
+                    <code>API_PATH_PREFIX=/api</code> も必要です。
+                  </p>
+                ) : null}
                 <div className={styles.modeRow} style={{ flexWrap: "wrap", gap: "0.4rem" }}>
                   <button
                     type="button"
                     className={`${styles.btn} ${styles.btnPrimary}`}
-                    disabled={stripeCheckoutBusy}
+                    disabled={
+                      stripeCheckoutBusy || stripeCheckoutReady === false || stripeCheckoutReady === null
+                    }
                     onClick={async () => {
                       setStripeCheckoutMessage(null);
                       setStripeCheckoutBusy(true);
@@ -351,14 +386,24 @@ export function SettingsPage() {
                         });
                         window.location.assign(url);
                       } catch (e) {
-                        const msg = e instanceof Error ? e.message : String(e);
-                        setStripeCheckoutMessage(msg);
+                        const raw = e instanceof Error ? e.message : String(e);
+                        const isServerConfig =
+                          /STRIPE_|設定してください|StripeCheckoutUnavailable|決済設定/i.test(raw);
+                        setStripeCheckoutMessage(
+                          isServerConfig
+                            ? "サーバーに決済用の環境変数が読み込まれていない可能性があります。API を再起動し、backend/.env の STRIPE_TEST_PRICE_ID（または STRIPE_PRICE_ID）と Stripe 秘密鍵、必要なら API_PATH_PREFIX=/api を確認してください。"
+                            : raw,
+                        );
                       } finally {
                         setStripeCheckoutBusy(false);
                       }
                     }}
                   >
-                    {stripeCheckoutBusy ? "準備中…" : "契約する（Stripe Checkout）"}
+                    {stripeCheckoutBusy
+                      ? "準備中…"
+                      : stripeCheckoutReady === null
+                        ? "確認中…"
+                        : "契約する（Stripe Checkout）"}
                   </button>
                   <button
                     type="button"
