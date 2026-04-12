@@ -171,6 +171,18 @@ export async function getAuthMe() {
   }>(res);
 }
 
+export async function postBillingCheckoutSession(body: {
+  successUrl: string;
+  cancelUrl: string;
+}) {
+  const res = await apiFetch(`${BASE}/billing/checkout-session`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ url: string }>(res);
+}
+
 function rawToIsAdmin(isAdmin: unknown, is_admin: unknown): boolean {
   if (typeof isAdmin === "boolean") return isAdmin;
   if (typeof isAdmin === "number") return isAdmin === 1;

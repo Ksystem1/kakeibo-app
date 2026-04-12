@@ -9,6 +9,9 @@ import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
 import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
+  getAuthMe,
+  normalizeAuthContextUser,
+  postBillingCheckoutSession,
   reclassifyUncategorizedReceipts,
 } from "../lib/api";
 import {
@@ -66,7 +69,7 @@ export function SettingsPage() {
     });
   }, [location.hash, location.pathname]);
 
-  const { token, user: authUser } = useAuth();
+  const { token, user: authUser, setUser } = useAuth();
   const {
     fontScale,
     setFontScale,
@@ -86,6 +89,10 @@ export function SettingsPage() {
   const premiumPurchaseUrl = String(
     import.meta.env.VITE_PREMIUM_PURCHASE_URL ?? "",
   ).trim();
+  const stripeTestCheckoutEnabled =
+    String(import.meta.env.VITE_STRIPE_TEST_CHECKOUT ?? "").trim() === "1";
+  const [stripeCheckoutBusy, setStripeCheckoutBusy] = useState(false);
+  const [stripeCheckoutMessage, setStripeCheckoutMessage] = useState<string | null>(null);
 
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
     itemsForFixedCostEditor(fixedCostsByMonth),
@@ -99,6 +106,18 @@ export function SettingsPage() {
   useEffect(() => {
     setFixedItems(itemsForFixedCostEditor(fixedCostsByMonth));
   }, [fixedCostsByMonth]);
+
+  useEffect(() => {
+    const sp = new URLSearchParams(location.search);
+    if (sp.get("checkout") !== "success" || !token) return;
+    void getAuthMe()
+      .then((res) => {
+        if (res?.user) setUser(normalizeAuthContextUser(res.user));
+      })
+      .catch(() => {
+        /* オフライン時は無視 */
+      });
+  }, [location.search, token, setUser]);
 
   return (
     <div className={styles.wrap}>
@@ -224,6 +243,45 @@ export function SettingsPage() {
                   プレミアムの案内・お申し込み（外部サイト）
                 </a>
               </p>
+            ) : null}
+            {stripeTestCheckoutEnabled && getApiBaseUrl() && canSendAuthenticatedRequest(token) ? (
+              <div style={{ margin: "0.55rem 0 0" }}>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  disabled={stripeCheckoutBusy}
+                  onClick={async () => {
+                    setStripeCheckoutMessage(null);
+                    setStripeCheckoutBusy(true);
+                    try {
+                      const base =
+                        typeof window !== "undefined"
+                          ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "") || ""}`
+                          : "";
+                      const { url } = await postBillingCheckoutSession({
+                        successUrl: `${base}/settings?checkout=success`,
+                        cancelUrl: `${base}/settings?checkout=cancel`,
+                      });
+                      window.location.assign(url);
+                    } catch (e) {
+                      const msg = e instanceof Error ? e.message : String(e);
+                      setStripeCheckoutMessage(msg);
+                    } finally {
+                      setStripeCheckoutBusy(false);
+                    }
+                  }}
+                >
+                  {stripeCheckoutBusy ? "準備中…" : "Stripe テストで課金（Checkout）"}
+                </button>
+                {stripeCheckoutMessage ? (
+                  <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+                    {stripeCheckoutMessage}
+                  </p>
+                ) : null}
+                <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+                  Test mode 用。カードは 4242… などダッシュボードのテスト番号を使ってください。
+                </p>
+              </div>
             ) : null}
           </div>
         ) : null}

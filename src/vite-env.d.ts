@@ -14,4 +14,6 @@ interface ImportMetaEnv {
   readonly VITE_PUBLIC_ORIGIN?: string;
   readonly VITE_DEV_USER_ID?: string;
   readonly VITE_DEFAULT_USER_ID?: string;
+  readonly VITE_STRIPE_TEST_PUBLIC_KEY?: string;
+  readonly VITE_STRIPE_TEST_CHECKOUT?: string;
 }

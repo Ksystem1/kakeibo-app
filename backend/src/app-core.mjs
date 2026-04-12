@@ -34,6 +34,7 @@ import {
   normalizeAdminSettableSubscriptionStatus,
   bodyContainsSubscriptionMutationFields,
 } from "./subscription-logic.mjs";
+import { createBillingCheckoutSession } from "./stripe-checkout.mjs";
 import { processStripeWebhook } from "./stripe-webhook.mjs";
 
 const logger = createLogger("api");
@@ -830,6 +831,7 @@ export async function handleApiRequest(req, options = {}) {
             summary: "/summary/month",
             fixedCosts: "/settings/fixed-costs",
             stripeWebhook: "/webhooks/stripe",
+            billingCheckoutSession: "/billing/checkout-session",
           },
         },
         hdrs,
@@ -1513,6 +1515,50 @@ export async function handleApiRequest(req, options = {}) {
       case "POST /categories/ensure-defaults": {
         const r = await seedDefaultCategoriesIfEmpty(pool, userId, familyId);
         return json(200, { ok: true, inserted: r.inserted }, hdrs, skipCors);
+      }
+
+      case "POST /billing/checkout-session": {
+        const b = JSON.parse(req.body || "{}");
+        const billSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (billSubRej) return billSubRej;
+        try {
+          const url = await createBillingCheckoutSession(pool, userId, b);
+          return json(200, { url }, hdrs, skipCors);
+        } catch (e) {
+          const msg = String(e?.message || e);
+          if (
+            msg.includes("設定してください") ||
+            msg.includes("STRIPE_") ||
+            msg.includes("sk_test_")
+          ) {
+            return json(
+              503,
+              { error: "StripeCheckoutUnavailable", detail: msg },
+              hdrs,
+              skipCors,
+            );
+          }
+          if (
+            msg.includes("許可リスト") ||
+            msg.includes("URL") ||
+            msg.includes("successUrl") ||
+            msg.includes("cancelUrl")
+          ) {
+            return json(
+              400,
+              { error: "InvalidRequest", detail: msg },
+              hdrs,
+              skipCors,
+            );
+          }
+          logError("billing.checkout_session", e);
+          return json(
+            500,
+            { error: "InternalError", detail: msg },
+            hdrs,
+            skipCors,
+          );
+        }
       }
 
       case "POST /categories": {

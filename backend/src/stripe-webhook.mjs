@@ -3,6 +3,7 @@
  */
 import Stripe from "stripe";
 import { createLogger } from "./logger.mjs";
+import { getStripeWebhookSecret } from "./stripe-config.mjs";
 import { mapStripeSubscriptionStatusToDb } from "./subscription-logic.mjs";
 
 const logger = createLogger("stripe-webhook");
@@ -13,12 +14,16 @@ const logger = createLogger("stripe-webhook");
  * @param {import("mysql2/promise").Pool} pool
  */
 export async function processStripeWebhook(payload, sigHeader, pool) {
-  const secret = String(process.env.STRIPE_WEBHOOK_SECRET || "").trim();
+  const secret = getStripeWebhookSecret();
   if (!secret) {
     return {
       ok: false,
       statusCode: 503,
-      body: { error: "StripeWebhookNotConfigured", detail: "STRIPE_WEBHOOK_SECRET を設定してください" },
+      body: {
+        error: "StripeWebhookNotConfigured",
+        detail:
+          "STRIPE_TEST_WEBHOOK_SECRET（Test）または STRIPE_WEBHOOK_SECRET を設定してください",
+      },
     };
   }
 
@@ -42,6 +47,12 @@ export async function processStripeWebhook(payload, sigHeader, pool) {
       body: { error: "InvalidSignature" },
     };
   }
+
+  logger.info("stripe.event_received", {
+    type: event.type,
+    id: event.id,
+    livemode: event.livemode,
+  });
 
   try {
     switch (event.type) {
@@ -122,8 +133,25 @@ async function linkStripeCustomerFromCheckout(pool, session) {
     return;
   }
 
-  await pool.query(
-    `UPDATE users SET stripe_customer_id = ?, updated_at = NOW() WHERE id = ?`,
-    [customerId, userId],
-  );
+  let setSubscriptionStatus = false;
+  let dbStatus = "inactive";
+  if (session.mode === "subscription" && session.status === "complete") {
+    const ps = String(session.payment_status || "");
+    if (ps === "paid" || ps === "no_payment_required") {
+      setSubscriptionStatus = true;
+      dbStatus = "active";
+    }
+  }
+
+  if (setSubscriptionStatus) {
+    await pool.query(
+      `UPDATE users SET stripe_customer_id = ?, subscription_status = ?, updated_at = NOW() WHERE id = ?`,
+      [customerId, dbStatus, userId],
+    );
+  } else {
+    await pool.query(
+      `UPDATE users SET stripe_customer_id = ?, updated_at = NOW() WHERE id = ?`,
+      [customerId, userId],
+    );
+  }
 }

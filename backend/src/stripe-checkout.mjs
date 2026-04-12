@@ -1,0 +1,116 @@
+/**
+ * Stripe Checkout Session（サブスク課金・Test mode 想定）
+ */
+import Stripe from "stripe";
+import { requireStripeSecretKey } from "./stripe-config.mjs";
+
+const DEFAULT_ALLOWED_ORIGINS =
+  "http://localhost:5173,http://127.0.0.1:5173,https://ksystemapp.com";
+
+function parseAllowedOrigins() {
+  const raw = String(
+    process.env.STRIPE_CHECKOUT_ALLOWED_ORIGINS ?? DEFAULT_ALLOWED_ORIGINS,
+  ).trim();
+  const out = [];
+  for (const part of raw.split(",")) {
+    const entry = part.trim();
+    if (!entry) continue;
+    try {
+      const u = new URL(entry.includes("://") ? entry : `https://${entry}`);
+      out.push(u.origin);
+    } catch {
+      /* skip */
+    }
+  }
+  return out;
+}
+
+function assertAllowedRedirectUrl(urlStr, allowedOrigins) {
+  let u;
+  try {
+    u = new URL(urlStr);
+  } catch {
+    throw new Error("successUrl / cancelUrl が URL として不正です");
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error("successUrl / cancelUrl は http(s) のみです");
+  }
+  if (!allowedOrigins.includes(u.origin)) {
+    throw new Error(
+      `リダイレクト先の Origin が許可リストにありません: ${u.origin}（STRIPE_CHECKOUT_ALLOWED_ORIGINS を確認）`,
+    );
+  }
+}
+
+/**
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {number} userId
+ * @param {Record<string, unknown>} body
+ * @returns {Promise<string>} Checkout URL
+ */
+export async function createBillingCheckoutSession(pool, userId, body) {
+  const priceId = String(
+    process.env.STRIPE_TEST_PRICE_ID ?? process.env.STRIPE_PRICE_ID ?? "",
+  ).trim();
+  if (!priceId) {
+    throw new Error(
+      "STRIPE_TEST_PRICE_ID（または STRIPE_PRICE_ID）を設定してください",
+    );
+  }
+
+  const key = requireStripeSecretKey();
+  const requireTest =
+    String(process.env.STRIPE_CHECKOUT_REQUIRE_TEST_KEY ?? "").trim() === "1";
+  if (requireTest && !key.startsWith("sk_test_")) {
+    throw new Error(
+      "STRIPE_CHECKOUT_REQUIRE_TEST_KEY=1 のため、テスト秘密鍵（sk_test_）のみ利用できます",
+    );
+  }
+
+  const allowedOrigins = parseAllowedOrigins();
+  const successUrl = String(body?.successUrl ?? "").trim();
+  const cancelUrl = String(body?.cancelUrl ?? "").trim();
+  if (!successUrl || !cancelUrl) {
+    throw new Error("successUrl と cancelUrl が必要です");
+  }
+  assertAllowedRedirectUrl(successUrl, allowedOrigins);
+  assertAllowedRedirectUrl(cancelUrl, allowedOrigins);
+
+  const [[user]] = await pool.query(
+    `SELECT id, email, stripe_customer_id FROM users WHERE id = ? LIMIT 1`,
+    [userId],
+  );
+  if (!user) {
+    throw new Error("ユーザーが見つかりません");
+  }
+
+  const stripe = new Stripe(key);
+
+  /** @type {import("stripe").Stripe.Checkout.SessionCreateParams} */
+  const params = {
+    mode: "subscription",
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    client_reference_id: String(userId),
+    metadata: { kakeibo_user_id: String(userId) },
+  };
+
+  const email = user.email != null ? String(user.email).trim() : "";
+  const existingCus =
+    user.stripe_customer_id != null
+      ? String(user.stripe_customer_id).trim()
+      : "";
+  if (existingCus.startsWith("cus_")) {
+    params.customer = existingCus;
+  } else if (email) {
+    params.customer_email = email;
+  }
+
+  const session = await stripe.checkout.sessions.create(params);
+  const url = session.url;
+  if (!url) {
+    throw new Error("Stripe が Checkout URL を返しませんでした");
+  }
+  return url;
+}
