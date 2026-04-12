@@ -1,13 +1,31 @@
 import { getStoredToken } from "../context/AuthContext";
 
-/** 本番は .env.production の VITE_API_URL。開発で未設定のときは Vite プロキシ /api を使う。 */
+/**
+ * 本番は .env.production の VITE_API_URL。
+ * 開発で未設定のときは Vite プロキシ `/api`（→ backend:3456）。
+ *
+ * バックエンドを直接叩く例（API_PATH_PREFIX=/api のとき）:
+ *   VITE_API_URL=http://127.0.0.1:3456/api
+ * ホストだけのときは VITE_API_APPEND_PREFIX=1 で末尾に /api を付与。
+ */
 function resolveApiBase(): string {
   const raw = import.meta.env.VITE_API_URL;
   if (raw != null && String(raw).trim() !== "") {
-    return String(raw).replace(/\/$/, "");
+    let u = String(raw).replace(/\/$/, "");
+    if (String(import.meta.env.VITE_API_APPEND_PREFIX ?? "").trim() === "1") {
+      if (!/\/api$/i.test(u)) u = `${u}/api`;
+    }
+    return u;
   }
   if (import.meta.env.DEV) return "/api";
   return "";
+}
+
+/** GET /config 用。未設定時は `${BASE}/config` */
+function resolveStripeConfigUrl(): string {
+  const full = String(import.meta.env.VITE_STRIPE_CONFIG_URL ?? "").trim();
+  if (full) return full;
+  return `${resolveApiBase()}/config`;
 }
 
 const BASE = resolveApiBase();
@@ -181,6 +199,13 @@ export type BillingStripeStatus = {
   stripeTestPriceId?: string;
 };
 
+/** Stripe Price ID らしい文字列か（test / live いずれも price_ で始まる） */
+function looksLikeStripePriceId(value: string): boolean {
+  const s = String(value ?? "").trim();
+  if (!s) return false;
+  return /^price_[a-zA-Z0-9]+$/i.test(s);
+}
+
 /**
  * API のフラグと stripeTestPriceId を突き合わせ、Price ID 有無をフロントでも一貫させる。
  * （バックエンドのみ Price ID が取れている場合に priceIdConfigured が false になるずれを吸収）
@@ -190,7 +215,7 @@ export function normalizeBillingStripeStatus(
 ): BillingStripeStatus {
   const stripeTestPriceId = String(raw?.stripeTestPriceId ?? "").trim();
   const priceIdConfigured =
-    Boolean(raw?.priceIdConfigured) || stripeTestPriceId.length > 0;
+    Boolean(raw?.priceIdConfigured) || looksLikeStripePriceId(stripeTestPriceId);
   const secretKeyConfigured = Boolean(raw?.secretKeyConfigured);
   const checkoutReady =
     Boolean(raw?.checkoutReady) || (priceIdConfigured && secretKeyConfigured);
@@ -204,7 +229,7 @@ export function normalizeBillingStripeStatus(
 
 /** サーバーに Checkout 用の Price ID・Stripe 秘密鍵が揃っているか。stripeTestPriceId は検証用 */
 export async function getBillingStripeStatus(): Promise<BillingStripeStatus> {
-  const res = await apiFetch(`${BASE}/config`, {
+  const res = await apiFetch(resolveStripeConfigUrl(), {
     headers: buildHeaders(),
   });
   const text = await res.text();
