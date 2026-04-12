@@ -4,8 +4,9 @@
  * 起動: cd backend && npm run dev:api  （または npm start）
  * 既定ポート: API_PORT / PORT / 3456
  *
- * .env は src/load-env.mjs で読み込み（index.js 経由で先に実行。本ファイル単体起動時も下記 import で読む）。
+ * index.js 経由でない単体起動時も、dotenv → load-env の順で .env を読む。
  */
+import "dotenv/config";
 import "../src/load-env.mjs";
 import cors from "cors";
 import express from "express";

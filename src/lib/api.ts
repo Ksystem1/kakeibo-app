@@ -173,7 +173,7 @@ export async function getAuthMe() {
   }>(res);
 }
 
-/** サーバーに Checkout 用の Price ID・Stripe 秘密鍵が揃っているか（秘密・Price ID 文字列は返さない） */
+/** サーバーに Checkout 用の Price ID・Stripe 秘密鍵が揃っているか。stripeTestPriceId は API が読んだ STRIPE_TEST_PRICE_ID（検証用） */
 export async function getBillingStripeStatus() {
   const res = await apiFetch(`${BASE}/config`, {
     headers: buildHeaders(),
@@ -183,6 +183,7 @@ export async function getBillingStripeStatus() {
       checkoutReady: boolean;
       priceIdConfigured: boolean;
       secretKeyConfigured: boolean;
+      stripeTestPriceId?: string;
     };
   }>(res);
   return data.stripe;

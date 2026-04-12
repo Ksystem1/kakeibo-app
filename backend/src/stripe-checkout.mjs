@@ -58,12 +58,15 @@ export function isStripeCheckoutConfigured() {
   return Boolean(getStripeSecretKey());
 }
 
-/** GET /config 用。Price ID 文字列・秘密鍵は含めない */
+/** GET /config 用。秘密鍵は含めない。stripeTestPriceId は検証用（本番では ECS の env で確認後に返却をやめることも可） */
 export function getStripeCheckoutPublicConfig() {
+  const testRaw = String(process.env.STRIPE_TEST_PRICE_ID ?? "").trim();
   return {
     checkoutReady: isStripeCheckoutConfigured(),
     priceIdConfigured: Boolean(getSubscriptionPriceId()),
     secretKeyConfigured: Boolean(getStripeSecretKey()),
+    /** process.env の STRIPE_TEST_PRICE_ID をそのまま返す（未設定は空文字） */
+    stripeTestPriceId: testRaw,
   };
 }
 
