@@ -10,6 +10,8 @@ public/sitemap.xml
 vite.config.js
 *.local
 .DS_Store
+# Stripe CLI（プロジェクト直下に置いた場合）
+stripe.exe
 .env
 backend/.env
 # ドメイン・ARN メモ（infra/env.deploy.example をコピーしたもの）
