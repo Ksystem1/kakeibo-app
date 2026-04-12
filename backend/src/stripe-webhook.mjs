@@ -1,5 +1,10 @@
 /**
  * Stripe Webhook: users.subscription_status / stripe_customer_id を同期
+ *
+ * 処理イベント:
+ * - customer.subscription.created / updated → Stripe Subscription.status を DB に反映
+ * - customer.subscription.deleted → subscription_status = canceled（管理画面では「解約済み」）
+ * - checkout.session.completed → metadata / client_reference_id でユーザと cus_ を紐付け
  */
 import Stripe from "stripe";
 import { createLogger } from "./logger.mjs";
@@ -22,7 +27,7 @@ export async function processStripeWebhook(payload, sigHeader, pool) {
       body: {
         error: "StripeWebhookNotConfigured",
         detail:
-          "STRIPE_TEST_WEBHOOK_SECRET（Test）または STRIPE_WEBHOOK_SECRET を設定してください",
+          "STRIPE_WEBHOOK_SECRET（または STRIPE_TEST_WEBHOOK_SECRET）を設定してください（Stripe ダッシュボードの Webhook 署名シークレット whsec_...）",
       },
     };
   }

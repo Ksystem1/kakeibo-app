@@ -18,33 +18,38 @@ const logger = createLogger("local-server");
 app.use(cors(expressCorsOptions()));
 
 /** Stripe 署名検証には JSON パース前の生バイト列が必要 */
-app.post(
-  "/webhooks/stripe",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
-    try {
-      const out = await handleApiRequest(
-        {
-          method: "POST",
-          path: "/webhooks/stripe",
-          body: null,
-          stripeRawPayload: req.body,
-          headers: req.headers,
-        },
-        { skipCors: true },
-      );
-      if (out.headers) {
-        for (const [k, v] of Object.entries(out.headers)) {
-          if (v !== undefined) res.setHeader(k, String(v));
+function mountStripeWebhook(expressApp, routePath) {
+  expressApp.post(
+    routePath,
+    express.raw({ type: "application/json" }),
+    async (req, res) => {
+      try {
+        const out = await handleApiRequest(
+          {
+            method: "POST",
+            path: routePath,
+            body: null,
+            stripeRawPayload: req.body,
+            headers: req.headers,
+          },
+          { skipCors: true },
+        );
+        if (out.headers) {
+          for (const [k, v] of Object.entries(out.headers)) {
+            if (v !== undefined) res.setHeader(k, String(v));
+          }
         }
+        res.status(out.statusCode).send(out.body ?? "");
+      } catch (e) {
+        logger.error("stripe.webhook.route", e, { path: routePath });
+        res.status(500).json({ error: "InternalError" });
       }
-      res.status(out.statusCode).send(out.body ?? "");
-    } catch (e) {
-      logger.error("stripe.webhook.route", e);
-      res.status(500).json({ error: "InternalError" });
-    }
-  },
-);
+    },
+  );
+}
+
+mountStripeWebhook(app, "/webhooks/stripe");
+mountStripeWebhook(app, "/api/webhooks/stripe");
 
 app.use(express.json({ limit: "15mb" }));
 

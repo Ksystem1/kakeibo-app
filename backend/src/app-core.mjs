@@ -874,6 +874,7 @@ export async function handleApiRequest(req, options = {}) {
             summary: "/summary/month",
             fixedCosts: "/settings/fixed-costs",
             stripeWebhook: "/webhooks/stripe",
+            stripeWebhookApiPrefixed: "/api/webhooks/stripe",
             billingCheckoutSession: "/billing/checkout-session",
           },
         },
@@ -957,19 +958,22 @@ export async function handleApiRequest(req, options = {}) {
 
     const pool = getPool();
 
-    if (routeKey(method, path) === "POST /webhooks/stripe") {
-      const sigHeader =
-        hdrs["stripe-signature"] ??
-        hdrs["Stripe-Signature"] ??
-        hdrs["STRIPE-SIGNATURE"];
-      const rawPayload =
-        req.stripeRawPayload != null
-          ? req.stripeRawPayload
-          : typeof req.body === "string"
-            ? req.body
-            : "";
-      const wh = await processStripeWebhook(rawPayload, sigHeader, pool);
-      return json(wh.statusCode, wh.body, hdrs, skipCors);
+    {
+      const rk = routeKey(method, path);
+      if (rk === "POST /webhooks/stripe" || rk === "POST /api/webhooks/stripe") {
+        const sigHeader =
+          hdrs["stripe-signature"] ??
+          hdrs["Stripe-Signature"] ??
+          hdrs["STRIPE-SIGNATURE"];
+        const rawPayload =
+          req.stripeRawPayload != null
+            ? req.stripeRawPayload
+            : typeof req.body === "string"
+              ? req.body
+              : "";
+        const wh = await processStripeWebhook(rawPayload, sigHeader, pool);
+        return json(wh.statusCode, wh.body, hdrs, skipCors);
+      }
     }
 
     const userId = resolveUserId(hdrs);
