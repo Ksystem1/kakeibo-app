@@ -1,4 +1,4 @@
-import { Bot, MessageCircle, PiggyBank, Send, X } from "lucide-react";
+import { MessageCircle, PiggyBank, Send, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { askAiAdvisor, getMonthSummary } from "../lib/api";
@@ -61,8 +61,6 @@ export function AiAdvisorChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [lastSource, setLastSource] = useState<"bedrock" | "fallback" | "error" | null>(null);
-  const [lastSourceDetail, setLastSourceDetail] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 1, role: "ai", text: "こんにちは。AI家計アドバイザーです。気軽に相談してください。" },
@@ -135,16 +133,6 @@ export function AiAdvisorChat() {
       });
       const normalizedReply = String(reply.reply ?? "").trim();
       const finalReply = normalizedReply || buildClientFallback(text, summaryLite);
-      setLastSource(
-        reply.source === "bedrock"
-          ? "bedrock"
-          : reply.source === "error"
-            ? "error"
-            : "fallback",
-      );
-      setLastSourceDetail(
-        reply.sourceDetail && reply.source !== "bedrock" ? String(reply.sourceDetail) : "",
-      );
       setMessages((prev) =>
         prev.map((m) => (m.id === typingId ? { id: typingId, role: "ai", text: finalReply } : m)),
       );
@@ -211,30 +199,17 @@ export function AiAdvisorChat() {
         <section className="fixed right-3 z-[1100] flex h-[62vh] w-[min(90vw,360px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl md:right-4 md:h-[74vh] md:w-[min(96vw,420px)]"
           style={{ bottom: "max(5.5rem, calc(env(safe-area-inset-bottom) + 5rem))" }}>
           <header className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-2">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <span className="rounded-full bg-emerald-100 p-1.5 text-emerald-600">
-                <Bot size={14} />
-              </span>
+            <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">
               AI家計アドバイザー 🐷
-            </div>
-            <div className="flex flex-col items-end gap-0.5">
-              {lastSource ? (
-                <span className="text-[10px] font-medium text-slate-500" title="直近の応答の生成元">
-                  {lastSource === "bedrock"
-                    ? "AWS Bedrock"
-                    : lastSource === "error"
-                      ? `Bedrock失敗（デバッグ）${lastSourceDetail ? `: ${lastSourceDetail}` : ""}`
-                      : `ルール応答（Bedrock未使用${lastSourceDetail ? `: ${lastSourceDetail}` : ""}）`}
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded-md p-1 text-slate-500 hover:bg-slate-200"
-              >
-                <X size={16} />
-              </button>
-            </div>
+            </h2>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="shrink-0 rounded-md p-1 text-slate-500 hover:bg-slate-200"
+              aria-label="閉じる"
+            >
+              <X size={16} />
+            </button>
           </header>
 
           <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto bg-slate-100 p-3">

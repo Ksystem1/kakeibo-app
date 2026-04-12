@@ -129,8 +129,8 @@ function buildPrompt(message, context) {
 }
 
 function mapAwsError(e) {
-  const code = String(e?.name || e?.Code || "BedrockError");
-  const message = String(e?.message || "Bedrock invoke_model failed");
+  const code = String(e?.name || e?.Code || "ModelInvokeError");
+  const message = String(e?.message || "モデルの呼び出しに失敗しました");
   const throttled =
     code === "ThrottlingException" ||
     code === "TooManyRequestsException" ||
@@ -305,7 +305,7 @@ async function invokeBedrockReceiptVision({
 
   const { region, candidates } = getBedrockConfig();
   if (!candidates.length) {
-    return { ok: false, code: "NoBedrockConfig", message: "No model candidates" };
+    return { ok: false, code: "NoModelConfig", message: "モデル候補がありません" };
   }
 
   const client = new BedrockRuntimeClient({ region });
@@ -539,8 +539,8 @@ async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, te
   if (!modelId || candidates.length === 0) {
     return {
       ok: false,
-      code: "NoBedrockConfig",
-      message: "No Bedrock model candidates (region misconfigured?)",
+      code: "NoModelConfig",
+      message: "モデル候補がありません（リージョンまたは環境変数を確認してください）",
       authFailed: false,
       throttled: false,
       validationFailed: false,

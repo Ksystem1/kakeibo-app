@@ -2129,7 +2129,8 @@ export async function handleApiRequest(req, options = {}) {
           }
           if (aiResult && !aiResult.ok) {
             const detailParts = [aiResult.code, aiResult.message].filter(Boolean);
-            bedrockDetail = detailParts.join(": ").slice(0, 280) || "BedrockUnavailable";
+            bedrockDetail =
+              detailParts.join(": ").slice(0, 280) || "モデル応答を取得できませんでした";
             logError(
               "ai.advisor.bedrock",
               new Error(`${aiResult.code}: ${aiResult.message}`),
@@ -2161,7 +2162,7 @@ export async function handleApiRequest(req, options = {}) {
               ? `ThrottlingException: ${msg.slice(0, 220)}`
               : validationFailed
                 ? `ValidationException: ${msg.slice(0, 220)}`
-                : `BedrockUnavailable: ${msg.slice(0, 220)}`;
+                : `モデル応答エラー: ${msg.slice(0, 220)}`;
           logError("ai.advisor.bedrock", e, {
             authFailed,
             throttled,
@@ -2183,7 +2184,7 @@ export async function handleApiRequest(req, options = {}) {
               ? JSON.stringify(aiResult.attemptsLog).slice(0, 3500)
               : "";
           const reply = [
-            "[AI/Bedrock デバッグ] モデル応答を取得できませんでした。",
+            "[AIアドバイザー デバッグ] モデル応答を取得できませんでした。",
             "",
             "概要:",
             bedrockDetail || "(詳細なし)",
