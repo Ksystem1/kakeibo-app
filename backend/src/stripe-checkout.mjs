@@ -52,12 +52,12 @@ export function assertAllowedRedirectUrl(urlStr, allowedOrigins) {
  * @returns {Promise<string>} Checkout URL
  */
 export async function createBillingCheckoutSession(pool, userId, body) {
-  const priceId = String(
-    process.env.STRIPE_PRICE_ID ?? process.env.STRIPE_TEST_PRICE_ID ?? "",
-  ).trim();
+  const testPrice = String(process.env.STRIPE_TEST_PRICE_ID ?? "").trim();
+  const livePrice = String(process.env.STRIPE_PRICE_ID ?? "").trim();
+  const priceId = testPrice || livePrice;
   if (!priceId) {
     throw new Error(
-      "STRIPE_PRICE_ID（または STRIPE_TEST_PRICE_ID）を設定してください",
+      "STRIPE_TEST_PRICE_ID または STRIPE_PRICE_ID を設定してください",
     );
   }
 

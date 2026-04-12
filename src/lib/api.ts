@@ -96,10 +96,10 @@ async function parse<T>(res: Response): Promise<T> {
   const data = text ? (JSON.parse(text) as T) : ({} as T);
   if (!res.ok) {
     const err = data as { error?: string; detail?: string; message?: string };
-    const parts = [err.error, err.detail ?? err.message].filter(
-      (x): x is string => Boolean(x && String(x).trim()),
-    );
-    throw new Error(parts.length ? parts.join(" — ") : res.statusText);
+    const detail = String(err.detail ?? err.message ?? "").trim();
+    const code = String(err.error ?? "").trim();
+    const msg = detail || code || res.statusText;
+    throw new Error(msg);
   }
   return data;
 }
