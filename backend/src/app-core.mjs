@@ -491,10 +491,11 @@ function isUnknownSubscriptionColumnError(e) {
   const code = e.code ? String(e.code) : "";
   const errno = Number(e.errno);
   const msg = String(e.message || "");
-  return (
-    (code === "ER_BAD_FIELD_ERROR" || errno === 1054) &&
-    msg.includes("subscription_status")
-  );
+  const okCode = code === "ER_BAD_FIELD_ERROR" || errno === 1054;
+  if (!okCode) return false;
+  // エラーメッセージに SQL 断片だけが載る環境での誤検知を避ける（本当の Unknown column のみ）
+  if (!/unknown column/i.test(msg)) return false;
+  return msg.includes("subscription_status");
 }
 
 let warnedAdminUsersListSubscriptionColumnMissing = false;
@@ -559,16 +560,24 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
          LIMIT 1000`;
 
 /**
+ * 管理者一覧の生行に subscription_status が SELECT されているか（フォールバック SQL との見分け）
+ */
+function adminUsersListRowsIncludeSubscriptionColumn(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return true;
+  const row = rows[0];
+  if (!row || typeof row !== "object") return false;
+  if (Object.prototype.hasOwnProperty.call(row, "subscription_status")) return true;
+  return Object.prototype.hasOwnProperty.call(row, "SUBSCRIPTION_STATUS");
+}
+
+/**
  * migration v8 未適用時は subscription_status なしで一覧取得する。
- * @returns {Promise<{ rows: unknown[]; subscriptionStatusWritable: boolean }>}
+ * @returns {Promise<unknown[]>}
  */
 async function queryAdminUsersListRows(pool) {
   try {
     const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITH_SUB);
-    return {
-      rows: Array.isArray(rows) ? rows : [],
-      subscriptionStatusWritable: true,
-    };
+    return Array.isArray(rows) ? rows : [];
   } catch (e) {
     if (isUnknownSubscriptionColumnError(e)) {
       if (!warnedAdminUsersListSubscriptionColumnMissing) {
@@ -579,10 +588,7 @@ async function queryAdminUsersListRows(pool) {
         );
       }
       const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITHOUT_SUB);
-      return {
-        rows: Array.isArray(rows) ? rows : [],
-        subscriptionStatusWritable: false,
-      };
+      return Array.isArray(rows) ? rows : [];
     }
     throw e;
   }
@@ -606,9 +612,7 @@ async function loadUserSubscriptionRowFull(pool, userId) {
         if (!Array.isArray(rows) || rows.length === 0) return {};
         return rows[0];
       } catch (e2) {
-        const c2 = e2 && typeof e2 === "object" && "code" in e2 ? String(e2.code) : "";
-        const m2 = String(e2?.message || "");
-        if (c2 === "ER_BAD_FIELD_ERROR" && m2.includes("subscription_status")) {
+        if (isUnknownSubscriptionColumnError(e2)) {
           logger.warn("subscription_status column missing; defaulting to inactive", {
             userId,
           });
@@ -617,9 +621,7 @@ async function loadUserSubscriptionRowFull(pool, userId) {
         throw e2;
       }
     }
-    const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
-    const msg = String(e?.message || "");
-    if (code === "ER_BAD_FIELD_ERROR" && msg.includes("subscription_status")) {
+    if (isUnknownSubscriptionColumnError(e)) {
       logger.warn("subscription_status column missing; defaulting to inactive", {
         userId,
       });
@@ -1069,7 +1071,9 @@ export async function handleApiRequest(req, options = {}) {
     if (routeKey(method, path) === "GET /admin/users") {
       const admin = await ensureAdmin(pool, userId);
       if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
-      const { rows, subscriptionStatusWritable } = await queryAdminUsersListRows(pool);
+      const rows = await queryAdminUsersListRows(pool);
+      const subscriptionStatusWritable =
+        adminUsersListRowsIncludeSubscriptionColumn(rows);
       const items = rows.map((r) => ({
         id: Number(r.id),
         email: String(r.email ?? ""),

@@ -101,6 +101,7 @@ export function AdminPage() {
         ),
       );
     } catch (e) {
+      setSubscriptionStatusWritable(true);
       setError(formatAdminApiError(e));
     } finally {
       setLoading(false);

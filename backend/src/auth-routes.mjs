@@ -107,10 +107,10 @@ function isUnknownSubscriptionColumnError(e) {
   const code = e.code ? String(e.code) : "";
   const errno = Number(e.errno);
   const msg = String(e.message || "");
-  return (
-    (code === "ER_BAD_FIELD_ERROR" || errno === 1054) &&
-    msg.includes("subscription_status")
-  );
+  const okCode = code === "ER_BAD_FIELD_ERROR" || errno === 1054;
+  if (!okCode) return false;
+  if (!/unknown column/i.test(msg)) return false;
+  return msg.includes("subscription_status");
 }
 
 function isUnknownIsPremiumColumnError(e) {
