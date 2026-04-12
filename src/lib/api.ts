@@ -542,6 +542,7 @@ export async function inviteFamilyMember(email: string) {
 export async function getAdminUsers() {
   const res = await apiFetch(`${BASE}/admin/users`, {
     headers: buildHeaders(),
+    cache: "no-store",
   });
   return parse<{
     items: Array<{

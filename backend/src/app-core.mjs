@@ -560,24 +560,18 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
          LIMIT 1000`;
 
 /**
- * 管理者一覧の生行に subscription_status が SELECT されているか（フォールバック SQL との見分け）
- */
-function adminUsersListRowsIncludeSubscriptionColumn(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) return true;
-  const row = rows[0];
-  if (!row || typeof row !== "object") return false;
-  if (Object.prototype.hasOwnProperty.call(row, "subscription_status")) return true;
-  return Object.prototype.hasOwnProperty.call(row, "SUBSCRIPTION_STATUS");
-}
-
-/**
  * migration v8 未適用時は subscription_status なしで一覧取得する。
- * @returns {Promise<unknown[]>}
+ * meta.subscriptionStatusWritable は「本当にフォールバック SQL に落ちたか」で決める。
+ * （mysql2 の RowDataPacket は hasOwnProperty で列が見えないことがあり、行のキー検査は信頼できない）
+ * @returns {Promise<{ rows: unknown[]; usedSubscriptionFallback: boolean }>}
  */
 async function queryAdminUsersListRows(pool) {
   try {
     const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITH_SUB);
-    return Array.isArray(rows) ? rows : [];
+    return {
+      rows: Array.isArray(rows) ? rows : [],
+      usedSubscriptionFallback: false,
+    };
   } catch (e) {
     if (isUnknownSubscriptionColumnError(e)) {
       if (!warnedAdminUsersListSubscriptionColumnMissing) {
@@ -588,7 +582,10 @@ async function queryAdminUsersListRows(pool) {
         );
       }
       const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITHOUT_SUB);
-      return Array.isArray(rows) ? rows : [];
+      return {
+        rows: Array.isArray(rows) ? rows : [],
+        usedSubscriptionFallback: true,
+      };
     }
     throw e;
   }
@@ -1071,9 +1068,8 @@ export async function handleApiRequest(req, options = {}) {
     if (routeKey(method, path) === "GET /admin/users") {
       const admin = await ensureAdmin(pool, userId);
       if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
-      const rows = await queryAdminUsersListRows(pool);
-      const subscriptionStatusWritable =
-        adminUsersListRowsIncludeSubscriptionColumn(rows);
+      const { rows, usedSubscriptionFallback } = await queryAdminUsersListRows(pool);
+      const subscriptionStatusWritable = !usedSubscriptionFallback;
       const items = rows.map((r) => ({
         id: Number(r.id),
         email: String(r.email ?? ""),
