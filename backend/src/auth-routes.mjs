@@ -218,10 +218,7 @@ async function queryMeUserRow(pool, uid) {
 
 export async function getDefaultFamilyId(pool, userId) {
   const [rows] = await pool.query(
-    `SELECT COALESCE(
-       u.default_family_id,
-       (SELECT fm.family_id FROM family_members fm WHERE fm.user_id = u.id ORDER BY fm.id LIMIT 1)
-     ) AS fid
+    `SELECT ${FAM_JOIN_ON_U} AS fid
      FROM users u WHERE u.id = ?`,
     [userId],
   );
