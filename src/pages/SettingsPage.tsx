@@ -170,6 +170,36 @@ export function SettingsPage() {
   }, [location.search, token, setUser]);
 
   useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const startedAt = Date.now();
+    const maxWaitMs = 30_000;
+
+    const refresh = async () => {
+      try {
+        const res = await getAuthMe();
+        const normalized = res?.user ? normalizeAuthContextUser(res.user) : null;
+        if (cancelled) return;
+        if (normalized) setUser(normalized);
+        if (hasPremiumStatus(normalized)) return;
+      } catch {
+        if (cancelled) return;
+      }
+      if (Date.now() - startedAt >= maxWaitMs || cancelled) return;
+      timer = setTimeout(() => {
+        void refresh();
+      }, 3000);
+    };
+
+    void refresh();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [token, location.pathname, setUser]);
+
+  useEffect(() => {
     if (!premiumContractOpen || !getApiBaseUrl()) return;
     if (!canSendAuthenticatedRequest(token)) return;
     setStripeCheckoutReady(null);
