@@ -1677,10 +1677,24 @@ export async function handleApiRequest(req, options = {}) {
 
       case "GET /billing/subscription-status": {
         const subRow = await loadUserSubscriptionRowFull(pool, userId);
-        const subscriptionStatus = getEffectiveSubscriptionStatus(
-          deriveSubscriptionStatusFromDbRow(subRow),
-          userId,
-        );
+        let statusFromAdminMap = null;
+        try {
+          const subMap = await fetchAdminUsersSubscriptionStatusMap(pool);
+          if (subMap.has(Number(userId))) {
+            const v = subMap.get(Number(userId));
+            if (v != null && String(v).trim() !== "") {
+              statusFromAdminMap = String(v).trim();
+            }
+          }
+        } catch {
+          /* fallback to subRow */
+        }
+        const subscriptionStatus = statusFromAdminMap
+          ? getEffectiveSubscriptionStatus(statusFromAdminMap, userId)
+          : getEffectiveSubscriptionStatus(
+              deriveSubscriptionStatusFromDbRow(subRow),
+              userId,
+            );
         const periodEndAt =
           subRow?.subscription_period_end_at != null &&
           String(subRow.subscription_period_end_at).trim() !== ""
