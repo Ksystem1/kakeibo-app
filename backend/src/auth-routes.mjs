@@ -225,6 +225,30 @@ export async function getDefaultFamilyId(pool, userId) {
   return rows[0]?.fid ?? null;
 }
 
+async function getPreferredFamilySubscriptionRow(pool, userId) {
+  const [rows] = await pool.query(
+    `SELECT
+       f.subscription_status,
+       f.subscription_period_end_at,
+       f.subscription_cancel_at_period_end,
+       f.stripe_subscription_id
+     FROM family_members fm
+     JOIN families f ON f.id = fm.family_id
+     WHERE fm.user_id = ?
+     ORDER BY
+       CASE
+         WHEN LOWER(COALESCE(f.subscription_status, '')) IN ('active','trialing','past_due') THEN 0
+         WHEN TRIM(COALESCE(f.stripe_customer_id, '')) <> '' THEN 1
+         ELSE 2
+       END,
+       COALESCE(f.updated_at, f.created_at, '1970-01-01') DESC,
+       fm.id ASC
+     LIMIT 1`,
+    [userId],
+  );
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+}
+
 /**
  * @returns {Promise<{ statusCode, headers, body }|null>}
  */
@@ -645,6 +669,22 @@ export async function tryAuthRoutes(req, ctx) {
       }
       const familyId = await getDefaultFamilyId(pool, uid);
       const row = rows[0] || {};
+      const famSub = await getPreferredFamilySubscriptionRow(pool, uid);
+      const mergedRow = famSub
+        ? {
+            ...row,
+            subscription_status:
+              famSub.subscription_status ?? row.subscription_status ?? null,
+            subscription_period_end_at:
+              famSub.subscription_period_end_at ?? row.subscription_period_end_at ?? null,
+            subscription_cancel_at_period_end:
+              famSub.subscription_cancel_at_period_end ??
+              row.subscription_cancel_at_period_end ??
+              null,
+            stripe_subscription_id:
+              famSub.stripe_subscription_id ?? row.stripe_subscription_id ?? null,
+          }
+        : row;
       const {
         is_admin: isAdminRaw,
         subscription_status: _sub,
@@ -653,7 +693,7 @@ export async function tryAuthRoutes(req, ctx) {
         subscription_cancel_at_period_end: _ce,
         stripe_subscription_id: _ssid,
         ...safeUser
-      } = row;
+      } = mergedRow;
       return json(
         200,
         {
@@ -662,10 +702,10 @@ export async function tryAuthRoutes(req, ctx) {
             isAdmin: Number(isAdminRaw) === 1,
             familyId,
             subscriptionStatus: getEffectiveSubscriptionStatus(
-              deriveSubscriptionStatusFromDbRow(row),
-              row.id,
+              deriveSubscriptionStatusFromDbRow(mergedRow),
+              mergedRow.id,
             ),
-            ...buildUserSubscriptionApiFields(row),
+            ...buildUserSubscriptionApiFields(mergedRow),
           },
         },
         hdrs,
