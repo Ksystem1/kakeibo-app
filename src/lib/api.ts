@@ -18,7 +18,8 @@ function resolveApiBase(): string {
     }
     return u;
   }
-  return "";
+  // 本番ビルドで VITE_API_URL が空でも API 呼び出しを落とさないための既定。
+  return "https://api.ksystemapp.com";
 }
 
 /** GET /config（開発は固定 URL、本番は VITE_STRIPE_CONFIG_URL または BASE/config） */
