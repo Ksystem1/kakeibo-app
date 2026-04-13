@@ -101,6 +101,20 @@ variable "app_env_vars" {
   }
 }
 
+variable "stripe_test_price_id" {
+  description = "GitHub Secrets から注入する Stripe test Price ID（未設定なら app_env_vars 側のみ）"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "stripe_secret_key" {
+  description = "GitHub Secrets から注入する Stripe secret key（未設定なら app_env_vars 側のみ）"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "app_secret_arns" {
   description = "ECS コンテナのシークレット（env 名 → Secrets Manager または SSM の ARN）。JWT_SECRET に加え、ログインには RDS_HOST / RDS_USER / RDS_PASSWORD / RDS_DATABASE（および必要なら RDS_PORT）が必須。"
   type        = map(string)

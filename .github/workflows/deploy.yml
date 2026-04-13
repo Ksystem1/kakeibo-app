@@ -77,6 +77,8 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
           TF_VAR_aws_region: ${{ env.AWS_REGION }}
+          TF_VAR_stripe_test_price_id: ${{ secrets.STRIPE_TEST_PRICE_ID }}
+          TF_VAR_stripe_secret_key: ${{ secrets.STRIPE_SECRET_KEY }}
         run: |
           terraform plan -input=false -no-color \
             -var-file=terraform.tfvars \
@@ -87,4 +89,6 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
           TF_VAR_aws_region: ${{ env.AWS_REGION }}
+          TF_VAR_stripe_test_price_id: ${{ secrets.STRIPE_TEST_PRICE_ID }}
+          TF_VAR_stripe_secret_key: ${{ secrets.STRIPE_SECRET_KEY }}
         run: terraform apply -input=false -no-color -auto-approve tfplan

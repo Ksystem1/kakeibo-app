@@ -59,3 +59,8 @@ app_env_vars = {
   TEXTRACT_CONNECT_TIMEOUT_MS = "5000"
   TEXTRACT_SOCKET_TIMEOUT_MS  = "22000"
 }
+
+# Stripe（本番）:
+# 値本体は GitHub Secrets（Repository secrets）で注入する:
+#   STRIPE_TEST_PRICE_ID, STRIPE_SECRET_KEY
+# この tfvars に平文で置く必要はない。

@@ -23,6 +23,11 @@ locals {
   # 手動 ARN（app_secret_arns）と Terraform 管理シークレットをマージ（後者が RDS_* を上書き）
   effective_app_secret_arns = merge(var.app_secret_arns, local.managed_rds_secret_value_arns)
   app_secret_arn_values     = values(local.effective_app_secret_arns)
+  effective_app_env_vars = merge(
+    var.app_env_vars,
+    var.stripe_test_price_id != "" ? { STRIPE_TEST_PRICE_ID = var.stripe_test_price_id } : {},
+    var.stripe_secret_key != "" ? { STRIPE_SECRET_KEY = var.stripe_secret_key } : {},
+  )
 
   # ECS の valueFrom が :key:: 付きのとき、GetSecretValue のリソースはベース ARN のみ有効（regexreplace 非搭載の CLI 互換）
   execution_secretsmgr_arns = distinct([
@@ -419,9 +424,9 @@ resource "aws_ecs_task_definition" "this" {
         }
       ]
       environment = [
-        for k in sort(keys(var.app_env_vars)) : {
+        for k in sort(keys(local.effective_app_env_vars)) : {
           name  = k
-          value = var.app_env_vars[k]
+          value = local.effective_app_env_vars[k]
         }
       ]
       secrets = [
