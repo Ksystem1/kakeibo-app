@@ -228,6 +228,12 @@ export type BillingStripeStatus = {
   stripeTestPriceId?: string;
 };
 
+export type BillingSubscriptionStatus = {
+  subscriptionStatus: string;
+  subscriptionPeriodEndAt: string | null;
+  subscriptionCancelAtPeriodEnd: boolean;
+};
+
 /** Stripe Price ID らしい文字列か（test / live いずれも price_ で始まる） */
 function looksLikeStripePriceId(value: string): boolean {
   const s = String(value ?? "").trim();
@@ -289,6 +295,29 @@ export async function getBillingStripeStatus(): Promise<BillingStripeStatus> {
   } & Partial<BillingStripeStatus>;
   const rawStripe = body.stripe ?? body;
   return normalizeBillingStripeStatus(rawStripe);
+}
+
+export async function getBillingSubscriptionStatus(): Promise<BillingSubscriptionStatus> {
+  const res = await apiFetch(`${BASE}/billing/subscription-status?t=${Date.now()}`, {
+    cache: "no-store",
+    headers: {
+      ...buildHeaders(),
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+    },
+  });
+  const data = await parse<Partial<BillingSubscriptionStatus>>(res);
+  return {
+    subscriptionStatus:
+      data.subscriptionStatus != null && String(data.subscriptionStatus).trim() !== ""
+        ? String(data.subscriptionStatus).trim()
+        : "inactive",
+    subscriptionPeriodEndAt:
+      data.subscriptionPeriodEndAt != null && String(data.subscriptionPeriodEndAt).trim() !== ""
+        ? String(data.subscriptionPeriodEndAt)
+        : null,
+    subscriptionCancelAtPeriodEnd: data.subscriptionCancelAtPeriodEnd === true,
+  };
 }
 
 export async function postBillingCheckoutSession(body: {

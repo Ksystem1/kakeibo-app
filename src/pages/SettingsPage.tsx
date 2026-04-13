@@ -11,6 +11,7 @@ import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
   getAuthMe,
+  getBillingSubscriptionStatus,
   getBillingStripeStatus,
   isStripeCheckoutUiReady,
   normalizeAuthContextUser,
@@ -117,6 +118,11 @@ export function SettingsPage() {
   const [stripeCheckoutMessage, setStripeCheckoutMessage] = useState<string | null>(null);
   /** null: 未確認 / true: サーバーで Price ID と秘密鍵が揃っている */
   const [stripeCheckoutReady, setStripeCheckoutReady] = useState<boolean | null>(null);
+  const [billingStatus, setBillingStatus] = useState<{
+    subscriptionStatus: string;
+    subscriptionPeriodEndAt: string | null;
+    subscriptionCancelAtPeriodEnd: boolean;
+  } | null>(null);
   const [premiumContractOpen, setPremiumContractOpen] = useState(false);
   const [portalBusy, setPortalBusy] = useState(false);
   const [portalMessage, setPortalMessage] = useState<string | null>(null);
@@ -198,6 +204,51 @@ export function SettingsPage() {
       if (timer) clearTimeout(timer);
     };
   }, [token, location.pathname, setUser]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!canSendAuthenticatedRequest(token)) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const startedAt = Date.now();
+    const maxWaitMs = 45_000;
+
+    const run = async () => {
+      try {
+        const s = await getBillingSubscriptionStatus();
+        if (cancelled) return;
+        setBillingStatus(s);
+        if (hasPremiumStatus({ subscriptionStatus: s.subscriptionStatus })) return;
+      } catch {
+        if (cancelled) return;
+      }
+      if (Date.now() - startedAt >= maxWaitMs || cancelled) return;
+      timer = setTimeout(() => {
+        void run();
+      }, 3000);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [token, location.pathname]);
+
+  const effectiveUser = useMemo(() => {
+    if (!authUser) return null;
+    if (!billingStatus) return authUser;
+    return {
+      ...authUser,
+      subscriptionStatus: billingStatus.subscriptionStatus ?? authUser.subscriptionStatus,
+      subscriptionPeriodEndAt:
+        billingStatus.subscriptionPeriodEndAt ?? authUser.subscriptionPeriodEndAt ?? null,
+      subscriptionCancelAtPeriodEnd:
+        billingStatus.subscriptionCancelAtPeriodEnd ??
+        authUser.subscriptionCancelAtPeriodEnd ??
+        false,
+    };
+  }, [authUser, billingStatus]);
 
   useEffect(() => {
     if (!premiumContractOpen || !getApiBaseUrl()) return;
@@ -353,18 +404,18 @@ export function SettingsPage() {
             );
           })}
         </div>
-        {token && authUser ? (
+        {token && effectiveUser ? (
           <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
             <p style={{ margin: 0 }}>
               プレミアム（サブスクリプション）状態:{" "}
               <strong>
-                {subscriptionStatusLabelJa(authUser.subscriptionStatus ?? "inactive")}
+                {subscriptionStatusLabelJa(effectiveUser.subscriptionStatus ?? "inactive")}
               </strong>
             </p>
             <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
-              {formatSettingsSubscriptionSummary(authUser)}
+              {formatSettingsSubscriptionSummary(effectiveUser)}
             </p>
-            {shouldShowSubscriptionManage(authUser) &&
+            {shouldShowSubscriptionManage(effectiveUser) &&
             getApiBaseUrl() &&
             canSendAuthenticatedRequest(token) ? (
               <div className={styles.modeRow} style={{ marginTop: "0.45rem", flexWrap: "wrap", gap: "0.4rem" }}>

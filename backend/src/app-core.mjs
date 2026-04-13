@@ -940,6 +940,7 @@ export async function handleApiRequest(req, options = {}) {
             stripeWebhook: "/webhooks/stripe",
             stripeWebhookApiPrefixed: "/api/webhooks/stripe",
             billingCheckoutSession: "/billing/checkout-session",
+            billingSubscriptionStatus: "/billing/subscription-status",
             billingStripeStatus: "/billing/stripe-status",
             publicConfig: "/config",
             billingPortalSession: "/billing/portal-session",
@@ -1660,6 +1661,31 @@ export async function handleApiRequest(req, options = {}) {
       case "POST /categories/ensure-defaults": {
         const r = await seedDefaultCategoriesIfEmpty(pool, userId, familyId);
         return json(200, { ok: true, inserted: r.inserted }, hdrs, skipCors);
+      }
+
+      case "GET /billing/subscription-status": {
+        const subRow = await loadUserSubscriptionRowFull(pool, userId);
+        const subscriptionStatus = getEffectiveSubscriptionStatus(
+          deriveSubscriptionStatusFromDbRow(subRow),
+          userId,
+        );
+        const periodEndAt =
+          subRow?.subscription_period_end_at != null &&
+          String(subRow.subscription_period_end_at).trim() !== ""
+            ? String(subRow.subscription_period_end_at)
+            : null;
+        return json(
+          200,
+          {
+            subscriptionStatus,
+            subscriptionPeriodEndAt: periodEndAt,
+            subscriptionCancelAtPeriodEnd:
+              subRow?.subscription_cancel_at_period_end === true ||
+              Number(subRow?.subscription_cancel_at_period_end) === 1,
+          },
+          hdrs,
+          skipCors,
+        );
       }
 
       case "POST /billing/checkout-session": {
