@@ -115,6 +115,13 @@ variable "stripe_secret_key" {
   sensitive   = true
 }
 
+variable "stripe_webhook_secret" {
+  description = "GitHub Secrets から注入する Stripe webhook secret（whsec_...）"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "app_secret_arns" {
   description = "ECS コンテナのシークレット（env 名 → Secrets Manager または SSM の ARN）。JWT_SECRET に加え、ログインには RDS_HOST / RDS_USER / RDS_PASSWORD / RDS_DATABASE（および必要なら RDS_PORT）が必須。"
   type        = map(string)

@@ -62,5 +62,5 @@ app_env_vars = {
 
 # Stripe（本番）:
 # 値本体は GitHub Secrets（Repository secrets）で注入する:
-#   STRIPE_TEST_PRICE_ID, STRIPE_SECRET_KEY
+#   STRIPE_TEST_PRICE_ID, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
 # この tfvars に平文で置く必要はない。

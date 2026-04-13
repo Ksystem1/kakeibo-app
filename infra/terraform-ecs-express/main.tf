@@ -27,6 +27,7 @@ locals {
     var.app_env_vars,
     var.stripe_test_price_id != "" ? { STRIPE_TEST_PRICE_ID = var.stripe_test_price_id } : {},
     var.stripe_secret_key != "" ? { STRIPE_SECRET_KEY = var.stripe_secret_key } : {},
+    var.stripe_webhook_secret != "" ? { STRIPE_WEBHOOK_SECRET = var.stripe_webhook_secret } : {},
   )
 
   # ECS の valueFrom が :key:: 付きのとき、GetSecretValue のリソースはベース ARN のみ有効（regexreplace 非搭載の CLI 互換）

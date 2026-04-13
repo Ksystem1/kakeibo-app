@@ -3,7 +3,11 @@
  */
 import Stripe from "stripe";
 import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
-import { getStripeSecretKey, requireStripeSecretKey } from "./stripe-config.mjs";
+import {
+  getStripeSecretKey,
+  getStripeWebhookSecret,
+  requireStripeSecretKey,
+} from "./stripe-config.mjs";
 
 const FAM_JOIN_U = sqlUserFamilyIdExpr("u");
 
@@ -65,6 +69,7 @@ export function getStripeCheckoutPublicConfig() {
     checkoutReady: isStripeCheckoutConfigured(),
     priceIdConfigured: Boolean(getSubscriptionPriceId()),
     secretKeyConfigured: Boolean(getStripeSecretKey()),
+    webhookConfigured: Boolean(getStripeWebhookSecret()),
     /** process.env の STRIPE_TEST_PRICE_ID をそのまま返す（未設定は空文字） */
     stripeTestPriceId: testRaw,
   };
