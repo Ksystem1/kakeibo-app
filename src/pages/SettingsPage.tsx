@@ -250,6 +250,23 @@ export function SettingsPage() {
     };
   }, [authUser, billingStatus]);
 
+  const subscriptionEndLabel = useMemo(() => {
+    const endRaw = effectiveUser?.subscriptionPeriodEndAt;
+    if (endRaw == null || String(endRaw).trim() === "") return null;
+    const d = new Date(String(endRaw));
+    if (!Number.isFinite(d.getTime())) return null;
+    const date = new Intl.DateTimeFormat("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }).format(d);
+    if (effectiveUser?.subscriptionCancelAtPeriodEnd) {
+      return `利用期限: ${date}`;
+    }
+    return `請求期間終了: ${date}`;
+  }, [effectiveUser]);
+
   useEffect(() => {
     if (!premiumContractOpen || !getApiBaseUrl()) return;
     if (!canSendAuthenticatedRequest(token)) return;
@@ -410,6 +427,7 @@ export function SettingsPage() {
               プレミアム（サブスクリプション）状態:{" "}
               <strong>
                 {subscriptionStatusLabelJa(effectiveUser.subscriptionStatus ?? "inactive")}
+                {subscriptionEndLabel ? `（${subscriptionEndLabel}）` : ""}
               </strong>
             </p>
             <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
