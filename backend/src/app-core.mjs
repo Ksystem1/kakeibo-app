@@ -722,10 +722,22 @@ function isErBadFieldErrorAppCore(e) {
 async function loadUserSubscriptionRowFull(pool, userId) {
   const queries = [
     `SELECT
-      COALESCE(f.subscription_status, u.subscription_status) AS subscription_status,
+      CASE
+        WHEN LOWER(COALESCE(f.subscription_status, '')) IN ('active','trialing','past_due') THEN f.subscription_status
+        WHEN LOWER(COALESCE(u.subscription_status, '')) IN ('active','trialing','past_due') THEN u.subscription_status
+        ELSE COALESCE(f.subscription_status, u.subscription_status)
+      END AS subscription_status,
       u.is_premium,
-      COALESCE(f.subscription_period_end_at, u.subscription_period_end_at) AS subscription_period_end_at,
-      COALESCE(f.subscription_cancel_at_period_end, u.subscription_cancel_at_period_end) AS subscription_cancel_at_period_end
+      CASE
+        WHEN LOWER(COALESCE(f.subscription_status, '')) IN ('active','trialing','past_due') THEN f.subscription_period_end_at
+        WHEN LOWER(COALESCE(u.subscription_status, '')) IN ('active','trialing','past_due') THEN u.subscription_period_end_at
+        ELSE COALESCE(f.subscription_period_end_at, u.subscription_period_end_at)
+      END AS subscription_period_end_at,
+      CASE
+        WHEN LOWER(COALESCE(f.subscription_status, '')) IN ('active','trialing','past_due') THEN f.subscription_cancel_at_period_end
+        WHEN LOWER(COALESCE(u.subscription_status, '')) IN ('active','trialing','past_due') THEN u.subscription_cancel_at_period_end
+        ELSE COALESCE(f.subscription_cancel_at_period_end, u.subscription_cancel_at_period_end)
+      END AS subscription_cancel_at_period_end
      FROM users u
      LEFT JOIN families f ON f.id = ${FAM_JOIN_ADMIN}
      WHERE u.id = ? LIMIT 1`,
