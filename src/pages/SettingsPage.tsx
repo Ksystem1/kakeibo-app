@@ -59,6 +59,12 @@ function shouldShowSubscriptionManage(user: { subscriptionStatus?: string } | nu
   return s === "active" || s === "trialing" || s === "past_due";
 }
 
+function hasPremiumStatus(user: { subscriptionStatus?: string } | null | undefined): boolean {
+  if (!user) return false;
+  const s = String(user.subscriptionStatus ?? "").trim().toLowerCase();
+  return s === "active" || s === "trialing" || s === "past_due";
+}
+
 export function SettingsPage() {
   const location = useLocation();
   const pwaTarget = usePwaTargetDevice();
@@ -130,17 +136,37 @@ export function SettingsPage() {
 
   useEffect(() => {
     const sp = new URLSearchParams(location.search);
-    const ok =
-      (sp.get("checkout") === "success" || sp.get("portal") === "return") && token;
-    if (!ok) return;
-    void getAuthMe()
-      .then((res) => {
-        if (res?.user) setUser(normalizeAuthContextUser(res.user));
+    const checkoutSuccess = sp.get("checkout") === "success";
+    const portalReturn = sp.get("portal") === "return";
+    if ((!checkoutSuccess && !portalReturn) || !token) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const startedAt = Date.now();
+    const maxWaitMs = checkoutSuccess ? 90_000 : 10_000;
+
+    const run = async () => {
+      try {
+        const res = await getAuthMe();
+        const normalized = res?.user ? normalizeAuthContextUser(res.user) : null;
+        if (cancelled) return;
+        if (normalized) setUser(normalized);
         setPremiumContractOpen(false);
-      })
-      .catch(() => {
-        /* オフライン時は無視 */
-      });
+        if (hasPremiumStatus(normalized)) return;
+      } catch {
+        if (cancelled) return;
+      }
+      if (Date.now() - startedAt >= maxWaitMs || cancelled) return;
+      timer = setTimeout(() => {
+        void run();
+      }, 3000);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [location.search, token, setUser]);
 
   useEffect(() => {
