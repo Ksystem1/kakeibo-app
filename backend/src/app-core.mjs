@@ -1775,6 +1775,7 @@ export async function handleApiRequest(req, options = {}) {
             msg.includes("未登録") ||
             msg.includes("顧客") ||
             msg.includes("契約") ||
+            msg.includes("再同期しました") ||
             msg.includes("returnUrl")
           ) {
             return json(

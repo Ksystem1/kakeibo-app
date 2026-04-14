@@ -14,6 +14,12 @@ const FAM_JOIN_U = sqlUserFamilyIdExpr("u");
 const DEFAULT_ALLOWED_ORIGINS =
   "http://localhost:5173,http://127.0.0.1:5173,https://ksystemapp.com";
 
+function isNoSuchCustomerError(e) {
+  const code = String(e?.code || "");
+  const msg = String(e?.message || "");
+  return code === "resource_missing" && msg.includes("No such customer");
+}
+
 export function parseAllowedOrigins() {
   const raw = String(
     process.env.STRIPE_CHECKOUT_ALLOWED_ORIGINS ?? DEFAULT_ALLOWED_ORIGINS,
@@ -108,7 +114,7 @@ export async function createBillingCheckoutSession(pool, userId, body) {
   assertAllowedRedirectUrl(cancelUrl, allowedOrigins);
 
   const [[user]] = await pool.query(
-    `SELECT u.id, u.email, f.stripe_customer_id AS stripe_customer_id
+    `SELECT u.id, u.email, f.id AS family_id, f.stripe_customer_id AS stripe_customer_id
      FROM users u
      LEFT JOIN families f ON f.id = ${FAM_JOIN_U}
      WHERE u.id = ? LIMIT 1`,
@@ -136,20 +142,34 @@ export async function createBillingCheckoutSession(pool, userId, body) {
       ? String(user.stripe_customer_id).trim()
       : "";
   if (existingCus.startsWith("cus_")) {
-    const list = await stripe.subscriptions.list({
-      customer: existingCus,
-      status: "all",
-      limit: 20,
-    });
-    const activeLike = list.data.find((s) =>
-      ["active", "trialing", "past_due", "unpaid"].includes(String(s.status || "")),
-    );
-    if (activeLike) {
-      throw new Error(
-        "既に有効なサブスクリプションがあります。新規契約ではなく「解約（プラン管理）」を利用してください",
+    try {
+      const list = await stripe.subscriptions.list({
+        customer: existingCus,
+        status: "all",
+        limit: 20,
+      });
+      const activeLike = list.data.find((s) =>
+        ["active", "trialing", "past_due", "unpaid"].includes(String(s.status || "")),
       );
+      if (activeLike) {
+        throw new Error(
+          "既に有効なサブスクリプションがあります。新規契約ではなく「解約（プラン管理）」を利用してください",
+        );
+      }
+      params.customer = existingCus;
+    } catch (e) {
+      if (!isNoSuchCustomerError(e)) throw e;
+      // 別 Stripe 環境で作られた古い cus_ が残っている場合は DB を掃除して再作成へ進める
+      if (Number.isFinite(Number(user.family_id)) && Number(user.family_id) > 0) {
+        await pool.query(
+          `UPDATE families
+           SET stripe_customer_id = NULL, stripe_subscription_id = NULL, updated_at = NOW()
+           WHERE id = ?`,
+          [Number(user.family_id)],
+        );
+      }
+      if (email) params.customer_email = email;
     }
-    params.customer = existingCus;
   } else if (email) {
     params.customer_email = email;
   }
