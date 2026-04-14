@@ -20,6 +20,16 @@ function isNoSuchCustomerError(e) {
   return code === "resource_missing" && msg.includes("No such customer");
 }
 
+async function clearFamilyStripeLinkIfAny(pool, familyId) {
+  if (!Number.isFinite(Number(familyId)) || Number(familyId) <= 0) return;
+  await pool.query(
+    `UPDATE families
+     SET stripe_customer_id = NULL, stripe_subscription_id = NULL, updated_at = NOW()
+     WHERE id = ?`,
+    [Number(familyId)],
+  );
+}
+
 export function parseAllowedOrigins() {
   const raw = String(
     process.env.STRIPE_CHECKOUT_ALLOWED_ORIGINS ?? DEFAULT_ALLOWED_ORIGINS,
@@ -160,21 +170,24 @@ export async function createBillingCheckoutSession(pool, userId, body) {
     } catch (e) {
       if (!isNoSuchCustomerError(e)) throw e;
       // 別 Stripe 環境で作られた古い cus_ が残っている場合は DB を掃除して再作成へ進める
-      if (Number.isFinite(Number(user.family_id)) && Number(user.family_id) > 0) {
-        await pool.query(
-          `UPDATE families
-           SET stripe_customer_id = NULL, stripe_subscription_id = NULL, updated_at = NOW()
-           WHERE id = ?`,
-          [Number(user.family_id)],
-        );
-      }
+      await clearFamilyStripeLinkIfAny(pool, user.family_id);
       if (email) params.customer_email = email;
     }
   } else if (email) {
     params.customer_email = email;
   }
 
-  const session = await stripe.checkout.sessions.create(params);
+  let session;
+  try {
+    session = await stripe.checkout.sessions.create(params);
+  } catch (e) {
+    if (!isNoSuchCustomerError(e)) throw e;
+    await clearFamilyStripeLinkIfAny(pool, user.family_id);
+    const retryParams = { ...params };
+    delete retryParams.customer;
+    if (email) retryParams.customer_email = email;
+    session = await stripe.checkout.sessions.create(retryParams);
+  }
   const url = session.url;
   if (!url) {
     throw new Error("Stripe が Checkout URL を返しませんでした");
