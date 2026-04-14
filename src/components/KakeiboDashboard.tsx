@@ -332,12 +332,23 @@ export function KakeiboDashboard() {
   /** モバイル編集時の日付（MM/DD）。ネイティブ date の yyyy/mm/dd 表示を避ける */
   const [mobileEditDateText, setMobileEditDateText] = useState("");
   const [fixedCostExpanded, setFixedCostExpanded] = useState(false);
+  const [transactionsExpanded, setTransactionsExpanded] = useState(false);
   const mobileFixedCostInitialRows = 6;
+  const mobileTxInitialRows = 8;
   const visibleFixedCostItems = useMemo(() => {
     if (!txMobileNarrow) return fixedCostItemsForMonth;
     if (fixedCostExpanded) return fixedCostItemsForMonth;
     return fixedCostItemsForMonth.slice(0, mobileFixedCostInitialRows);
   }, [txMobileNarrow, fixedCostExpanded, fixedCostItemsForMonth]);
+  const visibleTransactions = useMemo(() => {
+    if (!txMobileNarrow) return transactions;
+    if (transactionsExpanded) return transactions;
+    return transactions.slice(0, mobileTxInitialRows);
+  }, [txMobileNarrow, transactionsExpanded, transactions]);
+
+  useEffect(() => {
+    setTransactionsExpanded(false);
+  }, [ym]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -746,7 +757,7 @@ export function KakeiboDashboard() {
                 </td>
               </tr>
             ) : (
-              transactions.map((t) => {
+              visibleTransactions.map((t) => {
                 const isEditing = edit?.id === t.id;
                 const rowKind =
                   t.kind === "income"
@@ -1114,6 +1125,20 @@ export function KakeiboDashboard() {
             )}
           </tbody>
         </table>
+        {txMobileNarrow && transactions.length > mobileTxInitialRows ? (
+          <div style={{ padding: "0.45rem 0.55rem", borderTop: "1px solid var(--border)" }}>
+            <button
+              type="button"
+              className={styles.btn}
+              style={{ width: "100%" }}
+              onClick={() => setTransactionsExpanded((v) => !v)}
+            >
+              {transactionsExpanded
+                ? "取引一覧を折りたたむ"
+                : `取引一覧をすべて表示（全${transactions.length}件）`}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
