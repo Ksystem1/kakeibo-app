@@ -1360,6 +1360,7 @@ export async function handleApiRequest(req, options = {}) {
       const b = JSON.parse(req.body || "{}");
       const updates = [];
       const params = [];
+      let appliedFamilySub = false;
 
       if (Object.prototype.hasOwnProperty.call(b, "isAdmin")) {
         if (typeof b.isAdmin !== "boolean") {
@@ -1408,14 +1409,13 @@ export async function handleApiRequest(req, options = {}) {
           );
         }
         const targetFamilyId = await getDefaultFamilyId(pool, targetUserId);
-        let appliedFamilySub = false;
         if (targetFamilyId) {
           try {
-            await pool.query(
+            const [famUpd] = await pool.query(
               `UPDATE families SET subscription_status = ?, updated_at = NOW() WHERE id = ?`,
               [normalizedSub, targetFamilyId],
             );
-            appliedFamilySub = true;
+            appliedFamilySub = Boolean(famUpd?.affectedRows);
           } catch (e) {
             if (!isErBadFieldErrorAppCore(e)) throw e;
           }
@@ -1426,6 +1426,9 @@ export async function handleApiRequest(req, options = {}) {
         }
       }
       if (updates.length === 0) {
+        if (appliedFamilySub) {
+          return json(200, { ok: true }, hdrs, skipCors);
+        }
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
       }
       const [[exists]] = await pool.query(
