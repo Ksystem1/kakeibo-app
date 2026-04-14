@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { getAuthMe, normalizeAuthContextUser } from "../lib/api";
 
 export function AdminRoute() {
-  const { token, user, setUser, logout } = useAuth();
+  const { token, setUser, logout } = useAuth();
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
@@ -35,12 +35,7 @@ export function AdminRoute() {
   }, [token, setUser, logout]);
 
   if (!token) return <Navigate to="/login" replace />;
-  // 初回は user が null のまま。checked 前に !user?.isAdmin で弾くと常に / へ飛んでいた。
+  // 初回は user が null のまま。checked 前に判定すると常に / へ飛んでいた。
   if (!checked) return <div style={{ padding: "1rem" }}>確認中...</div>;
-  const isSuperAdmin =
-    user?.email?.toLowerCase() === "script_00123@yahoo.co.jp";
-  if (!user || (!user.isAdmin && !isSuperAdmin)) {
-    return <Navigate to="/" replace />;
-  }
   return <Outlet />;
 }
