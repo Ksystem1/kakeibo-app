@@ -249,26 +249,20 @@ export function AppLayout() {
         >
           {token ? (
             <>
-              {user &&
-              (user.isAdmin ||
-                user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <>
-                  <NavLink
-                    to="/dashboard"
-                    className={navIconLinkClassName}
-                    aria-label="ダッシュボード"
-                    onClick={onMobileIconNavClick("/dashboard")}
-                  >
-                    <img className="nav-icon-img" src={navIconPaths.dashboard} alt="" aria-hidden="true" />
-                  </NavLink>
-                  {useMobileInlineOutlet ? (
-                    <MobileInlineOutlet
-                      path="/dashboard"
-                      pathname={location.pathname}
-                      visible={showMobileInlineOutlet}
-                    />
-                  ) : null}
-                </>
+              <NavLink
+                to="/dashboard"
+                className={navIconLinkClassName}
+                aria-label="ダッシュボード"
+                onClick={onMobileIconNavClick("/dashboard")}
+              >
+                <img className="nav-icon-img" src={navIconPaths.dashboard} alt="" aria-hidden="true" />
+              </NavLink>
+              {useMobileInlineOutlet ? (
+                <MobileInlineOutlet
+                  path="/dashboard"
+                  pathname={location.pathname}
+                  visible={showMobileInlineOutlet}
+                />
               ) : null}
               <NavLink
                 to="/"

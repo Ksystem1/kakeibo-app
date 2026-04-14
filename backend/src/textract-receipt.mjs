@@ -425,6 +425,52 @@ function fallbackTotalFromLineItems(rows) {
   return Math.round(sum * 100) / 100;
 }
 
+function lineHasTotalKeyword(line) {
+  return /合計|税込(?:額)?|総額|お会計|ご請求|ご利用金額|お支払(?:金額)?|(?:^|[^A-Z])TOTAL(?:[^A-Z]|$)/i.test(
+    String(line ?? ""),
+  );
+}
+
+function lineHasNonTotalKeyword(line) {
+  return /小計|税|内税|外税|値引|割引|ポイント|お釣|つり|釣銭|預り|お預かり|現金|cash|change|coupon/i.test(
+    String(line ?? ""),
+  );
+}
+
+function moneyCandidatesFromLine(line) {
+  const src = String(line ?? "");
+  if (!src) return [];
+  const normalized = src.replace(/[¥￥]/g, "").replace(/[０-９]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
+  );
+  const hits = normalized.match(/\d{1,3}(?:[,\s]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g) ?? [];
+  const out = [];
+  for (const h of hits) {
+    const n = parseMoney(h);
+    if (n == null || !Number.isFinite(n) || n <= 0) continue;
+    out.push(n);
+  }
+  return out;
+}
+
+function fallbackTotalFromOcrLines(lines) {
+  if (!Array.isArray(lines) || lines.length === 0) return null;
+  /** @type {Array<{ amount: number; score: number }>} */
+  const candidates = [];
+  for (const line of lines) {
+    const amounts = moneyCandidatesFromLine(line);
+    if (amounts.length === 0) continue;
+    const hasTotal = lineHasTotalKeyword(line);
+    if (!hasTotal) continue;
+    if (lineHasNonTotalKeyword(line)) continue;
+    const amount = Math.max(...amounts);
+    candidates.push({ amount, score: 3 });
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.score - a.score || b.amount - a.amount);
+  return Math.round(candidates[0].amount * 100) / 100;
+}
+
 function fallbackDateFromLineItems(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
   for (const row of rows) {
@@ -597,12 +643,20 @@ export function createReceiptAnalyzer(ctx = {}) {
     let totalAmount = summary.totalAmount;
     let fieldConfidence = { ...summary.fieldConfidence };
     if (totalAmount == null) {
-      const fb = fallbackTotalFromLineItems(items);
-      if (fb != null) {
-        totalAmount = fb;
+      const byOcrLine = fallbackTotalFromOcrLines(ocrLines);
+      if (byOcrLine != null) {
+        totalAmount = byOcrLine;
         fieldConfidence = { ...fieldConfidence, totalAmount: null };
         notice =
-          "合計欄を自動検出できなかったため、明細行の金額を合算して推定しました。必要に応じて修正してください。";
+          "合計欄の型付き抽出に失敗したため、OCR 行から合計候補を推定しました。必要に応じて修正してください。";
+      } else {
+        const fb = fallbackTotalFromLineItems(items);
+        if (fb != null) {
+          totalAmount = fb;
+          fieldConfidence = { ...fieldConfidence, totalAmount: null };
+          notice =
+            "合計欄を自動検出できなかったため、明細行の金額を合算して推定しました。必要に応じて修正してください。";
+        }
       }
     }
     let dateVal = summary.date;
