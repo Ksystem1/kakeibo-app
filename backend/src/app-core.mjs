@@ -1739,7 +1739,8 @@ export async function handleApiRequest(req, options = {}) {
             msg.includes("許可リスト") ||
             msg.includes("URL") ||
             msg.includes("successUrl") ||
-            msg.includes("cancelUrl")
+            msg.includes("cancelUrl") ||
+            msg.includes("既に有効なサブスクリプション")
           ) {
             return json(
               400,

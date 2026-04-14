@@ -136,6 +136,19 @@ export async function createBillingCheckoutSession(pool, userId, body) {
       ? String(user.stripe_customer_id).trim()
       : "";
   if (existingCus.startsWith("cus_")) {
+    const list = await stripe.subscriptions.list({
+      customer: existingCus,
+      status: "all",
+      limit: 20,
+    });
+    const activeLike = list.data.find((s) =>
+      ["active", "trialing", "past_due", "unpaid"].includes(String(s.status || "")),
+    );
+    if (activeLike) {
+      throw new Error(
+        "既に有効なサブスクリプションがあります。新規契約ではなく「解約（プラン管理）」を利用してください",
+      );
+    }
     params.customer = existingCus;
   } else if (email) {
     params.customer_email = email;
