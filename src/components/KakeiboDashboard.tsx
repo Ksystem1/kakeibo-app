@@ -287,11 +287,12 @@ export function KakeiboDashboard() {
   /** 今月の登録収入が0のときは前月残高を収入カード・残金計算の土台に使う */
   const incomeBasisNum =
     incomeTotalNum > 0 ? incomeTotalNum : prevMonthBalance;
-  const balanceNum = incomeBasisNum - expenseTotalNum;
   const hasIncome = incomeBasisNum > 0;
   const incomeCardShowsCarryover = incomeTotalNum <= 0 && prevMonthBalance !== 0;
   const fixedCostItemsForMonth = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym);
   const fixedCostForMonth = fixedCostItemsForMonth.reduce((acc, x) => acc + Number(x.amount || 0), 0);
+  const expenseTotalWithFixedNum = expenseTotalNum + (Number.isFinite(fixedCostForMonth) ? fixedCostForMonth : 0);
+  const balanceNum = incomeBasisNum - expenseTotalWithFixedNum;
   const expenseRowsWithFixed = useMemo(() => {
     const rows = [...(summary?.expensesByCategory ?? [])];
     if (!Number.isFinite(fixedCostForMonth) || fixedCostForMonth <= 0) return rows;
@@ -553,7 +554,7 @@ export function KakeiboDashboard() {
             支出（今月）
           </div>
           <div className={`${styles.cardValue} ${styles.expense}`}>
-            {formatYenSingleLine(expenseTotalNum)}
+            {formatYenSingleLine(expenseTotalWithFixedNum)}
           </div>
         </div>
         <div className={styles.card}>
