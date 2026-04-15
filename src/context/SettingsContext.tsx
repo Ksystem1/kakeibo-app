@@ -314,11 +314,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [availableNavSkinIds, navSkinId]);
 
+  /** ログアウト中はリセットしない（localStorage の選択を維持）。未ログイン・読込中も触らない */
   useEffect(() => {
+    if (!authUser) return;
     if (!premiumNavUnlocked && navSkinId !== DEFAULT_NAV_SKIN_ID) {
       setNavSkinIdState(DEFAULT_NAV_SKIN_ID);
     }
-  }, [premiumNavUnlocked, navSkinId]);
+  }, [authUser, premiumNavUnlocked, navSkinId]);
 
   useEffect(() => {
     if (!apiBase || !canSendAuthenticatedRequest(token)) {
