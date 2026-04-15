@@ -621,19 +621,20 @@ export function SettingsPage() {
                         </div>
                         <div className={styles.navSkinPreviewIcons}>
                           {navPreviewOrder.map((k) => (
-                            <img
-                              key={`${opt.id}-${k}`}
-                              src={iconSet[k]}
-                              alt=""
-                              aria-hidden="true"
-                              loading="lazy"
-                              onError={(ev) => {
-                                const img = ev.currentTarget;
-                                if (img.dataset.fallbackApplied === "1") return;
-                                img.dataset.fallbackApplied = "1";
-                                img.src = defaultNavPreviewIcons[k];
-                              }}
-                            />
+                            <span key={`${opt.id}-${k}`} className={styles.navSkinPreviewIconSlot}>
+                              <img
+                                src={iconSet[k]}
+                                alt=""
+                                aria-hidden="true"
+                                loading="lazy"
+                                onError={(ev) => {
+                                  const img = ev.currentTarget;
+                                  if (img.dataset.fallbackApplied === "1") return;
+                                  img.dataset.fallbackApplied = "1";
+                                  img.src = defaultNavPreviewIcons[k];
+                                }}
+                              />
+                            </span>
                           ))}
                         </div>
                       </button>

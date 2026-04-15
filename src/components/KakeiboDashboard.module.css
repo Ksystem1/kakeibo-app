@@ -1240,23 +1240,40 @@
   white-space: nowrap;
 }
 
+/* 6 列で幅をダッシュボード列と同じ比率（214:66）に揃え、Tmp01/Tmp02/Tmp03 共通で適用 */
 .navSkinPreviewIcons {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  overflow-x: auto;
-  padding-bottom: 0.15rem;
-  scrollbar-width: thin;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.4rem;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
 }
 
-.navSkinPreviewIcons img {
-  width: 62px;
-  height: auto;
+.navSkinPreviewIconSlot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0.12rem;
+  border-radius: 8px;
+  /* 白余白を見えなくする（multiply でカード背景色に馴染ませる。追加スキンも同じ） */
+  background-color: var(--bg-card);
+  isolation: isolate;
+  aspect-ratio: 214 / 66;
+  max-height: 6.5rem;
+}
+
+.navSkinPreviewIconSlot img {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
   display: block;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--panel-bg);
-  flex: 0 0 auto;
+  object-fit: contain;
+  object-position: center;
+  border: none;
+  background: transparent;
+  mix-blend-mode: multiply;
 }
 
 @media (max-width: 520px) {
@@ -1315,11 +1332,12 @@
   }
 
   .navSkinPreviewIcons {
-    gap: 0.25rem;
+    gap: 0.28rem;
   }
 
-  .navSkinPreviewIcons img {
-    width: 48px;
-    border-radius: 5px;
+  .navSkinPreviewIconSlot {
+    max-height: 5.25rem;
+    padding: 0.08rem;
+    border-radius: 6px;
   }
 }
