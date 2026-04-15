@@ -6,7 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
-import { PREMIUM_NAV_SKIN_ID } from "../config/navSkins";
+import { DEFAULT_NAV_SKIN_ID } from "../config/navSkins";
 import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
@@ -388,25 +388,22 @@ export function SettingsPage() {
           style={{ marginTop: "0.5rem", flexWrap: "wrap", gap: "0.4rem" }}
         >
           {navSkinOptions.map((opt) => {
-            const isPremiumSkin = opt.id === PREMIUM_NAV_SKIN_ID;
             const locked = !opt.unlocked;
-            const premiumLocked = isPremiumSkin && locked;
             return (
               <button
                 key={opt.id}
                 type="button"
-                disabled={locked && !isPremiumSkin}
                 className={`${styles.btn} ${opt.selected ? styles.btnPrimary : ""}`}
                 aria-pressed={opt.selected}
                 aria-label={
-                  premiumLocked
+                  locked
                     ? `${opt.label}（タップで契約・プランの案内を表示）`
                     : opt.unlocked
                       ? `${opt.label}に切り替え`
                       : `${opt.label}（未購入のため選択できません）`
                 }
                 onClick={() => {
-                  if (premiumLocked) {
+                  if (locked && opt.id !== DEFAULT_NAV_SKIN_ID) {
                     setPremiumContractOpen(true);
                     setStripeCheckoutMessage(null);
                     setPortalMessage(null);

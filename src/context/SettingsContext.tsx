@@ -19,11 +19,8 @@ import {
   NAV_SKIN_CATALOG,
   type NavIconPaths,
   buildNavIconPaths,
-  resolveEffectiveNavSkinId,
-  isNavSkinUnlocked,
   isKnownNavSkinId,
   DEFAULT_NAV_SKIN_ID,
-  PREMIUM_NAV_SKIN_ID,
 } from "../config/navSkins";
 
 const KEY = "kakeibo_font_scale";
@@ -216,9 +213,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [ownedNavSkinIds, setOwnedNavSkinIds] = useState<string[]>(() => readOwnedNavSkinIds());
 
   const [navSkinId, setNavSkinIdState] = useState<string>(() => {
-    const owned = readOwnedNavSkinIds();
     const raw = readPersistedNavSkinId();
-    return resolveEffectiveNavSkinId(raw, owned);
+    return isKnownNavSkinId(raw) ? raw : DEFAULT_NAV_SKIN_ID;
   });
 
   const [fixedCostsByMonth, setFixedCostsByMonth] = useState<
@@ -271,7 +267,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [navSkinId]);
 
   useEffect(() => {
-    if (!premiumNavUnlocked && navSkinId === PREMIUM_NAV_SKIN_ID) {
+    if (!premiumNavUnlocked && navSkinId !== DEFAULT_NAV_SKIN_ID) {
       setNavSkinIdState(DEFAULT_NAV_SKIN_ID);
     }
   }, [premiumNavUnlocked, navSkinId]);
@@ -333,14 +329,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setNavSkinId = useCallback(
     (id: string) => {
       if (!isKnownNavSkinId(id)) return false;
-      const unlocked =
-        isNavSkinUnlocked(id, ownedNavSkinIds) ||
-        (id === PREMIUM_NAV_SKIN_ID && premiumNavUnlocked);
+      const unlocked = id === DEFAULT_NAV_SKIN_ID || premiumNavUnlocked;
       if (!unlocked) return false;
       setNavSkinIdState(id);
       return true;
     },
-    [ownedNavSkinIds, premiumNavUnlocked],
+    [premiumNavUnlocked],
   );
 
   const mergeOwnedNavSkinsFromServer = useCallback((ids: readonly string[]) => {
@@ -359,12 +353,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         id: s.id,
         label: s.label,
         description: s.description,
-        unlocked:
-          isNavSkinUnlocked(s.id, ownedNavSkinIds) ||
-          (s.id === PREMIUM_NAV_SKIN_ID && premiumNavUnlocked),
+        unlocked: s.id === DEFAULT_NAV_SKIN_ID || premiumNavUnlocked,
         selected: s.id === navSkinId,
       })),
-    [ownedNavSkinIds, navSkinId, premiumNavUnlocked],
+    [navSkinId, premiumNavUnlocked],
   );
 
   const setFontScale = (n: number) => {
