@@ -21,6 +21,7 @@ import {
   buildNavIconPaths,
   isKnownNavSkinId,
   DEFAULT_NAV_SKIN_ID,
+  PREMIUM_NAV_SKIN_IDS,
 } from "../config/navSkins";
 
 const KEY = "kakeibo_font_scale";
@@ -30,6 +31,14 @@ const FIXED_COSTS_KEY = "kakeibo_fixed_costs_by_month";
 const GLOBAL_FIXED_COSTS_KEY = "__all__";
 const NAV_SKIN_KEY = "kakeibo_nav_skin_id";
 const OWNED_NAV_SKINS_KEY = "kakeibo_owned_nav_skins";
+const NAV_ICON_FILE_KEYS: Array<keyof NavIconPaths> = [
+  "dashboard",
+  "kakeibo",
+  "csvPc",
+  "receipt",
+  "settings",
+  "admin",
+];
 
 function readOwnedNavSkinIds(): string[] {
   try {
@@ -211,6 +220,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   });
   const [ownedNavSkinIds, setOwnedNavSkinIds] = useState<string[]>(() => readOwnedNavSkinIds());
+  const [availableNavSkinIds, setAvailableNavSkinIds] = useState<string[]>([DEFAULT_NAV_SKIN_ID]);
 
   const [navSkinId, setNavSkinIdState] = useState<string>(() => {
     const raw = readPersistedNavSkinId();
@@ -265,6 +275,44 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
   }, [navSkinId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const candidates = [DEFAULT_NAV_SKIN_ID, ...PREMIUM_NAV_SKIN_IDS];
+    const checkSkinAssets = async (skinId: string): Promise<boolean> => {
+      const paths = buildNavIconPaths(skinId);
+      const urls = NAV_ICON_FILE_KEYS.map((k) => paths[k]);
+      try {
+        const results = await Promise.all(
+          urls.map(async (url) => {
+            const res = await fetch(url, { method: "GET", cache: "no-store" });
+            return res.ok;
+          }),
+        );
+        return results.every(Boolean);
+      } catch {
+        return false;
+      }
+    };
+    void (async () => {
+      const checks = await Promise.all(
+        candidates.map(async (id) => ({ id, ok: await checkSkinAssets(id) })),
+      );
+      if (cancelled) return;
+      const visible = checks.filter((x) => x.ok).map((x) => x.id);
+      const normalized = visible.includes(DEFAULT_NAV_SKIN_ID) ? visible : [DEFAULT_NAV_SKIN_ID];
+      setAvailableNavSkinIds(normalized);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!availableNavSkinIds.includes(navSkinId)) {
+      setNavSkinIdState(DEFAULT_NAV_SKIN_ID);
+    }
+  }, [availableNavSkinIds, navSkinId]);
 
   useEffect(() => {
     if (!premiumNavUnlocked && navSkinId !== DEFAULT_NAV_SKIN_ID) {
@@ -329,12 +377,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setNavSkinId = useCallback(
     (id: string) => {
       if (!isKnownNavSkinId(id)) return false;
+      if (!availableNavSkinIds.includes(id)) return false;
       const unlocked = id === DEFAULT_NAV_SKIN_ID || premiumNavUnlocked;
       if (!unlocked) return false;
       setNavSkinIdState(id);
       return true;
     },
-    [premiumNavUnlocked],
+    [availableNavSkinIds, premiumNavUnlocked],
   );
 
   const mergeOwnedNavSkinsFromServer = useCallback((ids: readonly string[]) => {
@@ -349,14 +398,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const navSkinOptions = useMemo<NavSkinOptionView[]>(
     () =>
-      NAV_SKIN_CATALOG.map((s) => ({
+      NAV_SKIN_CATALOG.filter((s) => availableNavSkinIds.includes(s.id)).map((s) => ({
         id: s.id,
         label: s.label,
         description: s.description,
         unlocked: s.id === DEFAULT_NAV_SKIN_ID || premiumNavUnlocked,
         selected: s.id === navSkinId,
       })),
-    [navSkinId, premiumNavUnlocked],
+    [availableNavSkinIds, navSkinId, premiumNavUnlocked],
   );
 
   const setFontScale = (n: number) => {

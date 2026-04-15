@@ -8,7 +8,6 @@ import { useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
 import {
   DEFAULT_NAV_SKIN_ID,
-  PREMIUM_NAV_SKIN_ID,
   buildNavIconPaths,
   type NavIconPaths,
 } from "../config/navSkins";
@@ -591,14 +590,12 @@ export function SettingsPage() {
             !premiumContractOpen ? (
               <>
                 <p className={styles.reclassifyHint} style={{ margin: "0.45rem 0 0" }}>
-                  プレミアム未契約のときは「プレミアム」スキンボタンを押すと、契約・お申し込みのパネルを表示します。
+                  プレミアム未契約のときはプレミアムスキンを押すと、契約・お申し込みのパネルを表示します。
                 </p>
                 <div className={styles.navSkinPreviewWrap}>
                   {navSkinOptions.map((opt) => {
                     const locked = !opt.unlocked;
-                    const previewSkinId =
-                      opt.id === PREMIUM_NAV_SKIN_ID ? PREMIUM_NAV_SKIN_ID : opt.id;
-                    const iconSet = buildNavIconPaths(previewSkinId);
+                    const iconSet = buildNavIconPaths(opt.id);
                     return (
                       <button
                         key={`preview-${opt.id}`}
