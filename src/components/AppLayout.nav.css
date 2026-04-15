@@ -3,12 +3,13 @@
  * ブレークポイントは useIsMobile（max-width: 768px）と揃える。
  */
 
+/* 1 ボタン = 固定枠（参照 PNG 214×66）。スキン差で枠サイズは変えない */
 .nav-icon-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   text-decoration: none;
-  padding: 0.12rem;
+  padding: 0;
   border: none;
   /* スキン PNG の白余白をヘッダ背景に馴染ませる（Tmp01/Tmp02/Tmp03 共通） */
   background: var(--panel-bg);
@@ -20,8 +21,10 @@
   opacity: 0.9;
   transform: none;
   transition: opacity 0.15s ease, transform 0.15s ease;
-  flex-shrink: 0;
+  flex: 0 0 auto;
   isolation: isolate;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .nav-icon-link.is-active {
@@ -35,27 +38,26 @@
 }
 
 /**
- * 参照 PNG と同一の表示枠（214×66px、約 3.24:1）。
- * 狭いビューでは同じ比率のまま幅だけ抑えて折り返し。
+ * 表示枠は常に 214×66（約 3.24:1）。画像は枠内に contain（スキンごとの PNG サイズ差を吸収）。
  */
 .nav-icon-img {
   display: block;
-  width: min(214px, calc((100vw - 2.5rem) / 2));
-  height: calc(min(214px, calc((100vw - 2.5rem) / 2)) * 66 / 214);
-  max-width: 214px;
-  max-height: 66px;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
   object-fit: contain;
   object-position: center;
   box-sizing: border-box;
   mix-blend-mode: multiply;
 }
 
+/* タブレット〜PC: 各ナビスロットを同一ピクセル幅に固定 */
 @media (min-width: 769px) {
-  .nav-icon-img {
+  .nav-icon-link {
     width: 214px;
     height: 66px;
-    max-width: none;
-    max-height: none;
+    flex: 0 0 214px;
   }
 }
 
