@@ -6,7 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
-import { DEFAULT_NAV_SKIN_ID } from "../config/navSkins";
+import { DEFAULT_NAV_SKIN_ID, buildNavIconPaths, type NavIconPaths } from "../config/navSkins";
 import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
@@ -266,6 +266,18 @@ export function SettingsPage() {
     }
     return `請求期間終了: ${date}`;
   }, [effectiveUser]);
+  const navPreviewOrder: Array<keyof NavIconPaths> = [
+    "dashboard",
+    "kakeibo",
+    "receipt",
+    "csvPc",
+    "settings",
+    "admin",
+  ];
+  const defaultNavPreviewIcons = useMemo(
+    () => buildNavIconPaths(DEFAULT_NAV_SKIN_ID),
+    [],
+  );
 
   useEffect(() => {
     if (!premiumContractOpen || !getApiBaseUrl()) return;
@@ -572,9 +584,59 @@ export function SettingsPage() {
             canSendAuthenticatedRequest(token) &&
             premiumNavUnlocked &&
             !premiumContractOpen ? (
-              <p className={styles.reclassifyHint} style={{ margin: "0.45rem 0 0" }}>
-                プレミアム未契約のときは「プレミアム」スキンボタンを押すと、契約・お申し込みのパネルを表示します。
-              </p>
+              <>
+                <p className={styles.reclassifyHint} style={{ margin: "0.45rem 0 0" }}>
+                  プレミアム未契約のときは「プレミアム」スキンボタンを押すと、契約・お申し込みのパネルを表示します。
+                </p>
+                <div className={styles.navSkinPreviewWrap}>
+                  {navSkinOptions.map((opt) => {
+                    const locked = !opt.unlocked;
+                    const iconSet = buildNavIconPaths(opt.id);
+                    return (
+                      <button
+                        key={`preview-${opt.id}`}
+                        type="button"
+                        className={`${styles.navSkinPreviewCard}${opt.selected ? ` ${styles.navSkinPreviewCardSelected}` : ""}`}
+                        aria-pressed={opt.selected}
+                        aria-label={locked ? `${opt.label}（契約案内を表示）` : `${opt.label}を適用`}
+                        onClick={() => {
+                          if (locked && opt.id !== DEFAULT_NAV_SKIN_ID) {
+                            setPremiumContractOpen(true);
+                            setStripeCheckoutMessage(null);
+                            setPortalMessage(null);
+                            return;
+                          }
+                          setNavSkinId(opt.id);
+                        }}
+                      >
+                        <div className={styles.navSkinPreviewTitleRow}>
+                          <span className={styles.navSkinPreviewTitle}>{opt.label}</span>
+                          <span className={styles.navSkinPreviewState}>
+                            {locked ? "🔒" : opt.selected ? "適用中" : "選択"}
+                          </span>
+                        </div>
+                        <div className={styles.navSkinPreviewIcons}>
+                          {navPreviewOrder.map((k) => (
+                            <img
+                              key={`${opt.id}-${k}`}
+                              src={iconSet[k]}
+                              alt=""
+                              aria-hidden="true"
+                              loading="lazy"
+                              onError={(ev) => {
+                                const img = ev.currentTarget;
+                                if (img.dataset.fallbackApplied === "1") return;
+                                img.dataset.fallbackApplied = "1";
+                                img.src = defaultNavPreviewIcons[k];
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             ) : null}
           </div>
         ) : null}
