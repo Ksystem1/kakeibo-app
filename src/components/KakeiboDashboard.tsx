@@ -335,17 +335,16 @@ export function KakeiboDashboard() {
   const [fixedCostExpanded, setFixedCostExpanded] = useState(false);
   const [transactionsExpanded, setTransactionsExpanded] = useState(false);
   const mobileFixedCostInitialRows = 6;
-  const mobileTxInitialRows = 8;
+  const txInitialRows = 5;
   const visibleFixedCostItems = useMemo(() => {
     if (!txMobileNarrow) return fixedCostItemsForMonth;
     if (fixedCostExpanded) return fixedCostItemsForMonth;
     return fixedCostItemsForMonth.slice(0, mobileFixedCostInitialRows);
   }, [txMobileNarrow, fixedCostExpanded, fixedCostItemsForMonth]);
   const visibleTransactions = useMemo(() => {
-    if (!txMobileNarrow) return transactions;
     if (transactionsExpanded) return transactions;
-    return transactions.slice(0, mobileTxInitialRows);
-  }, [txMobileNarrow, transactionsExpanded, transactions]);
+    return transactions.slice(0, txInitialRows);
+  }, [transactionsExpanded, transactions]);
 
   useEffect(() => {
     setTransactionsExpanded(false);
@@ -1126,7 +1125,7 @@ export function KakeiboDashboard() {
             )}
           </tbody>
         </table>
-        {txMobileNarrow && transactions.length > mobileTxInitialRows ? (
+        {transactions.length > txInitialRows ? (
           <div style={{ padding: "0.45rem 0.55rem", borderTop: "1px solid var(--border)" }}>
             <button
               type="button"
