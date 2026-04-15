@@ -6,7 +6,12 @@ import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
-import { DEFAULT_NAV_SKIN_ID, buildNavIconPaths, type NavIconPaths } from "../config/navSkins";
+import {
+  DEFAULT_NAV_SKIN_ID,
+  PREMIUM_NAV_SKIN_ID,
+  buildNavIconPaths,
+  type NavIconPaths,
+} from "../config/navSkins";
 import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
@@ -591,7 +596,9 @@ export function SettingsPage() {
                 <div className={styles.navSkinPreviewWrap}>
                   {navSkinOptions.map((opt) => {
                     const locked = !opt.unlocked;
-                    const iconSet = buildNavIconPaths(opt.id);
+                    const previewSkinId =
+                      opt.id === PREMIUM_NAV_SKIN_ID ? PREMIUM_NAV_SKIN_ID : opt.id;
+                    const iconSet = buildNavIconPaths(previewSkinId);
                     return (
                       <button
                         key={`preview-${opt.id}`}

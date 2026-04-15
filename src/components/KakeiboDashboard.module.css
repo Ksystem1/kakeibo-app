@@ -1197,8 +1197,8 @@
 
 .navSkinPreviewWrap {
   margin-top: 0.55rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 0.55rem;
 }
 
@@ -1299,7 +1299,7 @@
   }
 
   .navSkinPreviewWrap {
-    grid-template-columns: 1fr;
+    gap: 0.45rem;
   }
 
   .navSkinPreviewCard {
