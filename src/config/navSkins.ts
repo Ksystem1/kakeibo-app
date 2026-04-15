@@ -10,7 +10,7 @@ export const DEFAULT_NAV_SKIN_ID = "Tmp01";
 
 /** プレミアム契約が必要なスキン（subscription 連携で解放） */
 export const PREMIUM_NAV_SKIN_ID = "Tmp02";
-export const PREMIUM_NAV_SKIN_IDS = ["Tmp02"] as const;
+export const PREMIUM_NAV_SKIN_IDS = ["Tmp02", "Tmp03"] as const;
 
 export type NavSkinDefinition = {
   id: string;
@@ -32,6 +32,12 @@ export const NAV_SKIN_CATALOG: readonly NavSkinDefinition[] = [
     label: "プレミアム",
     free: false,
     description: "Tmp02（プレミアム契約で利用）",
+  },
+  {
+    id: "Tmp03",
+    label: "プレミアム 2",
+    free: false,
+    description: "Tmp03（プレミアム契約で利用）",
   },
 ] as const;
 
