@@ -61,6 +61,7 @@ export function DashboardPage() {
     null,
   );
   const [transactions, setTransactions] = useState<TxRow[]>([]);
+  const [totalBalance, setTotalBalance] = useState(0);
 
   const { from, to } = useMemo(() => ymToRange(ym), [ym]);
 
@@ -68,10 +69,11 @@ export function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [sum, prev, tx] = await Promise.all([
+      const [sum, prev, tx, txToMonth] = await Promise.all([
         getMonthSummary(ym, { scope: "family" }),
         getMonthSummary(prevYm(ym), { scope: "family" }),
         getTransactions(from, to, { scope: "family" }),
+        getTransactions(undefined, to, { scope: "family" }),
       ]);
       setSummary({
         incomeTotal: sum.incomeTotal,
@@ -82,12 +84,21 @@ export function DashboardPage() {
         incomeTotal: prev.incomeTotal,
         expenseTotal: prev.expenseTotal,
       });
-      setTransactions((tx.items ?? []) as TxRow[]);
+      const monthTx = (tx.items ?? []) as TxRow[];
+      setTransactions(monthTx);
+      const cumulative = ((txToMonth.items ?? []) as TxRow[]).reduce((acc, t) => {
+        const amount = num(t.amount);
+        if (t.kind === "income") return acc + amount;
+        if (t.kind === "expense") return acc - amount;
+        return acc;
+      }, 0);
+      setTotalBalance(cumulative);
     } catch (e) {
       setError(e instanceof Error ? e.message : "ダッシュボードの読込に失敗しました");
       setSummary(null);
       setPrevious(null);
       setTransactions([]);
+      setTotalBalance(0);
     } finally {
       setLoading(false);
     }
@@ -103,7 +114,7 @@ export function DashboardPage() {
   const prevIncome = num(previous?.incomeTotal);
   const prevExpense = num(previous?.expenseTotal);
   const prevBalance = prevIncome - prevExpense;
-  const currentSavings = prevBalance + balance;
+  const previousTotalBalance = totalBalance - balance;
   const balanceDiffPct =
     prevBalance === 0 ? 0 : ((balance - prevBalance) / Math.abs(prevBalance)) * 100;
   const hasIncome = income > 0;
@@ -158,10 +169,10 @@ export function DashboardPage() {
         />
         <MetricCard
           label="現在の貯金額"
-          value={yen(currentSavings)}
-          subLabel={loading ? "更新中…" : "前月残高 + 今月残高"}
+          value={yen(totalBalance)}
+          subLabel={loading ? "更新中…" : `${ym} までの残高合計`}
           icon={<PiggyBank size={16} />}
-          trend={currentSavings >= prevBalance ? "up" : "down"}
+          trend={totalBalance >= previousTotalBalance ? "up" : "down"}
         />
         <MetricCard
           label="前月比"
