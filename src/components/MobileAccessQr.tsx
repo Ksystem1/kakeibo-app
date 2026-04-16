@@ -130,7 +130,7 @@ export function MobileAccessQr({
       </span>
       <div
         style={{
-          padding: compact ? 8 : 10,
+          padding: compact ? 6 : 10,
           borderRadius: 8,
           background: "#fff",
           lineHeight: 0,
@@ -139,7 +139,7 @@ export function MobileAccessQr({
       >
         <QRCode
           value={value}
-          size={compact ? 108 : 156}
+          size={compact ? 88 : 156}
           level="Q"
           fgColor="#0f1419"
           bgColor="#ffffff"
