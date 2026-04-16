@@ -16,12 +16,15 @@ import {
   putFamilyFixedCosts,
 } from "../lib/api";
 import {
-  NAV_SKIN_CATALOG,
+  NAV_SKIN_TIER_CATALOG,
   type NavIconPaths,
   buildNavIconPaths,
   isKnownNavSkinId,
+  isPremiumVariantSkinId,
+  firstAvailablePremiumVariantId,
   DEFAULT_NAV_SKIN_ID,
-  PREMIUM_NAV_SKIN_IDS,
+  PREMIUM_NAV_SKIN_ID,
+  PREMIUM_VARIANT_SKIN_IDS,
 } from "../config/navSkins";
 
 const KEY = "kakeibo_font_scale";
@@ -172,6 +175,10 @@ type Settings = {
   navSkinId: string;
   navIconPaths: NavIconPaths;
   navSkinOptions: NavSkinOptionView[];
+  /** Tmp02〜（アセットがあるフォルダのみ）。プレミアム会員向けサブ選択 */
+  navPremiumVariantOptions: NavSkinOptionView[];
+  /** 存在確認済みのスキンID（Tmp04 追加時も自動で候補に入る） */
+  availableNavSkinIds: string[];
   /** Stripe サブスク等でプレミアムナビスキンが選べるか */
   premiumNavUnlocked: boolean;
   setFontScale: (n: number) => void;
@@ -278,7 +285,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    const candidates = [DEFAULT_NAV_SKIN_ID, ...PREMIUM_NAV_SKIN_IDS];
+    const candidates = [DEFAULT_NAV_SKIN_ID, ...PREMIUM_VARIANT_SKIN_IDS];
     const checkSkinAssets = async (skinId: string): Promise<boolean> => {
       const paths = buildNavIconPaths(skinId);
       const urls = NAV_ICON_FILE_KEYS.map((k) => paths[k]);
@@ -400,12 +407,33 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const navSkinOptions = useMemo<NavSkinOptionView[]>(
     () =>
-      NAV_SKIN_CATALOG.filter((s) => availableNavSkinIds.includes(s.id)).map((s) => ({
+      NAV_SKIN_TIER_CATALOG.filter((s) => {
+        if (s.id === DEFAULT_NAV_SKIN_ID) return availableNavSkinIds.includes(DEFAULT_NAV_SKIN_ID);
+        if (s.id === PREMIUM_NAV_SKIN_ID) {
+          return PREMIUM_VARIANT_SKIN_IDS.some((pid) => availableNavSkinIds.includes(pid));
+        }
+        return false;
+      }).map((s) => ({
         id: s.id,
         label: s.label,
         description: s.description,
         unlocked: s.id === DEFAULT_NAV_SKIN_ID || premiumNavUnlocked,
-        selected: s.id === navSkinId,
+        selected:
+          s.id === DEFAULT_NAV_SKIN_ID
+            ? navSkinId === DEFAULT_NAV_SKIN_ID
+            : isPremiumVariantSkinId(navSkinId),
+      })),
+    [availableNavSkinIds, navSkinId, premiumNavUnlocked],
+  );
+
+  const navPremiumVariantOptions = useMemo<NavSkinOptionView[]>(
+    () =>
+      PREMIUM_VARIANT_SKIN_IDS.filter((id) => availableNavSkinIds.includes(id)).map((id) => ({
+        id,
+        label: id,
+        description: undefined,
+        unlocked: premiumNavUnlocked,
+        selected: navSkinId === id,
       })),
     [availableNavSkinIds, navSkinId, premiumNavUnlocked],
   );
@@ -470,6 +498,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       navSkinId,
       navIconPaths,
       navSkinOptions,
+      navPremiumVariantOptions,
+      availableNavSkinIds,
       premiumNavUnlocked,
       setFontScale,
       setFontMode,
@@ -486,6 +516,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       navSkinId,
       navIconPaths,
       navSkinOptions,
+      navPremiumVariantOptions,
+      availableNavSkinIds,
       premiumNavUnlocked,
       setFixedCostsForMonth,
       setNavSkinId,

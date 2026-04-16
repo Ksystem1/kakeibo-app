@@ -8,7 +8,9 @@ import { useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
 import {
   DEFAULT_NAV_SKIN_ID,
+  PREMIUM_NAV_SKIN_ID,
   buildNavIconPaths,
+  firstAvailablePremiumVariantId,
   type NavIconPaths,
 } from "../config/navSkins";
 import {
@@ -103,7 +105,10 @@ export function SettingsPage() {
     setThemeMode,
     fixedCostsByMonth,
     setFixedCostsForMonth,
+    navSkinId,
     navSkinOptions,
+    navPremiumVariantOptions,
+    availableNavSkinIds,
     setNavSkinId,
     premiumNavUnlocked,
   } = useSettings();
@@ -283,6 +288,12 @@ export function SettingsPage() {
     [],
   );
 
+  /** プレミアム枠プレビュー用（Tmp02〜のうち現在 or 先頭の利用可能フォルダ） */
+  const premiumPreviewSkinId = useMemo(() => {
+    if (navSkinId !== DEFAULT_NAV_SKIN_ID) return navSkinId;
+    return firstAvailablePremiumVariantId(availableNavSkinIds) ?? PREMIUM_NAV_SKIN_ID;
+  }, [navSkinId, availableNavSkinIds]);
+
   useEffect(() => {
     if (!premiumContractOpen || !getApiBaseUrl()) return;
     if (!canSendAuthenticatedRequest(token)) return;
@@ -425,6 +436,11 @@ export function SettingsPage() {
                     setPortalMessage(null);
                     return;
                   }
+                  if (opt.id === PREMIUM_NAV_SKIN_ID) {
+                    const first = firstAvailablePremiumVariantId(availableNavSkinIds);
+                    if (first) void setNavSkinId(first);
+                    return;
+                  }
                   setNavSkinId(opt.id);
                 }}
               >
@@ -434,6 +450,30 @@ export function SettingsPage() {
             );
           })}
         </div>
+        {premiumNavUnlocked && navPremiumVariantOptions.length > 1 ? (
+          <>
+            <p className={styles.reclassifyHint} style={{ margin: "0.55rem 0 0" }}>
+              プレミアム会員向け: 利用するフォルダ（Tmp02〜）を選びます。公開フォルダが増えると自動で選択肢に追加されます。
+            </p>
+            <div
+              className={styles.modeRow}
+              style={{ marginTop: "0.35rem", flexWrap: "wrap", gap: "0.4rem" }}
+            >
+              {navPremiumVariantOptions.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  className={`${styles.btn} ${v.selected ? styles.btnPrimary : ""}`}
+                  aria-pressed={v.selected}
+                  aria-label={`${v.label}のスキンを適用`}
+                  onClick={() => void setNavSkinId(v.id)}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
         {token && effectiveUser ? (
           <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
             <p style={{ margin: 0 }}>
@@ -595,7 +635,9 @@ export function SettingsPage() {
                 <div className={styles.navSkinPreviewWrap}>
                   {navSkinOptions.map((opt) => {
                     const locked = !opt.unlocked;
-                    const iconSet = buildNavIconPaths(opt.id);
+                    const iconSet = buildNavIconPaths(
+                      opt.id === DEFAULT_NAV_SKIN_ID ? DEFAULT_NAV_SKIN_ID : premiumPreviewSkinId,
+                    );
                     return (
                       <button
                         key={`preview-${opt.id}`}
@@ -608,6 +650,11 @@ export function SettingsPage() {
                             setPremiumContractOpen(true);
                             setStripeCheckoutMessage(null);
                             setPortalMessage(null);
+                            return;
+                          }
+                          if (opt.id === PREMIUM_NAV_SKIN_ID) {
+                            const first = firstAvailablePremiumVariantId(availableNavSkinIds);
+                            if (first) void setNavSkinId(first);
                             return;
                           }
                           setNavSkinId(opt.id);

@@ -2,15 +2,20 @@
  * ナビ用アイコンのスキン（着せ替え）。
  * 各スキンは `public/skins/<id>/` に `1_1.png` … `1_6.png`（ASCII 名）を配置。
  *
- * 解放状態は localStorage（`kakeibo_owned_nav_skins`）。全スキン無料のため通常は未購入でも選択可。
- * 将来サーバ連携時は `mergeOwnedNavSkinsFromServer(ids)` でマージ可能。
+ * 画面上部の切替は「スタンダード」「プレミアム」の2ボタンのみ。
+ * プレミアム会員は Tmp02 / Tmp03 / Tmp04 … を別行で選択可能（フォルダが存在しアセットが揃う場合のみ表示）。
  */
 
 export const DEFAULT_NAV_SKIN_ID = "Tmp01";
 
-/** プレミアム契約が必要なスキン（subscription 連携で解放） */
+/** プレミアム枠の代表ID（上位「プレミアム」ボタンと紐づく） */
 export const PREMIUM_NAV_SKIN_ID = "Tmp02";
-export const PREMIUM_NAV_SKIN_IDS = ["Tmp02", "Tmp03"] as const;
+
+/** プレミアムで選択可能なフォルダ（Tmp04 追加時はここに足す） */
+export const PREMIUM_VARIANT_SKIN_IDS = ["Tmp02", "Tmp03", "Tmp04"] as const;
+
+/** @deprecated PREMIUM_VARIANT_SKIN_IDS を使用 */
+export const PREMIUM_NAV_SKIN_IDS = PREMIUM_VARIANT_SKIN_IDS;
 
 export type NavSkinDefinition = {
   id: string;
@@ -20,7 +25,10 @@ export type NavSkinDefinition = {
   description?: string;
 };
 
-export const NAV_SKIN_CATALOG: readonly NavSkinDefinition[] = [
+/**
+ * 設定画面上部の2ボタン用（スタンダード / プレミアムのみ）
+ */
+export const NAV_SKIN_TIER_CATALOG: readonly NavSkinDefinition[] = [
   {
     id: "Tmp01",
     label: "スタンダード",
@@ -31,15 +39,49 @@ export const NAV_SKIN_CATALOG: readonly NavSkinDefinition[] = [
     id: "Tmp02",
     label: "プレミアム",
     free: false,
-    description: "Tmp02（プレミアム契約で利用）",
-  },
-  {
-    id: "Tmp03",
-    label: "プレミアム 2",
-    free: false,
-    description: "Tmp03（プレミアム契約で利用）",
+    description: "プレミアム用スキン（Tmp02〜から選択）",
   },
 ] as const;
+
+/** 後方互換: 旧名 */
+export const NAV_SKIN_CATALOG = NAV_SKIN_TIER_CATALOG;
+
+export function isPremiumVariantSkinId(id: string): boolean {
+  return (PREMIUM_VARIANT_SKIN_IDS as readonly string[]).includes(id);
+}
+
+export function isKnownNavSkinId(id: string): boolean {
+  if (id === DEFAULT_NAV_SKIN_ID) return true;
+  return isPremiumVariantSkinId(id);
+}
+
+export function firstAvailablePremiumVariantId(availableIds: readonly string[]): string | null {
+  for (const id of PREMIUM_VARIANT_SKIN_IDS) {
+    if (availableIds.includes(id)) return id;
+  }
+  return null;
+}
+
+export function getNavSkinDefinition(id: string): NavSkinDefinition | undefined {
+  const tier = NAV_SKIN_TIER_CATALOG.find((s) => s.id === id);
+  if (tier) return tier;
+  if (isPremiumVariantSkinId(id) && id !== PREMIUM_NAV_SKIN_ID) {
+    return {
+      id,
+      label: id,
+      free: false,
+      description: `${id}（プレミアム）`,
+    };
+  }
+  return undefined;
+}
+
+export function isNavSkinUnlocked(skinId: string, ownedSkinIds: readonly string[]): boolean {
+  const def = getNavSkinDefinition(skinId);
+  if (!def) return false;
+  if (def.free) return true;
+  return ownedSkinIds.includes(skinId);
+}
 
 export type NavIconPaths = {
   dashboard: string;
@@ -49,21 +91,6 @@ export type NavIconPaths = {
   settings: string;
   admin: string;
 };
-
-export function isKnownNavSkinId(id: string): boolean {
-  return NAV_SKIN_CATALOG.some((s) => s.id === id);
-}
-
-export function getNavSkinDefinition(id: string): NavSkinDefinition | undefined {
-  return NAV_SKIN_CATALOG.find((s) => s.id === id);
-}
-
-export function isNavSkinUnlocked(skinId: string, ownedSkinIds: readonly string[]): boolean {
-  const def = getNavSkinDefinition(skinId);
-  if (!def) return false;
-  if (def.free) return true;
-  return ownedSkinIds.includes(skinId);
-}
 
 /** メインナビ 6 種（1 ダッシュボード 2 家計簿 3 CSV 4 レシート 5 設定 6 管理） */
 export function buildNavIconPaths(skinId: string): NavIconPaths {
