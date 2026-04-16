@@ -21,7 +21,6 @@ import {
   buildNavIconPaths,
   isKnownNavSkinId,
   isPremiumVariantSkinId,
-  firstAvailablePremiumVariantId,
   DEFAULT_NAV_SKIN_ID,
   PREMIUM_NAV_SKIN_ID,
   PREMIUM_VARIANT_SKIN_IDS,
