@@ -63,11 +63,6 @@ function readPersistedNavSkinId(): string {
   }
 }
 
-function hasResolvedSubscriptionStatus(user: { subscriptionStatus?: string } | null): boolean {
-  if (!user) return false;
-  return String(user.subscriptionStatus ?? "").trim() !== "";
-}
-
 function readLegacyFixedCostsFromLocalStorage(): FixedCostItem[] {
   try {
     const raw = localStorage.getItem(FIXED_COSTS_KEY);
@@ -328,15 +323,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [availableNavSkinIds, navSkinAssetsChecked, navSkinId]);
 
-  /** ログアウト中はリセットしない（localStorage の選択を維持）。未ログイン・読込中も触らない */
-  useEffect(() => {
-    if (!authUser) return;
-    // 再ログイン直後は subscriptionStatus が未反映な瞬間があるため、確定前に戻さない
-    if (!hasResolvedSubscriptionStatus(authUser)) return;
-    if (!premiumNavUnlocked && navSkinId !== DEFAULT_NAV_SKIN_ID) {
-      setNavSkinIdState(DEFAULT_NAV_SKIN_ID);
-    }
-  }, [authUser, premiumNavUnlocked, navSkinId]);
+  /**
+   * 認証状態の遷移（ログイン直後/再ログイン直後）の揺れでスキンを戻さない。
+   * スキン変更可否は setNavSkinId 側で制御し、既存選択は保持する。
+   */
 
   useEffect(() => {
     if (!apiBase || !canSendAuthenticatedRequest(token)) {
