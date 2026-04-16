@@ -63,6 +63,11 @@ function readPersistedNavSkinId(): string {
   }
 }
 
+function hasResolvedSubscriptionStatus(user: { subscriptionStatus?: string } | null): boolean {
+  if (!user) return false;
+  return String(user.subscriptionStatus ?? "").trim() !== "";
+}
+
 function readLegacyFixedCostsFromLocalStorage(): FixedCostItem[] {
   try {
     const raw = localStorage.getItem(FIXED_COSTS_KEY);
@@ -323,6 +328,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   /** ログアウト中はリセットしない（localStorage の選択を維持）。未ログイン・読込中も触らない */
   useEffect(() => {
     if (!authUser) return;
+    // 再ログイン直後は subscriptionStatus が未反映な瞬間があるため、確定前に戻さない
+    if (!hasResolvedSubscriptionStatus(authUser)) return;
     if (!premiumNavUnlocked && navSkinId !== DEFAULT_NAV_SKIN_ID) {
       setNavSkinIdState(DEFAULT_NAV_SKIN_ID);
     }
