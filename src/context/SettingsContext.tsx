@@ -232,6 +232,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   });
   const [ownedNavSkinIds, setOwnedNavSkinIds] = useState<string[]>(() => readOwnedNavSkinIds());
   const [availableNavSkinIds, setAvailableNavSkinIds] = useState<string[]>([DEFAULT_NAV_SKIN_ID]);
+  const [navSkinAssetsChecked, setNavSkinAssetsChecked] = useState(false);
 
   const [navSkinId, setNavSkinIdState] = useState<string>(() => {
     const raw = readPersistedNavSkinId();
@@ -313,6 +314,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       const visible = checks.filter((x) => x.ok).map((x) => x.id);
       const normalized = visible.includes(DEFAULT_NAV_SKIN_ID) ? visible : [DEFAULT_NAV_SKIN_ID];
       setAvailableNavSkinIds(normalized);
+      setNavSkinAssetsChecked(true);
     })();
     return () => {
       cancelled = true;
@@ -320,10 +322,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!navSkinAssetsChecked) return;
     if (!availableNavSkinIds.includes(navSkinId)) {
       setNavSkinIdState(DEFAULT_NAV_SKIN_ID);
     }
-  }, [availableNavSkinIds, navSkinId]);
+  }, [availableNavSkinIds, navSkinAssetsChecked, navSkinId]);
 
   /** ログアウト中はリセットしない（localStorage の選択を維持）。未ログイン・読込中も触らない */
   useEffect(() => {
