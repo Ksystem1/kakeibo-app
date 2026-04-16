@@ -287,7 +287,7 @@ export function AppLayout() {
                 aria-label="レシート"
                 onClick={onMobileIconNavClick("/receipt")}
               >
-                <img className="nav-icon-img" src={navIconPaths.receipt} alt="" aria-hidden="true" />
+                <img className="nav-icon-img nav-icon-img--smaller" src={navIconPaths.receipt} alt="" aria-hidden="true" />
               </NavLink>
               {useMobileInlineOutlet ? (
                 <MobileInlineOutlet
@@ -314,7 +314,7 @@ export function AppLayout() {
                 aria-label="設定"
                 onClick={onMobileIconNavClick("/settings")}
               >
-                <img className="nav-icon-img" src={navIconPaths.settings} alt="" aria-hidden="true" />
+                <img className="nav-icon-img nav-icon-img--smaller" src={navIconPaths.settings} alt="" aria-hidden="true" />
               </NavLink>
               {useMobileInlineOutlet ? (
                 <MobileInlineOutlet
@@ -332,7 +332,7 @@ export function AppLayout() {
                   aria-label="管理"
                   onClick={onMobileIconNavClick("/admin")}
                 >
-                  <img className="nav-icon-img" src={navIconPaths.admin} alt="" aria-hidden="true" />
+                  <img className="nav-icon-img nav-icon-img--smaller" src={navIconPaths.admin} alt="" aria-hidden="true" />
                 </NavLink>
               ) : null}
               {useMobileInlineOutlet &&
