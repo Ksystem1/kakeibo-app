@@ -46,6 +46,17 @@ export const NAV_SKIN_TIER_CATALOG: readonly NavSkinDefinition[] = [
 /** 後方互換: 旧名 */
 export const NAV_SKIN_CATALOG = NAV_SKIN_TIER_CATALOG;
 
+export function getPremiumVariantLabel(id: string): string {
+  switch (id) {
+    case "Tmp02":
+      return "ハワイ風";
+    case "Tmp03":
+      return "ロボット風";
+    default:
+      return id;
+  }
+}
+
 export function isPremiumVariantSkinId(id: string): boolean {
   return (PREMIUM_VARIANT_SKIN_IDS as readonly string[]).includes(id);
 }
@@ -68,7 +79,7 @@ export function getNavSkinDefinition(id: string): NavSkinDefinition | undefined 
   if (isPremiumVariantSkinId(id) && id !== PREMIUM_NAV_SKIN_ID) {
     return {
       id,
-      label: id,
+      label: getPremiumVariantLabel(id),
       free: false,
       description: `${id}（プレミアム）`,
     };

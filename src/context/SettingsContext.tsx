@@ -20,6 +20,7 @@ import {
   type NavIconPaths,
   buildNavIconPaths,
   firstAvailablePremiumVariantId,
+  getPremiumVariantLabel,
   isKnownNavSkinId,
   isPremiumVariantSkinId,
   DEFAULT_NAV_SKIN_ID,
@@ -329,13 +330,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
    * スキン変更可否は setNavSkinId 側で制御し、既存選択は保持する。
    */
 
-  /** 契約中ユーザーは常にプレミアムを既定にする */
+  /** 契約中ユーザーの初期値はプレミアム。ただし手動で選んだ派生スキンは上書きしない。 */
   useEffect(() => {
     if (!navSkinAssetsChecked) return;
     if (!premiumNavUnlocked) return;
+    if (navSkinId !== DEFAULT_NAV_SKIN_ID) return;
     const firstPremium = firstAvailablePremiumVariantId(availableNavSkinIds);
     if (!firstPremium) return;
-    if (navSkinId === firstPremium) return;
     setNavSkinIdState(firstPremium);
   }, [
     availableNavSkinIds,
@@ -445,7 +446,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     () =>
       PREMIUM_VARIANT_SKIN_IDS.filter((id) => availableNavSkinIds.includes(id)).map((id) => ({
         id,
-        label: id,
+        label: getPremiumVariantLabel(id),
         description: undefined,
         unlocked: premiumNavUnlocked,
         selected: navSkinId === id,
