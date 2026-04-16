@@ -82,6 +82,8 @@
     height: auto;
     aspect-ratio: 214 / 66;
     max-height: none;
+    /* スキン差分の余白を吸収し、全ボタンを同じ横幅で見せる */
+    object-fit: cover;
   }
 }
 
