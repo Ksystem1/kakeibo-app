@@ -67,23 +67,25 @@
     flex-direction: column;
     flex-wrap: nowrap;
     align-items: stretch;
-    gap: 0.35rem;
+    gap: 0.45rem;
   }
 
   .app-nav--mobile-column .nav-icon-link {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
+    padding: 0.2rem 0;
   }
 
   .app-nav--mobile-column .nav-icon-img {
-    width: 100%;
-    max-width: 100%;
+    width: 96%;
+    max-width: 96%;
     height: auto;
     aspect-ratio: 214 / 66;
     max-height: none;
-    /* スキン差分の余白を吸収し、全ボタンを同じ横幅で見せる */
-    object-fit: cover;
+    /* 全体が見えることを優先。Tmp01〜Tmp04 すべて同じ表示ルール。 */
+    object-fit: contain;
+    margin-inline: auto;
   }
 }
 
