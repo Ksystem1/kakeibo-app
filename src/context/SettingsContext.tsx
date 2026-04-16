@@ -19,6 +19,7 @@ import {
   NAV_SKIN_TIER_CATALOG,
   type NavIconPaths,
   buildNavIconPaths,
+  firstAvailablePremiumVariantId,
   isKnownNavSkinId,
   isPremiumVariantSkinId,
   DEFAULT_NAV_SKIN_ID,
@@ -228,6 +229,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [ownedNavSkinIds, setOwnedNavSkinIds] = useState<string[]>(() => readOwnedNavSkinIds());
   const [availableNavSkinIds, setAvailableNavSkinIds] = useState<string[]>([DEFAULT_NAV_SKIN_ID]);
   const [navSkinAssetsChecked, setNavSkinAssetsChecked] = useState(false);
+  const [premiumDefaultAppliedOnce, setPremiumDefaultAppliedOnce] = useState(false);
 
   const [navSkinId, setNavSkinIdState] = useState<string>(() => {
     const raw = readPersistedNavSkinId();
@@ -327,6 +329,33 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
    * 認証状態の遷移（ログイン直後/再ログイン直後）の揺れでスキンを戻さない。
    * スキン変更可否は setNavSkinId 側で制御し、既存選択は保持する。
    */
+
+  /**
+   * 契約中ユーザーの初期値はプレミアム。
+   * ただし初回のみ自動適用し、以後の手動選択（スタンダード含む）は尊重する。
+   */
+  useEffect(() => {
+    if (!navSkinAssetsChecked) return;
+    if (!premiumNavUnlocked) return;
+    if (premiumDefaultAppliedOnce) return;
+    if (navSkinId !== DEFAULT_NAV_SKIN_ID) {
+      setPremiumDefaultAppliedOnce(true);
+      return;
+    }
+    const firstPremium = firstAvailablePremiumVariantId(availableNavSkinIds);
+    if (!firstPremium) {
+      setPremiumDefaultAppliedOnce(true);
+      return;
+    }
+    setNavSkinIdState(firstPremium);
+    setPremiumDefaultAppliedOnce(true);
+  }, [
+    availableNavSkinIds,
+    navSkinAssetsChecked,
+    navSkinId,
+    premiumDefaultAppliedOnce,
+    premiumNavUnlocked,
+  ]);
 
   useEffect(() => {
     if (!apiBase || !canSendAuthenticatedRequest(token)) {
