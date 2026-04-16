@@ -85,12 +85,6 @@
     /* スキン差分の余白を吸収し、全ボタンを同じ横幅で見せる */
     object-fit: cover;
   }
-
-  /* レシート・設定・管理は少しだけ縮めて他と見た目バランスを揃える */
-  .app-nav--mobile-column .nav-icon-img--smaller {
-    width: 92%;
-    margin-inline: auto;
-  }
 }
 
 /* スマホ: 押したナビの直下に表示するページ領域 */
