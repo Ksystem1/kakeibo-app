@@ -20,6 +20,35 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: "autoUpdate",
+        workbox: {
+          clientsClaim: true,
+          skipWaiting: true,
+          cleanupOutdatedCaches: true,
+          navigateFallback: "/kakeibo/index.html",
+          navigateFallbackDenylist: [
+            /^\/kakeibo\/sw\.js$/,
+            /^\/kakeibo\/workbox-[^/]+\.js$/i,
+            /\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|json|webmanifest|map|txt|xml|woff2?)$/i,
+          ],
+          globPatterns: ["**/*.{js,css,html,ico,png,svg,webp}"],
+          runtimeCaching: [
+            {
+              urlPattern: ({ request }) =>
+                request.destination === "script" ||
+                request.destination === "style" ||
+                request.destination === "image" ||
+                request.destination === "font",
+              handler: "StaleWhileRevalidate",
+              options: {
+                cacheName: "kakeibo-static-assets",
+                expiration: {
+                  maxEntries: 120,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+              },
+            },
+          ],
+        },
         includeAssets: ["robots.txt", "og-image.png", "top-hero.png"],
         manifest: {
           id: pwaScope,
@@ -46,32 +75,6 @@ export default defineConfig(({ mode }) => {
               sizes: "1024x1024",
               type: "image/png",
               purpose: "maskable",
-            },
-          ],
-        },
-        workbox: {
-          navigateFallback: "/kakeibo/index.html",
-          navigateFallbackDenylist: [
-            /^\/kakeibo\/sw\.js$/,
-            /^\/kakeibo\/workbox-[^/]+\.js$/i,
-            /\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|json|webmanifest|map|txt|xml|woff2?)$/i,
-          ],
-          globPatterns: ["**/*.{js,css,html,ico,png,svg,webp}"],
-          runtimeCaching: [
-            {
-              urlPattern: ({ request }) =>
-                request.destination === "script" ||
-                request.destination === "style" ||
-                request.destination === "image" ||
-                request.destination === "font",
-              handler: "StaleWhileRevalidate",
-              options: {
-                cacheName: "kakeibo-static-assets",
-                expiration: {
-                  maxEntries: 120,
-                  maxAgeSeconds: 60 * 60 * 24 * 30,
-                },
-              },
             },
           ],
         },

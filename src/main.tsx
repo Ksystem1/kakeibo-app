@@ -7,14 +7,18 @@ import { AuthProvider } from "./context/AuthContext";
 import { SettingsProvider } from "./context/SettingsContext";
 import "./index.css";
 
-registerSW({
+const updateSW = registerSW({
   immediate: true,
+  onNeedRefresh() {
+    // 旧画面キャッシュをできるだけ早く切り替える
+    void updateSW(true);
+  },
   onRegisteredSW(_swUrl, registration) {
     if (!registration) return;
-    const hour = 60 * 60 * 1000;
+    const tenMinutes = 10 * 60 * 1000;
     setInterval(() => {
       void registration.update();
-    }, hour);
+    }, tenMinutes);
   },
 });
 
