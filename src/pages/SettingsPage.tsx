@@ -407,9 +407,6 @@ export function SettingsPage() {
 
       <div className={styles.settingsPanel} style={{ marginTop: "1.25rem", maxWidth: 820 }}>
         <h2 className={styles.sectionTitle}>ナビアイコンのスキン</h2>
-        <p className={styles.reclassifyHint}>
-          下部タブのアイコン画像のセットです。
-        </p>
         <div
           className={styles.modeRow}
           style={{ marginTop: "0.5rem", flexWrap: "wrap", gap: "0.4rem" }}
@@ -451,28 +448,23 @@ export function SettingsPage() {
           })}
         </div>
         {premiumNavUnlocked && navPremiumVariantOptions.length > 1 ? (
-          <>
-            <p className={styles.reclassifyHint} style={{ margin: "0.55rem 0 0" }}>
-              プレミアム会員向け: 利用するフォルダ（Tmp02〜）を選びます。公開フォルダが増えると自動で選択肢に追加されます。
-            </p>
-            <div
-              className={styles.modeRow}
-              style={{ marginTop: "0.35rem", flexWrap: "wrap", gap: "0.4rem" }}
-            >
-              {navPremiumVariantOptions.map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  className={`${styles.btn} ${v.selected ? styles.btnPrimary : ""}`}
-                  aria-pressed={v.selected}
-                  aria-label={`${v.label}のスキンを適用`}
-                  onClick={() => void setNavSkinId(v.id)}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
-          </>
+          <div
+            className={styles.modeRow}
+            style={{ marginTop: "0.35rem", flexWrap: "wrap", gap: "0.4rem" }}
+          >
+            {navPremiumVariantOptions.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                className={`${styles.btn} ${v.selected ? styles.btnPrimary : ""}`}
+                aria-pressed={v.selected}
+                aria-label={`${v.label}のスキンを適用`}
+                onClick={() => void setNavSkinId(v.id)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
         ) : null}
         {token && effectiveUser ? (
           <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
@@ -629,9 +621,6 @@ export function SettingsPage() {
             premiumNavUnlocked &&
             !premiumContractOpen ? (
               <>
-                <p className={styles.reclassifyHint} style={{ margin: "0.45rem 0 0" }}>
-                  プレミアム未契約のときはプレミアムスキンを押すと、契約・お申し込みのパネルを表示します。
-                </p>
                 <div className={styles.navSkinPreviewWrap}>
                   {navSkinOptions.map((opt) => {
                     const locked = !opt.unlocked;
