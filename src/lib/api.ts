@@ -553,6 +553,10 @@ export async function getMonthSummary(
     year_month: string;
     expenseTotal: unknown;
     incomeTotal: unknown;
+    /** 設定画面の家族固定費（その月に適用する月額合計） */
+    fixedCostFromSettings?: unknown;
+    /** 収入 − 変動費支出 − fixedCostFromSettings */
+    netMonthlyBalance?: unknown;
     expensesByCategory: Array<{
       category_id: number | null;
       category_name: string | null;
@@ -822,6 +826,8 @@ export async function askAiAdvisor(body: {
     yearMonth?: string;
     incomeTotal?: number;
     expenseTotal?: number;
+    fixedCostFromSettings?: number;
+    netMonthlyBalance?: number;
     topCategories?: Array<{ name: string; total: number }>;
     history?: Array<{ role: "user" | "ai"; text: string }>;
   };

@@ -90,7 +90,12 @@ function buildPrompt(message, context) {
     : [];
   const income = Number(context?.incomeTotal ?? 0);
   const expense = Number(context?.expenseTotal ?? 0);
-  const remaining = Math.max(0, Math.round(income - expense));
+  const fixedFromSettings = Number(context?.fixedCostFromSettings ?? 0);
+  const netMonthly =
+    context?.netMonthlyBalance != null && Number.isFinite(Number(context.netMonthlyBalance))
+      ? Math.round(Number(context.netMonthlyBalance))
+      : Math.round(income - expense - fixedFromSettings);
+  const remaining = netMonthly;
   const top = Array.isArray(context?.topCategories) ? context.topCategories : [];
   const topReadable = top
     .slice(0, 6)
@@ -105,7 +110,7 @@ function buildPrompt(message, context) {
     "ユーザーの家計状況（対象月・残金・支出内訳など）は、直後のユーザーメッセージブロックにまとめて渡されます。それが家計簿から集計された正本です。データに基づいた具体的な提案を優先してください。",
     "金額・カテゴリ別の数値は、そのブロックに明示されているものだけを引用してください。推測・例示・創作の金額は禁止です。",
     "JSONの上位カテゴリに無いラベル（例:「固定費」）に、勝手に具体額を当てはめないでください。言及するときは与えられたカテゴリ名だけを使うか、ユーザーに確認してください。",
-    "残り予算・あといくら・使える金額と聞かれたら、必ず与えられた「残金」の数値だけを使い、他の金額と矛盾させないでください。",
+    "残り予算・あといくら・使える金額と聞かれたら、必ず与えられた「収支残金」の数値だけを使い、他の金額と矛盾させないでください。",
     "天気・現在時刻・ニュースなど、ここに無いリアルタイム情報は正確には分かりません。「機能がありません」「お答えできません」だけで拒否せず、ユーモアや軽い一言で受け止めたうえで、家計アドバイザーとして与えられた残金・カテゴリに自然につなげてください（例: 時刻は分からないが、家計簿を見るなら今が見直しチャンスかも、など）。",
     "家計と無関係な雑談（ラッキー食材・豆知識など）には、まずその話に応じ、続けて家計データへ1文だけ軽く橋渡ししてください。",
     "家計の質問では、結論を先に述べ、質問のキーワードを1つ以上そのまま含めてください。カテゴリや節約の話では、上位カテゴリの名前を明示してください。",
@@ -117,8 +122,9 @@ function buildPrompt(message, context) {
     "【家計コンテキスト・正本（ここに無い数値は使わない）】",
     `対象月: ${context?.yearMonth ?? "不明"}`,
     `収入合計: ${income.toLocaleString("ja-JP")}円`,
-    `支出合計: ${expense.toLocaleString("ja-JP")}円`,
-    `残金（収入−支出、負のときは0）: ${remaining.toLocaleString("ja-JP")}円`,
+    `変動費支出（家計簿・「固定費」カテゴリの取引は除外済み）: ${expense.toLocaleString("ja-JP")}円`,
+    `設定の固定費（月額合計）: ${fixedFromSettings.toLocaleString("ja-JP")}円`,
+    `収支残金（収入−変動費−設定固定費。負もあり得ます）: ${remaining.toLocaleString("ja-JP")}円`,
     `支出カテゴリ上位（要約）: ${topReadable || "（データなし）"}`,
     `支出カテゴリ上位（機械可読・多い順）: ${JSON.stringify(top.slice(0, 10))}`,
     `直近会話: ${JSON.stringify(history)}`,

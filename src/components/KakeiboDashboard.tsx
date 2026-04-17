@@ -3,6 +3,10 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { getEffectiveFixedCostsForMonth, useSettings } from "../context/SettingsContext";
 import {
+  filterCategoriesForTransactionSelect,
+  isReservedLedgerFixedCostCategoryName,
+} from "../lib/transactionCategories";
+import {
   createTransaction,
   deleteTransaction,
   ensureDefaultCategories,
@@ -35,16 +39,6 @@ function ymToRange(ym: string) {
   const last = new Date(y, m, 0).getDate();
   const to = `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
   return { from, to };
-}
-
-/** YYYY-MM を delta 月シフト（例: -1 で前月） */
-function shiftYm(ym: string, deltaMonths: number): string | null {
-  const m = /^(\d{4})-(\d{2})$/.exec(ym);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo0 = Number(m[2]) - 1;
-  const d = new Date(y, mo0 + deltaMonths, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function currentYm() {
@@ -130,11 +124,11 @@ export function KakeiboDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  /** 前月の収入合計 − 支出合計（今月収入が0のとき収入カード表示用） */
-  const [prevMonthBalance, setPrevMonthBalance] = useState(0);
   const [summary, setSummary] = useState<{
     expenseTotal: unknown;
     incomeTotal: unknown;
+    fixedCostFromSettings?: unknown;
+    netMonthlyBalance?: unknown;
     expensesByCategory: Array<{
       category_id: number | null;
       category_name: string | null;
@@ -221,30 +215,17 @@ export function KakeiboDashboard() {
           /* 古い API では POST が無い場合がある */
         }
       }
-      const prevYm = shiftYm(ym, -1);
-      const prevSummaryPromise = prevYm
-        ? getMonthSummary(prevYm, { scope: "family" })
-        : Promise.resolve(null);
-      const [txRes, sumRes, prevSumRes] = await Promise.all([
+      const [txRes, sumRes] = await Promise.all([
         getTransactions(from, to, { scope: "family" }),
         getMonthSummary(ym, { scope: "family" }),
-        prevSummaryPromise,
       ]);
       setCategories(normalizeCategoryRows(items));
       setTransactions((txRes.items ?? []) as Transaction[]);
       setSummary(sumRes);
-      if (prevSumRes) {
-        const pi = numAmount(prevSumRes.incomeTotal as string | number);
-        const pe = numAmount(prevSumRes.expenseTotal as string | number);
-        setPrevMonthBalance(pi - pe);
-      } else {
-        setPrevMonthBalance(0);
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setTransactions([]);
       setSummary(null);
-      setPrevMonthBalance(0);
     } finally {
       setLoading(false);
     }
@@ -273,10 +254,18 @@ export function KakeiboDashboard() {
     for (const t of transactions) {
       const a = numAmount(t.amount);
       if (t.kind === "income") income += a;
-      else if (t.kind === "expense") expense += a;
+      else if (t.kind === "expense") {
+        if (t.category_id != null) {
+          const cid =
+            typeof t.category_id === "number" ? t.category_id : Number(t.category_id);
+          const nm = Number.isFinite(cid) ? categoryById.get(cid) : undefined;
+          if (isReservedLedgerFixedCostCategoryName(nm)) continue;
+        }
+        expense += a;
+      }
     }
     return { income, expense, balance: income - expense };
-  }, [transactions]);
+  }, [transactions, categoryById]);
 
   const incomeTotalNum = summary
     ? numAmount(summary.incomeTotal as string | number)
@@ -284,35 +273,32 @@ export function KakeiboDashboard() {
   const expenseTotalNum = summary
     ? numAmount(summary.expenseTotal as string | number)
     : totals.expense;
-  /** 今月の登録収入が0のときは前月残高を収入カード・残金計算の土台に使う */
-  const incomeBasisNum =
-    incomeTotalNum > 0 ? incomeTotalNum : prevMonthBalance;
-  const hasIncome = incomeBasisNum > 0;
-  const incomeCardShowsCarryover = incomeTotalNum <= 0 && prevMonthBalance !== 0;
   const fixedCostItemsForMonth = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym);
   const fixedCostForMonth = fixedCostItemsForMonth.reduce((acc, x) => acc + Number(x.amount || 0), 0);
-  const expenseTotalWithFixedNum = expenseTotalNum + (Number.isFinite(fixedCostForMonth) ? fixedCostForMonth : 0);
-  const balanceNum = incomeBasisNum - expenseTotalWithFixedNum;
-  const expenseRowsWithFixed = useMemo(() => {
-    const rows = [...(summary?.expensesByCategory ?? [])];
-    if (!Number.isFinite(fixedCostForMonth) || fixedCostForMonth <= 0) return rows;
-    const idx = rows.findIndex((r) => String(r.category_name ?? "").trim() === "固定費");
-    if (idx >= 0) {
-      const merged = numAmount(rows[idx].total as string | number) + fixedCostForMonth;
-      rows[idx] = { ...rows[idx], total: merged };
-    } else {
-      rows.push({
-        category_id: null,
-        category_name: "固定費",
-        total: fixedCostForMonth,
-      });
+  const balanceNum = (() => {
+    if (!summary) {
+      return (
+        totals.income -
+        totals.expense -
+        (Number.isFinite(fixedCostForMonth) ? fixedCostForMonth : 0)
+      );
     }
+    const apiNet = numAmount(summary.netMonthlyBalance as string | number);
+    if (Number.isFinite(apiNet)) return apiNet;
+    return (
+      incomeTotalNum -
+      expenseTotalNum -
+      (Number.isFinite(fixedCostForMonth) ? fixedCostForMonth : 0)
+    );
+  })();
+  const expenseRowsOrdered = useMemo(() => {
+    const rows = [...(summary?.expensesByCategory ?? [])];
     rows.sort(
       (a, b) =>
         numAmount(b.total as string | number) - numAmount(a.total as string | number),
     );
     return rows;
-  }, [summary?.expensesByCategory, fixedCostForMonth]);
+  }, [summary?.expensesByCategory]);
 
   const [formAmount, setFormAmount] = useState("");
   const [formKind, setFormKind] = useState<"expense" | "income">("expense");
@@ -362,6 +348,14 @@ export function KakeiboDashboard() {
       );
       return;
     }
+    if (formKind === "expense" && formCategoryId) {
+      const cid = Number.parseInt(formCategoryId, 10);
+      const cat = categories.find((c) => c.id === cid);
+      if (cat && isReservedLedgerFixedCostCategoryName(cat.name)) {
+        setError("「固定費」は取引では選べません。設定画面の固定費を利用してください。");
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     try {
@@ -384,20 +378,40 @@ export function KakeiboDashboard() {
     }
   }
 
-  const filteredCategories = categories.filter((c) => c.kind === formKind);
-  const editCategories = categories.filter(
-    (c) => c.kind === (edit?.kind ?? "expense"),
+  const filteredCategories = filterCategoriesForTransactionSelect(
+    categories.filter((c) => c.kind === formKind),
   );
+  const editCategories = filterCategoriesForTransactionSelect(
+    categories.filter((c) => c.kind === (edit?.kind ?? "expense")),
+  );
+
+  /** 一覧に出ない／固定費の ID が value に残るとブラウザが誤表示することがあるためクリア */
+  useEffect(() => {
+    if (!formCategoryId) return;
+    const id = Number.parseInt(formCategoryId, 10);
+    if (!Number.isFinite(id)) return;
+    const cat = categories.find((c) => c.id === id);
+    if (!cat || cat.kind !== formKind || isReservedLedgerFixedCostCategoryName(cat.name)) {
+      setFormCategoryId("");
+    }
+  }, [categories, formKind, formCategoryId]);
 
   function beginEdit(t: Transaction) {
     const ymd = formatTxDateYmd(t.transaction_date);
+    let categoryIdStr = t.category_id != null ? String(t.category_id) : "";
+    if (t.kind === "expense" && t.category_id != null) {
+      const cid =
+        typeof t.category_id === "number" ? t.category_id : Number(t.category_id);
+      const nm = Number.isFinite(cid) ? categoryById.get(cid) : undefined;
+      if (isReservedLedgerFixedCostCategoryName(nm)) categoryIdStr = "";
+    }
     setEdit({
       id: t.id,
       kind: t.kind === "income" ? "income" : "expense",
       amount: String(numAmount(t.amount)),
       transaction_date: ymd,
       memo: t.memo ?? "",
-      category_id: t.category_id != null ? String(t.category_id) : "",
+      category_id: categoryIdStr,
     });
     setMobileEditDateText(formatTxDateMd(t.transaction_date));
   }
@@ -418,6 +432,14 @@ export function KakeiboDashboard() {
           : "支出は 1 以上で入力してください。",
       );
       return;
+    }
+    if (edit.kind === "expense" && edit.category_id) {
+      const cid = Number.parseInt(edit.category_id, 10);
+      const cat = categories.find((c) => c.id === cid);
+      if (cat && isReservedLedgerFixedCostCategoryName(cat.name)) {
+        setError("「固定費」は取引では選べません。設定画面の固定費を利用してください。");
+        return;
+      }
     }
     setEditSaving(true);
     setError(null);
@@ -537,40 +559,33 @@ export function KakeiboDashboard() {
           <div className={styles.cardLabel} title="収入（今月）">
             収入（今月）
           </div>
-          <div
-            className={`${styles.cardValue} ${styles.income}`}
-            title={
-              incomeCardShowsCarryover
-                ? "今月の登録収入が0のため、前月の残金（前月収入−前月支出）を表示しています。"
-                : undefined
-            }
-          >
-            {formatYenSingleLine(incomeBasisNum)}
+          <div className={`${styles.cardValue} ${styles.income}`}>
+            {formatYenSingleLine(incomeTotalNum)}
           </div>
         </div>
         <div className={`${styles.card} ${styles.cardExpense}`}>
-          <div className={styles.cardLabel} title="支出（今月）">
-            支出（今月）
+          <div className={styles.cardLabel} title="変動費（今月・家計簿の支出、固定費カテゴリ除く）">
+            変動費（今月）
           </div>
           <div className={`${styles.cardValue} ${styles.expense}`}>
-            {formatYenSingleLine(expenseTotalWithFixedNum)}
+            {formatYenSingleLine(expenseTotalNum)}
           </div>
         </div>
         <div className={styles.card}>
-          <div className={styles.cardLabel} title="残金（今月あといくら）">
+          <div className={styles.cardLabel} title="収支残金（収入−変動費−設定の固定費）">
             残金（今月あといくら）
           </div>
           <div
             className={`${styles.cardValue} ${
-              !hasIncome ? "" : balanceNum >= 0 ? styles.balancePositive : styles.balanceNegative
+              balanceNum >= 0 ? styles.balancePositive : styles.balanceNegative
             }`}
           >
-            {hasIncome ? formatYenSingleLine(balanceNum) : "収入待ち"}
+            {formatYenSingleLine(balanceNum)}
           </div>
         </div>
       </div>
 
-      {summary && expenseRowsWithFixed.length > 0 ? (
+      {summary && expenseRowsOrdered.length > 0 ? (
         <>
           <h2 className={styles.sectionTitle}>品目別・支出（API集計）</h2>
           <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
@@ -582,7 +597,7 @@ export function KakeiboDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {expenseRowsWithFixed.map((row, i) => (
+                {expenseRowsOrdered.map((row, i) => (
                   <tr key={`${row.category_id ?? "x"}-${i}`}>
                     <td>{row.category_name ?? "（未分類）"}</td>
                     <td>{yen.format(numAmount(row.total as string | number))}</td>
@@ -611,6 +626,9 @@ export function KakeiboDashboard() {
               固定費設定（全月共通）へ
             </Link>
           </div>
+          <p className={styles.sub} style={{ margin: "0 0 0.5rem" }}>
+            毎月同額のものは設定の固定費へ。取引には変動分だけを登録する運用です。
+          </p>
           <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
             <table className={styles.table}>
               <thead>
@@ -682,9 +700,10 @@ export function KakeiboDashboard() {
           <select
             id="kb-kind"
             value={formKind}
-            onChange={(ev) =>
-              setFormKind(ev.target.value as "expense" | "income")
-            }
+            onChange={(ev) => {
+              setFormKind(ev.target.value as "expense" | "income");
+              setFormCategoryId("");
+            }}
           >
             <option value="expense">支出</option>
             <option value="income">収入</option>
@@ -694,6 +713,7 @@ export function KakeiboDashboard() {
           <label htmlFor="kb-cat">カテゴリ</label>
           <select
             id="kb-cat"
+            key={`kb-cat-${formKind}`}
             value={formCategoryId}
             onChange={(ev) => setFormCategoryId(ev.target.value)}
           >

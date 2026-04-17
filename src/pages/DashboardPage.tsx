@@ -55,63 +55,85 @@ export function DashboardPage() {
   const [summary, setSummary] = useState<{
     incomeTotal: unknown;
     expenseTotal: unknown;
+    fixedCostFromSettings?: unknown;
+    netMonthlyBalance?: unknown;
     expensesByCategory: Array<{ category_name: string | null; total: unknown }>;
   } | null>(null);
-  const [previous, setPrevious] = useState<{ incomeTotal: unknown; expenseTotal: unknown } | null>(
-    null,
-  );
+  const [previous, setPrevious] = useState<{
+    incomeTotal: unknown;
+    expenseTotal: unknown;
+    fixedCostFromSettings?: unknown;
+    netMonthlyBalance?: unknown;
+  } | null>(null);
   const [transactions, setTransactions] = useState<TxRow[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
+  const [balanceThroughPrevMonth, setBalanceThroughPrevMonth] = useState(0);
 
   const { from, to } = useMemo(() => ymToRange(ym), [ym]);
+  const prevMonthEnd = useMemo(() => ymToRange(prevYm(ym)).to, [ym]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [sum, prev, tx, balanceToMonth] = await Promise.all([
+      const [sum, prev, tx, balanceToMonth, balanceToPrevMonthEnd] = await Promise.all([
         getMonthSummary(ym, { scope: "family" }),
         getMonthSummary(prevYm(ym), { scope: "family" }),
         getTransactions(from, to, { scope: "family" }),
         getBalanceSummary(to, { scope: "family" }),
+        getBalanceSummary(prevMonthEnd, { scope: "family" }),
       ]);
       setSummary({
         incomeTotal: sum.incomeTotal,
         expenseTotal: sum.expenseTotal,
+        fixedCostFromSettings: sum.fixedCostFromSettings,
+        netMonthlyBalance: sum.netMonthlyBalance,
         expensesByCategory: sum.expensesByCategory ?? [],
       });
       setPrevious({
         incomeTotal: prev.incomeTotal,
         expenseTotal: prev.expenseTotal,
+        fixedCostFromSettings: prev.fixedCostFromSettings,
+        netMonthlyBalance: prev.netMonthlyBalance,
       });
       const monthTx = (tx.items ?? []) as TxRow[];
       setTransactions(monthTx);
       setTotalBalance(num(balanceToMonth.balance));
+      setBalanceThroughPrevMonth(num(balanceToPrevMonthEnd.balance));
     } catch (e) {
       setError(e instanceof Error ? e.message : "ダッシュボードの読込に失敗しました");
       setSummary(null);
       setPrevious(null);
       setTransactions([]);
       setTotalBalance(0);
+      setBalanceThroughPrevMonth(0);
     } finally {
       setLoading(false);
     }
-  }, [from, to, ym]);
+  }, [from, to, prevMonthEnd, ym]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const income = num(summary?.incomeTotal);
-  const expense = num(summary?.expenseTotal);
-  const balance = income - expense;
-  const prevIncome = num(previous?.incomeTotal);
-  const prevExpense = num(previous?.expenseTotal);
-  const prevBalance = prevIncome - prevExpense;
-  const previousTotalBalance = totalBalance - balance;
+  const balance =
+    summary && summary.netMonthlyBalance != null && summary.netMonthlyBalance !== ""
+      ? num(summary.netMonthlyBalance)
+      : summary
+        ? num(summary.incomeTotal) -
+          num(summary.expenseTotal) -
+          num(summary.fixedCostFromSettings)
+        : 0;
+  const prevBalance =
+    previous && previous.netMonthlyBalance != null && previous.netMonthlyBalance !== ""
+      ? num(previous.netMonthlyBalance)
+      : previous
+        ? num(previous.incomeTotal) -
+          num(previous.expenseTotal) -
+          num(previous.fixedCostFromSettings)
+        : 0;
   const balanceDiffPct =
     prevBalance === 0 ? 0 : ((balance - prevBalance) / Math.abs(prevBalance)) * 100;
-  const hasIncome = income > 0;
   const chartColors = ["#2fbf71", "#86efac", "#fdba74", "#fb923c", "#cbd5e1"];
   const chartData = (summary?.expensesByCategory ?? []).slice(0, 5).map((r, i) => ({
     name: r.category_name ?? "未分類",
@@ -156,8 +178,8 @@ export function DashboardPage() {
       <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <MetricCard
           label="今月の残り予算"
-          value={hasIncome ? yen(balance) : "収入待ち"}
-          subLabel={loading ? "更新中…" : `${ym} の実績`}
+          value={summary ? yen(balance) : loading ? "更新中…" : "—"}
+          subLabel={loading ? "更新中…" : `${ym} の実績（収入−変動費−設定の固定費）`}
           icon={<Wallet size={16} />}
           trend={balance >= 0 ? "up" : "down"}
         />
@@ -166,7 +188,7 @@ export function DashboardPage() {
           value={yen(totalBalance)}
           subLabel={loading ? "更新中…" : `${ym} までの残高合計`}
           icon={<PiggyBank size={16} />}
-          trend={totalBalance >= previousTotalBalance ? "up" : "down"}
+          trend={totalBalance >= balanceThroughPrevMonth ? "up" : "down"}
         />
         <MetricCard
           label="前月比"

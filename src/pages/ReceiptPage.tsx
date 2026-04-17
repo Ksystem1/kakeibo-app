@@ -7,6 +7,7 @@ import {
   parseReceiptImage,
   saveReceiptOcrCorrection,
 } from "../lib/api";
+import { isReservedLedgerFixedCostCategoryName } from "../lib/transactionCategories";
 import { normalizeReceiptDateToYmd } from "../lib/receiptDate";
 import { prepareReceiptImageForApi } from "../lib/receiptImage";
 import { getReceiptDebugTier } from "../lib/receiptDebugTier";
@@ -242,7 +243,13 @@ export function ReceiptPage() {
             name: String(c.name ?? ""),
             kind: String(c.kind ?? "expense") as "expense" | "income",
           }))
-          .filter((c) => Number.isFinite(c.id) && c.name && c.kind === "expense");
+          .filter(
+            (c) =>
+              Number.isFinite(c.id) &&
+              c.name &&
+              c.kind === "expense" &&
+              !isReservedLedgerFixedCostCategoryName(c.name),
+          );
         if (!mounted) return;
         setCategories(mapped);
       } catch {

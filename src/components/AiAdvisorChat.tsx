@@ -30,13 +30,19 @@ function buildClientFallback(
   summary: {
     incomeTotal: number;
     expenseTotal: number;
+    fixedCostFromSettings?: number;
+    netMonthlyBalance?: number;
     topCategoryName: string;
     topCategoryTotal: number;
   },
 ) {
   const q = String(question ?? "");
   const lower = q.toLowerCase();
-  const rest = Math.max(0, Math.round(summary.incomeTotal - summary.expenseTotal));
+  const fixed = Number(summary.fixedCostFromSettings ?? 0);
+  const rest =
+    summary.netMonthlyBalance != null && Number.isFinite(summary.netMonthlyBalance)
+      ? Math.round(summary.netMonthlyBalance)
+      : Math.max(0, Math.round(summary.incomeTotal - summary.expenseTotal - fixed));
   if (q.includes("解析") || q.includes("読み取り") || q.includes("読取")) {
     return "レシート画面の「レシート取込」から画像を選ぶと、合計・日付・カテゴリ候補が自動入力されます。内容を確認して「登録」を押すと保存できます。";
   }
@@ -104,6 +110,11 @@ export function AiAdvisorChat() {
       const summaryLite = {
         incomeTotal: Number(sum.incomeTotal ?? 0),
         expenseTotal: Number(sum.expenseTotal ?? 0),
+        fixedCostFromSettings: Number(sum.fixedCostFromSettings ?? 0),
+        netMonthlyBalance:
+          sum.netMonthlyBalance != null && sum.netMonthlyBalance !== ""
+            ? Number(sum.netMonthlyBalance)
+            : undefined,
         topCategoryName: sum.expensesByCategory?.[0]?.category_name ?? "変動費",
         topCategoryTotal: Number(sum.expensesByCategory?.[0]?.total ?? 0),
       };
@@ -124,6 +135,8 @@ export function AiAdvisorChat() {
           yearMonth: ym,
           incomeTotal: summaryLite.incomeTotal,
           expenseTotal: summaryLite.expenseTotal,
+          fixedCostFromSettings: summaryLite.fixedCostFromSettings,
+          netMonthlyBalance: summaryLite.netMonthlyBalance,
           topCategories: (sum.expensesByCategory ?? []).slice(0, 10).map((x) => ({
             name: x.category_name ?? "未分類",
             total: Number(x.total ?? 0),

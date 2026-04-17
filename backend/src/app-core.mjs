@@ -104,10 +104,49 @@ function validateTransactionAmount(kind, amt) {
   return { ok: true };
 }
 
+/** 旧運用の「固定費」支出カテゴリ。設定の固定費に移行済みのため取引では禁止し、集計から除外する。 */
+const RESERVED_LEDGER_FIXED_COST_CATEGORY = "固定費";
+
+function normalizeLedgerCategoryNameForCompare(name) {
+  return String(name ?? "")
+    .normalize("NFKC")
+    .replace(/[\u200b-\u200f\ufeff\u2060]/g, "")
+    .trim();
+}
+
+function isReservedLedgerFixedCostCategoryName(name) {
+  return normalizeLedgerCategoryNameForCompare(name) === RESERVED_LEDGER_FIXED_COST_CATEGORY;
+}
+
+/**
+ * 支出で「固定費」カテゴリを使わせない（設定画面の固定費のみで管理）。
+ * @returns {Promise<string|null>} エラーメッセージ or null
+ */
+async function rejectExpenseUsingLedgerFixedCategory(pool, catWhere, userPair, kind, categoryId) {
+  if (kind !== "expense" || categoryId == null || !Number.isFinite(Number(categoryId))) {
+    return null;
+  }
+  const [[row]] = await pool.query(
+    `SELECT TRIM(IFNULL(c.name, '')) AS n FROM categories c
+     WHERE c.id = ? AND (${catWhere}) LIMIT 1`,
+    [Number(categoryId), ...userPair],
+  );
+  if (!row) return "カテゴリが見つかりません";
+  if (isReservedLedgerFixedCostCategoryName(row.n)) {
+    return "「固定費」カテゴリの支出は登録できません。設定画面の固定費を利用してください。";
+  }
+  return null;
+}
+
 function buildAdvisorFallbackReply(message, ctx) {
   const income = Number(ctx?.incomeTotal ?? 0);
   const expense = Number(ctx?.expenseTotal ?? 0);
-  const rest = Math.max(0, Math.round(income - expense));
+  const fixed = Number(ctx?.fixedCostFromSettings ?? 0);
+  const netRaw =
+    ctx?.netMonthlyBalance != null && Number.isFinite(Number(ctx.netMonthlyBalance))
+      ? Number(ctx.netMonthlyBalance)
+      : income - expense - fixed;
+  const rest = Math.max(0, Math.round(netRaw));
   const top = Array.isArray(ctx?.topCategories) ? ctx.topCategories[0] : null;
   const topName = top?.name ? String(top.name) : "変動費";
   const topTotal = Number(top?.total ?? 0);
@@ -889,6 +928,30 @@ function ymBounds(yearMonth) {
   return { from, to };
 }
 
+/** YYYY-MM の比較用インデックス（null: 不正） */
+function ymToIndex(ym) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(ym || ""));
+  if (!m) return null;
+  return Number(m[1]) * 12 + Number(m[2]) - 1;
+}
+
+/** 月初〜 inclusive のカレンダー月数（fromYm > toYm のときは 0） */
+function inclusiveMonthSpan(fromYm, toYm) {
+  const a = ymToIndex(fromYm);
+  const b = ymToIndex(toYm);
+  if (a == null || b == null || a > b) return 0;
+  return b - a + 1;
+}
+
+async function familyFixedCostMonthlySum(pool, familyId) {
+  if (!familyId) return 0;
+  const [[row]] = await pool.query(
+    `SELECT COALESCE(SUM(amount),0) AS s FROM family_fixed_cost_items WHERE family_id = ?`,
+    [familyId],
+  );
+  return Math.round(Number(row?.s ?? 0));
+}
+
 async function ensureAdmin(pool, userId) {
   const [rows] = await pool.query(
     `SELECT id, email, is_admin FROM users WHERE id = ? LIMIT 1`,
@@ -1115,10 +1178,11 @@ export async function handleApiRequest(req, options = {}) {
         b.kind === "income" || b.kind === "expense"
           ? b.kind
           : String(existing.kind || "expense");
-      const nextAmount =
-        b.amount != null && b.amount !== ""
-          ? Number(b.amount)
-          : Number(existing.amount);
+      const amountProvided =
+        Object.prototype.hasOwnProperty.call(b, "amount") &&
+        b.amount !== null &&
+        b.amount !== "";
+      const nextAmount = amountProvided ? Number(b.amount) : Number(existing.amount);
       const nextDate =
         b.transaction_date != null && b.transaction_date !== ""
           ? String(b.transaction_date).slice(0, 10)
@@ -1148,7 +1212,7 @@ export async function handleApiRequest(req, options = {}) {
         fields.push("kind = ?");
         params.push(b.kind);
       }
-      if (b.amount != null && b.amount !== "") {
+      if (amountProvided) {
         fields.push("amount = ?");
         params.push(nextAmount);
       }
@@ -1166,6 +1230,22 @@ export async function handleApiRequest(req, options = {}) {
       }
       if (fields.length === 0) {
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
+      }
+      const categoryOrKindTouched =
+        Object.prototype.hasOwnProperty.call(b, "category_id") ||
+        b.kind === "income" ||
+        b.kind === "expense";
+      if (categoryOrKindTouched) {
+        const catFixedRej = await rejectExpenseUsingLedgerFixedCategory(
+          pool,
+          catWhere,
+          [userId, userId],
+          nextKind,
+          nextCategoryId,
+        );
+        if (catFixedRej) {
+          return json(400, { error: catFixedRej }, hdrs, skipCors);
+        }
       }
       const [dupRows] = await pool.query(
         `SELECT t.id, t.amount
@@ -1932,6 +2012,13 @@ export async function handleApiRequest(req, options = {}) {
         const txSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
         if (txSubRej) return txSubRej;
         const kind = b.kind === "income" ? "income" : "expense";
+        if (
+          !Object.prototype.hasOwnProperty.call(b, "amount") ||
+          b.amount === null ||
+          b.amount === ""
+        ) {
+          return json(400, { error: "金額（amount）が必要です" }, hdrs, skipCors);
+        }
         const amt = Number(b.amount);
         const v = validateTransactionAmount(kind, amt);
         if (!v.ok) {
@@ -1947,6 +2034,16 @@ export async function handleApiRequest(req, options = {}) {
           if (!Number.isFinite(categoryId)) {
             return json(400, { error: "category_id が不正です" }, hdrs, skipCors);
           }
+        }
+        const catFixedPost = await rejectExpenseUsingLedgerFixedCategory(
+          pool,
+          catWhere,
+          [userId, userId],
+          kind,
+          categoryId,
+        );
+        if (catFixedPost) {
+          return json(400, { error: catFixedPost }, hdrs, skipCors);
         }
         const memo = normalizeTxMemo(b.memo);
         const fromReceipt = b.from_receipt === true || b.from_receipt === "true";
@@ -2059,9 +2156,10 @@ export async function handleApiRequest(req, options = {}) {
            WHERE ${txWhereForScope}
            AND t.transaction_date >= ? AND t.transaction_date <= ?
            AND t.kind = 'expense'
+           AND (t.category_id IS NULL OR TRIM(IFNULL(c.name, '')) <> ?)
            GROUP BY c.id, c.name
            ORDER BY total DESC`,
-          [...txScopeParams, from, to],
+          [...txScopeParams, from, to, RESERVED_LEDGER_FIXED_COST_CATEGORY],
         );
         const [incRows] = await pool.query(
           `SELECT c.id AS category_id, c.name AS category_name, COALESCE(SUM(t.amount),0) AS total
@@ -2076,9 +2174,11 @@ export async function handleApiRequest(req, options = {}) {
         );
         const [[sumE]] = await pool.query(
           `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
+           LEFT JOIN categories c ON c.id = t.category_id
            WHERE ${txWhereForScope}
-           AND t.transaction_date >= ? AND t.transaction_date <= ? AND t.kind = 'expense'`,
-          [...txScopeParams, from, to],
+           AND t.transaction_date >= ? AND t.transaction_date <= ? AND t.kind = 'expense'
+           AND (t.category_id IS NULL OR TRIM(IFNULL(c.name, '')) <> ?)`,
+          [...txScopeParams, from, to, RESERVED_LEDGER_FIXED_COST_CATEGORY],
         );
         const [[sumI]] = await pool.query(
           `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
@@ -2086,6 +2186,16 @@ export async function handleApiRequest(req, options = {}) {
            AND t.transaction_date >= ? AND t.transaction_date <= ? AND t.kind = 'income'`,
           [...txScopeParams, from, to],
         );
+        let fixedCostFromSettings = 0;
+        if (familyScopeOnly && familyId) {
+          const memberOkSum = await verifyUserInFamily(pool, userId, familyId);
+          if (memberOkSum) {
+            fixedCostFromSettings = await familyFixedCostMonthlySum(pool, familyId);
+          }
+        }
+        const incNum = Number(sumI?.total ?? 0);
+        const varExpNum = Number(sumE?.total ?? 0);
+        const netMonthlyBalance = incNum - varExpNum - fixedCostFromSettings;
         return json(
           200,
           {
@@ -2094,6 +2204,8 @@ export async function handleApiRequest(req, options = {}) {
             to,
             expenseTotal: sumE.total,
             incomeTotal: sumI.total,
+            fixedCostFromSettings,
+            netMonthlyBalance,
             expensesByCategory: expRows,
             incomesByCategory: incRows,
           },
@@ -2117,9 +2229,11 @@ export async function handleApiRequest(req, options = {}) {
         const txScopeParams = familyScopeOnly ? [userId] : [userId, userId];
         const [[sumE]] = await pool.query(
           `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
+           LEFT JOIN categories c ON c.id = t.category_id
            WHERE ${txWhereForScope}
-           AND t.transaction_date <= ? AND t.kind = 'expense'`,
-          [...txScopeParams, to],
+           AND t.transaction_date <= ? AND t.kind = 'expense'
+           AND (t.category_id IS NULL OR TRIM(IFNULL(c.name, '')) <> ?)`,
+          [...txScopeParams, to, RESERVED_LEDGER_FIXED_COST_CATEGORY],
         );
         const [[sumI]] = await pool.query(
           `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
@@ -2127,15 +2241,35 @@ export async function handleApiRequest(req, options = {}) {
            AND t.transaction_date <= ? AND t.kind = 'income'`,
           [...txScopeParams, to],
         );
-        const expenseTotal = Number(sumE?.total ?? 0);
+        const expenseVariableTotal = Number(sumE?.total ?? 0);
         const incomeTotal = Number(sumI?.total ?? 0);
+        let balance = incomeTotal - expenseVariableTotal;
+        if (familyScopeOnly && familyId) {
+          const memberOkBal = await verifyUserInFamily(pool, userId, familyId);
+          if (memberOkBal) {
+            const fixedSum = await familyFixedCostMonthlySum(pool, familyId);
+            if (fixedSum > 0) {
+              const [[firstRow]] = await pool.query(
+                `SELECT MIN(t.transaction_date) AS d FROM transactions t WHERE ${txWhereForScope}`,
+                txScopeParams,
+              );
+              const d0 = firstRow?.d;
+              if (d0) {
+                const fromYm = String(d0).slice(0, 7);
+                const toYm = to.slice(0, 7);
+                const months = inclusiveMonthSpan(fromYm, toYm);
+                balance -= fixedSum * months;
+              }
+            }
+          }
+        }
         return json(
           200,
           {
             to,
-            expenseTotal,
+            expenseTotal: expenseVariableTotal,
             incomeTotal,
-            balance: incomeTotal - expenseTotal,
+            balance,
           },
           hdrs,
           skipCors,
@@ -2426,14 +2560,18 @@ export async function handleApiRequest(req, options = {}) {
         /** @type {Map<string, number>} */
         const csvCategoryByNorm = new Map();
         for (const row of validRows) {
-          const { categoryId, created } = await findOrCreateExpenseCategoryByName(
-            pool,
-            userId,
-            familyId,
-            catWhere,
-            row.categoryRaw,
-            csvCategoryByNorm,
-          );
+          const rawCat = String(row.categoryRaw ?? "").trim();
+          const skipLedgerFixedName = rawCat === RESERVED_LEDGER_FIXED_COST_CATEGORY;
+          const { categoryId, created } = skipLedgerFixedName
+            ? { categoryId: null, created: false }
+            : await findOrCreateExpenseCategoryByName(
+                pool,
+                userId,
+                familyId,
+                catWhere,
+                row.categoryRaw,
+                csvCategoryByNorm,
+              );
           if (created) categoriesCreated += 1;
           await pool.query(
             `INSERT INTO transactions (user_id, family_id, kind, amount, transaction_date, memo, category_id)

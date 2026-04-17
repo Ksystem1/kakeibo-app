@@ -763,6 +763,9 @@ export function SettingsPage() {
         style={{ marginTop: "1.5rem", maxWidth: 720 }}
       >
         <h2 className={styles.sectionTitle}>固定費設定（全月共通）</h2>
+        <p className={styles.reclassifyHint}>
+          毎月おおよそ同じ金額になる項目は、ここに入力してください。家計簿の取引として毎月入力する運用は想定していません（変動する支出だけを取引に記録すると集計が一致しやすくなります）。
+        </p>
         {!getApiBaseUrl() || !canSendAuthenticatedRequest(token) ? (
           <p className={styles.reclassifyHint}>
             API に接続できない、またはログイン・開発用ユーザー設定がない場合は、この端末の画面にのみ反映されます。
