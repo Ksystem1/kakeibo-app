@@ -275,6 +275,9 @@ export function KakeiboDashboard() {
     : totals.expense;
   const fixedCostItemsForMonth = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym);
   const fixedCostForMonth = fixedCostItemsForMonth.reduce((acc, x) => acc + Number(x.amount || 0), 0);
+  /** カード「支出（今月）」: 変動費（API）＋設定の固定費合計 */
+  const expenseWithFixedDisplayNum =
+    expenseTotalNum + (Number.isFinite(fixedCostForMonth) ? fixedCostForMonth : 0);
   const balanceNum = (() => {
     if (!summary) {
       return (
@@ -564,15 +567,21 @@ export function KakeiboDashboard() {
           </div>
         </div>
         <div className={`${styles.card} ${styles.cardExpense}`}>
-          <div className={styles.cardLabel} title="変動費（今月・家計簿の支出、固定費カテゴリ除く）">
-            変動費（今月）
+          <div
+            className={styles.cardLabel}
+            title="家計簿から集計した変動費に、設定画面の固定費（月額合計）を加えた今月の支出合計です。"
+          >
+            支出（今月）
           </div>
           <div className={`${styles.cardValue} ${styles.expense}`}>
-            {formatYenSingleLine(expenseTotalNum)}
+            {formatYenSingleLine(expenseWithFixedDisplayNum)}
           </div>
         </div>
         <div className={styles.card}>
-          <div className={styles.cardLabel} title="収支残金（収入−変動費−設定の固定費）">
+          <div
+            className={styles.cardLabel}
+            title="収入 − 支出（今月）。支出は変動費と設定の固定費の合計と一致します。"
+          >
             残金（今月あといくら）
           </div>
           <div
