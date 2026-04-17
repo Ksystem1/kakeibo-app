@@ -70,21 +70,28 @@ def flood_transparent_edge(img: Image.Image) -> Image.Image:
 
 
 def main() -> int:
-    root = Path(__file__).resolve().parents[1] / "public" / "skins" / "Tmp01"
-    if not root.is_dir():
-        print(f"Missing: {root}", file=sys.stderr)
+    skins_root = Path(__file__).resolve().parents[1] / "public" / "skins"
+    if not skins_root.is_dir():
+        print(f"Missing: {skins_root}", file=sys.stderr)
         return 1
 
-    pngs = sorted(root.glob("*.png"))
-    if not pngs:
-        print("No PNG files", file=sys.stderr)
-        return 1
+    target_ids = sys.argv[1:] if len(sys.argv) > 1 else ["Tmp01"]
+    for skin_id in target_ids:
+        root = skins_root / skin_id
+        if not root.is_dir():
+            print(f"Skip (missing): {root}")
+            continue
 
-    for path in pngs:
-        im = Image.open(path)
-        out = flood_transparent_edge(im)
-        out.save(path, format="PNG", optimize=True)
-        print(f"OK {path.name}")
+        pngs = sorted(root.glob("*.png"))
+        if not pngs:
+            print(f"Skip (no png): {root}")
+            continue
+
+        for path in pngs:
+            im = Image.open(path)
+            out = flood_transparent_edge(im)
+            out.save(path, format="PNG", optimize=True)
+            print(f"OK {skin_id}/{path.name}")
 
     return 0
 
