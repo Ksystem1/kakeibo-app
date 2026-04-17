@@ -318,7 +318,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         const results = await Promise.all(
           urls.map(async (url) => {
             const res = await fetch(url, { method: "GET", cache: "no-store" });
-            return res.ok;
+            if (!res.ok) return false;
+            const contentType = String(res.headers.get("content-type") ?? "").toLowerCase();
+            // CloudFront の SPA 404 変換で HTML(200) が返るケースを除外する。
+            return contentType.startsWith("image/");
           }),
         );
         return results.every(Boolean);

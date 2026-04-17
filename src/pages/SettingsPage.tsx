@@ -453,7 +453,9 @@ export function SettingsPage() {
             className={styles.modeRow}
             style={{ marginTop: "0.35rem", flexWrap: "wrap", gap: "0.4rem" }}
           >
-            {navPremiumVariantOptions.map((v) => (
+            {navPremiumVariantOptions.map((v) => {
+              const preview = buildNavIconPaths(v.id);
+              return (
               <button
                 key={v.id}
                 type="button"
@@ -461,10 +463,31 @@ export function SettingsPage() {
                 aria-pressed={v.selected}
                 aria-label={`${v.label}のスキンを適用`}
                 onClick={() => void setNavSkinId(v.id)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                }}
               >
+                <img
+                  src={preview.dashboard}
+                  alt=""
+                  aria-hidden="true"
+                  loading="lazy"
+                  width={28}
+                  height={28}
+                  style={{ width: 28, height: 28, borderRadius: 6, objectFit: "contain" }}
+                  onError={(ev) => {
+                    const img = ev.currentTarget;
+                    if (img.dataset.fallbackApplied === "1") return;
+                    img.dataset.fallbackApplied = "1";
+                    img.src = defaultNavPreviewIcons.dashboard;
+                  }}
+                />
                 {v.label}
               </button>
-            ))}
+              );
+            })}
           </div>
         ) : null}
         {token && effectiveUser ? (

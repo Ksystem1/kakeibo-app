@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
+import { buildNavIconPaths, DEFAULT_NAV_SKIN_ID, type NavIconPaths } from "../config/navSkins";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { getAuthMe, normalizeAuthContextUser } from "../lib/api";
 import "./AppLayout.nav.css";
@@ -64,6 +65,14 @@ function MobileInlineOutlet(props: {
 export function AppLayout() {
   const { token, user, setUser, logout } = useAuth();
   const { navIconPaths } = useSettings();
+  const defaultNavIconPaths = buildNavIconPaths(DEFAULT_NAV_SKIN_ID);
+  const withDefaultIconFallback =
+    (key: keyof NavIconPaths) => (ev: React.SyntheticEvent<HTMLImageElement>) => {
+      const img = ev.currentTarget;
+      if (img.dataset.fallbackApplied === "1") return;
+      img.dataset.fallbackApplied = "1";
+      img.src = defaultNavIconPaths[key];
+    };
   const navigate = useNavigate();
   const mobile = useIsMobile();
   const location = useLocation();
@@ -255,7 +264,7 @@ export function AppLayout() {
                 aria-label="ダッシュボード"
                 onClick={onMobileIconNavClick("/dashboard")}
               >
-                <img className="nav-icon-img" src={navIconPaths.dashboard} alt="" aria-hidden="true" />
+                <img className="nav-icon-img" src={navIconPaths.dashboard} alt="" aria-hidden="true" onError={withDefaultIconFallback("dashboard")} />
               </NavLink>
               {useMobileInlineOutlet ? (
                 <MobileInlineOutlet
@@ -271,7 +280,7 @@ export function AppLayout() {
                 aria-label="家計簿"
                 onClick={onMobileIconNavClick("/", true)}
               >
-                <img className="nav-icon-img" src={navIconPaths.kakeibo} alt="" aria-hidden="true" />
+                <img className="nav-icon-img" src={navIconPaths.kakeibo} alt="" aria-hidden="true" onError={withDefaultIconFallback("kakeibo")} />
               </NavLink>
               {useMobileInlineOutlet ? (
                 <MobileInlineOutlet
@@ -287,7 +296,7 @@ export function AppLayout() {
                 aria-label="レシート"
                 onClick={onMobileIconNavClick("/receipt")}
               >
-                <img className="nav-icon-img" src={navIconPaths.receipt} alt="" aria-hidden="true" />
+                <img className="nav-icon-img" src={navIconPaths.receipt} alt="" aria-hidden="true" onError={withDefaultIconFallback("receipt")} />
               </NavLink>
               {useMobileInlineOutlet ? (
                 <MobileInlineOutlet
@@ -298,7 +307,7 @@ export function AppLayout() {
               ) : null}
               {!mobile ? (
                 <NavLink to="/import" className={navIconLinkClassName} aria-label="CSV取込（PC）">
-                  <img className="nav-icon-img" src={navIconPaths.csvPc} alt="" aria-hidden="true" />
+                  <img className="nav-icon-img" src={navIconPaths.csvPc} alt="" aria-hidden="true" onError={withDefaultIconFallback("csvPc")} />
                 </NavLink>
               ) : null}
               {useMobileInlineOutlet ? (
@@ -314,7 +323,7 @@ export function AppLayout() {
                 aria-label="設定"
                 onClick={onMobileIconNavClick("/settings")}
               >
-                <img className="nav-icon-img" src={navIconPaths.settings} alt="" aria-hidden="true" />
+                <img className="nav-icon-img" src={navIconPaths.settings} alt="" aria-hidden="true" onError={withDefaultIconFallback("settings")} />
               </NavLink>
               {useMobileInlineOutlet ? (
                 <MobileInlineOutlet
@@ -332,7 +341,7 @@ export function AppLayout() {
                   aria-label="管理"
                   onClick={onMobileIconNavClick("/admin")}
                 >
-                  <img className="nav-icon-img" src={navIconPaths.admin} alt="" aria-hidden="true" />
+                  <img className="nav-icon-img" src={navIconPaths.admin} alt="" aria-hidden="true" onError={withDefaultIconFallback("admin")} />
                 </NavLink>
               ) : null}
               {useMobileInlineOutlet &&
