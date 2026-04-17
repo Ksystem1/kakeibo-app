@@ -277,14 +277,14 @@ export function KakeiboDashboard() {
   const fixedCostForMonth = fixedCostItemsForMonth.reduce((acc, x) => acc + Number(x.amount || 0), 0);
   const fixedCostForSpend =
     Number.isFinite(fixedCostForMonth) && fixedCostForMonth > 0 ? fixedCostForMonth : 0;
-  /** 変動費（API／当月取引）が0の月は固定費を支出合計に含めない */
-  const applyFixedToSpend = expenseTotalNum > 0;
-  /** カード「支出（今月）」: 変動費があれば設定の固定費月額を加算 */
+  /** 収入も変動費も0の月は固定費を支出合計に含めない */
+  const applyFixedToSpend = incomeTotalNum > 0 || expenseTotalNum > 0;
+  /** カード「支出（今月）」: 収入または変動費がある月は設定の固定費月額を加算 */
   const expenseWithFixedDisplayNum =
     expenseTotalNum + (applyFixedToSpend ? fixedCostForSpend : 0);
   const balanceNum = (() => {
     if (!summary) {
-      const useFixed = totals.expense > 0;
+      const useFixed = totals.income > 0 || totals.expense > 0;
       return totals.income - totals.expense - (useFixed ? fixedCostForSpend : 0);
     }
     const apiNet = numAmount(summary.netMonthlyBalance as string | number);
@@ -570,7 +570,7 @@ export function KakeiboDashboard() {
         <div className={`${styles.card} ${styles.cardExpense}`}>
           <div
             className={styles.cardLabel}
-            title="変動費（家計簿）が1円でもある月は、ここに設定画面の固定費（月額合計）を加えた合計です。変動費が無い月は固定費を含めません。"
+            title="収入または変動費（家計簿）のどちらかが0より大きい月は、ここに設定画面の固定費（月額合計）を加えた合計です。収入も変動費も無い月は固定費を含めません。"
           >
             支出（今月）
           </div>
@@ -581,7 +581,7 @@ export function KakeiboDashboard() {
         <div className={styles.card}>
           <div
             className={styles.cardLabel}
-            title="収入 − 支出（今月）。変動費がある月のみ支出に固定費を含め、APIの収支残金と一致します。"
+            title="収入 − 支出（今月）。収入または変動費がある月のみ支出に固定費を含め、APIの収支残金と一致します。"
           >
             残金（今月あといくら）
           </div>

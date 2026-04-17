@@ -39,7 +39,8 @@ function buildClientFallback(
   const q = String(question ?? "");
   const lower = q.toLowerCase();
   const fixed = Number(summary.fixedCostFromSettings ?? 0);
-  const fixedInNet = summary.expenseTotal > 0 ? fixed : 0;
+  const fixedInNet =
+    summary.incomeTotal > 0 || summary.expenseTotal > 0 ? fixed : 0;
   const rest =
     summary.netMonthlyBalance != null && Number.isFinite(summary.netMonthlyBalance)
       ? Math.round(summary.netMonthlyBalance)

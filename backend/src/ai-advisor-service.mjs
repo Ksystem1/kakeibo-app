@@ -91,7 +91,7 @@ function buildPrompt(message, context) {
   const income = Number(context?.incomeTotal ?? 0);
   const expense = Number(context?.expenseTotal ?? 0);
   const fixedFromSettings = Number(context?.fixedCostFromSettings ?? 0);
-  const fixedInNet = expense > 0 ? fixedFromSettings : 0;
+  const fixedInNet = income > 0 || expense > 0 ? fixedFromSettings : 0;
   const netMonthly =
     context?.netMonthlyBalance != null && Number.isFinite(Number(context.netMonthlyBalance))
       ? Math.round(Number(context.netMonthlyBalance))
@@ -125,7 +125,7 @@ function buildPrompt(message, context) {
     `収入合計: ${income.toLocaleString("ja-JP")}円`,
     `変動費支出（家計簿・「固定費」カテゴリの取引は除外済み）: ${expense.toLocaleString("ja-JP")}円`,
     `設定の固定費（月額合計）: ${fixedFromSettings.toLocaleString("ja-JP")}円`,
-    `収支残金（変動費が0円の月は固定費を差し引かない。それ以外は収入−変動費−設定固定費。負もあり得ます）: ${remaining.toLocaleString("ja-JP")}円`,
+    `収支残金（収入も変動費も0円の月は固定費を差し引かない。それ以外は収入−変動費−設定固定費。負もあり得ます）: ${remaining.toLocaleString("ja-JP")}円`,
     `支出カテゴリ上位（要約）: ${topReadable || "（データなし）"}`,
     `支出カテゴリ上位（機械可読・多い順）: ${JSON.stringify(top.slice(0, 10))}`,
     `直近会話: ${JSON.stringify(history)}`,
