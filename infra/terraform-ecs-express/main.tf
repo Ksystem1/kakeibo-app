@@ -458,9 +458,10 @@ resource "aws_ecs_service" "this" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = var.private_subnet_ids
+    # NAT Gateway 廃止後も外部APIへ到達できるよう、Public Subnet + Public IP で実行
+    subnets          = var.public_subnet_ids
     security_groups  = [aws_security_group.ecs_service.id]
-    assign_public_ip = false
+    assign_public_ip = true
   }
 
   load_balancer {
