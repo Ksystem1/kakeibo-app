@@ -275,23 +275,24 @@ export function KakeiboDashboard() {
     : totals.expense;
   const fixedCostItemsForMonth = getEffectiveFixedCostsForMonth(fixedCostsByMonth, ym);
   const fixedCostForMonth = fixedCostItemsForMonth.reduce((acc, x) => acc + Number(x.amount || 0), 0);
-  /** カード「支出（今月）」: 変動費（API）＋設定の固定費合計 */
+  const fixedCostForSpend =
+    Number.isFinite(fixedCostForMonth) && fixedCostForMonth > 0 ? fixedCostForMonth : 0;
+  /** 変動費（API／当月取引）が0の月は固定費を支出合計に含めない */
+  const applyFixedToSpend = expenseTotalNum > 0;
+  /** カード「支出（今月）」: 変動費があれば設定の固定費月額を加算 */
   const expenseWithFixedDisplayNum =
-    expenseTotalNum + (Number.isFinite(fixedCostForMonth) ? fixedCostForMonth : 0);
+    expenseTotalNum + (applyFixedToSpend ? fixedCostForSpend : 0);
   const balanceNum = (() => {
     if (!summary) {
-      return (
-        totals.income -
-        totals.expense -
-        (Number.isFinite(fixedCostForMonth) ? fixedCostForMonth : 0)
-      );
+      const useFixed = totals.expense > 0;
+      return totals.income - totals.expense - (useFixed ? fixedCostForSpend : 0);
     }
     const apiNet = numAmount(summary.netMonthlyBalance as string | number);
     if (Number.isFinite(apiNet)) return apiNet;
     return (
       incomeTotalNum -
       expenseTotalNum -
-      (Number.isFinite(fixedCostForMonth) ? fixedCostForMonth : 0)
+      (applyFixedToSpend ? fixedCostForSpend : 0)
     );
   })();
   const expenseRowsOrdered = useMemo(() => {
@@ -569,7 +570,7 @@ export function KakeiboDashboard() {
         <div className={`${styles.card} ${styles.cardExpense}`}>
           <div
             className={styles.cardLabel}
-            title="家計簿から集計した変動費に、設定画面の固定費（月額合計）を加えた今月の支出合計です。"
+            title="変動費（家計簿）が1円でもある月は、ここに設定画面の固定費（月額合計）を加えた合計です。変動費が無い月は固定費を含めません。"
           >
             支出（今月）
           </div>
@@ -580,7 +581,7 @@ export function KakeiboDashboard() {
         <div className={styles.card}>
           <div
             className={styles.cardLabel}
-            title="収入 − 支出（今月）。支出は変動費と設定の固定費の合計と一致します。"
+            title="収入 − 支出（今月）。変動費がある月のみ支出に固定費を含め、APIの収支残金と一致します。"
           >
             残金（今月あといくら）
           </div>

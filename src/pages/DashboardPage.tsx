@@ -60,7 +60,9 @@ function netMonthlyFromSummary(s: MonthSummaryLike | null): number {
   if (s.netMonthlyBalance != null && s.netMonthlyBalance !== "") {
     return num(s.netMonthlyBalance);
   }
-  return num(s.incomeTotal) - num(s.expenseTotal) - num(s.fixedCostFromSettings);
+  const exp = num(s.expenseTotal);
+  const fixed = exp > 0 ? num(s.fixedCostFromSettings) : 0;
+  return num(s.incomeTotal) - exp - fixed;
 }
 
 export function DashboardPage() {

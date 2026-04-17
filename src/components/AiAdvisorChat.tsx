@@ -39,10 +39,11 @@ function buildClientFallback(
   const q = String(question ?? "");
   const lower = q.toLowerCase();
   const fixed = Number(summary.fixedCostFromSettings ?? 0);
+  const fixedInNet = summary.expenseTotal > 0 ? fixed : 0;
   const rest =
     summary.netMonthlyBalance != null && Number.isFinite(summary.netMonthlyBalance)
       ? Math.round(summary.netMonthlyBalance)
-      : Math.max(0, Math.round(summary.incomeTotal - summary.expenseTotal - fixed));
+      : Math.max(0, Math.round(summary.incomeTotal - summary.expenseTotal - fixedInNet));
   if (q.includes("解析") || q.includes("読み取り") || q.includes("読取")) {
     return "レシート画面の「レシート取込」から画像を選ぶと、合計・日付・カテゴリ候補が自動入力されます。内容を確認して「登録」を押すと保存できます。";
   }

@@ -142,10 +142,11 @@ function buildAdvisorFallbackReply(message, ctx) {
   const income = Number(ctx?.incomeTotal ?? 0);
   const expense = Number(ctx?.expenseTotal ?? 0);
   const fixed = Number(ctx?.fixedCostFromSettings ?? 0);
+  const fixedInNet = expense > 0 ? fixed : 0;
   const netRaw =
     ctx?.netMonthlyBalance != null && Number.isFinite(Number(ctx.netMonthlyBalance))
       ? Number(ctx.netMonthlyBalance)
-      : income - expense - fixed;
+      : income - expense - fixedInNet;
   const rest = Math.max(0, Math.round(netRaw));
   const top = Array.isArray(ctx?.topCategories) ? ctx.topCategories[0] : null;
   const topName = top?.name ? String(top.name) : "変動費";
@@ -2195,7 +2196,9 @@ export async function handleApiRequest(req, options = {}) {
         }
         const incNum = Number(sumI?.total ?? 0);
         const varExpNum = Number(sumE?.total ?? 0);
-        const netMonthlyBalance = incNum - varExpNum - fixedCostFromSettings;
+        /** 品目別・支出（変動費）が1件も無い月は固定費を収支に含めない */
+        const fixedInNet = varExpNum > 0 ? fixedCostFromSettings : 0;
+        const netMonthlyBalance = incNum - varExpNum - fixedInNet;
         return json(
           200,
           {

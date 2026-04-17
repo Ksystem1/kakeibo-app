@@ -555,7 +555,7 @@ export async function getMonthSummary(
     incomeTotal: unknown;
     /** 設定画面の家族固定費（その月に適用する月額合計） */
     fixedCostFromSettings?: unknown;
-    /** 収入 − 変動費支出 − fixedCostFromSettings */
+    /** 収入 − 変動費支出 −（変動費が0より大きい月のみ）fixedCostFromSettings */
     netMonthlyBalance?: unknown;
     expensesByCategory: Array<{
       category_id: number | null;
