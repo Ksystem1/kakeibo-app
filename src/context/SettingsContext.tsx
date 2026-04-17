@@ -346,10 +346,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!navSkinAssetsChecked) return;
-    if (!availableNavSkinIds.includes(navSkinId)) {
+    // アセット可用性の一時失敗で選択中スキンを戻さない。
+    // 画像欠損時は表示側の onError フォールバックで吸収する。
+    if (!isKnownNavSkinId(navSkinId)) {
       setNavSkinIdState(DEFAULT_NAV_SKIN_ID);
     }
-  }, [availableNavSkinIds, navSkinAssetsChecked, navSkinId]);
+  }, [navSkinAssetsChecked, navSkinId]);
 
   /**
    * 認証状態の遷移（ログイン直後/再ログイン直後）の揺れでスキンを戻さない。
@@ -430,14 +432,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setNavSkinId = useCallback(
     (id: string) => {
       if (!isKnownNavSkinId(id)) return false;
-      if (!availableNavSkinIds.includes(id)) return false;
       const unlocked = id === DEFAULT_NAV_SKIN_ID || premiumNavUnlocked;
       if (!unlocked) return false;
       setNavSkinIdState(id);
       setManualDefaultSelected(id === DEFAULT_NAV_SKIN_ID);
       return true;
     },
-    [availableNavSkinIds, premiumNavUnlocked],
+    [premiumNavUnlocked],
   );
 
   const mergeOwnedNavSkinsFromServer = useCallback((ids: readonly string[]) => {
@@ -455,7 +456,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       NAV_SKIN_TIER_CATALOG.filter((s) => {
         if (s.id === DEFAULT_NAV_SKIN_ID) return availableNavSkinIds.includes(DEFAULT_NAV_SKIN_ID);
         if (s.id === PREMIUM_NAV_SKIN_ID) {
-          return PREMIUM_VARIANT_SKIN_IDS.some((pid) => availableNavSkinIds.includes(pid));
+          return true;
         }
         return false;
       }).map((s) => ({
@@ -473,14 +474,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const navPremiumVariantOptions = useMemo<NavSkinOptionView[]>(
     () =>
-      PREMIUM_VARIANT_SKIN_IDS.filter((id) => availableNavSkinIds.includes(id)).map((id) => ({
+      PREMIUM_VARIANT_SKIN_IDS.map((id) => ({
         id,
         label: getPremiumVariantLabel(id),
         description: undefined,
         unlocked: premiumNavUnlocked,
         selected: navSkinId === id,
       })),
-    [availableNavSkinIds, navSkinId, premiumNavUnlocked],
+    [navSkinId, premiumNavUnlocked],
   );
 
   const setFontScale = (n: number) => {

@@ -436,7 +436,7 @@ export function SettingsPage() {
                   }
                   if (opt.id === PREMIUM_NAV_SKIN_ID) {
                     const first = firstAvailablePremiumVariantId(availableNavSkinIds);
-                    if (first) void setNavSkinId(first);
+                    void setNavSkinId(first ?? PREMIUM_NAV_SKIN_ID);
                     return;
                   }
                   setNavSkinId(opt.id);
@@ -667,7 +667,7 @@ export function SettingsPage() {
                           }
                           if (opt.id === PREMIUM_NAV_SKIN_ID) {
                             const first = firstAvailablePremiumVariantId(availableNavSkinIds);
-                            if (first) void setNavSkinId(first);
+                            void setNavSkinId(first ?? PREMIUM_NAV_SKIN_ID);
                             return;
                           }
                           setNavSkinId(opt.id);
