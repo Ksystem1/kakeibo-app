@@ -11,8 +11,8 @@ export const DEFAULT_NAV_SKIN_ID = "Tmp01";
 /** プレミアム枠の代表ID（上位「プレミアム」ボタンと紐づく） */
 export const PREMIUM_NAV_SKIN_ID = "Tmp02";
 
-/** プレミアムで選択可能なフォルダ（Tmp04 追加時はここに足す） */
-export const PREMIUM_VARIANT_SKIN_IDS = ["Tmp02", "Tmp03", "Tmp04"] as const;
+/** プレミアムで選択可能なフォルダ（新規追加時はここに足す） */
+export const PREMIUM_VARIANT_SKIN_IDS = ["Tmp02", "Tmp03", "Tmp04", "Tmp05", "Tmp06"] as const;
 
 /** @deprecated PREMIUM_VARIANT_SKIN_IDS を使用 */
 export const PREMIUM_NAV_SKIN_IDS = PREMIUM_VARIANT_SKIN_IDS;
@@ -52,6 +52,12 @@ export function getPremiumVariantLabel(id: string): string {
       return "ハワイ風";
     case "Tmp03":
       return "ロボット風";
+    case "Tmp04":
+      return "古代風";
+    case "Tmp05":
+      return "ギャル風";
+    case "Tmp06":
+      return "クラシック風";
     default:
       return id;
   }

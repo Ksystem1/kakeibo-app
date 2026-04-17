@@ -595,7 +595,22 @@ export function KakeiboDashboard() {
       ) : null}
       {fixedCostItemsForMonth.length > 0 ? (
         <>
-          <h2 className={styles.sectionTitle}>固定費明細</h2>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "0.5rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <h2 className={styles.sectionTitle} style={{ marginBottom: 0 }}>
+              固定費明細
+            </h2>
+            <Link to="/settings#fixed-cost-settings" className={styles.btn}>
+              固定費設定（全月共通）へ
+            </Link>
+          </div>
           <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
             <table className={styles.table}>
               <thead>

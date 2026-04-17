@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { MetricCard } from "../components/demo/MetricCard";
 import { RecentTransactions } from "../components/demo/RecentTransactions";
 import { SpendingChart } from "../components/demo/SpendingChart";
-import { getMonthSummary, getTransactions } from "../lib/api";
+import { getBalanceSummary, getMonthSummary, getTransactions } from "../lib/api";
 
 type TxRow = {
   id: number;
@@ -69,11 +69,11 @@ export function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [sum, prev, tx, txToMonth] = await Promise.all([
+      const [sum, prev, tx, balanceToMonth] = await Promise.all([
         getMonthSummary(ym, { scope: "family" }),
         getMonthSummary(prevYm(ym), { scope: "family" }),
         getTransactions(from, to, { scope: "family" }),
-        getTransactions(undefined, to, { scope: "family" }),
+        getBalanceSummary(to, { scope: "family" }),
       ]);
       setSummary({
         incomeTotal: sum.incomeTotal,
@@ -86,13 +86,7 @@ export function DashboardPage() {
       });
       const monthTx = (tx.items ?? []) as TxRow[];
       setTransactions(monthTx);
-      const cumulative = ((txToMonth.items ?? []) as TxRow[]).reduce((acc, t) => {
-        const amount = num(t.amount);
-        if (t.kind === "income") return acc + amount;
-        if (t.kind === "expense") return acc - amount;
-        return acc;
-      }, 0);
-      setTotalBalance(cumulative);
+      setTotalBalance(num(balanceToMonth.balance));
     } catch (e) {
       setError(e instanceof Error ? e.message : "ダッシュボードの読込に失敗しました");
       setSummary(null);

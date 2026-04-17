@@ -86,9 +86,10 @@ export function SettingsPage() {
 
   useEffect(() => {
     const h = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
-    if (location.pathname !== "/settings" || h !== "pwa-install-help") return;
+    if (location.pathname !== "/settings") return;
+    if (h !== "pwa-install-help" && h !== "fixed-cost-settings") return;
     requestAnimationFrame(() => {
-      document.getElementById("pwa-install-help")?.scrollIntoView({
+      document.getElementById(h)?.scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
@@ -733,7 +734,11 @@ export function SettingsPage() {
         </div>
       ) : null}
 
-      <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 720 }}>
+      <div
+        id="fixed-cost-settings"
+        className={styles.settingsPanel}
+        style={{ marginTop: "1.5rem", maxWidth: 720 }}
+      >
         <h2 className={styles.sectionTitle}>固定費設定（全月共通）</h2>
         {!getApiBaseUrl() || !canSendAuthenticatedRequest(token) ? (
           <p className={styles.reclassifyHint}>

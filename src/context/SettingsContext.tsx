@@ -34,6 +34,7 @@ const THEME_KEY = "kakeibo_theme_mode";
 const FIXED_COSTS_KEY = "kakeibo_fixed_costs_by_month";
 const GLOBAL_FIXED_COSTS_KEY = "__all__";
 const NAV_SKIN_KEY = "kakeibo_nav_skin_id";
+const NAV_SKIN_MANUAL_DEFAULT_KEY = "kakeibo_nav_skin_manual_default";
 const OWNED_NAV_SKINS_KEY = "kakeibo_owned_nav_skins";
 const NAV_ICON_FILE_KEYS: Array<keyof NavIconPaths> = [
   "dashboard",
@@ -62,6 +63,14 @@ function readPersistedNavSkinId(): string {
     return raw && isKnownNavSkinId(raw) ? raw : DEFAULT_NAV_SKIN_ID;
   } catch {
     return DEFAULT_NAV_SKIN_ID;
+  }
+}
+
+function readManualDefaultSelected(): boolean {
+  try {
+    return localStorage.getItem(NAV_SKIN_MANUAL_DEFAULT_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -235,6 +244,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const raw = readPersistedNavSkinId();
     return isKnownNavSkinId(raw) ? raw : DEFAULT_NAV_SKIN_ID;
   });
+  const [manualDefaultSelected, setManualDefaultSelected] = useState<boolean>(() =>
+    readManualDefaultSelected(),
+  );
 
   const [fixedCostsByMonth, setFixedCostsByMonth] = useState<
     Record<string, FixedCostItem[]>
@@ -286,6 +298,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [navSkinId]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(
+        NAV_SKIN_MANUAL_DEFAULT_KEY,
+        manualDefaultSelected ? "1" : "0",
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [manualDefaultSelected]);
+
+  useEffect(() => {
     let cancelled = false;
     const candidates = [DEFAULT_NAV_SKIN_ID, ...PREMIUM_VARIANT_SKIN_IDS];
     const checkSkinAssets = async (skinId: string): Promise<boolean> => {
@@ -334,12 +357,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!navSkinAssetsChecked) return;
     if (!premiumNavUnlocked) return;
+    if (manualDefaultSelected) return;
     if (navSkinId !== DEFAULT_NAV_SKIN_ID) return;
     const firstPremium = firstAvailablePremiumVariantId(availableNavSkinIds);
     if (!firstPremium) return;
     setNavSkinIdState(firstPremium);
   }, [
     availableNavSkinIds,
+    manualDefaultSelected,
     navSkinAssetsChecked,
     navSkinId,
     premiumNavUnlocked,
@@ -406,6 +431,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       const unlocked = id === DEFAULT_NAV_SKIN_ID || premiumNavUnlocked;
       if (!unlocked) return false;
       setNavSkinIdState(id);
+      setManualDefaultSelected(id === DEFAULT_NAV_SKIN_ID);
       return true;
     },
     [availableNavSkinIds, premiumNavUnlocked],

@@ -2102,6 +2102,46 @@ export async function handleApiRequest(req, options = {}) {
         );
       }
 
+      case "GET /summary/balance": {
+        const to = String(q.to ?? "").slice(0, 10);
+        if (!to || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+          return json(
+            400,
+            { error: "to=YYYY-MM-DD が必要です" },
+            hdrs,
+            skipCors,
+          );
+        }
+        const familyScopeOnly = String(q.scope ?? "").toLowerCase() === "family";
+        const txWhereForScope = familyScopeOnly ? txWhereFamily : txWhere;
+        const txScopeParams = familyScopeOnly ? [userId] : [userId, userId];
+        const [[sumE]] = await pool.query(
+          `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
+           WHERE ${txWhereForScope}
+           AND t.transaction_date <= ? AND t.kind = 'expense'`,
+          [...txScopeParams, to],
+        );
+        const [[sumI]] = await pool.query(
+          `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
+           WHERE ${txWhereForScope}
+           AND t.transaction_date <= ? AND t.kind = 'income'`,
+          [...txScopeParams, to],
+        );
+        const expenseTotal = Number(sumE?.total ?? 0);
+        const incomeTotal = Number(sumI?.total ?? 0);
+        return json(
+          200,
+          {
+            to,
+            expenseTotal,
+            incomeTotal,
+            balance: incomeTotal - expenseTotal,
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+
       case "GET /settings/fixed-costs": {
         if (!familyId) {
           return json(

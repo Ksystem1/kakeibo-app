@@ -566,6 +566,23 @@ export async function getMonthSummary(
   }>(res);
 }
 
+export async function getBalanceSummary(
+  to: string,
+  options?: { scope?: "family" | "all" },
+) {
+  const q = new URLSearchParams({ to });
+  if (options?.scope === "family") q.set("scope", "family");
+  const res = await apiFetch(`${BASE}/summary/balance?${q}`, {
+    headers: buildHeaders(),
+  });
+  return parse<{
+    to: string;
+    expenseTotal: number;
+    incomeTotal: number;
+    balance: number;
+  }>(res);
+}
+
 /** 家族共通の固定費（ログインユーザの default family） */
 export async function getFamilyFixedCosts() {
   const res = await apiFetch(`${BASE}/settings/fixed-costs`, {
