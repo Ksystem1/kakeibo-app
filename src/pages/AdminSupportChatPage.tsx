@@ -339,23 +339,21 @@ export function AdminSupportChatPage() {
                     {needs ? <span title="要返信">🔔 </span> : null}
                     {f.family_name}
                   </div>
-                  <div
-                    style={{
-                      fontSize: "0.76rem",
-                      color: "var(--text-muted)",
-                      lineHeight: 1.45,
-                      marginBottom: "0.25rem",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, marginBottom: "0.08rem" }}>メンバー</div>
-                    {(Array.isArray(f.members) ? f.members : []).length === 0 ? (
-                      <span>（メンバーなし）</span>
-                    ) : (
-                      (Array.isArray(f.members) ? f.members : []).map((m) => (
+                  {(Array.isArray(f.members) ? f.members : []).length > 0 ? (
+                    <div
+                      style={{
+                        fontSize: "0.76rem",
+                        color: "var(--text-muted)",
+                        lineHeight: 1.45,
+                        marginBottom: "0.25rem",
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: "0.08rem" }}>メンバー</div>
+                      {(Array.isArray(f.members) ? f.members : []).map((m) => (
                         <div key={m.user_id}>{formatMemberLoginLine(m)}</div>
-                      ))
-                    )}
-                  </div>
+                      ))}
+                    </div>
+                  ) : null}
                   {f.last_message ? (
                     <>
                       <div
