@@ -251,6 +251,17 @@ export function SettingsPage() {
     };
   }, [authUser, billingStatus]);
 
+  const premiumSubscriptionPrimaryLine = useMemo(
+    () =>
+      effectiveUser ? formatPremiumSubscriptionPrimaryStatus(effectiveUser).trim() : "",
+    [effectiveUser],
+  );
+  const premiumSubscriptionSummaryLine = useMemo(
+    () =>
+      effectiveUser ? formatSettingsSubscriptionSummary(effectiveUser).trim() : "",
+    [effectiveUser],
+  );
+
   const supportFamilyIdForUnread =
     effectiveUser?.familyId != null && Number.isFinite(Number(effectiveUser.familyId))
       ? Number(effectiveUser.familyId)
@@ -516,19 +527,18 @@ export function SettingsPage() {
                 flexWrap: "wrap",
                 gap: "0.5rem",
                 alignItems: "center",
-                justifyContent: "space-between",
+                justifyContent: "flex-start",
               }}
             >
-              <span style={{ flex: "1 1 auto", minWidth: "10rem", fontWeight: 600 }}>
-                {formatPremiumSubscriptionPrimaryStatus(effectiveUser)}
-              </span>
+              {premiumSubscriptionPrimaryLine ? (
+                <span style={{ fontWeight: 600 }}>{premiumSubscriptionPrimaryLine}</span>
+              ) : null}
               {isSubscriptionServiceSubscribedClient(effectiveUser) &&
               getApiBaseUrl() &&
               canSendAuthenticatedRequest(token) ? (
                 <button
                   type="button"
                   className={styles.btn}
-                  style={{ flex: "0 0 auto" }}
                   disabled={portalBusy}
                   onClick={async () => {
                     setPortalMessage(null);
@@ -553,9 +563,11 @@ export function SettingsPage() {
                 </button>
               ) : null}
             </div>
-            <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
-              {formatSettingsSubscriptionSummary(effectiveUser)}
-            </p>
+            {premiumSubscriptionSummaryLine ? (
+              <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+                {premiumSubscriptionSummaryLine}
+              </p>
+            ) : null}
             {portalMessage ? (
               <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
                 {portalMessage}
