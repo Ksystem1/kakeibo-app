@@ -13,6 +13,12 @@ import {
   ADMIN_SUBSCRIPTION_STATUSES,
   subscriptionStatusLabelJa,
 } from "../lib/subscriptionStatusLabels";
+import {
+  isValidNewPassword,
+  NEW_PASSWORD_ERROR_MESSAGE,
+  NEW_PASSWORD_LABEL,
+  NEW_PASSWORD_TOOLTIP,
+} from "../lib/passwordPolicy";
 
 type AdminUser = {
   id: number;
@@ -28,7 +34,6 @@ type AdminUser = {
   family_peers: string | null;
 };
 
-const PW_RE = /^[a-zA-Z0-9]{8,}$/;
 const LOGIN_ID_RE = /^[a-zA-Z0-9]{1,15}$/;
 const NAME_RE = /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z0-9]+$/u;
 
@@ -223,8 +228,8 @@ export function AdminPage() {
       setError("有効なメールアドレスを入力してください。");
       return;
     }
-    if (!PW_RE.test(newPassword)) {
-      setError("パスワードは英数字8文字以上にしてください。");
+    if (!isValidNewPassword(newPassword)) {
+      setError(NEW_PASSWORD_ERROR_MESSAGE);
       return;
     }
     if (loginName && !LOGIN_ID_RE.test(loginName)) {
@@ -381,7 +386,10 @@ export function AdminPage() {
           />
           <input
             type="password"
-            placeholder="初期パスワード（英数字8文字以上）"
+            autoComplete="new-password"
+            title={NEW_PASSWORD_TOOLTIP}
+            placeholder={`初期パスワード（${NEW_PASSWORD_LABEL}）`}
+            maxLength={128}
             value={newPassword}
             disabled={creating}
             onChange={(e) => setNewPassword(e.target.value)}

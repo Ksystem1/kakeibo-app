@@ -1,11 +1,25 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-/** 英数字8文字以上（仕様①） */
-export const PASSWORD_REGEX = /^[a-zA-Z0-9]{8,}$/;
+/**
+ * 新規登録・パスワード再設定・管理者による新規ユーザー初期パスワード設定時のみ使用。
+ * ログイン時は検証しない（verifyPassword のみ）。
+ *
+ * 8〜128 文字、印字可能 ASCII のみ、英字・数字・記号（英数字以外）をそれぞれ1文字以上。
+ */
+const PRINTABLE_ASCII = /^[\x21-\x7E]+$/;
+
+/** @deprecated 互換のため残す。validatePassword を使用してください。 */
+export const PASSWORD_REGEX = PRINTABLE_ASCII;
 
 export function validatePassword(pw) {
-  return typeof pw === "string" && PASSWORD_REGEX.test(pw);
+  if (typeof pw !== "string") return false;
+  if (pw.length < 8 || pw.length > 128) return false;
+  if (!PRINTABLE_ASCII.test(pw)) return false;
+  if (!/[a-zA-Z]/.test(pw)) return false;
+  if (!/[0-9]/.test(pw)) return false;
+  if (!/[^A-Za-z0-9]/.test(pw)) return false;
+  return true;
 }
 
 export function normalizeHeaders(raw) {

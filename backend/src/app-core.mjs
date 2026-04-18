@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import { stripApiPathPrefix } from "./api-path.mjs";
 import { tryAuthRoutes, getDefaultFamilyId } from "./auth-routes.mjs";
 import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
-import { hashPassword, resolveUserId } from "./auth-logic.mjs";
+import { hashPassword, resolveUserId, validatePassword } from "./auth-logic.mjs";
 import { buildCorsHeaders } from "./cors-config.mjs";
 import { getPool, isRdsConfigured, pingDatabase } from "./db.mjs";
 import { createLogger } from "./logger.mjs";
@@ -1982,8 +1982,16 @@ export async function handleApiRequest(req, options = {}) {
       if (!email || !email.includes("@")) {
         return json(400, { error: "メールアドレスが不正です" }, hdrs, skipCors);
       }
-      if (!/^[a-zA-Z0-9]{8,}$/.test(password)) {
-        return json(400, { error: "パスワードは英数字8文字以上にしてください" }, hdrs, skipCors);
+      if (!validatePassword(password)) {
+        return json(
+          400,
+          {
+            error:
+              "パスワードは英数字記号8文字以上としてください。英字・数字・記号をそれぞれ1文字以上含めてください",
+          },
+          hdrs,
+          skipCors,
+        );
       }
       if (loginName && !/^[a-zA-Z0-9]{1,15}$/.test(loginName)) {
         return json(400, { error: "ログインIDは英数字のみ・最大15文字で入力してください" }, hdrs, skipCors);

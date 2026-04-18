@@ -78,7 +78,7 @@ export function LoginPage() {
             </div>
             <div className={styles.field}>
               <label className={styles.label} htmlFor="login-password">
-                パスワード（英数字8文字以上）
+                パスワード
               </label>
               <input
                 id="login-password"

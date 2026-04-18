@@ -4,8 +4,12 @@ import { useAuth } from "../context/AuthContext";
 import { normalizeAuthContextUser, registerRequest } from "../lib/api";
 import { AuthHeroAside } from "../components/AuthHeroAside";
 import styles from "../components/LoginScreen.module.css";
-
-const PW_RE = /^[a-zA-Z0-9]{8,}$/;
+import {
+  isValidNewPassword,
+  NEW_PASSWORD_ERROR_MESSAGE,
+  NEW_PASSWORD_LABEL,
+  NEW_PASSWORD_TOOLTIP,
+} from "../lib/passwordPolicy";
 const LOGIN_ID_RE = /^[a-zA-Z0-9]{1,15}$/;
 // 漢字・ひらがな・カタカナ・英数字（最大長は useState 側で制御）
 const NAME_RE = /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z0-9]+$/u;
@@ -40,8 +44,8 @@ export function RegisterPage() {
       setError("有効なメールアドレスを入力してください。");
       return;
     }
-    if (!PW_RE.test(password)) {
-      setError("パスワードは英数字8文字以上にしてください。");
+    if (!isValidNewPassword(password)) {
+      setError(NEW_PASSWORD_ERROR_MESSAGE);
       return;
     }
     if (loginName && !LOGIN_ID_RE.test(loginName)) {
@@ -154,13 +158,17 @@ export function RegisterPage() {
               />
             </div>
             <div className={styles.field}>
-              <label className={styles.label} htmlFor="reg-pw">
-                パスワード（英数字8文字以上）
+              <label className={styles.label} htmlFor="reg-pw" title={NEW_PASSWORD_TOOLTIP}>
+                パスワード（{NEW_PASSWORD_LABEL}）
               </label>
               <input
                 id="reg-pw"
                 className={styles.input}
                 type="password"
+                autoComplete="new-password"
+                title={NEW_PASSWORD_TOOLTIP}
+                placeholder={`${NEW_PASSWORD_LABEL}（例: Abcdef1!）`}
+                maxLength={128}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={submitting}

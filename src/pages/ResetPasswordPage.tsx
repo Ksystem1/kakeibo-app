@@ -2,8 +2,12 @@ import { FormEvent, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { resetPasswordRequest } from "../lib/api";
 import styles from "../components/LoginScreen.module.css";
-
-const PW_RE = /^[a-zA-Z0-9]{8,}$/;
+import {
+  isValidNewPassword,
+  NEW_PASSWORD_ERROR_MESSAGE,
+  NEW_PASSWORD_LABEL,
+  NEW_PASSWORD_TOOLTIP,
+} from "../lib/passwordPolicy";
 
 export function ResetPasswordPage() {
   const [params] = useSearchParams();
@@ -22,8 +26,8 @@ export function ResetPasswordPage() {
       setError("トークンを入力してください（メール内リンクから開いてください）。");
       return;
     }
-    if (!PW_RE.test(password)) {
-      setError("パスワードは英数字8文字以上にしてください。");
+    if (!isValidNewPassword(password)) {
+      setError(NEW_PASSWORD_ERROR_MESSAGE);
       return;
     }
     setLoading(true);
@@ -59,13 +63,17 @@ export function ResetPasswordPage() {
               />
             </div>
             <div className={styles.field}>
-              <label className={styles.label} htmlFor="rs-pw">
-                新パスワード（英数字8文字以上）
+              <label className={styles.label} htmlFor="rs-pw" title={NEW_PASSWORD_TOOLTIP}>
+                新パスワード（{NEW_PASSWORD_LABEL}）
               </label>
               <input
                 id="rs-pw"
                 className={styles.input}
                 type="password"
+                autoComplete="new-password"
+                title={NEW_PASSWORD_TOOLTIP}
+                placeholder={`${NEW_PASSWORD_LABEL}（例: Abcdef1!）`}
+                maxLength={128}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}

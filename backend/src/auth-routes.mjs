@@ -306,9 +306,15 @@ export async function tryAuthRoutes(req, ctx) {
         return json(400, { error: "メールアドレスが不正です" }, hdrs, skipCors);
       }
       if (!validatePassword(password)) {
-        return json(400, {
-          error: "パスワードは英数字8文字以上にしてください",
-        }, hdrs, skipCors);
+        return json(
+          400,
+          {
+            error:
+              "パスワードは英数字記号8文字以上としてください。英字・数字・記号をそれぞれ1文字以上含めてください",
+          },
+          hdrs,
+          skipCors,
+        );
       }
 
       const ph = await hashPassword(password);
@@ -630,10 +636,19 @@ export async function tryAuthRoutes(req, ctx) {
       }
       const token = String(b.token || "").trim();
       const password = String(b.password || "");
-      if (!token || !validatePassword(password)) {
-        return json(400, {
-          error: "トークンと新パスワード（英数字8文字以上）が必要です",
-        }, hdrs, skipCors);
+      if (!token) {
+        return json(400, { error: "再設定トークンが必要です" }, hdrs, skipCors);
+      }
+      if (!password || !validatePassword(password)) {
+        return json(
+          400,
+          {
+            error:
+              "パスワードは英数字記号8文字以上としてください。英字・数字・記号をそれぞれ1文字以上含めてください",
+          },
+          hdrs,
+          skipCors,
+        );
       }
 
       const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
