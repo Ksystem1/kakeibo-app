@@ -255,6 +255,28 @@ export function AppLayout() {
             </strong>
           </div>
           <HeaderAnnouncementBar text={headerAnnouncement} />
+          {token ? (
+            <NavLink
+              to="/support"
+              end
+              className={({ isActive }) =>
+                `header-support-entry${isActive ? " header-support-entry--active" : ""}`
+              }
+              aria-label={
+                supportChatUnread ? "運営サポート（運営からの未読メッセージがあります）" : "運営サポート"
+              }
+            >
+              <span className="header-support-entry__icon" aria-hidden>
+                💬
+              </span>
+              <span className="header-support-entry__label">
+                {mobile ? "サポート" : "運営サポート"}
+              </span>
+              {supportChatUnread ? (
+                <span className="header-support-entry__unread" title="運営からの未読があります" />
+              ) : null}
+            </NavLink>
+          ) : null}
           <div
             style={{
               display: "flex",
