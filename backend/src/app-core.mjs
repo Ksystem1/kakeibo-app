@@ -1900,13 +1900,42 @@ export async function handleApiRequest(req, options = {}) {
                GROUP BY family_id
              ) x ON m.family_id = x.family_id AND m.id = x.max_id
            ) lm ON lm.family_id = f.id
-           ORDER BY COALESCE(lm.created_at, f.updated_at, f.created_at) DESC, f.id DESC`,
+           ORDER BY f.id DESC`,
         );
+        const familyIds = rows
+          .map((r) => Number(r.family_id))
+          .filter((id) => Number.isFinite(id) && id > 0);
+        const membersByFamily = new Map();
+        if (familyIds.length > 0) {
+          const ph = familyIds.map(() => "?").join(",");
+          const [memRows] = await pool.query(
+            `SELECT fm.family_id, u.id AS user_id, u.display_name, u.login_name, u.email
+             FROM family_members fm
+             INNER JOIN users u ON u.id = fm.user_id
+             WHERE fm.family_id IN (${ph})
+             ORDER BY fm.family_id ASC, fm.id ASC`,
+            familyIds,
+          );
+          for (const mem of memRows) {
+            const fid = Number(mem.family_id);
+            if (!Number.isFinite(fid)) continue;
+            const list = membersByFamily.get(fid) ?? [];
+            list.push({
+              user_id: Number(mem.user_id),
+              display_name: mem.display_name == null ? null : String(mem.display_name),
+              login_name: mem.login_name == null ? null : String(mem.login_name),
+              email: String(mem.email ?? ""),
+            });
+            membersByFamily.set(fid, list);
+          }
+        }
         const items = rows.map((r) => {
           const lastAt = r.last_message_at;
+          const fid = Number(r.family_id);
           return {
-            family_id: Number(r.family_id),
+            family_id: fid,
             family_name: String(r.family_name ?? ""),
+            members: membersByFamily.get(fid) ?? [],
             last_message:
               r.last_message_id == null
                 ? null

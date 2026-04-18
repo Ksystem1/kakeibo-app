@@ -17,6 +17,19 @@ import {
 
 const PAGE_SIZE = 40;
 
+function formatMemberLoginLine(m: {
+  display_name: string | null;
+  login_name: string | null;
+  email: string;
+}): string {
+  const name = (m.display_name ?? "").trim() || "（表示名なし）";
+  const login = (m.login_name ?? "").trim();
+  if (login) return `${name} — ログイン: ${login}`;
+  const em = (m.email ?? "").trim();
+  if (em) return `${name} — ログイン: （未設定） / ${em}`;
+  return `${name} — ログイン: （未設定）`;
+}
+
 function formatListTime(iso: string | null | undefined): string {
   if (iso == null || iso === "") return "—";
   const d = new Date(iso);
@@ -258,7 +271,7 @@ export function AdminSupportChatPage() {
         className="admin-support-chat-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(240px, 320px) 1fr",
+          gridTemplateColumns: "minmax(280px, 400px) 1fr",
           gap: "1rem",
           alignItems: "stretch",
         }}
@@ -312,9 +325,36 @@ export function AdminSupportChatPage() {
                     color: "var(--text)",
                   }}
                 >
-                  <div style={{ fontWeight: 600, marginBottom: "0.2rem" }}>
+                  <div
+                    style={{
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                      color: "var(--text-muted)",
+                      marginBottom: "0.15rem",
+                    }}
+                  >
+                    家族ID: {f.family_id}
+                  </div>
+                  <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>
                     {needs ? <span title="要返信">🔔 </span> : null}
                     {f.family_name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.76rem",
+                      color: "var(--text-muted)",
+                      lineHeight: 1.45,
+                      marginBottom: "0.25rem",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: "0.08rem" }}>メンバー</div>
+                    {(Array.isArray(f.members) ? f.members : []).length === 0 ? (
+                      <span>（メンバーなし）</span>
+                    ) : (
+                      (Array.isArray(f.members) ? f.members : []).map((m) => (
+                        <div key={m.user_id}>{formatMemberLoginLine(m)}</div>
+                      ))
+                    )}
                   </div>
                   {f.last_message ? (
                     <>

@@ -888,9 +888,17 @@ export async function postSupportChatMessage(body: { body: string; family_id?: n
   return parse<{ message: SupportChatMessage }>(res);
 }
 
+export type AdminSupportChatFamilyMember = {
+  user_id: number;
+  display_name: string | null;
+  login_name: string | null;
+  email: string;
+};
+
 export type AdminSupportChatFamilyRow = {
   family_id: number;
   family_name: string;
+  members: AdminSupportChatFamilyMember[];
   last_message: null | {
     id: number;
     body: string;

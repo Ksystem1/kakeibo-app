@@ -254,7 +254,7 @@ export function AppLayout() {
               🐷 Kakeibo
             </strong>
           </div>
-          <HeaderAnnouncementBar text={headerAnnouncement} />
+          {!mobile ? <HeaderAnnouncementBar text={headerAnnouncement} /> : null}
           {token ? (
             <NavLink
               to="/support"
@@ -315,6 +315,11 @@ export function AppLayout() {
             ) : null}
           </div>
         </div>
+        {mobile && headerAnnouncement.trim() ? (
+          <div className="header-announcement-mobile-row">
+            <HeaderAnnouncementBar text={headerAnnouncement} />
+          </div>
+        ) : null}
         {/* 2段目: ナビゲーション */}
         <nav
           className={token && mobile ? "app-nav--mobile-column" : undefined}
