@@ -220,7 +220,16 @@ const RECEIPT_CATEGORY_KEYWORDS = {
     "スーパー",
     "コンビニ",
   ],
-  daily: ["ティッシュ", "洗剤", "シャンプー", "歯ブラシ", "トイレットペーパー", "日用品"],
+  daily: [
+    "ティッシュ",
+    "洗剤",
+    "シャンプー",
+    "リンス",
+    "コンディショナー",
+    "歯ブラシ",
+    "トイレットペーパー",
+    "日用品",
+  ],
   transport: ["電車", "バス", "タクシー", "駐車", "ガソリン", "高速", "ic"],
   utility: ["電気", "ガス", "水道", "通信", "wifi", "インターネット", "携帯"],
   medical: ["薬", "病院", "診療", "処方", "クリニック"],
@@ -271,6 +280,212 @@ const RECEIPT_VENDOR_TAG_HINTS = {
   daily: ["ダイソー", "セリア", "キャンドゥ", "無印"],
   transport: ["jr", "地下鉄", "メトロ", "モバイルsuica", "pasmo"],
 };
+
+/**
+ * 明細行テキスト向けの語彙（店名が弱くても効かせる・プレミアム用）。
+ * RECEIPT_CATEGORY_KEYWORDS より細かく、明細のみに高い重みを付ける。
+ */
+const RECEIPT_LINE_ITEM_KEYWORDS = {
+  daily: [
+    "シャンプー",
+    "リンス",
+    "コンディショナー",
+    "トリートメント",
+    "ヘアパック",
+    "ヘアマスク",
+    "ボディソープ",
+    "ボディーソープ",
+    "ハンドソープ",
+    "洗顔",
+    "クレンジング",
+    "化粧水",
+    "乳液",
+    "美容液",
+    "日焼け止め",
+    "uvケア",
+    "柔軟剤",
+    "漂白剤",
+    "洗濯洗剤",
+    "台所用洗剤",
+    "食器用洗剤",
+    "洗剤",
+    "ティッシュ",
+    "トイレットペーパー",
+    "ウェットティッシュ",
+    "おしりふき",
+    "おむつ",
+    "紙おむつ",
+    "生理用品",
+    "ナプキン",
+    "歯ブラシ",
+    "歯磨き",
+    "ハミガキ",
+    "歯みがき粉",
+    "マウスウォッシュ",
+    "カミソリ",
+    "替刃",
+    "シェービング",
+    "除菌",
+    "消臭",
+    "除湿剤",
+    "防虫",
+    "ゴミ袋",
+    "ラップ",
+    "アルミホイル",
+    "キッチンペーパー",
+    "スポンジ",
+    "雑巾",
+    "マスク",
+    "絆創膏",
+    "消毒液",
+    "体温計",
+    "電池",
+    "乾電池",
+  ],
+  food: [
+    "牛乳",
+    "ヨーグルト",
+    "チーズ",
+    "バター",
+    "卵",
+    "卵１０",
+    "米",
+    "パン",
+    "食パン",
+    "惣菜",
+    "弁当",
+    "おにぎり",
+    "サンドイッチ",
+    "ハム",
+    "ベーコン",
+    "ソーセージ",
+    "野菜",
+    "果物",
+    "りんご",
+    "バナナ",
+    "豚肉",
+    "牛肉",
+    "鶏肉",
+    "魚",
+    "刺身",
+    "寿司",
+    "納豆",
+    "豆腐",
+    "味噌",
+    "醤油",
+    "ソース",
+    "調味料",
+    "スナック",
+    "チョコ",
+    "クッキー",
+    "アイス",
+    "ジュース",
+    "お茶",
+    "水２ｌ",
+    "炭酸",
+    "ビール",
+    "発泡酒",
+    "ワイン",
+  ],
+  medical: [
+    "処方",
+    "医薬品",
+    "第１類",
+    "第２類",
+    "第３類",
+    "鎮痛剤",
+    "解熱",
+    "かぜ薬",
+    "胃腸薬",
+    "整腸剤",
+    "便秘薬",
+    "目薬",
+    "鼻炎",
+    "湿布",
+    "絆創膏",
+    "消毒液",
+    "マスク",
+    "体温計",
+    "検査",
+    "診察",
+  ],
+  leisure: [
+    "入場券",
+    "チケット",
+    "映画",
+    "グッズ",
+    "フィギュア",
+    "トレカ",
+    "ゲームソフト",
+    "コミック",
+    "雑誌",
+    "書籍",
+    "文房具",
+    "ノート",
+    "ペン",
+  ],
+  transport: ["定期", "チャージ", "１０００円券", "回数券", "パーク券", "駐車券", "etc"],
+  utility: ["電気代", "ガス代", "水道代", "通信料", "プロバイダ", "ひかり", "ドコモ", "au", "ソフトバンク"],
+};
+
+/**
+ * プレミアム: 明細の商品名だけでカテゴリタグを推し、ユーザー支出カテゴリにマッピングする。
+ * 店名が弱いときはしきい値を緩める。
+ * @returns {{ id: number; name: string; source: "line_items"; lowConfidence: boolean } | null}
+ */
+function suggestExpenseCategoryFromPremiumLineItems(items, userExpenseCategories, vendor) {
+  const userCats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
+  if (userCats.length === 0) return null;
+  const itemCorpus = normalizeKeyword((items ?? []).map((x) => x?.name ?? "").join(" "));
+  if (!itemCorpus || itemCorpus.length < 2) return null;
+
+  const vendorWeak =
+    receiptVendorSignalWeak(vendor) || normalizeVendorName(vendor).length < 4;
+
+  /** @type {Record<string, { score: number; hits: number }>} */
+  const tagStats = {};
+  for (const [tag, words] of Object.entries(RECEIPT_LINE_ITEM_KEYWORDS)) {
+    let hits = 0;
+    let score = 0;
+    for (const w of words) {
+      const nw = normalizeKeyword(w);
+      if (!nw || nw.length < 2) continue;
+      if (!itemCorpus.includes(nw)) continue;
+      hits += 1;
+      score += nw.length >= 4 ? 6 : 5;
+    }
+    if (hits > 0) tagStats[tag] = { score, hits };
+  }
+
+  let bestTag = null;
+  let bestStat = null;
+  for (const [tag, st] of Object.entries(tagStats)) {
+    if (
+      !bestStat ||
+      st.score > bestStat.score ||
+      (st.score === bestStat.score && st.hits > bestStat.hits)
+    ) {
+      bestTag = tag;
+      bestStat = st;
+    }
+  }
+
+  const minScore = vendorWeak ? 5 : 10;
+  const minHits = vendorWeak ? 1 : 2;
+  if (!bestTag || !bestStat || bestStat.score < minScore || bestStat.hits < minHits) return null;
+
+  const matched = userCats.filter((r) => tagFromCategoryName(r.name) === bestTag);
+  if (matched.length === 0) return null;
+  const picked = matched[0];
+
+  const lowConfidence = bestStat.score < 12 || bestStat.hits < 2;
+  return {
+    id: Number(picked.id),
+    name: String(picked.name),
+    source: "line_items",
+    lowConfidence,
+  };
+}
 
 function normalizeKeyword(s) {
   return String(s ?? "").toLowerCase().replace(/\s+/g, "").replace(/[　]/g, "");
@@ -746,6 +961,19 @@ async function predictCategory({
     );
     if (fromGlobal?.id != null) {
       return { ...fromGlobal, lowConfidence: false };
+    }
+    const fromLineItems = suggestExpenseCategoryFromPremiumLineItems(
+      items,
+      userExpenseCategories,
+      vendor,
+    );
+    if (fromLineItems?.id != null) {
+      return {
+        id: fromLineItems.id,
+        name: fromLineItems.name,
+        source: "line_items",
+        lowConfidence: Boolean(fromLineItems.lowConfidence),
+      };
     }
   } else {
     const fromTx = await suggestExpenseCategoryFromTransactionHistory(pool, userId, txWhere, vendor);
@@ -3918,6 +4146,7 @@ export async function handleApiRequest(req, options = {}) {
               finalSource === "history" ||
               finalSource === "chain_catalog" ||
               finalSource === "global_master" ||
+              finalSource === "line_items" ||
               totalCandidates.some((c) => c.source === "global"));
           const body = {
             ok: true,

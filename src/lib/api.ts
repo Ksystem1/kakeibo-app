@@ -669,6 +669,7 @@ export async function parseReceiptImage(
           | "keywords"
           | "global_master"
           | "chain_catalog"
+          | "line_items"
           | "correction"
           | "ai"
           | null;

@@ -209,7 +209,14 @@ export function ReceiptPage() {
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [draftCategoryId, setDraftCategoryId] = useState<number | null>(null);
   const [categorySuggestSource, setCategorySuggestSource] = useState<
-    "history" | "keywords" | "global_master" | "chain_catalog" | "correction" | "ai" | null
+    | "history"
+    | "keywords"
+    | "global_master"
+    | "chain_catalog"
+    | "line_items"
+    | "correction"
+    | "ai"
+    | null
   >(null);
   const [suggestedCategoryLowConfidence, setSuggestedCategoryLowConfidence] = useState(false);
   const [suggestedCategoryNameHint, setSuggestedCategoryNameHint] = useState<string | null>(null);
