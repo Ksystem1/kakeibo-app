@@ -1,0 +1,38 @@
+# static_chain_store_category_hints（チェーン店名→カテゴリ初期辞書）用 DDL+シードを RDS に適用する（migration v16）。
+#
+# 実行: Actions → 「RDS migrate static_chain_store (v16)」→ Run workflow
+#
+# 前提:
+#   - Repository Secrets: RDS_HOST, RDS_USER, RDS_PASSWORD, RDS_DATABASE
+#   - 任意: RDS_PORT、RDS_SSL
+#   - GitHub runner から RDS の 3306 が届くこと
+#
+name: RDS migrate static_chain_store (v16)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Apply migration_v16 to RDS
+        env:
+          RDS_HOST: ${{ secrets.RDS_HOST }}
+          RDS_USER: ${{ secrets.RDS_USER }}
+          RDS_PASSWORD: ${{ secrets.RDS_PASSWORD }}
+          RDS_DATABASE: ${{ secrets.RDS_DATABASE }}
+          RDS_PORT: ${{ secrets.RDS_PORT }}
+          RDS_SSL: ${{ secrets.RDS_SSL }}
+        run: npm run db:migrate-v16 --prefix backend

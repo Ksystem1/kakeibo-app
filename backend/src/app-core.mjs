@@ -484,14 +484,16 @@ function tagFromCategoryName(name) {
 
 const RECEIPT_NORMALIZED_MEMO_EXPR =
   "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(t.memo), ' ', ''), '　', ''), '株式会社', ''), '(株)', ''))";
+const RECEIPT_NORMALIZED_SNAPSHOT_VENDOR_EXPR =
+  "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(JSON_UNQUOTE(JSON_EXTRACT(r.ocr_snapshot_json, '$.vendorName'))), ' ', ''), '　', ''), '株式会社', ''), '(株)', ''))";
 
-async function suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor) {
+/** 無料向け: 家族スコープの取引メモ（店名）一致で直近の支出カテゴリ */
+async function suggestExpenseCategoryFromTransactionHistory(pool, userId, txWhere, vendor) {
   const memo = String(vendor ?? "").trim();
   if (!memo) return null;
   const normMemo = normalizeVendorName(memo);
   if (!normMemo) return null;
 
-  // 家族スコープで「最新に使ったカテゴリ」を最優先
   const [rows] = await pool.query(
     `SELECT t.category_id, c.name, t.transaction_date, t.id
      FROM transactions t
@@ -517,6 +519,100 @@ async function suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor) 
   return null;
 }
 
+/** プレミアム: 家族内のレシート補正履歴（同一店名の最新 category）を最優先 */
+async function suggestExpenseCategoryFromFamilyReceiptCorrections(
+  pool,
+  userId,
+  familyId,
+  vendor,
+  userExpenseCategories,
+) {
+  const memo = String(vendor ?? "").trim();
+  if (!memo) return null;
+  const normMemo = normalizeVendorName(memo);
+  if (!normMemo) return null;
+  const catRows = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
+  if (catRows.length === 0) return null;
+  const byId = new Map(catRows.map((c) => [Number(c.id), c]));
+  const byName = new Map(catRows.map((c) => [normalizeCategoryNameKey(c.name), c]));
+  const hasFamily = Number.isFinite(Number(familyId)) && Number(familyId) > 0;
+  const scopeSql = hasFamily ? "(r.user_id = ? OR r.family_id = ?)" : "r.user_id = ?";
+  const params = hasFamily ? [userId, Number(familyId), normMemo] : [userId, normMemo];
+
+  const [rows] = await pool.query(
+    `SELECT r.category_id, c.name AS category_name
+     FROM receipt_ocr_corrections r
+     LEFT JOIN categories c ON c.id = r.category_id
+     WHERE ${scopeSql}
+       AND r.category_id IS NOT NULL
+       AND JSON_VALID(r.ocr_snapshot_json)
+       AND ${RECEIPT_NORMALIZED_SNAPSHOT_VENDOR_EXPR} = ?
+     ORDER BY r.updated_at DESC, r.id DESC
+     LIMIT 20`,
+    params,
+  );
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  for (const row of rows) {
+    const categoryId = row?.category_id != null ? Number(row.category_id) : null;
+    if (categoryId != null && byId.has(categoryId)) {
+      const hit = byId.get(categoryId);
+      return { id: Number(hit.id), name: String(hit.name), source: "history" };
+    }
+    const categoryName = String(row?.category_name ?? "").trim();
+    if (!categoryName) continue;
+    const byNameHit = byName.get(normalizeCategoryNameKey(categoryName));
+    if (byNameHit?.id != null) {
+      return { id: Number(byNameHit.id), name: String(byNameHit.name), source: "history" };
+    }
+  }
+  return null;
+}
+
+/**
+ * プレミアム: 初期投入のチェーン店名辞書（vendor_norm の最長一致）→ カテゴリ名ヒント → ユーザー ID へ解決
+ */
+async function suggestExpenseCategoryFromStaticChainCatalog(pool, vendor, userExpenseCategories) {
+  const norm = normalizeVendorName(vendor);
+  if (!norm || norm.length < 3) return null;
+  const userCats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
+  if (userCats.length === 0) return null;
+  try {
+    const [rows] = await pool.query(
+      `SELECT category_name_hint, weight
+       FROM static_chain_store_category_hints
+       WHERE ? LIKE CONCAT(vendor_norm, '%')
+         AND CHAR_LENGTH(vendor_norm) >= 3
+       ORDER BY CHAR_LENGTH(vendor_norm) DESC, weight DESC, id ASC
+       LIMIT 12`,
+      [norm],
+    );
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    for (const row of rows) {
+      const hint = String(row?.category_name_hint ?? "").trim();
+      if (!hint) continue;
+      const hintKey = normalizeCategoryNameKey(hint);
+      const hit = userCats.find((c) => normalizeCategoryNameKey(c.name) === hintKey);
+      if (hit?.id != null) {
+        return { id: Number(hit.id), name: String(hit.name), source: "chain_catalog" };
+      }
+      const partial = userCats.find(
+        (c) =>
+          normalizeCategoryNameKey(c.name).includes(hintKey) ||
+          hintKey.includes(normalizeCategoryNameKey(c.name)),
+      );
+      if (partial?.id != null) {
+        return { id: Number(partial.id), name: String(partial.name), source: "chain_catalog" };
+      }
+    }
+  } catch (e) {
+    const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+    if (code !== "ER_NO_SUCH_TABLE") {
+      logError("receipts.parse.static_chain_catalog", e);
+    }
+  }
+  return null;
+}
+
 async function suggestExpenseCategoryFromGlobalMaster(pool, vendor, userExpenseCategories) {
   const memo = String(vendor ?? "").trim();
   if (!memo) return null;
@@ -526,16 +622,15 @@ async function suggestExpenseCategoryFromGlobalMaster(pool, vendor, userExpenseC
   if (userCats.length === 0) return null;
   const [rows] = await pool.query(
     `SELECT c.name AS global_category_name, COUNT(*) AS used_count
-     FROM transactions t
-     JOIN categories c ON c.id = t.category_id
-     WHERE t.kind = 'expense'
-       AND t.category_id IS NOT NULL
+     FROM receipt_ocr_corrections r
+     JOIN categories c ON c.id = r.category_id
+     WHERE r.category_id IS NOT NULL
        AND c.kind = 'expense'
-       AND c.is_archived = 0
-       AND ${RECEIPT_NORMALIZED_MEMO_EXPR} = ?
+       AND JSON_VALID(r.ocr_snapshot_json)
+       AND ${RECEIPT_NORMALIZED_SNAPSHOT_VENDOR_EXPR} = ?
      GROUP BY c.name
-     ORDER BY used_count DESC, c.name ASC
-     LIMIT 6`,
+     ORDER BY used_count DESC, MAX(r.updated_at) DESC, c.name ASC
+     LIMIT 12`,
     [normMemo],
   );
   if (!Array.isArray(rows) || rows.length === 0) return null;
@@ -558,11 +653,11 @@ async function suggestExpenseCategoryForReceipt(
   txWhere,
   vendor,
   items,
-  { usePersonalHistory = true, expenseCategories = null } = {},
+  { usePersonalHistory = true, familyId = null, expenseCategories = null } = {},
 ) {
   if (usePersonalHistory) {
-    const fromHistory = await suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor);
-    if (fromHistory?.id) return fromHistory;
+    const fromTx = await suggestExpenseCategoryFromTransactionHistory(pool, userId, txWhere, vendor);
+    if (fromTx?.id) return fromTx;
   }
 
   const vend = normalizeKeyword(vendor ?? "");
@@ -617,6 +712,7 @@ async function suggestExpenseCategoryForReceipt(
 async function predictCategory({
   pool,
   userId,
+  familyId,
   txWhere,
   vendor,
   items,
@@ -624,17 +720,38 @@ async function predictCategory({
   subscriptionActive,
   aiCategoryName,
 }) {
-  const fromHistory = await suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor);
-  if (fromHistory?.id != null) {
-    return { ...fromHistory, lowConfidence: false };
-  }
-  const fromGlobal = await suggestExpenseCategoryFromGlobalMaster(
-    pool,
-    vendor,
-    userExpenseCategories,
-  );
-  if (fromGlobal?.id != null) {
-    return { ...fromGlobal, lowConfidence: false };
+  if (subscriptionActive) {
+    const fromFamilyCorr = await suggestExpenseCategoryFromFamilyReceiptCorrections(
+      pool,
+      userId,
+      familyId,
+      vendor,
+      userExpenseCategories,
+    );
+    if (fromFamilyCorr?.id != null) {
+      return { ...fromFamilyCorr, lowConfidence: false };
+    }
+    const fromStatic = await suggestExpenseCategoryFromStaticChainCatalog(
+      pool,
+      vendor,
+      userExpenseCategories,
+    );
+    if (fromStatic?.id != null) {
+      return { ...fromStatic, lowConfidence: false };
+    }
+    const fromGlobal = await suggestExpenseCategoryFromGlobalMaster(
+      pool,
+      vendor,
+      userExpenseCategories,
+    );
+    if (fromGlobal?.id != null) {
+      return { ...fromGlobal, lowConfidence: false };
+    }
+  } else {
+    const fromTx = await suggestExpenseCategoryFromTransactionHistory(pool, userId, txWhere, vendor);
+    if (fromTx?.id != null) {
+      return { ...fromTx, lowConfidence: false };
+    }
   }
   const fromKeywords = await suggestExpenseCategoryForReceipt(
     pool,
@@ -643,10 +760,10 @@ async function predictCategory({
     txWhere,
     vendor,
     items,
-    { usePersonalHistory: false, expenseCategories: userExpenseCategories },
+    { usePersonalHistory: false, familyId, expenseCategories: userExpenseCategories },
   );
   if (fromKeywords?.id != null) {
-    return { ...fromKeywords, source: "global_master", lowConfidence: true };
+    return { ...fromKeywords, lowConfidence: true };
   }
   if (subscriptionActive && aiCategoryName) {
     const aiNorm = normalizeCategoryNameKey(aiCategoryName);
@@ -983,13 +1100,53 @@ function tokenizeMemo(text) {
   return [s];
 }
 
-async function suggestExpenseCategoryForMemo(pool, userId, catWhere, txWhere, memo) {
+async function suggestExpenseCategoryForMemo(
+  pool,
+  userId,
+  catWhere,
+  txWhere,
+  familyId,
+  memo,
+  expenseCategories,
+  subscriptionActive,
+) {
   const vendor = String(memo ?? "").trim();
   if (!vendor) return null;
-  const fromHistory = await suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor);
-  if (fromHistory?.id) return fromHistory;
+  const cats =
+    Array.isArray(expenseCategories) && expenseCategories.length > 0
+      ? expenseCategories
+      : (
+          await pool.query(
+            `SELECT c.id, c.name
+             FROM categories c
+             WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense'
+             ORDER BY c.sort_order, c.id`,
+            [userId, userId],
+          )
+        )[0];
+  if (subscriptionActive) {
+    const fromFamilyCorr = await suggestExpenseCategoryFromFamilyReceiptCorrections(
+      pool,
+      userId,
+      familyId,
+      vendor,
+      cats,
+    );
+    if (fromFamilyCorr?.id) return fromFamilyCorr;
+    const fromStatic = await suggestExpenseCategoryFromStaticChainCatalog(pool, vendor, cats);
+    if (fromStatic?.id) return fromStatic;
+    const fromGlobal = await suggestExpenseCategoryFromGlobalMaster(pool, vendor, cats);
+    if (fromGlobal?.id) return fromGlobal;
+  } else {
+    const fromTx = await suggestExpenseCategoryFromTransactionHistory(pool, userId, txWhere, vendor);
+    if (fromTx?.id) return fromTx;
+  }
   const tokens = tokenizeMemo(vendor).map((name) => ({ name, amount: null }));
-  return suggestExpenseCategoryForReceipt(pool, userId, catWhere, txWhere, vendor, tokens);
+  return suggestExpenseCategoryForReceipt(pool, userId, catWhere, txWhere, vendor, tokens, {
+    usePersonalHistory: false,
+    familyId,
+    expenseCategories: cats,
+  });
 }
 
 /**
@@ -3650,6 +3807,7 @@ export async function handleApiRequest(req, options = {}) {
           const predicted = await predictCategory({
             pool,
             userId,
+            familyId,
             txWhere,
             vendor: adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
             items: result?.items ?? [],
@@ -3758,6 +3916,8 @@ export async function handleApiRequest(req, options = {}) {
               learnCorrectionHit ||
               reconcileAdjusted ||
               finalSource === "history" ||
+              finalSource === "chain_catalog" ||
+              finalSource === "global_master" ||
               totalCandidates.some((c) => c.source === "global"));
           const body = {
             ok: true,
@@ -3861,6 +4021,17 @@ export async function handleApiRequest(req, options = {}) {
             ? Math.min(maxBatchesRaw, 5000)
             : 2000;
 
+        const subRowReclass = await loadUserSubscriptionRowFull(pool, userId);
+        const subscriptionActiveReclass = userHasPremiumSubscriptionAccess(subRowReclass, userId);
+        const [reclassExpenseCats] = await pool.query(
+          `SELECT c.id, c.name
+           FROM categories c
+           WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense'
+           ORDER BY c.sort_order, c.id`,
+          [userId, userId],
+        );
+        const reclassExpenseCatRows = Array.isArray(reclassExpenseCats) ? reclassExpenseCats : [];
+
         let totalScanned = 0;
         let totalUpdated = 0;
         let offset = 0;
@@ -3893,7 +4064,10 @@ export async function handleApiRequest(req, options = {}) {
               userId,
               catWhere,
               txWhere,
+              familyId,
               memo,
+              reclassExpenseCatRows,
+              subscriptionActiveReclass,
             );
             if (!suggestion?.id) continue;
             const [upd] = await pool.query(

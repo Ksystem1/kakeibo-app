@@ -172,6 +172,18 @@ CREATE TABLE IF NOT EXISTS global_receipt_ocr_corrections (
   KEY idx_global_receipt_fp (layout_fingerprint)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- チェーン店名（正規化）→ 代表的な支出カテゴリ名（初期シード約1万件）。migration_v16 と同等。
+CREATE TABLE IF NOT EXISTS static_chain_store_category_hints (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  vendor_norm VARCHAR(191) NOT NULL COMMENT 'normalizeVendorName 相当（OCR 店名の先頭一致に使用）',
+  category_name_hint VARCHAR(64) NOT NULL COMMENT 'ユーザー家計簿のカテゴリ名に寄せたヒント',
+  weight INT NOT NULL DEFAULT 0 COMMENT '複数候補時の優先度（大きいほど優先）',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_static_chain_vendor_norm (vendor_norm),
+  KEY idx_static_chain_vendor_norm (vendor_norm)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ---------------------------------------------------------------------------
 -- 家族共通の固定費（GET/PUT /settings/fixed-costs）
 -- ---------------------------------------------------------------------------
