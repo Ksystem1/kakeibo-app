@@ -411,6 +411,13 @@ export function AppLayout() {
                   visible={showMobileInlineOutlet}
                 />
               ) : null}
+              {useMobileInlineOutlet ? (
+                <MobileInlineOutlet
+                  path="/support"
+                  pathname={location.pathname}
+                  visible={showMobileInlineOutlet}
+                />
+              ) : null}
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
