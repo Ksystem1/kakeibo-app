@@ -5,20 +5,47 @@
 import crypto from "node:crypto";
 import { normalizeVendorForMatch, normalizeDateYmd } from "./receipt-learn.mjs";
 
-/**
- * 辞書登録・照合用フィンガープリント（店名正規化＋年月のみ。合計は含めず複数候補を束ねる）
- * @param {Record<string, unknown>|null|undefined} summary vendorName / date のみ使用
- * @returns {string|null} 64 hex または登録不可
- */
-export function globalReceiptLayoutFingerprint(summary) {
+function fingerprintFromVendorYm(vendor, ym) {
+  const canonical = JSON.stringify({ v: vendor, ym });
+  return crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function parseYm(ym) {
+  if (!/^\d{4}-\d{2}$/.test(ym)) return null;
+  const dt = new Date(`${ym}-01T00:00:00Z`);
+  return Number.isFinite(dt.getTime()) ? dt : null;
+}
+
+function shiftYm(ym, diffMonths) {
+  const base = parseYm(ym);
+  if (!base) return ym;
+  const y = base.getUTCFullYear();
+  const m = base.getUTCMonth();
+  const moved = new Date(Date.UTC(y, m + diffMonths, 1));
+  const yy = moved.getUTCFullYear();
+  const mm = String(moved.getUTCMonth() + 1).padStart(2, "0");
+  return `${yy}-${mm}`;
+}
+
+function vendorAndYmFromSummary(summary) {
   const vendor = normalizeVendorForMatch(summary?.vendorName ?? "").slice(0, 48);
   if (vendor.length < 2) return null;
   if (/@/.test(vendor)) return null;
   if (/\d{11,}/.test(vendor)) return null;
   const ymd = normalizeDateYmd(summary?.date ?? "");
   const ym = ymd.length >= 7 ? ymd.slice(0, 7) : "0000-00";
-  const canonical = JSON.stringify({ v: vendor, ym });
-  return crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+  return { vendor, ym };
+}
+
+/**
+ * 辞書登録・照合用フィンガープリント（店名正規化＋年月のみ。合計は含めず複数候補を束ねる）
+ * @param {Record<string, unknown>|null|undefined} summary vendorName / date のみ使用
+ * @returns {string|null} 64 hex または登録不可
+ */
+export function globalReceiptLayoutFingerprint(summary) {
+  const p = vendorAndYmFromSummary(summary);
+  if (!p) return null;
+  return fingerprintFromVendorYm(p.vendor, p.ym);
 }
 
 /**
@@ -89,6 +116,43 @@ export async function fetchGlobalReceiptTotalsByFingerprint(pool, fingerprint, l
       weight: Math.max(1, Math.round(Number(r.weight) || 1)),
     }))
     .filter((r) => Number.isFinite(r.total) && r.total > 0);
+}
+
+/**
+ * ヒット率改善: 同店名の前後 1 ヶ月も検索し、近傍月は重みを少し下げて合算する。
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {Record<string, unknown>|null|undefined} summary
+ * @param {number} [limit]
+ * @returns {Promise<{ rows: Array<{ total: number; weight: number }>; hitCount: number }>}
+ */
+export async function fetchGlobalReceiptTotalsBySummaryWindow(pool, summary, limit = 8) {
+  const p = vendorAndYmFromSummary(summary);
+  if (!p) return { rows: [], hitCount: 0 };
+  const lim = Math.min(20, Math.max(1, Number(limit) || 8));
+  const ymList = p.ym === "0000-00" ? [p.ym] : [shiftYm(p.ym, -1), p.ym, shiftYm(p.ym, 1)];
+  const ymWeight = new Map([
+    [p.ym, 1.0],
+    [shiftYm(p.ym, -1), 0.65],
+    [shiftYm(p.ym, 1), 0.65],
+  ]);
+  const totals = new Map();
+  let hitCount = 0;
+  for (const ym of ymList) {
+    const fp = fingerprintFromVendorYm(p.vendor, ym);
+    const rows = await fetchGlobalReceiptTotalsByFingerprint(pool, fp, lim);
+    hitCount += rows.length;
+    const w = ymWeight.get(ym) ?? 1;
+    for (const r of rows) {
+      const t = Math.round(Number(r.total));
+      const cur = totals.get(t) ?? 0;
+      totals.set(t, cur + Math.max(1, Number(r.weight) || 1) * w);
+    }
+  }
+  const merged = [...totals.entries()]
+    .map(([total, score]) => ({ total, weight: Math.max(1, Math.round(score)) }))
+    .sort((a, b) => b.weight - a.weight || a.total - b.total)
+    .slice(0, lim);
+  return { rows: merged, hitCount };
 }
 
 function sumReceiptLineItemAmounts(items) {

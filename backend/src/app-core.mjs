@@ -20,8 +20,7 @@ import {
 } from "./receipt-learn.mjs";
 import {
   buildReceiptTotalCandidates,
-  fetchGlobalReceiptTotalsByFingerprint,
-  globalReceiptLayoutFingerprint,
+  fetchGlobalReceiptTotalsBySummaryWindow,
   mergeSummaryForGlobalFingerprint,
   upsertGlobalReceiptOcrStat,
 } from "./global-receipt-ocr.mjs";
@@ -3640,12 +3639,9 @@ export async function handleApiRequest(req, options = {}) {
                 result?.summary ?? {},
                 adjustedSummary,
               );
-              const gfp = globalReceiptLayoutFingerprint(fpSummary);
-              const globalRows =
-                gfp != null
-                  ? await fetchGlobalReceiptTotalsByFingerprint(pool, gfp, 8)
-                  : [];
-              receiptGlobalDictionaryHitCount = globalRows.length;
+              const globalHit = await fetchGlobalReceiptTotalsBySummaryWindow(pool, fpSummary, 8);
+              const globalRows = globalHit.rows;
+              receiptGlobalDictionaryHitCount = globalHit.hitCount;
               totalCandidates = buildReceiptTotalCandidates({
                 subscriptionActive,
                 adjustedSummary,
