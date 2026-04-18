@@ -406,26 +406,6 @@ export function AppLayout() {
                   visible={showMobileInlineOutlet}
                 />
               ) : null}
-              <NavLink
-                to="/support"
-                className={(p) =>
-                  `${navIconLinkClassName(p)} nav-icon-link--support`.trim()
-                }
-                aria-label="サポートチャット"
-                onClick={onMobileIconNavClick("/support")}
-              >
-                <span className="nav-support-emoji" aria-hidden="true">
-                  💬
-                </span>
-                {supportChatUnread ? <span className="nav-support-unread-dot" title="新着あり" /> : null}
-              </NavLink>
-              {useMobileInlineOutlet ? (
-                <MobileInlineOutlet
-                  path="/support"
-                  pathname={location.pathname}
-                  visible={showMobileInlineOutlet}
-                />
-              ) : null}
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
