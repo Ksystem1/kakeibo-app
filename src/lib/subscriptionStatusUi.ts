@@ -13,7 +13,7 @@ function formatPeriodEndNumericJa(isoOrDate: string | Date): string | null {
 }
 
 /**
- * 設定画面の1行目用: 「契約中」「2026/04/30に終了予定」など（解約予約時は日付表記）
+ * 設定画面の1行目用: 通常の active では空（「契約中」は出さない）。解約予約・遅延・トライアルのみ文言を出す。
  */
 export function formatPremiumSubscriptionPrimaryStatus(user: {
   subscriptionStatus?: string;
@@ -45,7 +45,8 @@ export function formatPremiumSubscriptionPrimaryStatus(user: {
       : null;
     return num ? `${num}まで利用可能` : subscriptionStatusLabelJa("canceled");
   }
-  return subscriptionStatusLabelJa("active");
+  /* active 等: 見出しで十分のため「契約中」は表示しない */
+  return "";
 }
 
 /**
@@ -78,6 +79,9 @@ export function formatSettingsSubscriptionSummary(user: {
     return `解約が予約されています。${endNum}まではプレミアムをご利用いただけます（請求期間の終了日: ${endStr}）。`;
   }
   if ((status === "active" || status === "trialing" || status === "past_due") && !user.subscriptionCancelAtPeriodEnd) {
+    if (status === "active") {
+      return endStr ? `次の請求期間終了: ${endStr}` : "";
+    }
     return `${label}${endStr ? `（次の請求期間終了: ${endStr}）` : ""}`;
   }
   if (status === "canceled" && endOk && Date.now() <= end!.getTime()) {
