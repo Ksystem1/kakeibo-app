@@ -22,6 +22,28 @@ export function globalReceiptLayoutFingerprint(summary) {
 }
 
 /**
+ * 辞書照合時: AI 補正後の店名が空でも Textract の店名でキーを揃える（学習時のキーと一致しやすくする）
+ * @param {Record<string, unknown>} textractSummary
+ * @param {Record<string, unknown>} adjustedSummary
+ */
+export function mergeSummaryForGlobalFingerprint(textractSummary, adjustedSummary) {
+  const tx = textractSummary && typeof textractSummary === "object" ? textractSummary : {};
+  const adj = adjustedSummary && typeof adjustedSummary === "object" ? adjustedSummary : {};
+  const vendorRaw =
+    (adj.vendorName != null && String(adj.vendorName).trim()) ||
+    (tx.vendorName != null && String(tx.vendorName).trim()) ||
+    "";
+  const dateRaw =
+    (adj.date != null && String(adj.date).trim()) || (tx.date != null && String(tx.date).trim()) || "";
+  const totalRaw = adj.totalAmount != null ? adj.totalAmount : tx.totalAmount;
+  return {
+    vendorName: vendorRaw || null,
+    date: dateRaw || null,
+    totalAmount: totalRaw,
+  };
+}
+
+/**
  * 学習保存時: プライバシー上問題なければグローバル集計を 1 件加算
  * @param {import("mysql2/promise").Pool} pool
  * @param {Record<string, unknown>} summary buildReceiptOcrSnapshot の summary 相当
@@ -98,8 +120,9 @@ export function buildReceiptTotalCandidates(p) {
   function add(total, label, source) {
     const t = Math.round(Number(total));
     if (!Number.isFinite(t) || t <= 0) return;
-    if (seen.has(t)) return;
-    seen.add(t);
+    const key = `${source}:${t}`;
+    if (seen.has(key)) return;
+    seen.add(key);
     out.push({ total: t, label, source });
   }
 

@@ -676,6 +676,7 @@ export async function parseReceiptImage(
         receiptAdvancedParsingBanner?: string | null;
         receiptAdvancedParsingMessages?: string[];
         totalCandidates?: Array<{ total: number; label: string; source: string }>;
+        receiptGlobalDictionaryHitCount?: number;
       }>(res);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -694,6 +695,10 @@ export async function saveReceiptOcrCorrection(body: {
   items: Array<{ name: string; amount: number | null; confidence?: number }>;
   category_id: number | null;
   memo: string | null;
+  /** 匿名グローバル辞書用: 登録時にユーザーが確定した合計（円） */
+  confirmed_total_amount?: number | null;
+  /** 匿名グローバル辞書用: YYYY-MM-DD */
+  confirmed_date?: string | null;
 }) {
   const res = await apiFetch(`${BASE}/receipts/learn`, {
     method: "POST",

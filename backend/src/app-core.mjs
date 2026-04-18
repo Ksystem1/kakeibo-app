@@ -22,6 +22,7 @@ import {
   buildReceiptTotalCandidates,
   fetchGlobalReceiptTotalsByFingerprint,
   globalReceiptLayoutFingerprint,
+  mergeSummaryForGlobalFingerprint,
   upsertGlobalReceiptOcrStat,
 } from "./global-receipt-ocr.mjs";
 import {
@@ -3309,7 +3310,33 @@ export async function handleApiRequest(req, options = {}) {
             [userId, familyId, matchKey, jsonSnap, categoryId, memo],
           );
           try {
-            await upsertGlobalReceiptOcrStat(pool, snapshot);
+            const ct =
+              b.confirmed_total_amount != null && Number.isFinite(Number(b.confirmed_total_amount))
+                ? Math.round(Number(b.confirmed_total_amount))
+                : null;
+            const cd =
+              b.confirmed_date != null && String(b.confirmed_date).trim() !== ""
+                ? String(b.confirmed_date).trim().slice(0, 10)
+                : null;
+            const vendorHint =
+              snapshot.vendorName != null && String(snapshot.vendorName).trim() !== ""
+                ? snapshot.vendorName
+                : memo;
+            const globalLearnSummary = buildReceiptOcrSnapshot(
+              {
+                vendorName: vendorHint,
+                totalAmount:
+                  ct != null && Number.isFinite(ct) && ct > 0 ? ct : snapshot.totalAmount,
+                date:
+                  cd && /^\d{4}-\d{2}-\d{2}$/.test(cd)
+                    ? cd
+                    : snapshot.date != null
+                      ? String(snapshot.date)
+                      : null,
+              },
+              [],
+            );
+            await upsertGlobalReceiptOcrStat(pool, globalLearnSummary);
           } catch (eG) {
             const gCode = eG && typeof eG === "object" && "code" in eG ? String(eG.code) : "";
             if (gCode !== "ER_NO_SUCH_TABLE") {
@@ -3606,13 +3633,19 @@ export async function handleApiRequest(req, options = {}) {
           }
 
           let totalCandidates = [];
+          let receiptGlobalDictionaryHitCount = 0;
           if (subscriptionActive) {
             try {
-              const gfp = globalReceiptLayoutFingerprint(adjustedSummary);
+              const fpSummary = mergeSummaryForGlobalFingerprint(
+                result?.summary ?? {},
+                adjustedSummary,
+              );
+              const gfp = globalReceiptLayoutFingerprint(fpSummary);
               const globalRows =
                 gfp != null
                   ? await fetchGlobalReceiptTotalsByFingerprint(pool, gfp, 8)
                   : [];
+              receiptGlobalDictionaryHitCount = globalRows.length;
               totalCandidates = buildReceiptTotalCandidates({
                 subscriptionActive,
                 adjustedSummary,
@@ -3681,6 +3714,7 @@ export async function handleApiRequest(req, options = {}) {
               : null,
             receiptAdvancedParsingMessages,
             totalCandidates,
+            receiptGlobalDictionaryHitCount: subscriptionActive ? receiptGlobalDictionaryHitCount : 0,
           };
           if (learnCorrectionHit && learnedMemoPresent) {
             body.suggestedMemo = learnedMemoValue;
@@ -3721,6 +3755,7 @@ export async function handleApiRequest(req, options = {}) {
                   "自動解析を一時的に利用できませんでした。店舗名・金額・日付を手入力して登録できます。",
                 expenseIndex: null,
                 totalCandidates: [],
+                receiptGlobalDictionaryHitCount: 0,
               },
               hdrs,
               skipCors,

@@ -208,11 +208,14 @@ export function ReceiptPage() {
   const [totalCandidates, setTotalCandidates] = useState<
     Array<{ total: number; label: string; source: string }>
   >([]);
+  const [lastParsePremium, setLastParsePremium] = useState(false);
+  const [receiptDictionaryHits, setReceiptDictionaryHits] = useState(0);
   const showTotalCandidateChips = useMemo(
     () =>
-      totalCandidates.length >= 2 ||
-      totalCandidates.some((c) => c.source === "global" || c.source === "lines"),
-    [totalCandidates],
+      lastParsePremium &&
+      (totalCandidates.length >= 2 ||
+        totalCandidates.some((c) => c.source === "global" || c.source === "lines")),
+    [lastParsePremium, totalCandidates],
   );
   /** 登録時に POST /receipts/learn へ送る直近の取込スナップショット */
   const [lastOcrForLearn, setLastOcrForLearn] = useState<{
@@ -332,6 +335,8 @@ export function ReceiptPage() {
     setDraftCategoryId(null);
     setCategorySuggestSource(null);
     setTotalCandidates([]);
+    setLastParsePremium(false);
+    setReceiptDictionaryHits(0);
     setItems([]);
     setLastOcrForLearn(null);
     setLoadedReceiptBaseline(null);
@@ -342,6 +347,12 @@ export function ReceiptPage() {
         debugForceReceiptTier: receiptDebugTier,
       });
       setTotalCandidates(Array.isArray(r.totalCandidates) ? r.totalCandidates : []);
+      setLastParsePremium(r.subscriptionActive === true);
+      setReceiptDictionaryHits(
+        typeof r.receiptGlobalDictionaryHitCount === "number"
+          ? r.receiptGlobalDictionaryHitCount
+          : 0,
+      );
       setItems(r.items ?? []);
       const s = r.summary;
       if (s && typeof s === "object") {
@@ -414,6 +425,8 @@ export function ReceiptPage() {
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
       setItems([]);
+      setLastParsePremium(false);
+      setReceiptDictionaryHits(0);
     } finally {
       setLoading(false);
     }
@@ -604,6 +617,11 @@ export function ReceiptPage() {
           >
             <span className={styles.sub} style={{ display: "block", marginBottom: "0.35rem" }}>
               合計の候補（プレミアム）
+              {receiptDictionaryHits > 0 ? (
+                <span style={{ marginLeft: "0.35rem", opacity: 0.85 }}>
+                  · 匿名辞書 {receiptDictionaryHits} 件一致
+                </span>
+              ) : null}
             </span>
             <div className={styles.modeRow} style={{ flexWrap: "wrap", gap: "0.35rem" }}>
               {totalCandidates.map((c, idx) => (
@@ -613,8 +631,16 @@ export function ReceiptPage() {
                   className={styles.btn}
                   disabled={loading}
                   onClick={() => setDraftTotal(String(c.total))}
+                  title={c.label}
                 >
-                  ¥{c.total.toLocaleString("ja-JP")} · {c.label}
+                  ¥{c.total.toLocaleString("ja-JP")}
+                  <span className={styles.sub} style={{ marginLeft: "0.25rem", fontSize: "0.82em" }}>
+                    {c.source === "global"
+                      ? "辞書"
+                      : c.source === "lines"
+                        ? "明細"
+                        : "解析"}
+                  </span>
                 </button>
               ))}
             </div>
@@ -679,6 +705,8 @@ export function ReceiptPage() {
                     items: lastOcrForLearn.items,
                     category_id: draftCategoryId,
                     memo: submittedMemo || null,
+                    confirmed_total_amount: amount,
+                    confirmed_date: dateField.value,
                   }).catch(() => {});
                 }
               }
