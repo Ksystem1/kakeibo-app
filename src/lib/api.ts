@@ -672,6 +672,9 @@ export async function parseReceiptImage(
         receiptAiTier?: "free" | "subscribed" | null;
         debugReceiptTierOverride?: "free" | "subscribed" | null;
         subscriptionMockedByEnv?: boolean;
+        receiptAdvancedParsingApplied?: boolean;
+        receiptAdvancedParsingBanner?: string | null;
+        receiptAdvancedParsingMessages?: string[];
       }>(res);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

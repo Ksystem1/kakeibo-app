@@ -405,6 +405,69 @@ async function findLearnedReceiptCorrection(pool, userId, catWhere, summary, ite
   };
 }
 
+/** 明細の金額合計（プレミアム検算用） */
+function sumReceiptLineItemAmounts(items) {
+  if (!Array.isArray(items)) return NaN;
+  let s = 0;
+  let any = false;
+  for (const it of items) {
+    const n = Number(it?.amount);
+    if (Number.isFinite(n) && n > 0) {
+      s += n;
+      any = true;
+    }
+  }
+  return any ? Math.round(s) : NaN;
+}
+
+/**
+ * プレミアム: 印字合計と明細合計のずれを検算し、明細優先で補正することがある。
+ * @returns {{ summary: Record<string, unknown>, adjusted: boolean, note: string | null }}
+ */
+function reconcilePremiumReceiptTotal(summary, items) {
+  const base = summary && typeof summary === "object" ? { ...summary } : {};
+  const lineSum = sumReceiptLineItemAmounts(items);
+  if (!Number.isFinite(lineSum) || lineSum <= 0) {
+    return { summary: base, adjusted: false, note: null };
+  }
+  const cur = Number(base.totalAmount ?? NaN);
+  if (!Number.isFinite(cur) || cur <= 0) {
+    return {
+      summary: { ...base, totalAmount: lineSum },
+      adjusted: true,
+      note: `明細を検算し、合計金額を ${lineSum.toLocaleString("ja-JP")} 円としました。`,
+    };
+  }
+  const diff = Math.abs(cur - lineSum);
+  if (diff <= 1) return { summary: base, adjusted: false, note: null };
+  const ratio = cur / lineSum;
+  if (ratio < 0.95 || ratio > 1.08) {
+    const prev = Math.round(cur);
+    const next = lineSum;
+    return {
+      summary: { ...base, totalAmount: next },
+      adjusted: true,
+      note: `明細を検算し、合計金額を補正しました（¥${prev.toLocaleString("ja-JP")} → ¥${next.toLocaleString("ja-JP")}）。`,
+    };
+  }
+  return { summary: base, adjusted: false, note: null };
+}
+
+const JP_PHONE_IN_OCR_RE = /0\d{1,4}-\d{1,4}-\d{4}|0\d{9,10}/;
+
+function ocrLinesMayContainJapanPhone(ocrLines) {
+  const text = Array.isArray(ocrLines) ? ocrLines.map((x) => String(x ?? "")).join("\n") : "";
+  return JP_PHONE_IN_OCR_RE.test(text);
+}
+
+function receiptVendorSignalWeak(v) {
+  const s = String(v ?? "").trim();
+  if (s.length < 2) return true;
+  if (/^(不明|unknown|不詳)$/i.test(s)) return true;
+  if (/^[-_/|\s・。]+$/u.test(s)) return true;
+  return false;
+}
+
 function tagFromCategoryName(name) {
   const n = normalizeKeyword(name);
   for (const [tag, aliases] of Object.entries(RECEIPT_CATEGORY_ALIASES)) {
@@ -475,9 +538,19 @@ async function suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor) 
   };
 }
 
-async function suggestExpenseCategoryForReceipt(pool, userId, catWhere, txWhere, vendor, items) {
-  const fromHistory = await suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor);
-  if (fromHistory?.id) return fromHistory;
+async function suggestExpenseCategoryForReceipt(
+  pool,
+  userId,
+  catWhere,
+  txWhere,
+  vendor,
+  items,
+  { usePersonalHistory = true } = {},
+) {
+  if (usePersonalHistory) {
+    const fromHistory = await suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor);
+    if (fromHistory?.id) return fromHistory;
+  }
 
   const vend = normalizeKeyword(vendor ?? "");
   const itemCorpus = normalizeKeyword((items ?? []).map((x) => x?.name ?? "").join(" "));
@@ -3281,14 +3354,6 @@ export async function handleApiRequest(req, options = {}) {
             [userId, userId],
           );
           const expenseCatRows = Array.isArray(expenseCats) ? expenseCats : [];
-          const suggestedCategory = await suggestExpenseCategoryForReceipt(
-            pool,
-            userId,
-            catWhere,
-            txWhere,
-            result?.summary?.vendorName ?? "",
-            result?.items ?? [],
-          );
           const subRow = await loadUserSubscriptionRowFull(pool, userId);
           let subscriptionActive = userHasPremiumSubscriptionAccess(subRow, userId);
           let debugReceiptTierOverride = null;
@@ -3302,29 +3367,41 @@ export async function handleApiRequest(req, options = {}) {
               subscriptionActive = raw === "subscribed";
             }
           }
+          const textractVendorBaseline = String(result?.summary?.vendorName ?? "").trim();
+          const suggestedCategory = await suggestExpenseCategoryForReceipt(
+            pool,
+            userId,
+            catWhere,
+            txWhere,
+            result?.summary?.vendorName ?? "",
+            result?.items ?? [],
+            { usePersonalHistory: subscriptionActive },
+          );
           const historyHints = subscriptionActive
             ? await fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere)
             : [];
           let aiReceipt = null;
-          try {
-            aiReceipt = await askBedrockReceiptAssistant({
-              subscriptionActive,
-              historyHints,
-              heuristicCategorySuggestion: suggestedCategory
-                ? {
-                    name: suggestedCategory.name,
-                    source: suggestedCategory.source,
-                  }
-                : null,
-              summary: result?.summary ?? {},
-              items: result?.items ?? [],
-              ocrLines: result?.ocrLines ?? [],
-              categoryCandidates: expenseCatRows.map((c) => c.name),
-              imageBase64: buf.toString("base64"),
-              imageMediaType: inferReceiptImageMediaTypeFromBuffer(buf),
-            });
-          } catch (e) {
-            logError("receipts.parse.ai_assist", e);
+          if (subscriptionActive) {
+            try {
+              aiReceipt = await askBedrockReceiptAssistant({
+                subscriptionActive,
+                historyHints,
+                heuristicCategorySuggestion: suggestedCategory
+                  ? {
+                      name: suggestedCategory.name,
+                      source: suggestedCategory.source,
+                    }
+                  : null,
+                summary: result?.summary ?? {},
+                items: result?.items ?? [],
+                ocrLines: result?.ocrLines ?? [],
+                categoryCandidates: expenseCatRows.map((c) => c.name),
+                imageBase64: buf.toString("base64"),
+                imageMediaType: inferReceiptImageMediaTypeFromBuffer(buf),
+              });
+            } catch (e) {
+              logError("receipts.parse.ai_assist", e);
+            }
           }
 
           let adjustedSummary = { ...(result?.summary ?? {}) };
@@ -3332,10 +3409,6 @@ export async function handleApiRequest(req, options = {}) {
           let aiCategoryName = null;
           if (aiReceipt?.ok && aiReceipt.data) {
             const d = aiReceipt.data;
-            if (!subscriptionActive) {
-              d.vendorName = null;
-              d.categoryName = null;
-            }
             const aiVendor = String(d.vendorName ?? "").trim();
             const aiDate = String(d.date ?? "").trim();
             const aiTotal = Number(d.totalAmount ?? NaN);
@@ -3388,41 +3461,85 @@ export async function handleApiRequest(req, options = {}) {
           let learnedMemoPresent = false;
           let learnedMemoValue = "";
           let learnedMode = null;
-          try {
-            const learned = await findLearnedReceiptCorrection(
-              pool,
-              userId,
-              catWhere,
-              result?.summary,
-              result?.items ?? [],
-            );
-            if (learned?.hit) {
-              const hasCat = learned.categoryId != null;
-              const hasMemo = learned.memoPresent;
-              if (hasCat || hasMemo) {
-                learnCorrectionHit = true;
-                learnedMode = learned.mode;
-                if (hasCat) {
-                  learnedCategoryId = Number(learned.categoryId);
-                  const [cn] = await pool.query(
-                    `SELECT c.name FROM categories c
-                     WHERE ${catWhere} AND c.id = ? AND c.is_archived = 0 LIMIT 1`,
-                    [userId, userId, learnedCategoryId],
-                  );
-                  if (Array.isArray(cn) && cn[0]?.name) {
-                    learnedCategoryName = String(cn[0].name);
+          if (subscriptionActive) {
+            try {
+              const learned = await findLearnedReceiptCorrection(
+                pool,
+                userId,
+                catWhere,
+                result?.summary,
+                result?.items ?? [],
+              );
+              if (learned?.hit) {
+                const hasCat = learned.categoryId != null;
+                const hasMemo = learned.memoPresent;
+                if (hasCat || hasMemo) {
+                  learnCorrectionHit = true;
+                  learnedMode = learned.mode;
+                  if (hasCat) {
+                    learnedCategoryId = Number(learned.categoryId);
+                    const [cn] = await pool.query(
+                      `SELECT c.name FROM categories c
+                       WHERE ${catWhere} AND c.id = ? AND c.is_archived = 0 LIMIT 1`,
+                      [userId, userId, learnedCategoryId],
+                    );
+                    if (Array.isArray(cn) && cn[0]?.name) {
+                      learnedCategoryName = String(cn[0].name);
+                    }
+                  }
+                  if (hasMemo) {
+                    learnedMemoPresent = true;
+                    learnedMemoValue = learned.memoValue;
                   }
                 }
-                if (hasMemo) {
-                  learnedMemoPresent = true;
-                  learnedMemoValue = learned.memoValue;
-                }
+              }
+            } catch (e) {
+              const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+              if (code !== "ER_NO_SUCH_TABLE") {
+                logError("receipts.parse.correction_lookup", e);
               }
             }
-          } catch (e) {
-            const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
-            if (code !== "ER_NO_SUCH_TABLE") {
-              logError("receipts.parse.correction_lookup", e);
+          }
+
+          let reconcileAdjusted = false;
+          let reconcilePremiumNote = null;
+          if (subscriptionActive) {
+            const rec = reconcilePremiumReceiptTotal(adjustedSummary, result?.items ?? []);
+            if (rec.adjusted) {
+              adjustedSummary = rec.summary;
+              reconcileAdjusted = true;
+              reconcilePremiumNote = rec.note;
+            }
+          }
+
+          const receiptAdvancedParsingMessages = [];
+          if (subscriptionActive) {
+            if (learnCorrectionHit && (learnedCategoryId != null || learnedMemoPresent)) {
+              receiptAdvancedParsingMessages.push(
+                "過去に保存した修正パターンに基づき、カテゴリやメモを提案しました。",
+              );
+            }
+            if (reconcileAdjusted && reconcilePremiumNote) {
+              receiptAdvancedParsingMessages.push(reconcilePremiumNote);
+            }
+            const vNow = String(adjustedSummary?.vendorName ?? "").trim();
+            if (
+              vNow &&
+              receiptVendorSignalWeak(textractVendorBaseline) &&
+              ocrLinesMayContainJapanPhone(result?.ocrLines)
+            ) {
+              receiptAdvancedParsingMessages.push(
+                `電話番号などの表記を手がかりに、店舗名を「${vNow.slice(0, 80)}」として補完しました。`,
+              );
+            }
+            while (receiptAdvancedParsingMessages.length > 5) {
+              receiptAdvancedParsingMessages.pop();
+            }
+            for (let i = 0; i < receiptAdvancedParsingMessages.length; i += 1) {
+              receiptAdvancedParsingMessages[i] = String(receiptAdvancedParsingMessages[i]).slice(
+                0,
+                220,
+              );
             }
           }
 
@@ -3474,6 +3591,12 @@ export async function handleApiRequest(req, options = {}) {
             logError("receipts.parse.duplicate_check", eDup);
           }
 
+          const receiptAdvancedParsingApplied =
+            Boolean(subscriptionActive) &&
+            (Boolean(aiReceipt?.ok) ||
+              learnCorrectionHit ||
+              reconcileAdjusted ||
+              suggestedCategory?.source === "history");
           const body = {
             ok: true,
             demo: false,
@@ -3490,6 +3613,11 @@ export async function handleApiRequest(req, options = {}) {
             receiptAiTier: aiReceipt?.receiptAiTier ?? null,
             debugReceiptTierOverride,
             subscriptionMockedByEnv: isUserIdForcedPremiumByEnv(userId),
+            receiptAdvancedParsingApplied,
+            receiptAdvancedParsingBanner: receiptAdvancedParsingApplied
+              ? "高度な解析を適用しました"
+              : null,
+            receiptAdvancedParsingMessages,
           };
           if (learnCorrectionHit && learnedMemoPresent) {
             body.suggestedMemo = learnedMemoValue;

@@ -391,6 +391,10 @@ export function ReceiptPage() {
       });
       {
         const parts: string[] = [];
+        if (r.receiptAdvancedParsingBanner) parts.push(r.receiptAdvancedParsingBanner);
+        if (r.receiptAdvancedParsingMessages?.length) {
+          parts.push(r.receiptAdvancedParsingMessages.join(" "));
+        }
         if (r.duplicateWarning) parts.push(r.duplicateWarning);
         if (r.notice) parts.push(r.notice);
         setNotice(parts.length ? parts.join(" ") : null);
