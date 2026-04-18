@@ -222,10 +222,11 @@ export function ReceiptPage() {
     summary: Record<string, unknown>;
     items: Array<{ name: string; amount: number | null; confidence?: number }>;
   } | null>(null);
-  /** 解析直後にフォームへ入れたメモ（店名）・カテゴリ。これと異なる内容で登録したときだけ学習する */
+  /** 解析直後にフォームへ入れたメモ（店名）・カテゴリ・金額。差分があれば学習する */
   const [loadedReceiptBaseline, setLoadedReceiptBaseline] = useState<{
     memo: string;
     categoryId: number | null;
+    totalAmount: number | null;
   } | null>(null);
   /** true のときはカテゴリ変更をユーザー操作とみなし、baseline を自動追従しない */
   const categoryTouchedByUserRef = useRef(false);
@@ -411,6 +412,10 @@ export function ReceiptPage() {
       setLoadedReceiptBaseline({
         memo: initialMemo,
         categoryId: initialCategoryId,
+        totalAmount:
+          s?.totalAmount != null && Number.isFinite(Number(s.totalAmount))
+            ? Math.round(Number(s.totalAmount))
+            : null,
       });
       {
         const parts: string[] = [];
@@ -697,9 +702,11 @@ export function ReceiptPage() {
               if (lastOcrForLearn?.summary && loadedReceiptBaseline) {
                 const submittedMemo = draftMemo.trim();
                 const submittedCat = draftCategoryId ?? null;
+                const submittedTotal = Number.isFinite(amount) ? Math.round(amount) : null;
                 const memoChanged = submittedMemo !== loadedReceiptBaseline.memo;
                 const categoryChanged = submittedCat !== loadedReceiptBaseline.categoryId;
-                if (memoChanged || categoryChanged) {
+                const totalChanged = submittedTotal !== loadedReceiptBaseline.totalAmount;
+                if (memoChanged || categoryChanged || totalChanged) {
                   void saveReceiptOcrCorrection({
                     summary: lastOcrForLearn.summary,
                     items: lastOcrForLearn.items,
