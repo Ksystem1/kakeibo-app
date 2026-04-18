@@ -204,6 +204,16 @@ export function ReceiptPage() {
   const [categorySuggestSource, setCategorySuggestSource] = useState<
     "history" | "keywords" | "correction" | "ai" | null
   >(null);
+  /** プレミアム: 解析 API が返す合計の候補（匿名辞書・明細合算など） */
+  const [totalCandidates, setTotalCandidates] = useState<
+    Array<{ total: number; label: string; source: string }>
+  >([]);
+  const showTotalCandidateChips = useMemo(
+    () =>
+      totalCandidates.length >= 2 ||
+      totalCandidates.some((c) => c.source === "global" || c.source === "lines"),
+    [totalCandidates],
+  );
   /** 登録時に POST /receipts/learn へ送る直近の取込スナップショット */
   const [lastOcrForLearn, setLastOcrForLearn] = useState<{
     summary: Record<string, unknown>;
@@ -321,6 +331,7 @@ export function ReceiptPage() {
     setDraftDate("");
     setDraftCategoryId(null);
     setCategorySuggestSource(null);
+    setTotalCandidates([]);
     setItems([]);
     setLastOcrForLearn(null);
     setLoadedReceiptBaseline(null);
@@ -330,6 +341,7 @@ export function ReceiptPage() {
       const r = await parseReceiptImage(b64, {
         debugForceReceiptTier: receiptDebugTier,
       });
+      setTotalCandidates(Array.isArray(r.totalCandidates) ? r.totalCandidates : []);
       setItems(r.items ?? []);
       const s = r.summary;
       if (s && typeof s === "object") {
@@ -585,6 +597,29 @@ export function ReceiptPage() {
             disabled={loading}
           />
         </div>
+        {showTotalCandidateChips ? (
+          <div
+            className={`${styles.field} ${styles.receiptFieldAmount}`}
+            style={{ gridColumn: "1 / -1" }}
+          >
+            <span className={styles.sub} style={{ display: "block", marginBottom: "0.35rem" }}>
+              合計の候補（プレミアム）
+            </span>
+            <div className={styles.modeRow} style={{ flexWrap: "wrap", gap: "0.35rem" }}>
+              {totalCandidates.map((c, idx) => (
+                <button
+                  key={`${c.source}-${c.total}-${idx}`}
+                  type="button"
+                  className={styles.btn}
+                  disabled={loading}
+                  onClick={() => setDraftTotal(String(c.total))}
+                >
+                  ¥{c.total.toLocaleString("ja-JP")} · {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div
           className={`${styles.field} ${styles.receiptMemoField} ${styles.receiptFieldMemo}`}
         >

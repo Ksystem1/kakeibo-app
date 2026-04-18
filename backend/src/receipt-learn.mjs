@@ -7,7 +7,8 @@ function normalizeToken(s) {
     .replace(/[　]/g, "");
 }
 
-function normalizeVendorForMatch(s) {
+/** グローバル辞書の照合・学習で共有する正規化（個人メモは使わない） */
+export function normalizeVendorForMatch(s) {
   return normalizeToken(s)
     .replace(/株式会社/g, "")
     .replace(/\(株\)/g, "")
@@ -15,7 +16,7 @@ function normalizeVendorForMatch(s) {
     .replace(/\(有\)/g, "");
 }
 
-function normalizeDateYmd(raw) {
+export function normalizeDateYmd(raw) {
   const t = String(raw ?? "")
     .trim()
     .replace(/\//g, "-");

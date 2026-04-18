@@ -159,6 +159,19 @@ CREATE TABLE IF NOT EXISTS receipt_ocr_corrections (
     ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 匿名化レシート合計のグローバル集計（プレミアム解析の候補用）。migration_v15 と同等。
+CREATE TABLE IF NOT EXISTS global_receipt_ocr_corrections (
+  id                   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  layout_fingerprint   CHAR(64) NOT NULL COMMENT 'SHA-256 hex（正規化 vendor + YYYY-MM）',
+  suggested_total      INT NOT NULL COMMENT '確定合計（円）。商品名・メモは保持しない',
+  hit_count            INT UNSIGNED NOT NULL DEFAULT 1,
+  created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_global_receipt_fp_total (layout_fingerprint, suggested_total),
+  KEY idx_global_receipt_fp (layout_fingerprint)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ---------------------------------------------------------------------------
 -- 家族共通の固定費（GET/PUT /settings/fixed-costs）
 -- ---------------------------------------------------------------------------

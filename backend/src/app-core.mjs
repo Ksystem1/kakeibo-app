@@ -19,6 +19,12 @@ import {
   receiptOcrMatchKey,
 } from "./receipt-learn.mjs";
 import {
+  buildReceiptTotalCandidates,
+  fetchGlobalReceiptTotalsByFingerprint,
+  globalReceiptLayoutFingerprint,
+  upsertGlobalReceiptOcrStat,
+} from "./global-receipt-ocr.mjs";
+import {
   mergeDuplicateCategories,
   normalizeCategoryNameKey,
 } from "./category-utils.mjs";
@@ -3302,6 +3308,14 @@ export async function handleApiRequest(req, options = {}) {
                updated_at = CURRENT_TIMESTAMP`,
             [userId, familyId, matchKey, jsonSnap, categoryId, memo],
           );
+          try {
+            await upsertGlobalReceiptOcrStat(pool, snapshot);
+          } catch (eG) {
+            const gCode = eG && typeof eG === "object" && "code" in eG ? String(eG.code) : "";
+            if (gCode !== "ER_NO_SUCH_TABLE") {
+              logError("receipts.learn.global_agg", eG);
+            }
+          }
           return json(200, { ok: true, skipped: false }, hdrs, skipCors);
         } catch (e) {
           const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
@@ -3591,12 +3605,60 @@ export async function handleApiRequest(req, options = {}) {
             logError("receipts.parse.duplicate_check", eDup);
           }
 
+          let totalCandidates = [];
+          if (subscriptionActive) {
+            try {
+              const gfp = globalReceiptLayoutFingerprint(adjustedSummary);
+              const globalRows =
+                gfp != null
+                  ? await fetchGlobalReceiptTotalsByFingerprint(pool, gfp, 8)
+                  : [];
+              totalCandidates = buildReceiptTotalCandidates({
+                subscriptionActive,
+                adjustedSummary,
+                items: result.items ?? [],
+                globalRows,
+              });
+            } catch (eGlob) {
+              const gCode =
+                eGlob && typeof eGlob === "object" && "code" in eGlob ? String(eGlob.code) : "";
+              if (gCode !== "ER_NO_SUCH_TABLE") {
+                logError("receipts.parse.global_agg", eGlob);
+              }
+              totalCandidates = buildReceiptTotalCandidates({
+                subscriptionActive,
+                adjustedSummary,
+                items: result.items ?? [],
+                globalRows: [],
+              });
+            }
+          }
+          if (
+            subscriptionActive &&
+            totalCandidates.some((c) => c.source === "global") &&
+            !receiptAdvancedParsingMessages.some((m) => String(m).includes("匿名"))
+          ) {
+            receiptAdvancedParsingMessages.push(
+              "匿名化された利用傾向から、合計金額の別候補を表示しています。",
+            );
+            while (receiptAdvancedParsingMessages.length > 5) {
+              receiptAdvancedParsingMessages.shift();
+            }
+            for (let mi = 0; mi < receiptAdvancedParsingMessages.length; mi += 1) {
+              receiptAdvancedParsingMessages[mi] = String(receiptAdvancedParsingMessages[mi]).slice(
+                0,
+                220,
+              );
+            }
+          }
+
           const receiptAdvancedParsingApplied =
             Boolean(subscriptionActive) &&
             (Boolean(aiReceipt?.ok) ||
               learnCorrectionHit ||
               reconcileAdjusted ||
-              suggestedCategory?.source === "history");
+              suggestedCategory?.source === "history" ||
+              totalCandidates.some((c) => c.source === "global"));
           const body = {
             ok: true,
             demo: false,
@@ -3618,6 +3680,7 @@ export async function handleApiRequest(req, options = {}) {
               ? "高度な解析を適用しました"
               : null,
             receiptAdvancedParsingMessages,
+            totalCandidates,
           };
           if (learnCorrectionHit && learnedMemoPresent) {
             body.suggestedMemo = learnedMemoValue;
@@ -3657,6 +3720,7 @@ export async function handleApiRequest(req, options = {}) {
                 notice:
                   "自動解析を一時的に利用できませんでした。店舗名・金額・日付を手入力して登録できます。",
                 expenseIndex: null,
+                totalCandidates: [],
               },
               hdrs,
               skipCors,

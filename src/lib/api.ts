@@ -675,6 +675,7 @@ export async function parseReceiptImage(
         receiptAdvancedParsingApplied?: boolean;
         receiptAdvancedParsingBanner?: string | null;
         receiptAdvancedParsingMessages?: string[];
+        totalCandidates?: Array<{ total: number; label: string; source: string }>;
       }>(res);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
