@@ -776,7 +776,7 @@ export function SettingsPage() {
             <label>固定費入力（1行 = カテゴリ + 金額 / カテゴリは自由入力）</label>
             <div style={{ display: "grid", gap: 8 }}>
               {fixedItems.map((item, idx) => (
-                <div key={item.id} style={{ display: "grid", gridTemplateColumns: "140px 1fr auto", gap: 8 }}>
+                <div key={item.id} className={styles.fixedCostRow}>
                   <input
                     type="text"
                     placeholder="カテゴリ（自由入力: 例 家賃 / サブスク）"

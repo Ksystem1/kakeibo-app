@@ -1147,6 +1147,45 @@
   box-shadow: none;
 }
 
+/* 設定の固定費: カテゴリは可変、金額は桁数＋大フォントでも切れない最小幅 */
+.fixedCostRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(14ch, 11rem) auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.fixedCostRow > input[type="text"] {
+  min-width: 0;
+}
+
+.fixedCostRow > input[type="number"] {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (max-width: 520px) {
+  .fixedCostRow {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+
+  .fixedCostRow > input[type="number"] {
+    max-width: 100%;
+  }
+
+  .fixedCostRow > .btn,
+  .fixedCostRow > button {
+    justify-self: stretch;
+    width: 100%;
+  }
+}
+
 .settingsLabel {
   display: block;
   margin-bottom: 0.5rem;
