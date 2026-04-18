@@ -26,8 +26,11 @@ import {
   postBillingPortalSession,
   reclassifyUncategorizedReceipts,
 } from "../lib/api";
-import { subscriptionStatusLabelJa } from "../lib/subscriptionStatusLabels";
-import { formatSettingsSubscriptionSummary } from "../lib/subscriptionStatusUi";
+import { isSubscriptionServiceSubscribedClient } from "../lib/subscriptionAccess";
+import {
+  formatPremiumSubscriptionPrimaryStatus,
+  formatSettingsSubscriptionSummary,
+} from "../lib/subscriptionStatusUi";
 import {
   clearPwaInstallBannerHidden,
   isPwaInstallBannerHidden,
@@ -58,19 +61,6 @@ function itemsForFixedCostEditor(
     }));
   }
   return [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }];
-}
-
-/** Stripe 上で契約が継続しているときのみプラン管理（ポータル）を出す */
-function shouldShowSubscriptionManage(user: { subscriptionStatus?: string } | null | undefined): boolean {
-  if (!user) return false;
-  const s = String(user.subscriptionStatus ?? "").trim().toLowerCase();
-  return s === "active" || s === "trialing" || s === "past_due";
-}
-
-function hasPremiumStatus(user: { subscriptionStatus?: string } | null | undefined): boolean {
-  if (!user) return false;
-  const s = String(user.subscriptionStatus ?? "").trim().toLowerCase();
-  return s === "active" || s === "trialing" || s === "past_due";
 }
 
 export function SettingsPage() {
@@ -169,7 +159,7 @@ export function SettingsPage() {
         if (cancelled) return;
         if (normalized) setUser(normalized);
         setPremiumContractOpen(false);
-        if (hasPremiumStatus(normalized)) return;
+        if (isSubscriptionServiceSubscribedClient(normalized)) return;
       } catch {
         if (cancelled) return;
       }
@@ -199,7 +189,7 @@ export function SettingsPage() {
         const normalized = res?.user ? normalizeAuthContextUser(res.user) : null;
         if (cancelled) return;
         if (normalized) setUser(normalized);
-        if (hasPremiumStatus(normalized)) return;
+        if (isSubscriptionServiceSubscribedClient(normalized)) return;
       } catch {
         if (cancelled) return;
       }
@@ -229,7 +219,7 @@ export function SettingsPage() {
         const s = await getBillingSubscriptionStatus();
         if (cancelled) return;
         setBillingStatus(s);
-        if (hasPremiumStatus({ subscriptionStatus: s.subscriptionStatus })) return;
+        if (isSubscriptionServiceSubscribedClient(s)) return;
       } catch {
         if (cancelled) return;
       }
@@ -271,22 +261,6 @@ export function SettingsPage() {
     enabled: Boolean(token && canSendAuthenticatedRequest(token)),
   });
 
-  const subscriptionEndLabel = useMemo(() => {
-    const endRaw = effectiveUser?.subscriptionPeriodEndAt;
-    if (endRaw == null || String(endRaw).trim() === "") return null;
-    const d = new Date(String(endRaw));
-    if (!Number.isFinite(d.getTime())) return null;
-    const date = new Intl.DateTimeFormat("ja-JP", {
-      timeZone: "Asia/Tokyo",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    }).format(d);
-    if (effectiveUser?.subscriptionCancelAtPeriodEnd) {
-      return `利用期限: ${date}`;
-    }
-    return `請求期間終了: ${date}`;
-  }, [effectiveUser]);
   const navPreviewOrder: Array<keyof NavIconPaths> = [
     "dashboard",
     "kakeibo",
@@ -534,23 +508,27 @@ export function SettingsPage() {
         ) : null}
         {token && effectiveUser ? (
           <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
-            <p style={{ margin: 0 }}>
-              プレミアム（サブスクリプション）状態:{" "}
-              <strong>
-                {subscriptionStatusLabelJa(effectiveUser.subscriptionStatus ?? "inactive")}
-                {subscriptionEndLabel ? `（${subscriptionEndLabel}）` : ""}
-              </strong>
-            </p>
-            <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
-              {formatSettingsSubscriptionSummary(effectiveUser)}
-            </p>
-            {shouldShowSubscriptionManage(effectiveUser) &&
-            getApiBaseUrl() &&
-            canSendAuthenticatedRequest(token) ? (
-              <div className={styles.modeRow} style={{ marginTop: "0.45rem", flexWrap: "wrap", gap: "0.4rem" }}>
+            <p style={{ margin: 0, fontWeight: 600 }}>プレミアム（サブスクリプション）</p>
+            <div
+              className={styles.modeRow}
+              style={{
+                marginTop: "0.35rem",
+                flexWrap: "wrap",
+                gap: "0.5rem",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span style={{ flex: "1 1 auto", minWidth: "10rem", fontWeight: 600 }}>
+                {formatPremiumSubscriptionPrimaryStatus(effectiveUser)}
+              </span>
+              {isSubscriptionServiceSubscribedClient(effectiveUser) &&
+              getApiBaseUrl() &&
+              canSendAuthenticatedRequest(token) ? (
                 <button
                   type="button"
                   className={styles.btn}
+                  style={{ flex: "0 0 auto" }}
                   disabled={portalBusy}
                   onClick={async () => {
                     setPortalMessage(null);
@@ -573,12 +551,15 @@ export function SettingsPage() {
                 >
                   {portalBusy ? "準備中…" : "解約（プラン管理）"}
                 </button>
-                {portalMessage ? (
-                  <p className={styles.reclassifyHint} style={{ margin: 0 }}>
-                    {portalMessage}
-                  </p>
-                ) : null}
-              </div>
+              ) : null}
+            </div>
+            <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+              {formatSettingsSubscriptionSummary(effectiveUser)}
+            </p>
+            {portalMessage ? (
+              <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+                {portalMessage}
+              </p>
             ) : null}
             {premiumContractOpen &&
             stripeCheckoutEnabled &&

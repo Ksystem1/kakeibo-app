@@ -47,25 +47,47 @@ export function isSubscriptionActive(subscriptionStatus) {
 }
 
 /**
+ * DB 行の subscription_period_end_at をミリ秒に（不正なら null）
+ * @param {Record<string, unknown> | null | undefined} row
+ * @returns {number | null}
+ */
+export function subscriptionPeriodEndMsFromRow(row) {
+  const raw = row?.subscription_period_end_at;
+  if (raw == null || raw === "") return null;
+  const end = raw instanceof Date ? raw : new Date(raw);
+  if (!Number.isFinite(end.getTime())) return null;
+  return end.getTime();
+}
+
+/**
+ * Stripe 準拠: サービス利用可能か（current_period_end を過ぎるまでは cancel_at_period_end でも有効）。
+ * - active / past_due / trialing: 期間終了前なら利用可
+ * - canceled: current_period_end（DB の subscription_period_end_at）まで利用可
+ * @param {Record<string, unknown> | null | undefined} row users/families JOIN 行（subscription_period_end_at 任意）
+ * @param {number} userId
+ * @param {number} [nowMs=Date.now()]
+ * @returns {boolean}
+ */
+export function isSubscriptionServiceSubscribed(row, userId, nowMs = Date.now()) {
+  if (isUserIdForcedPremiumByEnv(userId)) return true;
+  const status = String(
+    getEffectiveSubscriptionStatus(deriveSubscriptionStatusFromDbRow(row), userId),
+  ).trim()
+    .toLowerCase();
+  const endMs = subscriptionPeriodEndMsFromRow(row);
+  if (endMs != null && nowMs > endMs) return false;
+  if (status === "active" || status === "past_due" || status === "trialing") return true;
+  if (status === "canceled" && endMs != null && nowMs <= endMs) return true;
+  return false;
+}
+
+/**
  * プレミアム機能（ナビスキン・レシート AI 等）の利用可否。
- * - active / trialing は利用可（解約予定で期間内のケースも Stripe 上は多くは active のまま）
- * - canceled でも請求期間終了日時まで利用可（即時解約などの稀なケース）
  * @param {Record<string, unknown>} row users の一部（subscription_period_end_at 任意）
  * @param {number} userId
  */
 export function userHasPremiumSubscriptionAccess(row, userId) {
-  const status = getEffectiveSubscriptionStatus(deriveSubscriptionStatusFromDbRow(row), userId);
-  if (isSubscriptionActive(status)) return true;
-  const s = String(status ?? "").trim().toLowerCase();
-  if (s === "past_due") return true;
-  if (s === "canceled") {
-    const raw = row?.subscription_period_end_at;
-    if (raw == null || raw === "") return false;
-    const end = raw instanceof Date ? raw : new Date(raw);
-    if (!Number.isFinite(end.getTime())) return false;
-    return Date.now() <= end.getTime();
-  }
-  return false;
+  return isSubscriptionServiceSubscribed(row, userId);
 }
 
 /**
