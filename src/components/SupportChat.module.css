@@ -1,0 +1,75 @@
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.35rem 0.15rem 0.5rem;
+  min-height: 0;
+}
+
+.row {
+  display: flex;
+  width: 100%;
+  align-items: flex-end;
+}
+
+.rowUser {
+  justify-content: flex-end;
+}
+
+.rowStaff {
+  justify-content: flex-start;
+}
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  max-width: min(88%, 440px);
+  align-items: stretch;
+}
+
+.bubble {
+  padding: 0.55rem 0.78rem;
+  border-radius: 18px;
+  font-size: 0.92rem;
+  line-height: 1.48;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubbleUser {
+  background: linear-gradient(145deg, #0d8f5f, #0a6d49);
+  color: #fff;
+  border-bottom-right-radius: 5px;
+  box-shadow: 0 2px 8px rgba(10, 90, 60, 0.22);
+}
+
+.bubbleStaff {
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 5px;
+  box-shadow: 0 1px 4px rgba(15, 43, 71, 0.08);
+}
+
+.meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.12rem;
+  padding: 0 0.2rem;
+}
+
+.rowUser .meta {
+  text-align: right;
+}
+
+.rowStaff .meta {
+  text-align: left;
+}
+
+.importantBadge {
+  display: inline-block;
+  margin-left: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #b45309;
+}

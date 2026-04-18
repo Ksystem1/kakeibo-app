@@ -968,6 +968,67 @@ async function ensureAdmin(pool, userId) {
   return { ok: true };
 }
 
+const SUPPORT_CHAT_BODY_MAX = 8000;
+
+function supportChatMigrationNeededResponseBody() {
+  return {
+    error: "SupportChatNotConfigured",
+    detail: "db/migration_v14_chat_messages.sql を RDS に適用してください。",
+  };
+}
+
+function isSupportChatTableMissingError(e) {
+  const code = e && typeof e === "object" ? String(e.code || "") : "";
+  if (code !== "ER_NO_SUCH_TABLE") return false;
+  const msg =
+    e && typeof e === "object" ? String(e.sqlMessage || "").toLowerCase() : "";
+  return msg.includes("chat_messages");
+}
+
+async function userBelongsToFamily(pool, userId, familyId) {
+  const [[row]] = await pool.query(
+    `SELECT 1 AS ok FROM family_members WHERE family_id = ? AND user_id = ? LIMIT 1`,
+    [familyId, userId],
+  );
+  return Boolean(row?.ok);
+}
+
+function normalizeSupportChatBody(raw) {
+  const s = raw == null ? "" : String(raw);
+  if (s.length > SUPPORT_CHAT_BODY_MAX) {
+    return {
+      error: `本文は${SUPPORT_CHAT_BODY_MAX}文字以内で入力してください`,
+    };
+  }
+  const trimmed = s.trim();
+  if (trimmed.length < 1) {
+    return { error: "本文を入力してください" };
+  }
+  return { body: trimmed };
+}
+
+function clampSupportChatLimit(n, fallback = 50) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return fallback;
+  return Math.min(200, Math.max(1, Math.floor(x)));
+}
+
+function rowToChatMessageApi(r) {
+  if (!r) return null;
+  const created = r.created_at;
+  const createdAt =
+    created instanceof Date ? created.toISOString() : r.created_at ?? null;
+  return {
+    id: Number(r.id),
+    family_id: Number(r.family_id),
+    sender_user_id: Number(r.sender_user_id),
+    body: String(r.body ?? ""),
+    is_staff: Number(r.is_staff) === 1,
+    is_important: Number(r.is_important) === 1,
+    created_at: createdAt,
+  };
+}
+
 /** ヘッダーお知らせ（未マイグレーション時は空） */
 async function getHeaderAnnouncement(pool) {
   try {
@@ -1038,6 +1099,9 @@ export async function handleApiRequest(req, options = {}) {
             billingCancelSubscription: "/billing/cancel-subscription",
             announcement: "/announcement",
             adminAnnouncement: "/admin/announcement",
+            supportChatMessages: "/support/chat/messages",
+            adminSupportChatFamilies: "/admin/support/chat/families",
+            adminSupportChatMessages: "/admin/support/chat/messages",
           },
         },
         hdrs,
@@ -1187,6 +1251,8 @@ export async function handleApiRequest(req, options = {}) {
     const categoryOneMatch = /^\/categories\/(\d+)$/.exec(normPath);
     const adminUserOneMatch = /^\/admin\/users\/(\d+)$/.exec(normPath);
     const adminUserResetPasswordMatch = /^\/admin\/users\/(\d+)\/reset-password$/.exec(normPath);
+    const adminSupportChatMessageOneMatch =
+      /^\/admin\/support\/chat\/messages\/(\d+)$/.exec(normPath);
 
     if (txOneMatch && method === "PATCH") {
       const txId = Number(txOneMatch[1], 10);
@@ -1689,6 +1755,398 @@ export async function handleApiRequest(req, options = {}) {
         throw e;
       }
       return json(200, { ok: true, text: normalized }, hdrs, skipCors);
+    }
+
+    if (routeKey(method, path) === "GET /support/chat/messages") {
+      let targetFamilyId = null;
+      const rawFam = q.family_id ?? q.familyId;
+      if (rawFam != null && String(rawFam).trim() !== "") {
+        const fid = Number(rawFam, 10);
+        if (!Number.isFinite(fid) || fid <= 0) {
+          return json(400, { error: "family_id が不正です" }, hdrs, skipCors);
+        }
+        const member = await userBelongsToFamily(pool, userId, fid);
+        if (!member) {
+          return json(403, { error: "この家族のチャットを表示できません" }, hdrs, skipCors);
+        }
+        targetFamilyId = fid;
+      } else {
+        const def = await getDefaultFamilyId(pool, userId);
+        if (!def) {
+          return json(400, { error: "家族が未設定です" }, hdrs, skipCors);
+        }
+        targetFamilyId = def;
+      }
+      const limit = clampSupportChatLimit(q.limit, 50);
+      const beforeRaw = q.before ?? q.before_id;
+      const beforeId =
+        beforeRaw != null && String(beforeRaw).trim() !== ""
+          ? Number(beforeRaw, 10)
+          : null;
+      if (beforeId != null && (!Number.isFinite(beforeId) || beforeId <= 0)) {
+        return json(400, { error: "before が不正です" }, hdrs, skipCors);
+      }
+      const fetchLimit = limit + 1;
+      try {
+        const [rows] =
+          beforeId == null
+            ? await pool.query(
+                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                 FROM chat_messages
+                 WHERE family_id = ? AND deleted_at IS NULL
+                 ORDER BY id DESC
+                 LIMIT ?`,
+                [targetFamilyId, fetchLimit],
+              )
+            : await pool.query(
+                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                 FROM chat_messages
+                 WHERE family_id = ? AND deleted_at IS NULL AND id < ?
+                 ORDER BY id DESC
+                 LIMIT ?`,
+                [targetFamilyId, beforeId, fetchLimit],
+              );
+        const hasMore = rows.length > limit;
+        const page = hasMore ? rows.slice(0, limit) : rows;
+        const items = page.map(rowToChatMessageApi).reverse();
+        const nextBeforeId =
+          hasMore && items.length > 0 ? Number(items[0].id) : null;
+        return json(
+          200,
+          { family_id: targetFamilyId, items, has_more: hasMore, next_before_id: nextBeforeId },
+          hdrs,
+          skipCors,
+        );
+      } catch (e) {
+        if (isSupportChatTableMissingError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (routeKey(method, path) === "POST /support/chat/messages") {
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      let targetFamilyId = null;
+      const rawFam = b.family_id ?? b.familyId;
+      if (rawFam != null && String(rawFam).trim() !== "") {
+        const fid = Number(rawFam, 10);
+        if (!Number.isFinite(fid) || fid <= 0) {
+          return json(400, { error: "family_id が不正です" }, hdrs, skipCors);
+        }
+        const member = await userBelongsToFamily(pool, userId, fid);
+        if (!member) {
+          return json(403, { error: "この家族のチャットに投稿できません" }, hdrs, skipCors);
+        }
+        targetFamilyId = fid;
+      } else {
+        const def = await getDefaultFamilyId(pool, userId);
+        if (!def) {
+          return json(400, { error: "家族が未設定です" }, hdrs, skipCors);
+        }
+        targetFamilyId = def;
+      }
+      const normBody = normalizeSupportChatBody(b.body);
+      if (normBody.error) {
+        return json(400, { error: normBody.error }, hdrs, skipCors);
+      }
+      try {
+        const [ins] = await pool.query(
+          `INSERT INTO chat_messages (family_id, sender_user_id, body, is_staff, is_important)
+           VALUES (?, ?, ?, 0, 0)`,
+          [targetFamilyId, userId, normBody.body],
+        );
+        const newId = Number(ins.insertId);
+        const [[row]] = await pool.query(
+          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+           FROM chat_messages WHERE id = ? LIMIT 1`,
+          [newId],
+        );
+        return json(201, { message: rowToChatMessageApi(row) }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatTableMissingError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (routeKey(method, path) === "GET /admin/support/chat/families") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      try {
+        const [rows] = await pool.query(
+          `SELECT f.id AS family_id,
+                  f.name AS family_name,
+                  lm.id AS last_message_id,
+                  lm.body AS last_message_body,
+                  lm.created_at AS last_message_at,
+                  lm.sender_user_id AS last_sender_user_id,
+                  lm.is_staff AS last_is_staff,
+                  lm.is_important AS last_is_important
+           FROM families f
+           LEFT JOIN (
+             SELECT m.*
+             FROM chat_messages m
+             INNER JOIN (
+               SELECT family_id, MAX(id) AS max_id
+               FROM chat_messages
+               WHERE deleted_at IS NULL
+               GROUP BY family_id
+             ) x ON m.family_id = x.family_id AND m.id = x.max_id
+           ) lm ON lm.family_id = f.id
+           ORDER BY COALESCE(lm.created_at, f.updated_at, f.created_at) DESC, f.id DESC`,
+        );
+        const items = rows.map((r) => {
+          const lastAt = r.last_message_at;
+          return {
+            family_id: Number(r.family_id),
+            family_name: String(r.family_name ?? ""),
+            last_message:
+              r.last_message_id == null
+                ? null
+                : {
+                    id: Number(r.last_message_id),
+                    body: String(r.last_message_body ?? ""),
+                    created_at:
+                      lastAt instanceof Date ? lastAt.toISOString() : r.last_message_at ?? null,
+                    sender_user_id: Number(r.last_sender_user_id),
+                    is_staff: Number(r.last_is_staff) === 1,
+                    is_important: Number(r.last_is_important) === 1,
+                  },
+          };
+        });
+        return json(200, { items }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatTableMissingError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (routeKey(method, path) === "GET /admin/support/chat/messages") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const rawFam = q.family_id ?? q.familyId;
+      if (rawFam == null || String(rawFam).trim() === "") {
+        return json(400, { error: "family_id が必要です" }, hdrs, skipCors);
+      }
+      const targetFamilyId = Number(rawFam, 10);
+      if (!Number.isFinite(targetFamilyId) || targetFamilyId <= 0) {
+        return json(400, { error: "family_id が不正です" }, hdrs, skipCors);
+      }
+      const [[fam]] = await pool.query(`SELECT id FROM families WHERE id = ? LIMIT 1`, [
+        targetFamilyId,
+      ]);
+      if (!fam) {
+        return json(404, { error: "家族が見つかりません" }, hdrs, skipCors);
+      }
+      const limit = clampSupportChatLimit(q.limit, 50);
+      const beforeRaw = q.before ?? q.before_id;
+      const beforeId =
+        beforeRaw != null && String(beforeRaw).trim() !== ""
+          ? Number(beforeRaw, 10)
+          : null;
+      if (beforeId != null && (!Number.isFinite(beforeId) || beforeId <= 0)) {
+        return json(400, { error: "before が不正です" }, hdrs, skipCors);
+      }
+      const fetchLimit = limit + 1;
+      try {
+        const [rows] =
+          beforeId == null
+            ? await pool.query(
+                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                 FROM chat_messages
+                 WHERE family_id = ? AND deleted_at IS NULL
+                 ORDER BY id DESC
+                 LIMIT ?`,
+                [targetFamilyId, fetchLimit],
+              )
+            : await pool.query(
+                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                 FROM chat_messages
+                 WHERE family_id = ? AND deleted_at IS NULL AND id < ?
+                 ORDER BY id DESC
+                 LIMIT ?`,
+                [targetFamilyId, beforeId, fetchLimit],
+              );
+        const hasMore = rows.length > limit;
+        const page = hasMore ? rows.slice(0, limit) : rows;
+        const items = page.map(rowToChatMessageApi).reverse();
+        const nextBeforeId =
+          hasMore && items.length > 0 ? Number(items[0].id) : null;
+        return json(
+          200,
+          { family_id: targetFamilyId, items, has_more: hasMore, next_before_id: nextBeforeId },
+          hdrs,
+          skipCors,
+        );
+      } catch (e) {
+        if (isSupportChatTableMissingError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (routeKey(method, path) === "POST /admin/support/chat/messages") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      const rawFam = b.family_id ?? b.familyId;
+      const targetFamilyId = Number(rawFam, 10);
+      if (!Number.isFinite(targetFamilyId) || targetFamilyId <= 0) {
+        return json(400, { error: "family_id が必要です" }, hdrs, skipCors);
+      }
+      const [[fam]] = await pool.query(`SELECT id FROM families WHERE id = ? LIMIT 1`, [
+        targetFamilyId,
+      ]);
+      if (!fam) {
+        return json(404, { error: "家族が見つかりません" }, hdrs, skipCors);
+      }
+      const normBody = normalizeSupportChatBody(b.body);
+      if (normBody.error) {
+        return json(400, { error: normBody.error }, hdrs, skipCors);
+      }
+      const isImportant =
+        b.is_important === true ||
+        b.isImportant === true ||
+        b.important === true;
+      try {
+        const [ins] = await pool.query(
+          `INSERT INTO chat_messages (family_id, sender_user_id, body, is_staff, is_important)
+           VALUES (?, ?, ?, 1, ?)`,
+          [targetFamilyId, userId, normBody.body, isImportant ? 1 : 0],
+        );
+        const newId = Number(ins.insertId);
+        const [[row]] = await pool.query(
+          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+           FROM chat_messages WHERE id = ? LIMIT 1`,
+          [newId],
+        );
+        return json(201, { message: rowToChatMessageApi(row) }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatTableMissingError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (adminSupportChatMessageOneMatch && method === "PATCH") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const msgId = Number(adminSupportChatMessageOneMatch[1], 10);
+      if (!Number.isFinite(msgId) || msgId <= 0) {
+        return json(400, { error: "メッセージIDが不正です" }, hdrs, skipCors);
+      }
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      const hasImportant =
+        Object.prototype.hasOwnProperty.call(b, "is_important") ||
+        Object.prototype.hasOwnProperty.call(b, "isImportant");
+      const hasBody = Object.prototype.hasOwnProperty.call(b, "body");
+      if (!hasImportant && !hasBody) {
+        return json(
+          400,
+          { error: "is_important または body を指定してください" },
+          hdrs,
+          skipCors,
+        );
+      }
+      let normalizedBody = null;
+      if (hasBody) {
+        const norm = normalizeSupportChatBody(b.body);
+        if (norm.error) {
+          return json(400, { error: norm.error }, hdrs, skipCors);
+        }
+        normalizedBody = norm.body;
+      }
+      try {
+        const [[exists]] = await pool.query(
+          `SELECT is_staff FROM chat_messages WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+          [msgId],
+        );
+        if (!exists) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (hasBody && Number(exists.is_staff) !== 1) {
+          return json(
+            400,
+            { error: "管理者メッセージのみ本文を編集できます" },
+            hdrs,
+            skipCors,
+          );
+        }
+        const fields = [];
+        const params = [];
+        if (hasImportant) {
+          const flag = Boolean(b.is_important ?? b.isImportant);
+          fields.push("is_important = ?");
+          params.push(flag ? 1 : 0);
+        }
+        if (hasBody) {
+          fields.push("body = ?");
+          params.push(normalizedBody);
+        }
+        const [upd] = await pool.query(
+          `UPDATE chat_messages SET ${fields.join(", ")} WHERE id = ? AND deleted_at IS NULL`,
+          [...params, msgId],
+        );
+        if (!upd?.affectedRows) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        const [[row]] = await pool.query(
+          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+           FROM chat_messages WHERE id = ? LIMIT 1`,
+          [msgId],
+        );
+        return json(200, { message: rowToChatMessageApi(row) }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatTableMissingError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (adminSupportChatMessageOneMatch && method === "DELETE") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const msgId = Number(adminSupportChatMessageOneMatch[1], 10);
+      if (!Number.isFinite(msgId) || msgId <= 0) {
+        return json(400, { error: "メッセージIDが不正です" }, hdrs, skipCors);
+      }
+      try {
+        const [upd] = await pool.query(
+          `UPDATE chat_messages SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`,
+          [msgId],
+        );
+        if (!upd?.affectedRows) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        return json(200, { ok: true }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatTableMissingError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
     }
 
     if (categoryOneMatch && method === "PATCH") {

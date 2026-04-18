@@ -4,8 +4,9 @@ import {
 } from "../context/SettingsContext";
 import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
+import { useSupportChatUnreadBadge } from "../hooks/useSupportChatUnreadBadge";
 import {
   DEFAULT_NAV_SKIN_ID,
   PREMIUM_NAV_SKIN_ID,
@@ -260,6 +261,16 @@ export function SettingsPage() {
     };
   }, [authUser, billingStatus]);
 
+  const supportFamilyIdForUnread =
+    effectiveUser?.familyId != null && Number.isFinite(Number(effectiveUser.familyId))
+      ? Number(effectiveUser.familyId)
+      : null;
+  const { unread: supportChatUnreadSettings } = useSupportChatUnreadBadge({
+    token,
+    familyId: supportFamilyIdForUnread,
+    enabled: Boolean(token && canSendAuthenticatedRequest(token)),
+  });
+
   const subscriptionEndLabel = useMemo(() => {
     const endRaw = effectiveUser?.subscriptionPeriodEndAt;
     if (endRaw == null || String(endRaw).trim() === "") return null;
@@ -331,6 +342,37 @@ export function SettingsPage() {
           同じ家族に紐づいた人は取引の入力・閲覧ができます。メール登録で招待URLを発行します。
         </p>
         <MembersPage embedded />
+      </div>
+      <div className={styles.settingsPanel} style={{ marginTop: "0.75rem", maxWidth: 980 }}>
+        <h2 className={styles.sectionTitle}>運営サポート</h2>
+        <p className={styles.reclassifyHint}>
+          ご不明点や不具合は家族単位のチャットでお問い合わせいただけます。
+        </p>
+        <span style={{ position: "relative", display: "inline-block" }}>
+          <Link
+            to="/support"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            style={{ display: "inline-block", textDecoration: "none", textAlign: "center" }}
+          >
+            サポートチャットを開く
+          </Link>
+          {supportChatUnreadSettings ? (
+            <span
+              title="運営からの新着メッセージがあります"
+              aria-label="未読あり"
+              style={{
+                position: "absolute",
+                top: -3,
+                right: -3,
+                width: 11,
+                height: 11,
+                borderRadius: "50%",
+                background: "#e11d48",
+                boxShadow: "0 0 0 2px var(--bg-card, #fff)",
+              }}
+            />
+          ) : null}
+        </span>
       </div>
       <div className={styles.settingsPanel} style={{ maxWidth: 820 }}>
         <p className={styles.sub} style={{ margin: "0 0 0.5rem" }}>

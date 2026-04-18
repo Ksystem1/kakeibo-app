@@ -10,7 +10,14 @@ import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
 import { buildNavIconPaths, DEFAULT_NAV_SKIN_ID, type NavIconPaths } from "../config/navSkins";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { getAuthMe, getHeaderAnnouncement, normalizeAuthContextUser } from "../lib/api";
+import {
+  canSendAuthenticatedRequest,
+  getAuthMe,
+  getHeaderAnnouncement,
+  normalizeAuthContextUser,
+} from "../lib/api";
+import { useAdminSupportNeedsReplyBadge } from "../hooks/useAdminSupportNeedsReplyBadge";
+import { useSupportChatUnreadBadge } from "../hooks/useSupportChatUnreadBadge";
 import "./AppLayout.nav.css";
 import { AdSlot } from "./AdSlot";
 import { AiAdvisorChat } from "./AiAdvisorChat";
@@ -132,6 +139,32 @@ export function AppLayout() {
     mobile && token && !mobileMainHidden,
   );
   const useMobileInlineOutlet = Boolean(mobile && token);
+
+  const supportFamilyId =
+    user?.familyId != null && Number.isFinite(Number(user.familyId))
+      ? Number(user.familyId)
+      : null;
+  const { unread: supportChatUnread } = useSupportChatUnreadBadge({
+    token,
+    familyId: supportFamilyId,
+    enabled: Boolean(token && canSendAuthenticatedRequest(token)),
+  });
+
+  const isAdminUser =
+    Boolean(user?.isAdmin) ||
+    user?.email?.toLowerCase() === "script_00123@yahoo.co.jp";
+  const { needsReplyCount: adminSupportNeedsReply, refresh: refreshAdminSupportQueue } =
+    useAdminSupportNeedsReplyBadge({
+      token,
+      enabled: Boolean(token && isAdminUser && canSendAuthenticatedRequest(token)),
+    });
+
+  useEffect(() => {
+    if (!isAdminUser || !token || !canSendAuthenticatedRequest(token)) return;
+    if (location.pathname.startsWith("/admin")) {
+      void refreshAdminSupportQueue();
+    }
+  }, [location.pathname, isAdminUser, token, refreshAdminSupportQueue]);
 
   const [headerAnnouncement, setHeaderAnnouncement] = useState("");
   const fetchHeaderAnnouncement = useCallback(() => {
@@ -351,16 +384,47 @@ export function AppLayout() {
                   visible={showMobileInlineOutlet}
                 />
               ) : null}
+              <NavLink
+                to="/support"
+                className={(p) =>
+                  `${navIconLinkClassName(p)} nav-icon-link--support`.trim()
+                }
+                aria-label="サポートチャット"
+                onClick={onMobileIconNavClick("/support")}
+              >
+                <span className="nav-support-emoji" aria-hidden="true">
+                  💬
+                </span>
+                {supportChatUnread ? <span className="nav-support-unread-dot" title="新着あり" /> : null}
+              </NavLink>
+              {useMobileInlineOutlet ? (
+                <MobileInlineOutlet
+                  path="/support"
+                  pathname={location.pathname}
+                  visible={showMobileInlineOutlet}
+                />
+              ) : null}
               {user &&
               (user.isAdmin ||
                 user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
                 <NavLink
                   to="/admin"
-                  className={navIconLinkClassName}
-                  aria-label="管理"
+                  className={(p) =>
+                    `${navIconLinkClassName(p)} nav-icon-link--admin-queue`.trim()
+                  }
+                  aria-label={
+                    adminSupportNeedsReply > 0
+                      ? `管理（サポート要返信 ${adminSupportNeedsReply} 件）`
+                      : "管理"
+                  }
                   onClick={onMobileIconNavClick("/admin")}
                 >
                   <img className="nav-icon-img" src={navIconPaths.admin} alt="" aria-hidden="true" onError={withDefaultIconFallback("admin")} />
+                  {adminSupportNeedsReply > 0 ? (
+                    <span className="nav-admin-queue-badge" title="サポート要返信">
+                      {adminSupportNeedsReply > 99 ? "99+" : String(adminSupportNeedsReply)}
+                    </span>
+                  ) : null}
                 </NavLink>
               ) : null}
               {useMobileInlineOutlet &&

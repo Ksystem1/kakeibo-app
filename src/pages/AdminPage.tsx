@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   createAdminUser,
   deleteAdminUser,
@@ -263,6 +264,18 @@ export function AdminPage() {
       <h1 style={{ margin: 0 }}>管理者ダッシュボード</h1>
       <p style={{ color: "var(--text-muted)" }}>
         管理者数: {adminCount} / 全ユーザー: {items.length}
+      </p>
+      <p style={{ margin: "0.35rem 0 0.75rem" }}>
+        <Link
+          to="/admin/chat"
+          style={{
+            fontWeight: 600,
+            color: "var(--accent)",
+            textDecoration: "none",
+          }}
+        >
+          サポートチャット（家族一覧・返信）→
+        </Link>
       </p>
       <div
         style={{

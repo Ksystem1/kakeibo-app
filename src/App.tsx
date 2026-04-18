@@ -12,6 +12,8 @@ import { ReceiptPage } from "./pages/ReceiptPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { AdminPage } from "./pages/AdminPage";
+import { AdminSupportChatPage } from "./pages/AdminSupportChatPage";
+import { SupportChatPage } from "./pages/SupportChatPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { DemoDashboardPage } from "./pages/DemoDashboardPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -34,9 +36,11 @@ export default function App() {
           <Route path="/members" element={<Navigate to="/settings" replace />} />
           <Route path="/categories" element={<Navigate to="/settings" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/support" element={<SupportChatPage />} />
           <Route element={<AdminRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/admin/chat" element={<AdminSupportChatPage />} />
           </Route>
         </Route>
       </Route>

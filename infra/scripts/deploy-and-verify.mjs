@@ -5,8 +5,9 @@
  *   npm run deploy:auto
  *
  * 必須環境変数（verify 用）:
- *   VERIFY_API_URL, VERIFY_LOGIN_ID, VERIFY_LOGIN_PASSWORD
- * 任意:
+ *   VERIFY_LOGIN_ID, VERIFY_LOGIN_PASSWORD
+ * 任意（verify-login.mjs 内の既定あり）:
+ *   VERIFY_API_URL（既定: https://api.ksystemapp.com）
  *   VERIFY_APP_URL（既定: https://ksystemapp.com/kakeibo/login）
  */
 import { execSync } from "node:child_process";

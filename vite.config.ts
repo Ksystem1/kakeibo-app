@@ -19,6 +19,10 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
+        /**
+         * autoUpdate: 新 SW 取得時に onNeedRefresh（main でサイレント有効化のみ・現在タブはリロードしない）。
+         * skipWaiting + clientsClaim: 新 SW が待機→アクティブ化しやすく、次回起動で最新 precache を参照しやすい。
+         */
         registerType: "autoUpdate",
         workbox: {
           clientsClaim: true,

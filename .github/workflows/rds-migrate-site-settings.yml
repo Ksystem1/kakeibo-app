@@ -1,0 +1,41 @@
+# site_settings（ヘッダーお知らせ）用 DDL を RDS に適用する（migration v13）。
+#
+# 実行: Actions → 「RDS migrate site_settings (v13)」→ Run workflow
+#
+# 前提:
+#   - Repository Secrets に RDS 接続情報を登録すること:
+#       RDS_HOST, RDS_USER, RDS_PASSWORD, RDS_DATABASE
+#     任意: RDS_PORT（未設定時は 3306）、RDS_SSL（true/false。*.rds.amazonaws.com は既定で TLS）
+#   - GitHub の runner から RDS エンドポイントへ TCP 3306 が届くこと。
+#     非公開サブネットのみの RDS の場合、このジョブは失敗します。その場合は bastion / SSM ポートフォワード経由で
+#     手元から `npm run db:migrate-v13`（リポジトリルート）を実行してください。
+#
+name: RDS migrate site_settings (v13)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Apply migration_v13 to RDS
+        env:
+          RDS_HOST: ${{ secrets.RDS_HOST }}
+          RDS_USER: ${{ secrets.RDS_USER }}
+          RDS_PASSWORD: ${{ secrets.RDS_PASSWORD }}
+          RDS_DATABASE: ${{ secrets.RDS_DATABASE }}
+          RDS_PORT: ${{ secrets.RDS_PORT }}
+          RDS_SSL: ${{ secrets.RDS_SSL }}
+        run: npm run db:migrate-v13 --prefix backend

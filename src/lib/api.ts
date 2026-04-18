@@ -846,6 +846,129 @@ export async function deleteAdminUser(userId: number) {
   return parse<{ ok: boolean }>(res);
 }
 
+/** サポートチャット 1 件（ユーザー・管理者共通） */
+export type SupportChatMessage = {
+  id: number;
+  family_id: number;
+  sender_user_id: number;
+  body: string;
+  is_staff: boolean;
+  is_important: boolean;
+  created_at: string;
+};
+
+export async function getSupportChatMessages(params?: {
+  family_id?: number;
+  limit?: number;
+  before?: number;
+}) {
+  const sp = new URLSearchParams();
+  if (params?.family_id != null) sp.set("family_id", String(params.family_id));
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  if (params?.before != null) sp.set("before", String(params.before));
+  const q = sp.toString();
+  const res = await apiFetch(`${BASE}/support/chat/messages${q ? `?${q}` : ""}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    family_id: number;
+    items: SupportChatMessage[];
+    has_more: boolean;
+    next_before_id: number | null;
+  }>(res);
+}
+
+export async function postSupportChatMessage(body: { body: string; family_id?: number }) {
+  const res = await apiFetch(`${BASE}/support/chat/messages`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ message: SupportChatMessage }>(res);
+}
+
+export type AdminSupportChatFamilyRow = {
+  family_id: number;
+  family_name: string;
+  last_message: null | {
+    id: number;
+    body: string;
+    created_at: string | null;
+    sender_user_id: number;
+    is_staff: boolean;
+    is_important: boolean;
+  };
+};
+
+export async function getAdminSupportChatFamilies() {
+  const res = await apiFetch(`${BASE}/admin/support/chat/families`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ items: AdminSupportChatFamilyRow[] }>(res);
+}
+
+export async function getAdminSupportChatMessages(params: {
+  family_id: number;
+  limit?: number;
+  before?: number;
+}) {
+  const sp = new URLSearchParams();
+  sp.set("family_id", String(params.family_id));
+  if (params.limit != null) sp.set("limit", String(params.limit));
+  if (params.before != null) sp.set("before", String(params.before));
+  const res = await apiFetch(`${BASE}/admin/support/chat/messages?${sp}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    family_id: number;
+    items: SupportChatMessage[];
+    has_more: boolean;
+    next_before_id: number | null;
+  }>(res);
+}
+
+export async function postAdminSupportChatMessage(body: {
+  family_id: number;
+  body: string;
+  is_important?: boolean;
+}) {
+  const res = await apiFetch(`${BASE}/admin/support/chat/messages`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ message: SupportChatMessage }>(res);
+}
+
+export async function patchAdminSupportChatMessage(
+  messageId: number,
+  body: { is_important?: boolean; body?: string },
+) {
+  const payload: Record<string, unknown> = {};
+  if (body.is_important !== undefined) payload.is_important = body.is_important;
+  if (body.body !== undefined) payload.body = body.body;
+  if (Object.keys(payload).length === 0) {
+    throw new Error("PATCH には is_important または body が必要です");
+  }
+  const res = await apiFetch(`${BASE}/admin/support/chat/messages/${messageId}`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return parse<{ message: SupportChatMessage }>(res);
+}
+
+export async function deleteAdminSupportChatMessage(messageId: number) {
+  const res = await apiFetch(`${BASE}/admin/support/chat/messages/${messageId}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+  });
+  return parse<{ ok: boolean }>(res);
+}
+
 export async function askAiAdvisor(body: {
   message: string;
   context?: {

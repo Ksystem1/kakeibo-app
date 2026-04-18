@@ -101,6 +101,71 @@
   min-height: 0;
 }
 
+/* サポート（PNG スキン外の絵文字スロット + 未読ドット） */
+.nav-icon-link--support {
+  position: relative;
+}
+
+.nav-support-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: clamp(1.35rem, 4.5vw, 1.85rem);
+  line-height: 1;
+  user-select: none;
+}
+
+.nav-support-unread-dot {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e11d48;
+  box-shadow: 0 0 0 2px var(--panel-bg, #fff);
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .app-nav--mobile-column .nav-support-unread-dot {
+    top: 4px;
+    right: 10px;
+  }
+}
+
+/* 管理ナビ: サポート要返信件数 */
+.nav-icon-link--admin-queue {
+  position: relative;
+}
+
+.nav-admin-queue-badge {
+  position: absolute;
+  bottom: 5px;
+  right: 5px;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.22rem;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.05rem;
+  text-align: center;
+  border-radius: 999px;
+  background: #ea580c;
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--panel-bg, #fff);
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .app-nav--mobile-column .nav-admin-queue-badge {
+    bottom: 4px;
+    right: 8px;
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* ヘッダー中央: お知らせ（右から左へ）                                        */
 /* -------------------------------------------------------------------------- */
