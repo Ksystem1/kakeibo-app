@@ -1,0 +1,38 @@
+# global_receipt_ocr_corrections（匿名レシート合計辞書）用 DDL を RDS に適用する（migration v15）。
+#
+# 実行: Actions → 「RDS migrate global_receipt_ocr (v15)」→ Run workflow
+#
+# 前提:
+#   - Repository Secrets: RDS_HOST, RDS_USER, RDS_PASSWORD, RDS_DATABASE
+#   - 任意: RDS_PORT、RDS_SSL
+#   - GitHub runner から RDS の 3306 が届くこと（届かない場合は bastion 経由で手元から npm run db:migrate-v15）
+#
+name: RDS migrate global_receipt_ocr (v15)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Apply migration_v15 to RDS
+        env:
+          RDS_HOST: ${{ secrets.RDS_HOST }}
+          RDS_USER: ${{ secrets.RDS_USER }}
+          RDS_PASSWORD: ${{ secrets.RDS_PASSWORD }}
+          RDS_DATABASE: ${{ secrets.RDS_DATABASE }}
+          RDS_PORT: ${{ secrets.RDS_PORT }}
+          RDS_SSL: ${{ secrets.RDS_SSL }}
+        run: npm run db:migrate-v15 --prefix backend

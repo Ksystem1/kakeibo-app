@@ -23,6 +23,7 @@
     "verify:git-sync": "node infra/scripts/verify-git-sync.mjs",
     "db:migrate-v13": "npm run db:migrate-v13 --prefix backend",
     "db:migrate-v14": "npm run db:migrate-v14 --prefix backend",
+    "db:migrate-v15": "npm run db:migrate-v15 --prefix backend",
     "verify:stripe-config": "node scripts/verify-stripe-config.mjs",
     "verify:frontend-api": "node scripts/verify-frontend-api-fetch.mjs",
     "backup:release": "node scripts/backup-release.mjs"
