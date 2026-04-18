@@ -749,6 +749,32 @@ export async function inviteFamilyMember(email: string) {
   }>(res);
 }
 
+/** 未ログイン可: ヘッダーお知らせ文言 */
+export async function getHeaderAnnouncement() {
+  const res = await apiFetch(`${BASE}/announcement`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ text: string }>(res);
+}
+
+export async function getAdminAnnouncement() {
+  const res = await apiFetch(`${BASE}/admin/announcement`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ text: string }>(res);
+}
+
+export async function putAdminAnnouncement(body: { text: string }) {
+  const res = await apiFetch(`${BASE}/admin/announcement`, {
+    method: "PUT",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean; text: string }>(res);
+}
+
 export async function getAdminUsers() {
   const res = await apiFetch(`${BASE}/admin/users`, {
     headers: buildHeaders(),

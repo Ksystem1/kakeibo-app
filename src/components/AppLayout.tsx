@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import {
   Outlet,
   NavLink,
@@ -10,10 +10,11 @@ import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
 import { buildNavIconPaths, DEFAULT_NAV_SKIN_ID, type NavIconPaths } from "../config/navSkins";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { getAuthMe, normalizeAuthContextUser } from "../lib/api";
+import { getAuthMe, getHeaderAnnouncement, normalizeAuthContextUser } from "../lib/api";
 import "./AppLayout.nav.css";
 import { AdSlot } from "./AdSlot";
 import { AiAdvisorChat } from "./AiAdvisorChat";
+import { HeaderAnnouncementBar } from "./HeaderAnnouncementBar";
 import { MobileAccessQr } from "./MobileAccessQr";
 
 /** テキストナビ（未ログインのログイン・新規登録など） */
@@ -132,6 +133,23 @@ export function AppLayout() {
   );
   const useMobileInlineOutlet = Boolean(mobile && token);
 
+  const [headerAnnouncement, setHeaderAnnouncement] = useState("");
+  const fetchHeaderAnnouncement = useCallback(() => {
+    void getHeaderAnnouncement()
+      .then((r) => setHeaderAnnouncement(typeof r.text === "string" ? r.text : ""))
+      .catch(() => setHeaderAnnouncement(""));
+  }, []);
+
+  useEffect(() => {
+    fetchHeaderAnnouncement();
+  }, [fetchHeaderAnnouncement, location.pathname]);
+
+  useEffect(() => {
+    const onUpdated = () => fetchHeaderAnnouncement();
+    window.addEventListener("kakeibo:header-announcement-updated", onUpdated);
+    return () => window.removeEventListener("kakeibo:header-announcement-updated", onUpdated);
+  }, [fetchHeaderAnnouncement]);
+
   return (
     <>
     <div
@@ -162,7 +180,6 @@ export function AppLayout() {
             display: "flex",
             flexWrap: "wrap",
             alignItems: "center",
-            justifyContent: "space-between",
             gap: "0.45rem",
             width: "100%",
             minWidth: 0,
@@ -204,6 +221,7 @@ export function AppLayout() {
               🐷 Kakeibo
             </strong>
           </div>
+          <HeaderAnnouncementBar text={headerAnnouncement} />
           <div
             style={{
               display: "flex",
@@ -212,7 +230,8 @@ export function AppLayout() {
               justifyContent: "flex-end",
               gap: "0.45rem",
               minWidth: 0,
-              flex: "1 1 auto",
+              flexShrink: 0,
+              marginLeft: "auto",
             }}
           >
             {!mobile ? <MobileAccessQr fixedPath={`${import.meta.env.BASE_URL}login`} compact /> : null}

@@ -177,4 +177,13 @@ CREATE TABLE IF NOT EXISTS family_fixed_cost_items (
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------------
+-- サイト共通設定（ヘッダーお知らせなど）
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS site_settings (
+  id                   TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+  header_announcement  VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'ヘッダー1行お知らせ（プレーンテキスト）',
+  updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

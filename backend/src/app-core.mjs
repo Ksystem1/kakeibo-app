@@ -968,6 +968,21 @@ async function ensureAdmin(pool, userId) {
   return { ok: true };
 }
 
+/** ヘッダーお知らせ（未マイグレーション時は空） */
+async function getHeaderAnnouncement(pool) {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT header_announcement FROM site_settings WHERE id = 1 LIMIT 1`,
+    );
+    if (!row) return "";
+    return String(row.header_announcement ?? "").trim();
+  } catch (e) {
+    const code = e && typeof e === "object" ? e.code : "";
+    if (code === "ER_NO_SUCH_TABLE") return "";
+    throw e;
+  }
+}
+
 function generateAdminTempPassword() {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let out = "";
@@ -1021,6 +1036,8 @@ export async function handleApiRequest(req, options = {}) {
             publicConfig: "/config",
             billingPortalSession: "/billing/portal-session",
             billingCancelSubscription: "/billing/cancel-subscription",
+            announcement: "/announcement",
+            adminAnnouncement: "/admin/announcement",
           },
         },
         hdrs,
@@ -1133,6 +1150,15 @@ export async function handleApiRequest(req, options = {}) {
       }
       if (rk === "GET /billing/stripe-status") {
         return json(200, getStripeCheckoutPublicConfig(), hdrs, skipCors);
+      }
+      if (rk === "GET /announcement") {
+        try {
+          const text = await getHeaderAnnouncement(pool);
+          return json(200, { text }, hdrs, skipCors);
+        } catch (e) {
+          logError("announcement.read", e, { method, path });
+          return json(200, { text: "" }, hdrs, skipCors);
+        }
       }
     }
 
@@ -1616,6 +1642,53 @@ export async function handleApiRequest(req, options = {}) {
         return json(404, { error: "対象ユーザーが見つかりません" }, hdrs, skipCors);
       }
       return json(200, { ok: true }, hdrs, skipCors);
+    }
+
+    if (routeKey(method, path) === "GET /admin/announcement") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      try {
+        const text = await getHeaderAnnouncement(pool);
+        return json(200, { text }, hdrs, skipCors);
+      } catch (e) {
+        logError("admin.announcement.read", e, { method, path });
+        return json(200, { text: "" }, hdrs, skipCors);
+      }
+    }
+
+    if (routeKey(method, path) === "PUT /admin/announcement") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      const raw = b.text != null ? String(b.text) : "";
+      const normalized = raw.replace(/\s+/g, " ").trim().slice(0, 512);
+      try {
+        await pool.query(
+          `INSERT INTO site_settings (id, header_announcement) VALUES (1, ?)
+           ON DUPLICATE KEY UPDATE header_announcement = VALUES(header_announcement)`,
+          [normalized],
+        );
+      } catch (e) {
+        const code = e && typeof e === "object" ? e.code : "";
+        if (code === "ER_NO_SUCH_TABLE") {
+          return json(
+            503,
+            {
+              error: "お知らせ機能の DB 未適用",
+              detail: "db/migration_v13_site_settings_header_announcement.sql を RDS に適用してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        throw e;
+      }
+      return json(200, { ok: true, text: normalized }, hdrs, skipCors);
     }
 
     if (categoryOneMatch && method === "PATCH") {

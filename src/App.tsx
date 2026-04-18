@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { PullToRefresh } from "./components/PullToRefresh";
 import { PwaInstallBar } from "./components/PwaInstallBar";
 import { AppLayout } from "./components/AppLayout";
 import { AdminRoute } from "./components/AdminRoute";
@@ -18,6 +19,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 export default function App() {
   return (
     <>
+    <PullToRefresh />
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />

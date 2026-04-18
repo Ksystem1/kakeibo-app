@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createAdminUser,
   deleteAdminUser,
+  getAdminAnnouncement,
   getAdminUsers,
+  putAdminAnnouncement,
   resetAdminUserPassword,
   updateAdminUser,
 } from "../lib/api";
@@ -82,12 +84,18 @@ export function AdminPage() {
   const [newIsAdmin, setNewIsAdmin] = useState(false);
   /** RDS に users.subscription_status が無いとき false（一覧は表示、プルダウンは無効） */
   const [subscriptionStatusWritable, setSubscriptionStatusWritable] = useState(true);
+  const [announcementDraft, setAnnouncementDraft] = useState("");
+  const [announcementBusy, setAnnouncementBusy] = useState(false);
+  const [announcementMessage, setAnnouncementMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await getAdminUsers();
+      const [res, ann] = await Promise.all([
+        getAdminUsers(),
+        getAdminAnnouncement().catch(() => ({ text: "" })),
+      ]);
       const list = Array.isArray(res.items) ? res.items : [];
       setItems(list);
       setSubscriptionStatusWritable(res.meta?.subscriptionStatusWritable !== false);
@@ -96,6 +104,7 @@ export function AdminPage() {
           list.map((u) => [u.id, u.display_name ?? ""]),
         ),
       );
+      setAnnouncementDraft(typeof ann.text === "string" ? ann.text : "");
     } catch (e) {
       setSubscriptionStatusWritable(true);
       setError(formatAdminApiError(e));
@@ -255,6 +264,68 @@ export function AdminPage() {
       <p style={{ color: "var(--text-muted)" }}>
         管理者数: {adminCount} / 全ユーザー: {items.length}
       </p>
+      <div
+        style={{
+          margin: "0.8rem 0 1rem",
+          padding: "0.9rem 1rem",
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+        }}
+      >
+        <h2 style={{ margin: "0 0 0.5rem", fontSize: "1.02rem" }}>ヘッダーお知らせ</h2>
+        <p style={{ margin: "0 0 0.65rem", fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+          ログイン後ヘッダー（Kakeibo とログアウトの間）に 1 行で表示されます。空にすると非表示です。最大 512 文字・改行は空白にまとめられます。
+        </p>
+        <textarea
+          value={announcementDraft}
+          onChange={(e) => setAnnouncementDraft(e.target.value)}
+          maxLength={512}
+          rows={2}
+          disabled={announcementBusy || loading}
+          placeholder="例: メンテナンスは 4/20 2:00〜 を予定しています"
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            font: "inherit",
+            fontSize: "0.92rem",
+            padding: "0.5rem 0.6rem",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "var(--input-bg)",
+            color: "var(--text)",
+            resize: "vertical",
+            minHeight: "3.2rem",
+          }}
+        />
+        <div style={{ marginTop: "0.55rem", display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+          <button
+            type="button"
+            disabled={announcementBusy || loading}
+            onClick={async () => {
+              setAnnouncementBusy(true);
+              setAnnouncementMessage(null);
+              setError(null);
+              try {
+                const normalized = announcementDraft.replace(/\s+/g, " ").trim().slice(0, 512);
+                await putAdminAnnouncement({ text: normalized });
+                setAnnouncementDraft(normalized);
+                setAnnouncementMessage("保存しました。ヘッダーに反映されます。");
+                window.dispatchEvent(new Event("kakeibo:header-announcement-updated"));
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "お知らせの保存に失敗しました");
+              } finally {
+                setAnnouncementBusy(false);
+              }
+            }}
+          >
+            {announcementBusy ? "保存中…" : "お知らせを保存"}
+          </button>
+          {announcementMessage ? (
+            <span style={{ fontSize: "0.88rem", color: "var(--text-muted)" }}>{announcementMessage}</span>
+          ) : null}
+        </div>
+      </div>
       <div
         style={{
           margin: "0.8rem 0 1rem",

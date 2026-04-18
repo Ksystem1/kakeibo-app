@@ -1,0 +1,75 @@
+/* モバイル用 Pull-to-Refresh。安全域内のピル表示（pointer-events なし） */
+.track {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9975;
+  display: flex;
+  justify-content: center;
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+  pointer-events: none;
+  overflow: visible;
+  box-sizing: border-box;
+  will-change: padding-top;
+}
+
+.inner {
+  flex: 0 0 auto;
+  margin-top: calc(0.35rem + env(safe-area-inset-top, 0px));
+  margin-bottom: 0.25rem;
+  padding: 0.38rem 0.85rem 0.42rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--panel-bg) 88%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(22, 58, 95, 0.12);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  max-width: calc(100% - 1.2rem);
+}
+
+.innerReady {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent-dim) 55%, var(--panel-bg));
+}
+
+.icon {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid color-mix(in oklab, var(--accent) 55%, transparent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.85;
+}
+
+.iconSpin {
+  animation: ptrSpin 0.65s linear infinite;
+}
+
+@keyframes ptrSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 769px) {
+  .track {
+    display: none;
+  }
+}
