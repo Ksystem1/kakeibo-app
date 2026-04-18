@@ -171,6 +171,13 @@ function pickCategoryIdByName(
   return partial ? partial.id : null;
 }
 
+/** API 等から来る id を number | null に揃え、比較で学習が取りこぼされないようにする */
+function normalizeReceiptCategoryId(id: unknown): number | null {
+  if (id == null || id === "") return null;
+  const n = typeof id === "number" ? id : Number(id);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
+
 /** モバイル「レシート取込」: フォトライブラリ/ファイル優先（image/* は付けずにライブラリ寄りに絞る） */
 const MOBILE_GALLERY_ACCEPT =
   "image/jpeg,image/jpg,image/png,image/heic,image/heif,image/webp,.heic,.heif";
@@ -202,8 +209,10 @@ export function ReceiptPage() {
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [draftCategoryId, setDraftCategoryId] = useState<number | null>(null);
   const [categorySuggestSource, setCategorySuggestSource] = useState<
-    "history" | "keywords" | "correction" | "ai" | null
+    "history" | "keywords" | "global_master" | "correction" | "ai" | null
   >(null);
+  const [suggestedCategoryLowConfidence, setSuggestedCategoryLowConfidence] = useState(false);
+  const [suggestedCategoryNameHint, setSuggestedCategoryNameHint] = useState<string | null>(null);
   /** プレミアム: 解析 API が返す合計の候補（匿名辞書・明細合算など） */
   const [totalCandidates, setTotalCandidates] = useState<
     Array<{ total: number; label: string; source: string }>
@@ -280,7 +289,7 @@ export function ReceiptPage() {
     if (draftCategoryId != null) return;
     if (!ocrVendor && items.length === 0) return;
     const suggested = suggestExpenseCategoryId(categories, ocrVendor, items);
-    if (suggested != null) setDraftCategoryId(suggested);
+    if (suggested != null) setDraftCategoryId(normalizeReceiptCategoryId(suggested));
   }, [categories, ocrVendor, items, draftCategoryId]);
 
   /** 解析時は categories が遅れて届くと keyword 提案が後から入る。baseline.categoryId が null のままだと誤学習するため、ユーザー未操作時だけ追従する */
@@ -289,8 +298,9 @@ export function ReceiptPage() {
       if (!b) return b;
       if (categoryTouchedByUserRef.current) return b;
       if (b.categoryId != null) return b;
-      if (draftCategoryId == null) return b;
-      return { ...b, categoryId: draftCategoryId };
+      const next = normalizeReceiptCategoryId(draftCategoryId);
+      if (next == null) return b;
+      return { ...b, categoryId: next };
     });
   }, [draftCategoryId]);
 
@@ -335,6 +345,8 @@ export function ReceiptPage() {
     setDraftDate("");
     setDraftCategoryId(null);
     setCategorySuggestSource(null);
+    setSuggestedCategoryLowConfidence(false);
+    setSuggestedCategoryNameHint(null);
     setTotalCandidates([]);
     setLastParsePremium(false);
     setReceiptDictionaryHits(0);
@@ -396,9 +408,14 @@ export function ReceiptPage() {
         r.suggestedCategoryId == null
           ? pickCategoryIdByName(categories, r.suggestedCategoryName)
           : null;
-      const initialCategoryId =
-        r.suggestedCategoryId ?? aiNameMatchedId ?? localSuggested ?? null;
+      const initialCategoryId = normalizeReceiptCategoryId(
+        r.suggestedCategoryId ?? aiNameMatchedId ?? localSuggested,
+      );
       setDraftCategoryId(initialCategoryId);
+      setSuggestedCategoryLowConfidence(Boolean(r.suggestedCategoryLowConfidence));
+      setSuggestedCategoryNameHint(
+        r.suggestedCategoryName != null ? String(r.suggestedCategoryName).trim() : null,
+      );
       setCategorySuggestSource(
         r.suggestedCategorySource ??
           (r.suggestedCategoryId == null && aiNameMatchedId == null && localSuggested != null
@@ -550,9 +567,16 @@ export function ReceiptPage() {
               ? "過去履歴から自動反映しました（必要なら変更できます）。"
               : categorySuggestSource === "correction"
                 ? "過去の補正内容を反映しました（必要なら変更できます）。"
+                : categorySuggestSource === "global_master"
+                  ? "全体の統計辞書からカテゴリを推測しました（必要なら変更できます）。"
                 : categorySuggestSource === "ai"
                   ? "AIがカテゴリを予測して自動反映しました（必要なら変更できます）。"
                 : "カテゴリ候補を自動提案しました（必要なら変更できます）。"}
+          </p>
+        ) : null}
+        {suggestedCategoryLowConfidence && !draftCategoryId && suggestedCategoryNameHint ? (
+          <p className={styles.receiptSummaryHint} style={{ marginTop: "-0.2rem" }}>
+            未分類（推測: {suggestedCategoryNameHint}）
           </p>
         ) : null}
         <div className={`${styles.field} ${styles.receiptFieldKind}`}>
@@ -568,7 +592,9 @@ export function ReceiptPage() {
             value={draftCategoryId ?? ""}
             onChange={(e) => {
               categoryTouchedByUserRef.current = true;
-              setDraftCategoryId(e.target.value ? Number(e.target.value) : null);
+              setDraftCategoryId(
+                e.target.value ? normalizeReceiptCategoryId(Number(e.target.value)) : null,
+              );
             }}
             disabled={loading}
           >
@@ -691,26 +717,32 @@ export function ReceiptPage() {
 
             setRegistering(true);
             try {
+              const submittedCat = normalizeReceiptCategoryId(draftCategoryId);
               await createTransaction({
                 kind: "expense",
                 amount,
                 transaction_date: dateField.value,
                 memo: draftMemo.trim() || null,
-                category_id: draftCategoryId,
+                category_id: submittedCat,
                 from_receipt: true,
               });
               if (lastOcrForLearn?.summary && loadedReceiptBaseline) {
                 const submittedMemo = draftMemo.trim();
-                const submittedCat = draftCategoryId ?? null;
                 const submittedTotal = Number.isFinite(amount) ? Math.round(amount) : null;
                 const memoChanged = submittedMemo !== loadedReceiptBaseline.memo;
-                const categoryChanged = submittedCat !== loadedReceiptBaseline.categoryId;
+                const baselineCat = normalizeReceiptCategoryId(loadedReceiptBaseline.categoryId);
+                const categoryChanged = submittedCat !== baselineCat;
                 const totalChanged = submittedTotal !== loadedReceiptBaseline.totalAmount;
-                if (memoChanged || categoryChanged || totalChanged) {
+                if (
+                  memoChanged ||
+                  totalChanged ||
+                  categoryChanged ||
+                  categoryTouchedByUserRef.current
+                ) {
                   void saveReceiptOcrCorrection({
                     summary: lastOcrForLearn.summary,
                     items: lastOcrForLearn.items,
-                    category_id: draftCategoryId,
+                    category_id: submittedCat,
                     memo: submittedMemo || null,
                     confirmed_total_amount: amount,
                     confirmed_date: dateField.value,

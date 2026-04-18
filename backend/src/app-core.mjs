@@ -482,18 +482,18 @@ function tagFromCategoryName(name) {
   return null;
 }
 
+const RECEIPT_NORMALIZED_MEMO_EXPR =
+  "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(t.memo), ' ', ''), '　', ''), '株式会社', ''), '(株)', ''))";
+
 async function suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor) {
   const memo = String(vendor ?? "").trim();
   if (!memo) return null;
   const normMemo = normalizeVendorName(memo);
   if (!normMemo) return null;
 
-  const normalizedMemoExpr =
-    "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(t.memo), ' ', ''), '　', ''), '株式会社', ''), '(株)', ''))";
-
-  // まずは正規化完全一致で履歴学習カテゴリを選ぶ
+  // 家族スコープで「最新に使ったカテゴリ」を最優先
   const [rows] = await pool.query(
-    `SELECT t.category_id, c.name, COUNT(*) AS used_count
+    `SELECT t.category_id, c.name, t.transaction_date, t.id
      FROM transactions t
      JOIN categories c ON c.id = t.category_id
      WHERE ${txWhere}
@@ -501,13 +501,12 @@ async function suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor) 
        AND t.category_id IS NOT NULL
        AND c.kind = 'expense'
        AND c.is_archived = 0
-       AND ${normalizedMemoExpr} = ?
-     GROUP BY t.category_id, c.name
-     ORDER BY used_count DESC, t.category_id ASC
+       AND ${RECEIPT_NORMALIZED_MEMO_EXPR} = ?
+     ORDER BY t.transaction_date DESC, t.id DESC
      LIMIT 1`,
     [userId, userId, normMemo],
   );
-  if (Array.isArray(rows) && rows.length > 0) {
+  if (Array.isArray(rows) && rows[0]?.category_id != null) {
     const top = rows[0];
     return {
       id: Number(top.category_id),
@@ -515,33 +514,41 @@ async function suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor) 
       source: "history",
     };
   }
+  return null;
+}
 
-  // 次に包含一致（「イオン」「イオンスタイル」など）で緩く推定
-  const [fuzzyRows] = await pool.query(
-    `SELECT t.category_id, c.name, COUNT(*) AS used_count
+async function suggestExpenseCategoryFromGlobalMaster(pool, vendor, userExpenseCategories) {
+  const memo = String(vendor ?? "").trim();
+  if (!memo) return null;
+  const normMemo = normalizeVendorName(memo);
+  if (!normMemo) return null;
+  const userCats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
+  if (userCats.length === 0) return null;
+  const [rows] = await pool.query(
+    `SELECT c.name AS global_category_name, COUNT(*) AS used_count
      FROM transactions t
      JOIN categories c ON c.id = t.category_id
-     WHERE ${txWhere}
-       AND t.kind = 'expense'
+     WHERE t.kind = 'expense'
        AND t.category_id IS NOT NULL
        AND c.kind = 'expense'
        AND c.is_archived = 0
-       AND (
-         INSTR(${normalizedMemoExpr}, ?) > 0
-         OR INSTR(?, ${normalizedMemoExpr}) > 0
-       )
-     GROUP BY t.category_id, c.name
-     ORDER BY used_count DESC, t.category_id ASC
-     LIMIT 1`,
-    [userId, userId, normMemo, normMemo],
+       AND ${RECEIPT_NORMALIZED_MEMO_EXPR} = ?
+     GROUP BY c.name
+     ORDER BY used_count DESC, c.name ASC
+     LIMIT 6`,
+    [normMemo],
   );
-  if (!Array.isArray(fuzzyRows) || fuzzyRows.length === 0) return null;
-  const top = fuzzyRows[0];
-  return {
-    id: Number(top.category_id),
-    name: String(top.name),
-    source: "history",
-  };
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  for (const r of rows) {
+    const globalName = String(r.global_category_name ?? "").trim();
+    if (!globalName) continue;
+    const nk = normalizeCategoryNameKey(globalName);
+    const hit = userCats.find((c) => normalizeCategoryNameKey(c.name) === nk);
+    if (hit?.id != null) {
+      return { id: Number(hit.id), name: String(hit.name), source: "global_master" };
+    }
+  }
+  return null;
 }
 
 async function suggestExpenseCategoryForReceipt(
@@ -551,7 +558,7 @@ async function suggestExpenseCategoryForReceipt(
   txWhere,
   vendor,
   items,
-  { usePersonalHistory = true } = {},
+  { usePersonalHistory = true, expenseCategories = null } = {},
 ) {
   if (usePersonalHistory) {
     const fromHistory = await suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor);
@@ -561,13 +568,18 @@ async function suggestExpenseCategoryForReceipt(
   const vend = normalizeKeyword(vendor ?? "");
   const itemCorpus = normalizeKeyword((items ?? []).map((x) => x?.name ?? "").join(" "));
   if (!vend && !itemCorpus) return null;
-  const [rows] = await pool.query(
-    `SELECT c.id, c.name
-     FROM categories c
-     WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense'
-     ORDER BY c.sort_order, c.id`,
-    [userId, userId],
-  );
+  const rows =
+    Array.isArray(expenseCategories) && expenseCategories.length > 0
+      ? expenseCategories
+      : (
+          await pool.query(
+            `SELECT c.id, c.name
+             FROM categories c
+             WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense'
+             ORDER BY c.sort_order, c.id`,
+            [userId, userId],
+          )
+        )[0];
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
   const tagScore = {};
@@ -600,6 +612,58 @@ async function suggestExpenseCategoryForReceipt(
   }
   if (!best || best.score <= 0) return null;
   return { id: best.id, name: best.name, source: "keywords" };
+}
+
+async function predictCategory({
+  pool,
+  userId,
+  txWhere,
+  vendor,
+  items,
+  userExpenseCategories,
+  subscriptionActive,
+  aiCategoryName,
+}) {
+  const fromHistory = await suggestExpenseCategoryFromHistory(pool, userId, txWhere, vendor);
+  if (fromHistory?.id != null) {
+    return { ...fromHistory, lowConfidence: false };
+  }
+  const fromGlobal = await suggestExpenseCategoryFromGlobalMaster(
+    pool,
+    vendor,
+    userExpenseCategories,
+  );
+  if (fromGlobal?.id != null) {
+    return { ...fromGlobal, lowConfidence: false };
+  }
+  const fromKeywords = await suggestExpenseCategoryForReceipt(
+    pool,
+    userId,
+    "1=1",
+    txWhere,
+    vendor,
+    items,
+    { usePersonalHistory: false, expenseCategories: userExpenseCategories },
+  );
+  if (fromKeywords?.id != null) {
+    return { ...fromKeywords, source: "global_master", lowConfidence: true };
+  }
+  if (subscriptionActive && aiCategoryName) {
+    const aiNorm = normalizeCategoryNameKey(aiCategoryName);
+    const hit = (Array.isArray(userExpenseCategories) ? userExpenseCategories : []).find(
+      (c) => normalizeCategoryNameKey(c.name) === aiNorm,
+    );
+    if (hit?.id != null) {
+      return {
+        id: Number(hit.id),
+        name: String(hit.name),
+        source: "ai",
+        lowConfidence: true,
+      };
+    }
+    return { id: null, name: String(aiCategoryName), source: "ai", lowConfidence: true };
+  }
+  return { id: null, name: null, source: null, lowConfidence: false };
 }
 
 function isUnknownIsPremiumColumnError(e) {
@@ -3415,7 +3479,7 @@ export async function handleApiRequest(req, options = {}) {
             txWhere,
             result?.summary?.vendorName ?? "",
             result?.items ?? [],
-            { usePersonalHistory: subscriptionActive },
+            { usePersonalHistory: true, expenseCategories: expenseCatRows },
           );
           const historyHints = subscriptionActive
             ? await fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere)
@@ -3583,25 +3647,32 @@ export async function handleApiRequest(req, options = {}) {
             }
           }
 
+          const predicted = await predictCategory({
+            pool,
+            userId,
+            txWhere,
+            vendor: adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
+            items: result?.items ?? [],
+            userExpenseCategories: expenseCatRows,
+            subscriptionActive,
+            aiCategoryName,
+          });
+          /* 個別辞書（learnedCategoryId）がある場合は最優先 */
           const finalSuggestedId =
-            learnedCategoryId != null
-              ? learnedCategoryId
-              : aiCategoryId != null
-                ? aiCategoryId
-                : suggestedCategory?.id ?? null;
+            learnedCategoryId != null ? learnedCategoryId : predicted.id != null ? predicted.id : null;
           const finalSuggestedName =
             learnedCategoryId != null
               ? learnedCategoryName
-              : aiCategoryName != null
-                ? aiCategoryName
-                : suggestedCategory?.name ?? null;
+              : predicted.name != null
+                ? predicted.name
+                : null;
           const finalSource =
             learnCorrectionHit &&
             (learnedCategoryId != null || learnedMemoPresent)
               ? "correction"
-              : aiCategoryId != null
-                ? "ai"
-                : suggestedCategory?.source ?? null;
+              : predicted.source;
+          const suggestedCategoryLowConfidence =
+            learnedCategoryId != null ? false : Boolean(predicted.lowConfidence);
 
           let duplicateWarning = null;
           try {
@@ -3686,7 +3757,7 @@ export async function handleApiRequest(req, options = {}) {
             (Boolean(aiReceipt?.ok) ||
               learnCorrectionHit ||
               reconcileAdjusted ||
-              suggestedCategory?.source === "history" ||
+              finalSource === "history" ||
               totalCandidates.some((c) => c.source === "global"));
           const body = {
             ok: true,
@@ -3699,6 +3770,7 @@ export async function handleApiRequest(req, options = {}) {
             suggestedCategoryId: finalSuggestedId,
             suggestedCategoryName: finalSuggestedName ?? null,
             suggestedCategorySource: finalSource,
+            suggestedCategoryLowConfidence,
             suggestedCategoryCorrectionMode: learnedMode,
             subscriptionActive,
             receiptAiTier: aiReceipt?.receiptAiTier ?? null,

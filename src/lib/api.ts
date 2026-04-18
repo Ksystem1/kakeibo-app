@@ -664,7 +664,14 @@ export async function parseReceiptImage(
         expenseIndex?: number | null;
         suggestedCategoryId?: number | null;
         suggestedCategoryName?: string | null;
-        suggestedCategorySource?: "history" | "keywords" | "correction" | "ai" | null;
+        suggestedCategorySource?:
+          | "history"
+          | "keywords"
+          | "global_master"
+          | "correction"
+          | "ai"
+          | null;
+        suggestedCategoryLowConfidence?: boolean;
         learnCorrectionHit?: boolean;
         suggestedMemo?: string;
         duplicateWarning?: string | null;
