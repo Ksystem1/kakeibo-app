@@ -71,6 +71,19 @@ function formatYenSingleLine(n: number) {
   return yen.format(n).replace(/\s/g, "\u00a0");
 }
 
+const SUMMARY_AMOUNTS_VISIBLE_KEY = "kakeibo_summary_amounts_visible";
+
+function readSummaryAmountsVisible(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const v = localStorage.getItem(SUMMARY_AMOUNTS_VISIBLE_KEY);
+    if (v === null) return true;
+    return v !== "0" && v !== "false";
+  } catch {
+    return true;
+  }
+}
+
 function numAmount(v: string | number) {
   const n = typeof v === "number" ? v : Number.parseFloat(String(v));
   return Number.isFinite(n) ? n : 0;
@@ -194,6 +207,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       ? kidLedgerOpts.kidUserId
       : null;
   const [kidMemberRows, setKidMemberRows] = useState<FamilyMemberRow[]>([]);
+  const [summaryAmountsVisible, setSummaryAmountsVisible] = useState(readSummaryAmountsVisible);
   const loadSeqRef = useRef(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -345,6 +359,14 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SUMMARY_AMOUNTS_VISIBLE_KEY, summaryAmountsVisible ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [summaryAmountsVisible]);
 
   function handleMonthChange(nextYm: string) {
     setYm(nextYm);
@@ -747,13 +769,35 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         </div>
       ) : null}
 
+      <div className={styles.summaryAmountsToolbar}>
+        <label className={styles.summaryAmountsToggle}>
+          <input
+            type="checkbox"
+            checked={summaryAmountsVisible}
+            onChange={(e) => setSummaryAmountsVisible(e.target.checked)}
+          />
+          <span>今月の合計金額を表示する</span>
+        </label>
+      </div>
+
       <div className={styles.cards}>
         <div className={`${styles.card} ${styles.cardIncome}`}>
           <div className={styles.cardLabel} title="収入（今月）">
             収入（今月）
           </div>
-          <div className={`${styles.cardValue} ${styles.income}`}>
-            {formatYenSingleLine(incomeTotalNum)}
+          <div
+            className={`${styles.cardValue} ${styles.income}`}
+            {...(!summaryAmountsVisible
+              ? { role: "status", "aria-label": "収入の金額は非表示です" }
+              : {})}
+          >
+            {summaryAmountsVisible ? (
+              formatYenSingleLine(incomeTotalNum)
+            ) : (
+              <span className={styles.cardValueHidden} aria-hidden="true">
+                ¥ •••••••
+              </span>
+            )}
           </div>
         </div>
         <div className={`${styles.card} ${styles.cardExpense}`}>
@@ -763,8 +807,19 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           >
             支出（今月）
           </div>
-          <div className={`${styles.cardValue} ${styles.expense}`}>
-            {formatYenSingleLine(expenseWithFixedDisplayNum)}
+          <div
+            className={`${styles.cardValue} ${styles.expense}`}
+            {...(!summaryAmountsVisible
+              ? { role: "status", "aria-label": "支出の金額は非表示です" }
+              : {})}
+          >
+            {summaryAmountsVisible ? (
+              formatYenSingleLine(expenseWithFixedDisplayNum)
+            ) : (
+              <span className={styles.cardValueHidden} aria-hidden="true">
+                ¥ •••••••
+              </span>
+            )}
           </div>
         </div>
         <div className={styles.card}>
@@ -778,8 +833,17 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
             className={`${styles.cardValue} ${
               balanceNum >= 0 ? styles.balancePositive : styles.balanceNegative
             }`}
+            {...(!summaryAmountsVisible
+              ? { role: "status", "aria-label": "残金の金額は非表示です" }
+              : {})}
           >
-            {formatYenSingleLine(balanceNum)}
+            {summaryAmountsVisible ? (
+              formatYenSingleLine(balanceNum)
+            ) : (
+              <span className={styles.cardValueHidden} aria-hidden="true">
+                ¥ •••••••
+              </span>
+            )}
           </div>
         </div>
       </div>
