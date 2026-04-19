@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   cognito_sub     CHAR(36) NULL COMMENT 'Cognito Username (sub) — UNIQUE 制約は下記',
   email           VARCHAR(255) NOT NULL,
   is_admin        TINYINT(1) NOT NULL DEFAULT 0 COMMENT '管理者フラグ（1=true）',
-  subscription_status VARCHAR(32) NOT NULL DEFAULT 'inactive' COMMENT 'Stripe/admin: active trialing past_due canceled unpaid paused inactive',
+  subscription_status VARCHAR(32) NOT NULL DEFAULT 'inactive' COMMENT 'Stripe/admin: active trialing past_due canceled unpaid paused inactive admin_free',
   stripe_customer_id VARCHAR(255) NULL COMMENT 'Stripe Customer id (cus_...) Webhook 突合',
   stripe_subscription_id VARCHAR(255) NULL COMMENT 'Stripe Subscription id (sub_...)',
   subscription_period_end_at DATETIME NULL COMMENT 'Stripe current_period_end UTC 請求サイクル終了',

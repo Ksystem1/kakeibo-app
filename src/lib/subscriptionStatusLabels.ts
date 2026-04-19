@@ -8,6 +8,7 @@ export const ADMIN_SUBSCRIPTION_STATUSES = [
   "trialing",
   "unpaid",
   "paused",
+  "admin_free",
 ] as const;
 
 const SUBSCRIPTION_STATUS_LABEL_JA: Record<string, string> = {
@@ -18,6 +19,7 @@ const SUBSCRIPTION_STATUS_LABEL_JA: Record<string, string> = {
   trialing: "トライアル中",
   unpaid: "未払い",
   paused: "一時停止",
+  admin_free: "管理者付与",
 };
 
 export function subscriptionStatusLabelJa(value: string): string {

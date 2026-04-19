@@ -237,7 +237,7 @@ async function getPreferredFamilySubscriptionRow(pool, userId) {
      WHERE fm.user_id = ?
      ORDER BY
        CASE
-         WHEN LOWER(COALESCE(f.subscription_status, '')) IN ('active','trialing','past_due') THEN 0
+         WHEN LOWER(COALESCE(f.subscription_status, '')) IN ('active','trialing','past_due','admin_free') THEN 0
          WHEN TRIM(COALESCE(f.stripe_customer_id, '')) <> '' THEN 1
          ELSE 2
        END,

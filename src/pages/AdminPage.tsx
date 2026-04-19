@@ -51,6 +51,16 @@ function formatAdminApiError(e: unknown): string {
   return msg || "ユーザー一覧の取得に失敗しました";
 }
 
+/** 管理者一覧の family_peers（改行区切りまたは従来の " / " 区切り）を行配列に */
+function familyPeersToLines(peers: string): string[] {
+  const s = peers.trim();
+  if (!s) return [];
+  if (/\r?\n/.test(s)) {
+    return s.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  }
+  return s.split(/\s*\/\s*/).map((x) => x.trim()).filter(Boolean);
+}
+
 function formatDateTime(value: string | null | undefined): string {
   if (value == null || value === "") return "—";
   const d = new Date(value);
@@ -469,7 +479,7 @@ export function AdminPage() {
         {loading ? "読み込み中..." : "再読み込み"}
       </button>
       <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1520 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1720 }}>
           <thead>
             <tr style={{ background: "var(--panel-bg)" }}>
               <th style={{ textAlign: "left", padding: "0.7rem" }}>ID</th>
@@ -500,8 +510,25 @@ export function AdminPage() {
                 <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
                   {u.default_family_id != null ? u.default_family_id : "—"}
                 </td>
-                <td style={{ padding: "0.7rem", maxWidth: 280, wordBreak: "break-word" }}>
-                  {u.family_peers ?? "—"}
+                <td
+                  style={{
+                    padding: "0.7rem",
+                    minWidth: 360,
+                    maxWidth: 520,
+                    verticalAlign: "top",
+                  }}
+                >
+                  {u.family_peers == null || String(u.family_peers).trim() === "" ? (
+                    "—"
+                  ) : (
+                    <div style={{ lineHeight: 1.5 }}>
+                      {familyPeersToLines(String(u.family_peers)).map((line, i) => (
+                        <div key={i} style={{ whiteSpace: "nowrap" }}>
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </td>
                 <td style={{ padding: "0.7rem" }}>
                   <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>

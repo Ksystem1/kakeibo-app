@@ -75,6 +75,9 @@ export function formatSettingsSubscriptionSummary(user: {
     : null;
   const endNum = endOk ? formatPeriodEndNumericJa(end!) : null;
 
+  if (status === "admin_free") {
+    return "管理者による無料開放枠です。プレミアム機能をご利用いただけます。";
+  }
   if ((status === "active" || status === "trialing" || status === "past_due") && user.subscriptionCancelAtPeriodEnd && endStr && endNum) {
     return `解約が予約されています。${endNum}まではプレミアムをご利用いただけます（請求期間の終了日: ${endStr}）。`;
   }

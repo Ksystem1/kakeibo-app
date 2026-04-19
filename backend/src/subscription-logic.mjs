@@ -2,6 +2,7 @@
  * Stripe Webhook / 管理者 PATCH で更新するサブスク状態と is_premium の連携。
  * v12 以降: 主に families（家族単位）。API の user 行は JOIN 済みの subscription_* を参照。
  * DB: VARCHAR(32)（migration v8 users / v12 families）。Stripe Subscription.status を小文字で保存。
+ * admin_free: 管理者付与の無料プレミアム枠（Stripe 外。アプリ側でプレミアム同等扱い）。
  * is_premium=1（users）はレシートAI 等では active と同等。
  */
 
@@ -74,6 +75,8 @@ export function isSubscriptionServiceSubscribed(row, userId, nowMs = Date.now())
     getEffectiveSubscriptionStatus(deriveSubscriptionStatusFromDbRow(row), userId),
   ).trim()
     .toLowerCase();
+  /** 請求期間に依存しない管理者付与（期限なしでプレミアム同等） */
+  if (status === "admin_free") return true;
   const endMs = subscriptionPeriodEndMsFromRow(row);
   if (endMs != null && nowMs > endMs) return false;
   if (status === "active" || status === "past_due" || status === "trialing") return true;
@@ -131,6 +134,7 @@ export const ADMIN_SETTABLE_SUBSCRIPTION_STATUSES = new Set([
   "trialing",
   "unpaid",
   "paused",
+  "admin_free",
 ]);
 
 /**
