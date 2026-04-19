@@ -37,6 +37,28 @@ type AdminUser = {
 const LOGIN_ID_RE = /^[a-zA-Z0-9]{1,15}$/;
 const NAME_RE = /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}A-Za-z0-9]+$/u;
 
+/** 管理者ユーザー一覧テーブル: 行の縦余白を抑え、文字サイズを揃える */
+const adminTableTh = {
+  textAlign: "left" as const,
+  padding: "0.28rem 0.65rem",
+  fontSize: "0.78rem",
+  fontWeight: 600 as const,
+  lineHeight: 1.2,
+  whiteSpace: "nowrap" as const,
+};
+const adminTableTd = {
+  padding: "0.28rem 0.65rem",
+  fontSize: "0.8125rem",
+  lineHeight: 1.25,
+  verticalAlign: "middle" as const,
+};
+const adminTableBtn = {
+  whiteSpace: "nowrap" as const,
+  padding: "0.2rem 0.5rem",
+  fontSize: "0.8125rem",
+  lineHeight: 1.2,
+};
+
 function formatAdminApiError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e ?? "");
   if (/not found/i.test(msg)) {
@@ -479,49 +501,55 @@ export function AdminPage() {
         {loading ? "読み込み中..." : "再読み込み"}
       </button>
       <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1720 }}>
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            minWidth: 1980,
+            tableLayout: "auto",
+          }}
+        >
           <thead>
             <tr style={{ background: "var(--panel-bg)" }}>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>ID</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>メール</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>登録日</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>最終ログイン</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>家族ID</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>家族メンバー</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>表示名</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>ログイン名</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>サブスク</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>管理者</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>パスワード</th>
-              <th style={{ textAlign: "left", padding: "0.7rem" }}>削除</th>
+              <th style={{ ...adminTableTh, width: "2.5rem" }}>ID</th>
+              <th style={{ ...adminTableTh, minWidth: 260 }}>メール</th>
+              <th style={adminTableTh}>登録日</th>
+              <th style={adminTableTh}>最終ログイン</th>
+              <th style={adminTableTh}>家族ID</th>
+              <th style={{ ...adminTableTh, minWidth: 400 }}>家族メンバー</th>
+              <th style={{ ...adminTableTh, minWidth: 220 }}>表示名</th>
+              <th style={{ ...adminTableTh, minWidth: 100 }}>ログイン名</th>
+              <th style={{ ...adminTableTh, minWidth: 150 }}>サブスク</th>
+              <th style={adminTableTh}>管理者</th>
+              <th style={adminTableTh}>パスワード</th>
+              <th style={adminTableTh}>削除</th>
             </tr>
           </thead>
           <tbody>
             {items.map((u) => (
               <tr key={u.id} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ padding: "0.7rem" }}>{u.id}</td>
-                <td style={{ padding: "0.7rem" }}>{u.email}</td>
-                <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
+                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>{u.id}</td>
+                <td style={{ ...adminTableTd, minWidth: 260, wordBreak: "break-all" }}>{u.email}</td>
+                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
                   {formatDateOnly(u.created_at)}
                 </td>
-                <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
+                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
                   {formatDateTime(u.last_login_at)}
                 </td>
-                <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
+                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
                   {u.default_family_id != null ? u.default_family_id : "—"}
                 </td>
                 <td
                   style={{
-                    padding: "0.7rem",
-                    minWidth: 360,
-                    maxWidth: 520,
-                    verticalAlign: "top",
+                    ...adminTableTd,
+                    minWidth: 400,
+                    maxWidth: 560,
                   }}
                 >
                   {u.family_peers == null || String(u.family_peers).trim() === "" ? (
                     "—"
                   ) : (
-                    <div style={{ lineHeight: 1.5 }}>
+                    <div style={{ lineHeight: 1.15 }}>
                       {familyPeersToLines(String(u.family_peers)).map((line, i) => (
                         <div key={i} style={{ whiteSpace: "nowrap" }}>
                           {line}
@@ -530,8 +558,15 @@ export function AdminPage() {
                     </div>
                   )}
                 </td>
-                <td style={{ padding: "0.7rem" }}>
-                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                <td style={adminTableTd}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "nowrap",
+                      gap: "0.35rem",
+                      alignItems: "center",
+                    }}
+                  >
                     <input
                       type="text"
                       value={displayNameDrafts[u.id] ?? ""}
@@ -539,7 +574,7 @@ export function AdminPage() {
                       onChange={(e) =>
                         setDisplayNameDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
                       }
-                      style={{ minWidth: 140 }}
+                      style={{ minWidth: 120, maxWidth: 160, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
                     />
                     <button
                       type="button"
@@ -547,20 +582,26 @@ export function AdminPage() {
                       onClick={() => {
                         void onSaveDisplayName(u.id);
                       }}
+                      style={adminTableBtn}
                     >
                       保存
                     </button>
                   </div>
                 </td>
-                <td style={{ padding: "0.7rem" }}>{u.login_name ?? "-"}</td>
-                <td style={{ padding: "0.7rem", whiteSpace: "nowrap" }}>
+                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>{u.login_name ?? "-"}</td>
+                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
                   <select
                     value={u.subscriptionStatus ?? "inactive"}
                     disabled={savingUserId === u.id || !subscriptionStatusWritable}
                     onChange={(e) => {
                       void onSetSubscriptionStatus(u.id, e.target.value);
                     }}
-                    style={{ minWidth: 120, maxWidth: 200 }}
+                    style={{
+                      minWidth: 150,
+                      maxWidth: 220,
+                      padding: "0.2rem 0.35rem",
+                      fontSize: "0.8125rem",
+                    }}
                     title={
                       !subscriptionStatusWritable
                         ? "subscription_status 列が無いため変更できません（v8 マイグレーションを適用してください）"
@@ -584,8 +625,8 @@ export function AdminPage() {
                       ))}
                   </select>
                 </td>
-                <td style={{ padding: "0.7rem" }}>
-                  <label style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
+                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
+                  <label style={{ display: "inline-flex", gap: "0.35rem", alignItems: "center" }}>
                     <input
                       type="checkbox"
                       checked={u.isAdmin}
@@ -597,30 +638,38 @@ export function AdminPage() {
                     {u.isAdmin ? "admin" : "user"}
                   </label>
                 </td>
-                <td style={{ padding: "0.7rem" }}>
+                <td style={adminTableTd}>
                   <button
                     type="button"
                     disabled={savingUserId === u.id}
                     onClick={() => {
                       void onResetPassword(u.id, u.email);
                     }}
+                    style={adminTableBtn}
                   >
                     初期化
                   </button>
                   {tempPasswords[u.id] ? (
-                    <div style={{ marginTop: "0.35rem", color: "var(--text-muted)" }}>
+                    <div
+                      style={{
+                        marginTop: "0.2rem",
+                        color: "var(--text-muted)",
+                        fontSize: "0.75rem",
+                        lineHeight: 1.2,
+                      }}
+                    >
                       一時PW: <code>{tempPasswords[u.id]}</code>
                     </div>
                   ) : null}
                 </td>
-                <td style={{ padding: "0.7rem" }}>
+                <td style={adminTableTd}>
                   <button
                     type="button"
                     disabled={savingUserId === u.id}
                     onClick={() => {
                       void onDeleteUser(u.id, u.email);
                     }}
-                    style={{ color: "#b42318" }}
+                    style={{ ...adminTableBtn, color: "#b42318" }}
                   >
                     削除
                   </button>
