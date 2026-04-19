@@ -1300,6 +1300,64 @@ async function resolveUserFamilyRoleUpper(pool, userId) {
   }
 }
 
+/**
+ * 保護者が ?ledger_view=kid_watch で子の家族取引のみ参照するモード（scope=family と併用）。
+ * KID ログイン時はパラメータが付いていても無視（403 にしない）。
+ */
+async function resolveParentKidWatchLedger(pool, q, viewerId, familyRoleUpper, hdrs, skipCors) {
+  const ledgerRaw = String(q.ledger_view ?? q.ledgerView ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, "_");
+  const wants =
+    ledgerRaw === "kid_watch" ||
+    String(q.kid_watch ?? "").trim() === "1" ||
+    String(q.kidWatch ?? "")
+      .trim()
+      .toLowerCase() === "true";
+  if (!wants) return { active: false, kidUserId: null, error: null };
+  const role = String(familyRoleUpper || "MEMBER").toUpperCase();
+  if (role === "KID" || (role !== "ADMIN" && role !== "MEMBER")) {
+    return { active: false, kidUserId: null, error: null };
+  }
+  const rawKid = q.kid_user_id ?? q.kidUserId ?? q.kid_user ?? null;
+  let kidUserId = null;
+  if (rawKid != null && String(rawKid).trim() !== "") {
+    const n = Number(rawKid);
+    if (!Number.isFinite(n) || n <= 0) {
+      return {
+        active: false,
+        kidUserId: null,
+        error: json(400, { error: "kid_user_id（kidUserId）が不正です。" }, hdrs, skipCors),
+      };
+    }
+    const [[row]] = await pool.query(
+      `SELECT 1 AS ok
+       FROM users u
+       INNER JOIN family_members fm ON fm.user_id = u.id
+       WHERE u.id = ?
+         AND UPPER(TRIM(COALESCE(u.family_role, 'MEMBER'))) = 'KID'
+         AND fm.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?)
+       LIMIT 1`,
+      [n, viewerId],
+    );
+    if (!row?.ok) {
+      return {
+        active: false,
+        kidUserId: null,
+        error: json(
+          400,
+          { error: "指定したユーザーは、同一家族の KID として見つかりません。" },
+          hdrs,
+          skipCors,
+        ),
+      };
+    }
+    kidUserId = n;
+  }
+  return { active: true, kidUserId, error: null };
+}
+
 function normalizeAdminFamilyRole(raw) {
   const s = String(raw ?? "").trim().toUpperCase();
   if (s === "ADMIN" || s === "MEMBER" || s === "KID") return s;
@@ -1872,10 +1930,28 @@ export async function handleApiRequest(req, options = {}) {
 
     const catWhere = `(c.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (c.family_id IS NULL AND c.user_id = ?))`;
     const familyRoleUpper = await resolveUserFamilyRoleUpper(pool, userId);
+    const kidWatchLedger = await resolveParentKidWatchLedger(
+      pool,
+      q,
+      userId,
+      familyRoleUpper,
+      hdrs,
+      skipCors,
+    );
+    if (kidWatchLedger.error) return kidWatchLedger.error;
     const isKidTxScope = familyRoleUpper === "KID";
     // ADMIN/MEMBER の家族取引のみ（同一 family_id の KID お小遣い帳は除外）。KID は従来どおり本人分のみ。
     const txCreatorIsAdultLedger =
       "EXISTS (SELECT 1 FROM users u_tx WHERE u_tx.id = t.user_id AND UPPER(TRIM(COALESCE(u_tx.family_role, 'MEMBER'))) IN ('ADMIN', 'MEMBER'))";
+    const txCreatorIsKidLedger =
+      "EXISTS (SELECT 1 FROM users u_tx WHERE u_tx.id = t.user_id AND UPPER(TRIM(COALESCE(u_tx.family_role, 'MEMBER'))) = 'KID')";
+    let txWhereFamilyKidWatch = `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) AND ${txCreatorIsKidLedger}`;
+    const txP1KidWatch = [userId];
+    if (kidWatchLedger.active && kidWatchLedger.kidUserId != null) {
+      txWhereFamilyKidWatch += ` AND t.user_id = ?`;
+      txP1KidWatch.push(kidWatchLedger.kidUserId);
+    }
+    txWhereFamilyKidWatch += `)`;
     const txWhere = isKidTxScope
       ? `(t.user_id = ? AND (t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (t.family_id IS NULL AND t.user_id = ?)))`
       : `((
@@ -3463,11 +3539,18 @@ export async function handleApiRequest(req, options = {}) {
         const from = q.from;
         const to = q.to;
         const familyScopeOnly = String(q.scope ?? "").toLowerCase() === "family";
-        const txWhereForScope = familyScopeOnly ? txWhereFamily : txWhere;
+        const useKidWatchLedger = familyScopeOnly && kidWatchLedger.active;
+        const txWhereForScope = familyScopeOnly
+          ? useKidWatchLedger
+            ? txWhereFamilyKidWatch
+            : txWhereFamily
+          : txWhere;
         let sql = `SELECT t.id, t.account_id, t.category_id, t.kind, t.amount, t.transaction_date, t.memo, t.created_at, t.updated_at, t.user_id
                    FROM transactions t
                    WHERE ${txWhereForScope}`;
-        const params = familyScopeOnly ? txP1 : txP2;
+        const params = [
+          ...(familyScopeOnly ? (useKidWatchLedger ? txP1KidWatch : txP1) : txP2),
+        ];
         if (from) {
           sql += ` AND t.transaction_date >= ?`;
           params.push(from);
@@ -3611,8 +3694,17 @@ export async function handleApiRequest(req, options = {}) {
       case "GET /summary/month": {
         const ym = q.year_month || q.yearMonth;
         const familyScopeOnly = String(q.scope ?? "").toLowerCase() === "family";
-        const txWhereForScope = familyScopeOnly ? txWhereFamily : txWhere;
-        const txScopeParams = familyScopeOnly ? txP1 : txP2;
+        const useKidWatchLedger = familyScopeOnly && kidWatchLedger.active;
+        const txWhereForScope = familyScopeOnly
+          ? useKidWatchLedger
+            ? txWhereFamilyKidWatch
+            : txWhereFamily
+          : txWhere;
+        const txScopeParams = familyScopeOnly
+          ? useKidWatchLedger
+            ? txP1KidWatch
+            : txP1
+          : txP2;
         const bounds = ymBounds(ym);
         if (!bounds) {
           return json(
@@ -3661,7 +3753,7 @@ export async function handleApiRequest(req, options = {}) {
           [...txScopeParams, from, to],
         );
         let fixedCostFromSettings = 0;
-        if (familyScopeOnly && familyId && !isKidTxScope) {
+        if (familyScopeOnly && familyId && !isKidTxScope && !kidWatchLedger.active) {
           const memberOkSum = await verifyUserInFamily(pool, userId, familyId);
           if (memberOkSum) {
             fixedCostFromSettings = await familyFixedCostMonthlySum(pool, familyId);
@@ -3702,8 +3794,17 @@ export async function handleApiRequest(req, options = {}) {
           );
         }
         const familyScopeOnly = String(q.scope ?? "").toLowerCase() === "family";
-        const txWhereForScope = familyScopeOnly ? txWhereFamily : txWhere;
-        const txScopeParams = familyScopeOnly ? txP1 : txP2;
+        const useKidWatchLedger = familyScopeOnly && kidWatchLedger.active;
+        const txWhereForScope = familyScopeOnly
+          ? useKidWatchLedger
+            ? txWhereFamilyKidWatch
+            : txWhereFamily
+          : txWhere;
+        const txScopeParams = familyScopeOnly
+          ? useKidWatchLedger
+            ? txP1KidWatch
+            : txP1
+          : txP2;
         const [[sumE]] = await pool.query(
           `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
            LEFT JOIN categories c ON c.id = t.category_id
@@ -3721,14 +3822,14 @@ export async function handleApiRequest(req, options = {}) {
         const expenseVariableTotal = Number(sumE?.total ?? 0);
         const incomeTotal = Number(sumI?.total ?? 0);
         let balance = incomeTotal - expenseVariableTotal;
-        if (familyScopeOnly && familyId && !isKidTxScope) {
+        if (familyScopeOnly && familyId && !isKidTxScope && !kidWatchLedger.active) {
           const memberOkBal = await verifyUserInFamily(pool, userId, familyId);
           if (memberOkBal) {
             const fixedSum = await familyFixedCostMonthlySum(pool, familyId);
             if (fixedSum > 0) {
               const [[firstRow]] = await pool.query(
                 `SELECT MIN(t.transaction_date) AS d FROM transactions t WHERE ${txWhereForScope}`,
-                txScopeParams,
+                [...txScopeParams],
               );
               const d0 = firstRow?.d;
               if (d0) {

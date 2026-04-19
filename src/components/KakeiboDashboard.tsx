@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { getEffectiveFixedCostsForMonth, useSettings } from "../context/SettingsContext";
 import {
@@ -12,8 +13,11 @@ import {
   ensureDefaultCategories,
   getApiBaseUrl,
   getCategories,
+  getFamilyMembers,
   getMonthSummary,
   getTransactions,
+  ledgerKidWatchApiOptionsFromSearch,
+  normalizeFamilyRole,
   updateTransaction,
 } from "../lib/api";
 import styles from "./KakeiboDashboard.module.css";
@@ -123,12 +127,30 @@ type KakeiboDashboardProps = {
 export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   const { ledgerMode = "default" } = props ?? {};
   const isKidAllowance = ledgerMode === "kidAllowance";
+  const { user } = useAuth();
   const { fixedCostsByMonth } = useSettings();
   const location = useLocation();
   const routerNavigate = useNavigate();
   const base = getApiBaseUrl();
   const txMobileNarrow = useMediaQuery("(max-width: 768px)");
   const [ym, setYm] = useState(() => parseMonthParam(location.search) ?? currentYm());
+  const isParentForKidWatch = useMemo(() => {
+    if (isKidAllowance) return false;
+    const r = normalizeFamilyRole(user?.familyRole);
+    return r === "ADMIN" || r === "MEMBER";
+  }, [isKidAllowance, user?.familyRole]);
+  const kidLedgerOpts = useMemo(() => {
+    if (!isParentForKidWatch) return undefined;
+    return ledgerKidWatchApiOptionsFromSearch(location.search);
+  }, [isParentForKidWatch, location.search]);
+  const kidWatchOn = Boolean(kidLedgerOpts);
+  const selectedKidUserId =
+    kidLedgerOpts?.kidUserId != null && Number.isFinite(kidLedgerOpts.kidUserId)
+      ? kidLedgerOpts.kidUserId
+      : null;
+  const [kidMemberRows, setKidMemberRows] = useState<
+    Array<{ id: number; display_name: string | null; email: string; family_role?: string }>
+  >([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -151,6 +173,47 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   } | null>(null);
 
   const { from, to } = useMemo(() => ymToRange(ym), [ym]);
+
+  useEffect(() => {
+    const m = parseMonthParam(location.search);
+    if (m) setYm((prev) => (prev === m ? prev : m));
+  }, [location.search]);
+
+  useEffect(() => {
+    if (!isParentForKidWatch) {
+      setKidMemberRows([]);
+      return;
+    }
+    let cancelled = false;
+    void getFamilyMembers()
+      .then((res) => {
+        if (cancelled) return;
+        const rows = (res.items ?? []).filter(
+          (x) => normalizeFamilyRole(x.family_role) === "KID",
+        );
+        setKidMemberRows(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setKidMemberRows([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isParentForKidWatch]);
+
+  useEffect(() => {
+    if (kidWatchOn) {
+      setEdit(null);
+      setMobileEditDateText("");
+    }
+  }, [kidWatchOn]);
+
+  function navigateWithSearch(mutate: (p: URLSearchParams) => void) {
+    const p = new URLSearchParams(location.search);
+    mutate(p);
+    const s = p.toString();
+    routerNavigate({ pathname: location.pathname, search: s ? `?${s}` : "" }, { replace: true });
+  }
 
   const categoryById = useMemo(() => {
     const m = new Map<number, string>();
@@ -224,9 +287,13 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           /* 古い API では POST が無い場合がある */
         }
       }
+      const familyFetchOpts = {
+        scope: "family" as const,
+        ...(kidLedgerOpts ?? {}),
+      };
       const [txRes, sumRes] = await Promise.all([
-        getTransactions(from, to, { scope: "family" }),
-        getMonthSummary(ym, { scope: "family" }),
+        getTransactions(from, to, familyFetchOpts),
+        getMonthSummary(ym, familyFetchOpts),
       ]);
       setCategories(normalizeCategoryRows(items));
       setTransactions((txRes.items ?? []) as Transaction[]);
@@ -238,7 +305,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     } finally {
       setLoading(false);
     }
-  }, [base, from, to, ym]);
+  }, [base, from, to, ym, kidLedgerOpts]);
 
   useEffect(() => {
     void load();
@@ -492,10 +559,21 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     <div className={styles.wrap}>
       <header className={styles.header}>
         <div>
-          <h1 className={styles.title}>{isKidAllowance ? "おこづかい帳" : "家計簿"}</h1>
+          <h1 className={styles.title}>
+            {isKidAllowance
+              ? "おこづかい帳"
+              : kidWatchOn
+                ? "お小遣い帳（見守り）"
+                : "家計簿"}
+          </h1>
           {isKidAllowance ? (
             <p className={styles.sub} style={{ marginTop: "0.35rem", maxWidth: "36rem" }}>
               自分の入出金と残金です。保護者やきょうだいとは「家族チャット」からメッセージできます。
+            </p>
+          ) : null}
+          {kidWatchOn ? (
+            <p className={styles.sub} style={{ marginTop: "0.35rem", maxWidth: "40rem", color: "#5b21b6" }}>
+              家族内の KID が登録した取引のみを表示しています（閲覧のみ・ここからの追加・編集・削除はできません）。スイッチをオフにすると夫婦の家計簿に戻ります。
             </p>
           ) : null}
         </div>
@@ -559,6 +637,81 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           </button>
         </div>
       </header>
+      {isParentForKidWatch ? (
+        <div
+          style={{
+            marginBottom: "0.85rem",
+            padding: "0.65rem 0.75rem",
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+            background: kidWatchOn ? "rgba(139, 92, 246, 0.08)" : "var(--bg-card)",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "0.65rem",
+          }}
+        >
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.45rem",
+              fontWeight: 600,
+              fontSize: "0.92rem",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={kidWatchOn}
+              onChange={(ev) => {
+                const on = ev.target.checked;
+                navigateWithSearch((p) => {
+                  if (on) {
+                    p.set("kidWatch", "1");
+                  } else {
+                    p.delete("kidWatch");
+                    p.delete("kidUser");
+                  }
+                });
+              }}
+            />
+            子どものお小遣い帳を表示
+          </label>
+          {kidWatchOn && kidMemberRows.length > 0 ? (
+            <label style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+              <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>表示する子</span>
+              <select
+                className={styles.monthSelect}
+                value={selectedKidUserId != null ? String(selectedKidUserId) : ""}
+                onChange={(ev) => {
+                  const v = ev.target.value.trim();
+                  navigateWithSearch((p) => {
+                    p.set("kidWatch", "1");
+                    if (!v) p.delete("kidUser");
+                    else p.set("kidUser", v);
+                  });
+                }}
+                aria-label="お小遣い帳を表示する子ども"
+              >
+                <option value="">子ども全員（合算）</option>
+                {kidMemberRows.map((m) => (
+                  <option key={m.id} value={String(m.id)}>
+                    {m.display_name?.trim() || m.email || `ユーザー ${m.id}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {kidWatchOn ? (
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+              見守りモード（ヘッダー色も変わります）
+            </span>
+          ) : (
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>家計簿モード</span>
+          )}
+        </div>
+      ) : null}
       {error ? (
         <div className={styles.err} role="alert">
           {error}
@@ -633,7 +786,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           </div>
         </>
       ) : null}
-      {!isKidAllowance && fixedCostItemsForMonth.length > 0 ? (
+      {!isKidAllowance && !kidWatchOn && fixedCostItemsForMonth.length > 0 ? (
         <>
           <div
             style={{
@@ -714,7 +867,8 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         </>
       ) : null}
 
-      <h2 className={styles.sectionTitle}>取引を追加</h2>
+      {!kidWatchOn ? <h2 className={styles.sectionTitle}>取引を追加</h2> : null}
+      {!kidWatchOn ? (
       <form
         className={styles.form}
         data-kakeibo-tx-add
@@ -789,6 +943,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           {saving ? "保存中…" : "追加"}
         </button>
       </form>
+      ) : null}
 
       <h2 className={styles.sectionTitle}>
         取引一覧（{from} 〜 {to} / {transactions.length}件）
@@ -812,7 +967,9 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
               <tr>
                 <td colSpan={5}>
                   <div className={styles.empty}>
-                    この月の取引はまだありません。上のフォームから追加するか、別画面で登録済みか確認してください。
+                    {kidWatchOn
+                      ? "この月・この条件のお小遣い帳の取引はまだありません。"
+                      : "この月の取引はまだありません。上のフォームから追加するか、別画面で登録済みか確認してください。"}
                   </div>
                 </td>
               </tr>
@@ -999,24 +1156,26 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                               {t.memo ?? ""}
                             </span>
                           </div>
-                          <div className={styles.mobileTxViewActions}>
-                            <button
-                              type="button"
-                              className={`${styles.btn} ${styles.btnSm} ${styles.mobileTxViewBtn}`}
-                              disabled={!base}
-                              onClick={() => beginEdit(t)}
-                            >
-                              変更
-                            </button>
-                            <button
-                              type="button"
-                              className={`${styles.btn} ${styles.btnSm} ${styles.btnDanger} ${styles.mobileTxViewBtn}`}
-                              disabled={!base}
-                              onClick={() => void removeTransaction(t.id)}
-                            >
-                              削除
-                            </button>
-                          </div>
+                          {!kidWatchOn ? (
+                            <div className={styles.mobileTxViewActions}>
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnSm} ${styles.mobileTxViewBtn}`}
+                                disabled={!base}
+                                onClick={() => beginEdit(t)}
+                              >
+                                変更
+                              </button>
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnSm} ${styles.btnDanger} ${styles.mobileTxViewBtn}`}
+                                disabled={!base}
+                                onClick={() => void removeTransaction(t.id)}
+                              >
+                                削除
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -1158,24 +1317,26 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                           <span className={styles.memoText}>
                             {t.memo ?? ""}
                           </span>
-                          <div className={styles.rowActions}>
-                            <button
-                              type="button"
-                              className={`${styles.btn} ${styles.btnSm}`}
-                              disabled={!base}
-                              onClick={() => beginEdit(t)}
-                            >
-                              変更
-                            </button>
-                            <button
-                              type="button"
-                              className={`${styles.btn} ${styles.btnSm} ${styles.btnDanger}`}
-                              disabled={!base}
-                              onClick={() => void removeTransaction(t.id)}
-                            >
-                              削除
-                            </button>
-                          </div>
+                          {!kidWatchOn ? (
+                            <div className={styles.rowActions}>
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnSm}`}
+                                disabled={!base}
+                                onClick={() => beginEdit(t)}
+                              >
+                                変更
+                              </button>
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnSm} ${styles.btnDanger}`}
+                                disabled={!base}
+                                onClick={() => void removeTransaction(t.id)}
+                              >
+                                削除
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       )}
                     </td>

@@ -572,15 +572,45 @@ export async function deleteCategory(id: number) {
   return parse<{ ok: boolean }>(res);
 }
 
+/** 家計簿ホームの ?kidWatch=1（＋任意で &kidUser=ユーザーID）を API の ledger_view に変換 */
+export function ledgerKidWatchApiOptionsFromSearch(search: string): {
+  ledgerView: "kid_watch";
+  kidUserId?: number;
+} | undefined {
+  const sp = new URLSearchParams(
+    search.startsWith("?") ? search.slice(1) : search,
+  );
+  const v = (sp.get("kidWatch") ?? "").trim().toLowerCase();
+  const on = v === "1" || v === "true" || v === "on";
+  if (!on) return undefined;
+  const ku = sp.get("kidUser");
+  if (ku == null || ku === "") return { ledgerView: "kid_watch" };
+  const n = Number(ku);
+  if (!Number.isFinite(n) || n <= 0) return { ledgerView: "kid_watch" };
+  return { ledgerView: "kid_watch", kidUserId: Math.trunc(n) };
+}
+
+function appendLedgerKidWatchParams(
+  q: URLSearchParams,
+  opts?: { ledgerView?: "kid_watch"; kidUserId?: number },
+) {
+  if (opts?.ledgerView !== "kid_watch") return;
+  q.set("ledger_view", "kid_watch");
+  if (opts.kidUserId != null && Number.isFinite(opts.kidUserId)) {
+    q.set("kid_user_id", String(Math.trunc(opts.kidUserId)));
+  }
+}
+
 export async function getTransactions(
   from?: string,
   to?: string,
-  options?: { scope?: "family" | "all" },
+  options?: { scope?: "family" | "all"; ledgerView?: "kid_watch"; kidUserId?: number },
 ) {
   const q = new URLSearchParams();
   if (from) q.set("from", from);
   if (to) q.set("to", to);
   if (options?.scope === "family") q.set("scope", "family");
+  appendLedgerKidWatchParams(q, options);
   const qs = q.toString();
   const res = await apiFetch(`${BASE}/transactions${qs ? `?${qs}` : ""}`, {
     headers: buildHeaders(),
@@ -620,10 +650,11 @@ export async function deleteTransaction(id: number) {
 
 export async function getMonthSummary(
   yearMonth: string,
-  options?: { scope?: "family" | "all" },
+  options?: { scope?: "family" | "all"; ledgerView?: "kid_watch"; kidUserId?: number },
 ) {
   const q = new URLSearchParams({ year_month: yearMonth });
   if (options?.scope === "family") q.set("scope", "family");
+  appendLedgerKidWatchParams(q, options);
   const res = await apiFetch(`${BASE}/summary/month?${q}`, {
     headers: buildHeaders(),
   });
@@ -650,10 +681,11 @@ export async function getMonthSummary(
 
 export async function getBalanceSummary(
   to: string,
-  options?: { scope?: "family" | "all" },
+  options?: { scope?: "family" | "all"; ledgerView?: "kid_watch"; kidUserId?: number },
 ) {
   const q = new URLSearchParams({ to });
   if (options?.scope === "family") q.set("scope", "family");
+  appendLedgerKidWatchParams(q, options);
   const res = await apiFetch(`${BASE}/summary/balance?${q}`, {
     headers: buildHeaders(),
   });
@@ -825,6 +857,7 @@ export async function getFamilyMembers() {
       email: string;
       display_name: string | null;
       role: string;
+      family_role?: string;
     }>;
   }>(res);
 }

@@ -1,7 +1,13 @@
 import { MessageCircle, PiggyBank, Send, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { askAiAdvisor, getMonthSummary } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
+import {
+  askAiAdvisor,
+  getMonthSummary,
+  ledgerKidWatchApiOptionsFromSearch,
+  normalizeFamilyRole,
+} from "../lib/api";
 
 type ChatMessage = {
   id: number;
@@ -65,7 +71,20 @@ function buildClientFallback(
 
 export function AiAdvisorChat() {
   const location = useLocation();
+  const { user } = useAuth();
   const summaryYm = useMemo(() => advisorYearMonth(location.search), [location.search]);
+  const monthSummaryOpts = useMemo(() => {
+    const role = normalizeFamilyRole(user?.familyRole);
+    const parent = role === "ADMIN" || role === "MEMBER";
+    const kidOpts =
+      parent && location.pathname === "/"
+        ? ledgerKidWatchApiOptionsFromSearch(location.search)
+        : undefined;
+    return {
+      scope: "family" as const,
+      ...(kidOpts ?? {}),
+    };
+  }, [location.pathname, location.search, user?.familyRole]);
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -108,7 +127,7 @@ export function AiAdvisorChat() {
     setBusy(true);
     try {
       const ym = summaryYm;
-      const sum = await getMonthSummary(ym, { scope: "family" });
+      const sum = await getMonthSummary(ym, monthSummaryOpts);
       const summaryLite = {
         incomeTotal: Number(sum.incomeTotal ?? 0),
         expenseTotal: Number(sum.expenseTotal ?? 0),

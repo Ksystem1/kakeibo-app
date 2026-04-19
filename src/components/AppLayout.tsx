@@ -14,6 +14,7 @@ import {
   canSendAuthenticatedRequest,
   getAuthMe,
   getHeaderAnnouncement,
+  ledgerKidWatchApiOptionsFromSearch,
   normalizeAuthContextUser,
   normalizeFamilyRole,
   shouldShowFamilyChatDock,
@@ -89,6 +90,16 @@ export function AppLayout() {
   const location = useLocation();
   /** 子どもアカウント: ヘッダー・ナビを親向けから大幅に省略 */
   const isFamilyKid = normalizeFamilyRole(user?.familyRole) === "KID";
+  const isParentLedger = (() => {
+    const r = normalizeFamilyRole(user?.familyRole);
+    return r === "ADMIN" || r === "MEMBER";
+  })();
+  const kidWatchHeader =
+    Boolean(token) &&
+    !isFamilyKid &&
+    isParentLedger &&
+    location.pathname === "/" &&
+    Boolean(ledgerKidWatchApiOptionsFromSearch(location.search));
   const [mobileMainHidden, setMobileMainHidden] = useState(false);
   const prevPathnameRef = useRef<string | null>(null);
 
@@ -217,12 +228,16 @@ export function AppLayout() {
     >
       <header
         style={{
-          borderBottom: "1px solid var(--border)",
+          borderBottom: kidWatchHeader
+            ? "2px solid rgba(109, 40, 217, 0.55)"
+            : "1px solid var(--border)",
           padding: mobile ? "0.45rem 0.65rem 0.5rem" : "0.5rem 1rem 0.55rem",
           display: "flex",
           flexDirection: "column",
           gap: "0.45rem",
-          background: "var(--panel-bg)",
+          background: kidWatchHeader
+            ? "linear-gradient(180deg, rgba(139, 92, 246, 0.2) 0%, var(--panel-bg) 72%)"
+            : "var(--panel-bg)",
           width: "100%",
           maxWidth: "100%",
           minWidth: 0,
