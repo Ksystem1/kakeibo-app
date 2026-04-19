@@ -1166,42 +1166,65 @@
   }
 }
 
-/* 設定の固定費: カテゴリは可変、金額は桁数＋大フォントでも切れない最小幅 */
+/* 設定の固定費: 常に1行（狭い画面は行全体を横スクロール） */
 .fixedCostRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(14ch, 11rem) auto;
-  gap: 0.5rem;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
+  gap: 0.5rem;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
 }
 
 .fixedCostRow > input[type="text"] {
-  min-width: 0;
+  flex: 1 1 11rem;
+  min-width: 10rem;
 }
 
 .fixedCostRow > input[type="number"] {
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
+  flex: 0 0 7.5rem;
+  min-width: 7rem;
+  width: 7.5rem;
+  max-width: min(11rem, 40vw);
   box-sizing: border-box;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
-@media (max-width: 520px) {
+.fixedCostRow > .btn,
+.fixedCostRow > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (min-width: 521px) {
   .fixedCostRow {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(14ch, 11rem) auto;
+    overflow-x: visible;
+  }
+
+  .fixedCostRow > input[type="text"] {
+    min-width: 0;
+    flex: unset;
+    width: auto;
   }
 
   .fixedCostRow > input[type="number"] {
+    flex: unset;
+    min-width: 0;
+    width: 100%;
     max-width: 100%;
   }
 
   .fixedCostRow > .btn,
   .fixedCostRow > button {
-    justify-self: stretch;
-    width: 100%;
+    white-space: normal;
   }
 }
 
