@@ -805,7 +805,8 @@ export async function tryAuthRoutes(req, ctx) {
       }
       const [members] = await pool.query(
         `SELECT u.id, u.email, u.display_name, fm.role,
-                COALESCE(u.family_role, 'MEMBER') AS family_role
+                COALESCE(u.family_role, 'MEMBER') AS family_role,
+                u.kid_theme AS kid_theme
          FROM family_members fm
          JOIN users u ON u.id = fm.user_id
          WHERE fm.family_id = ?

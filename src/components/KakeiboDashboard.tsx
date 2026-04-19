@@ -124,17 +124,42 @@ type FamilyMemberRow = {
   display_name: string | null;
   email: string;
   family_role?: string;
+  familyRole?: string;
+  kid_theme?: string | null;
+  kidTheme?: string | null;
 };
 
-/** 見守り用の子候補。family_role が未返却の古い API では自分以外を暫定表示 */
+function memberRowFamilyRoleRaw(x: FamilyMemberRow): unknown {
+  return x.family_role ?? x.familyRole;
+}
+
+function memberRowHasKidTheme(x: FamilyMemberRow): boolean {
+  const t = String(x.kid_theme ?? x.kidTheme ?? "").trim().toLowerCase();
+  return t === "blue" || t === "pink";
+}
+
+/** 見守り用の子候補。KID / kid_theme 設定、またはロール列欠落時は自分以外を暫定表示 */
 function pickKidMemberRowsForWatch(items: FamilyMemberRow[], selfId: number | undefined) {
-  const kids = items.filter((x) => normalizeFamilyRole(x.family_role) === "KID");
+  const normItems: FamilyMemberRow[] = items.map((x) => ({
+    ...x,
+    id: typeof x.id === "number" ? x.id : Number(x.id),
+    family_role: String(memberRowFamilyRoleRaw(x) ?? "").trim() || undefined,
+  }));
+
+  const kids = normItems.filter((x) => normalizeFamilyRole(memberRowFamilyRoleRaw(x)) === "KID");
   if (kids.length > 0) return kids;
+
+  const byKidTheme = normItems.filter((x) => memberRowHasKidTheme(x));
+  if (byKidTheme.length > 0) return byKidTheme;
+
   const allMissing =
-    items.length > 0 &&
-    items.every((x) => x.family_role == null || String(x.family_role).trim() === "");
+    normItems.length > 0 &&
+    normItems.every((x) => {
+      const raw = memberRowFamilyRoleRaw(x);
+      return raw == null || String(raw).trim() === "";
+    });
   if (allMissing && selfId != null) {
-    return items.filter((x) => x.id !== selfId);
+    return normItems.filter((x) => Number(x.id) !== Number(selfId));
   }
   return [];
 }
@@ -674,6 +699,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
             <label className={styles.kidWatchChildPick}>
               <span className={styles.kidWatchChildPickLabel}>表示する子</span>
               <select
+                key={`kid-pick-${kidMemberRows.map((m) => m.id).join("-")}`}
                 className={`${styles.monthSelect} ${styles.kidWatchChildSelect}`}
                 value={selectedKidUserId != null ? String(selectedKidUserId) : ""}
                 onChange={(ev) => {

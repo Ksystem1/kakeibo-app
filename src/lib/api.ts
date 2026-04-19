@@ -849,6 +849,7 @@ export async function reclassifyUncategorizedReceipts() {
 export async function getFamilyMembers() {
   const res = await apiFetch(`${BASE}/families/members`, {
     headers: buildHeaders(),
+    cache: "no-store",
   });
   return parse<{
     familyId: number;
@@ -858,6 +859,9 @@ export async function getFamilyMembers() {
       display_name: string | null;
       role: string;
       family_role?: string;
+      familyRole?: string;
+      kid_theme?: string | null;
+      kidTheme?: string | null;
     }>;
   }>(res);
 }
