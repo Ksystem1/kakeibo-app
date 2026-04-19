@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -119,6 +119,26 @@ function yearOptions() {
 
 export type KakeiboLedgerMode = "default" | "kidAllowance";
 
+type FamilyMemberRow = {
+  id: number;
+  display_name: string | null;
+  email: string;
+  family_role?: string;
+};
+
+/** 見守り用の子候補。family_role が未返却の古い API では自分以外を暫定表示 */
+function pickKidMemberRowsForWatch(items: FamilyMemberRow[], selfId: number | undefined) {
+  const kids = items.filter((x) => normalizeFamilyRole(x.family_role) === "KID");
+  if (kids.length > 0) return kids;
+  const allMissing =
+    items.length > 0 &&
+    items.every((x) => x.family_role == null || String(x.family_role).trim() === "");
+  if (allMissing && selfId != null) {
+    return items.filter((x) => x.id !== selfId);
+  }
+  return [];
+}
+
 type KakeiboDashboardProps = {
   /** kidAllowance: 子ども向けおこづかい帳（見出し・一部の親向けセクションを省略） */
   ledgerMode?: KakeiboLedgerMode;
@@ -148,9 +168,8 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     kidLedgerOpts?.kidUserId != null && Number.isFinite(kidLedgerOpts.kidUserId)
       ? kidLedgerOpts.kidUserId
       : null;
-  const [kidMemberRows, setKidMemberRows] = useState<
-    Array<{ id: number; display_name: string | null; email: string; family_role?: string }>
-  >([]);
+  const [kidMemberRows, setKidMemberRows] = useState<FamilyMemberRow[]>([]);
+  const loadSeqRef = useRef(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -178,28 +197,6 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     const m = parseMonthParam(location.search);
     if (m) setYm((prev) => (prev === m ? prev : m));
   }, [location.search]);
-
-  useEffect(() => {
-    if (!isParentForKidWatch) {
-      setKidMemberRows([]);
-      return;
-    }
-    let cancelled = false;
-    void getFamilyMembers()
-      .then((res) => {
-        if (cancelled) return;
-        const rows = (res.items ?? []).filter(
-          (x) => normalizeFamilyRole(x.family_role) === "KID",
-        );
-        setKidMemberRows(rows);
-      })
-      .catch(() => {
-        if (!cancelled) setKidMemberRows([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isParentForKidWatch]);
 
   useEffect(() => {
     if (kidWatchOn) {
@@ -273,6 +270,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       setError("VITE_API_URL が未設定です。.env を確認してください。");
       return;
     }
+    const seq = ++loadSeqRef.current;
     setError(null);
     setLoading(true);
     try {
@@ -287,25 +285,37 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           /* 古い API では POST が無い場合がある */
         }
       }
+      if (seq !== loadSeqRef.current) return;
       const familyFetchOpts = {
         scope: "family" as const,
         ...(kidLedgerOpts ?? {}),
       };
-      const [txRes, sumRes] = await Promise.all([
+      const [txRes, sumRes, memRes] = await Promise.all([
         getTransactions(from, to, familyFetchOpts),
         getMonthSummary(ym, familyFetchOpts),
+        isParentForKidWatch ? getFamilyMembers() : Promise.resolve(null),
       ]);
+      if (seq !== loadSeqRef.current) return;
       setCategories(normalizeCategoryRows(items));
       setTransactions((txRes.items ?? []) as Transaction[]);
       setSummary(sumRes);
+      if (memRes && isParentForKidWatch) {
+        const memItems = (memRes.items ?? []) as FamilyMemberRow[];
+        setKidMemberRows(pickKidMemberRowsForWatch(memItems, user?.id));
+      } else if (!isParentForKidWatch) {
+        setKidMemberRows([]);
+      }
     } catch (e) {
+      if (seq !== loadSeqRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
       setTransactions([]);
       setSummary(null);
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
-  }, [base, from, to, ym, kidLedgerOpts]);
+  }, [base, from, to, ym, kidLedgerOpts, isParentForKidWatch, user?.id]);
 
   useEffect(() => {
     void load();
@@ -353,14 +363,15 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   const fixedCostForMonth = fixedCostItemsForMonth.reduce((acc, x) => acc + Number(x.amount || 0), 0);
   const fixedCostForSpend =
     Number.isFinite(fixedCostForMonth) && fixedCostForMonth > 0 ? fixedCostForMonth : 0;
-  /** 収入も変動費も0の月は固定費を支出合計に含めない */
-  const applyFixedToSpend = incomeTotalNum > 0 || expenseTotalNum > 0;
+  /** 収入も変動費も0の月は固定費を支出合計に含めない。見守りモードでは親の固定費を絶対に混ぜない */
+  const applyFixedToSpend =
+    !kidWatchOn && (incomeTotalNum > 0 || expenseTotalNum > 0);
   /** カード「支出（今月）」: 収入または変動費がある月は設定の固定費月額を加算 */
   const expenseWithFixedDisplayNum =
     expenseTotalNum + (applyFixedToSpend ? fixedCostForSpend : 0);
   const balanceNum = (() => {
     if (!summary) {
-      const useFixed = totals.income > 0 || totals.expense > 0;
+      const useFixed = !kidWatchOn && (totals.income > 0 || totals.expense > 0);
       return totals.income - totals.expense - (useFixed ? fixedCostForSpend : 0);
     }
     const apiNet = numAmount(summary.netMonthlyBalance as string | number);
@@ -639,28 +650,9 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       </header>
       {isParentForKidWatch ? (
         <div
-          style={{
-            marginBottom: "0.85rem",
-            padding: "0.65rem 0.75rem",
-            borderRadius: 12,
-            border: "1px solid var(--border)",
-            background: kidWatchOn ? "rgba(139, 92, 246, 0.08)" : "var(--bg-card)",
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: "0.65rem",
-          }}
+          className={`${styles.kidWatchControls} ${kidWatchOn ? styles.kidWatchControlsActive : ""}`}
         >
-          <label
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.45rem",
-              fontWeight: 600,
-              fontSize: "0.92rem",
-              cursor: "pointer",
-            }}
-          >
+          <label className={styles.kidWatchToggle}>
             <input
               type="checkbox"
               checked={kidWatchOn}
@@ -678,11 +670,11 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
             />
             子どものお小遣い帳を表示
           </label>
-          {kidWatchOn && kidMemberRows.length > 0 ? (
-            <label style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
-              <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>表示する子</span>
+          {kidWatchOn ? (
+            <label className={styles.kidWatchChildPick}>
+              <span className={styles.kidWatchChildPickLabel}>表示する子</span>
               <select
-                className={styles.monthSelect}
+                className={`${styles.monthSelect} ${styles.kidWatchChildSelect}`}
                 value={selectedKidUserId != null ? String(selectedKidUserId) : ""}
                 onChange={(ev) => {
                   const v = ev.target.value.trim();
@@ -701,14 +693,17 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                   </option>
                 ))}
               </select>
+              {!loading && kidMemberRows.length === 0 ? (
+                <span className={styles.kidWatchChildHint}>
+                  一覧が空のときは、管理画面で該当ユーザーの family_role を KID にしてください。
+                </span>
+              ) : null}
             </label>
           ) : null}
           {kidWatchOn ? (
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-              見守りモード（ヘッダー色も変わります）
-            </span>
+            <span className={styles.kidWatchModeNote}>見守りモード（ヘッダー色も変わります）</span>
           ) : (
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>家計簿モード</span>
+            <span className={styles.kidWatchModeNote}>家計簿モード</span>
           )}
         </div>
       ) : null}

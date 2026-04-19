@@ -1166,6 +1166,83 @@
   }
 }
 
+/* 見守りモード: 子ども選択をモバイルで確実にタップ・表示 */
+.kidWatchControls {
+  margin-bottom: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  background: var(--bg-card);
+}
+
+.kidWatchControlsActive {
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.kidWatchToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.kidWatchChildPick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.kidWatchChildPickLabel {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.kidWatchChildSelect {
+  min-width: min(100%, 12rem);
+  max-width: 100%;
+}
+
+.kidWatchChildHint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+  width: 100%;
+}
+
+.kidWatchModeNote {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .kidWatchControls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .kidWatchChildPick {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .kidWatchChildSelect {
+    width: 100%;
+    min-height: 44px;
+    font-size: 1rem;
+  }
+}
+
 /* 設定の固定費: 常に1行（狭い画面は行全体を横スクロール） */
 .fixedCostRow {
   display: flex;
