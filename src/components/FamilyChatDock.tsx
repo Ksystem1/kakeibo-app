@@ -18,6 +18,11 @@ type Props = {
   title?: string;
   /** 子ども画面: 大きな FAB とアイコンをやわらかく */
   variant?: "default" | "kid";
+  /**
+   * AI アドバイザー（右下・z 高め）と FAB が重ならないよう、家族チャット FAB を左へ寄せる。
+   * ログイン後の一般レイアウトで true にする想定。
+   */
+  fabClearAiAdvisor?: boolean;
 };
 
 function formatChatTime(iso: string | null | undefined) {
@@ -31,7 +36,11 @@ function formatChatTime(iso: string | null | undefined) {
   return `${mo}/${da} ${hh}:${mm}`;
 }
 
-export function FamilyChatDock({ title = "家族チャット", variant = "default" }: Props) {
+export function FamilyChatDock({
+  title = "家族チャット",
+  variant = "default",
+  fabClearAiAdvisor = false,
+}: Props) {
   const { token, user } = useAuth();
   const userId = user?.id;
   const familyId =
@@ -152,12 +161,22 @@ export function FamilyChatDock({ title = "家族チャット", variant = "defaul
   if (!canUse) return null;
 
   const isKid = variant === "kid";
+  /** AI アドバイザー（右下）と重ならないよう、一般ユーザーは家族チャットを左下へ */
+  const nudgeFab = Boolean(fabClearAiAdvisor && !isKid);
+  const bottomSafe = "max(1rem, calc(0.75rem + env(safe-area-inset-bottom, 0px)))";
 
   return (
     <div
-      className={`pointer-events-none fixed z-[60] flex flex-col items-end gap-2 ${
-        isKid ? "bottom-5 right-5" : "bottom-4 right-4"
-      }`}
+      className={
+        nudgeFab
+          ? "pointer-events-none fixed left-4 z-[1180] flex flex-col items-start gap-2"
+          : `pointer-events-none fixed z-[60] flex flex-col items-end gap-2 ${
+              isKid
+                ? "bottom-[max(5.5rem,calc(1rem+env(safe-area-inset-bottom,0px)))] right-5"
+                : "bottom-4 right-4"
+            }`
+      }
+      style={nudgeFab ? { bottom: bottomSafe } : undefined}
     >
       {open ? (
         <div className="pointer-events-auto flex w-[min(92vw,340px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">

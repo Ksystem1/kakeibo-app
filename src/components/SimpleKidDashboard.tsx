@@ -2,7 +2,6 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 import { Candy, Gift, ShoppingCart, Sparkles } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { celebrateKidTransactionSaved } from "../lib/kidConfetti";
-import { isReservedLedgerFixedCostCategoryName } from "../lib/transactionCategories";
 import {
   createTransaction,
   ensureDefaultCategories,
@@ -12,7 +11,6 @@ import {
   getTransactions,
   type KidTheme,
 } from "../lib/api";
-import { FamilyChatDock } from "./FamilyChatDock";
 import styles from "./SimpleKidDashboard.module.css";
 
 type Category = { id: number; name: string; kind: "income" | "expense" };
@@ -88,9 +86,9 @@ export function SimpleKidDashboard() {
 
   const [formKind, setFormKind] = useState<"income" | "expense">("expense");
   const [formAmount, setFormAmount] = useState("");
-  const [formMemo, setFormMemo] = useState("");
+  /** 「なにに？」— カテゴリは選ばず、手入力の内容をメモとして保存 */
+  const [formWhat, setFormWhat] = useState("");
   const [formDate, setFormDate] = useState(todayYmd);
-  const [formCategoryId, setFormCategoryId] = useState("");
   const [saving, setSaving] = useState(false);
 
   const { from, to } = useMemo(() => ymToRange(ym), [ym]);
@@ -100,11 +98,6 @@ export function SimpleKidDashboard() {
     for (const c of categories) m.set(c.id, c.name);
     return m;
   }, [categories]);
-
-  const selectableCategories = useMemo(
-    () => categories.filter((c) => c.kind === formKind),
-    [categories, formKind],
-  );
 
   const load = useCallback(async () => {
     if (!base) {
@@ -145,11 +138,6 @@ export function SimpleKidDashboard() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    const first = selectableCategories[0];
-    setFormCategoryId(first ? String(first.id) : "");
-  }, [formKind, selectableCategories]);
-
   const incomeTotal = summary ? numAmount(summary.incomeTotal as string | number) : 0;
   const expenseTotal = summary ? numAmount(summary.expenseTotal as string | number) : 0;
   const balance =
@@ -164,14 +152,6 @@ export function SimpleKidDashboard() {
       setError(formKind === "income" ? "金額は 0 以上の整数でね" : "金額は 1 円以上の整数でね");
       return;
     }
-    if (formKind === "expense" && formCategoryId) {
-      const cid = Number.parseInt(formCategoryId, 10);
-      const cat = categories.find((c) => c.id === cid);
-      if (cat && isReservedLedgerFixedCostCategoryName(cat.name)) {
-        setError("「固定費」はえらべないよ（おうちの人にきいてね）");
-        return;
-      }
-    }
     setSaving(true);
     setError(null);
     try {
@@ -179,12 +159,12 @@ export function SimpleKidDashboard() {
         kind: formKind,
         amount,
         transaction_date: formDate,
-        memo: formMemo.trim() || null,
-        category_id: formCategoryId ? Number.parseInt(formCategoryId, 10) : null,
+        memo: formWhat.trim() || null,
+        category_id: null,
       });
       celebrateKidTransactionSaved(theme);
       setFormAmount("");
-      setFormMemo("");
+      setFormWhat("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -289,36 +269,18 @@ export function SimpleKidDashboard() {
             />
           </div>
         </div>
-        {selectableCategories.length > 0 ? (
-          <div className={styles.fieldRow}>
-            <div className={styles.field} style={{ flex: "1 1 100%", maxWidth: "100%" }}>
-              <label htmlFor="kid-cat">なにに？</label>
-              <select
-                id="kid-cat"
-                className={styles.select}
-                value={formCategoryId}
-                onChange={(ev) => setFormCategoryId(ev.target.value)}
-              >
-                {selectableCategories.map((c) => (
-                  <option key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        ) : null}
         <div className={styles.fieldRow}>
           <div className={styles.field} style={{ flex: "1 1 100%", maxWidth: "100%" }}>
-            <label htmlFor="kid-memo">メモ（なくてもOK）</label>
+            <label htmlFor="kid-what">なにに？</label>
             <input
-              id="kid-memo"
+              id="kid-what"
               className={styles.input}
               type="text"
               maxLength={200}
-              value={formMemo}
-              onChange={(ev) => setFormMemo(ev.target.value)}
-              placeholder="おやつ、おもちゃ…"
+              value={formWhat}
+              onChange={(ev) => setFormWhat(ev.target.value)}
+              placeholder="おやつ、おもちゃ、おつり…"
+              autoComplete="off"
             />
           </div>
         </div>
@@ -359,7 +321,9 @@ export function SimpleKidDashboard() {
                         : Number(t.category_id)
                       : null;
                   const catLabel =
-                    cid != null && Number.isFinite(cid) ? categoryById.get(cid) ?? "—" : "—";
+                    cid != null && Number.isFinite(cid) ? categoryById.get(cid) ?? "" : "";
+                  const memoStr = t.memo != null && String(t.memo).trim() !== "" ? String(t.memo).trim() : "";
+                  const whatLabel = memoStr || catLabel || "—";
                   const day = String(t.transaction_date).slice(0, 10);
                   return (
                     <tr key={t.id}>
@@ -378,8 +342,7 @@ export function SimpleKidDashboard() {
                             </>
                           )}
                         </span>
-                        {catLabel}
-                        {t.memo ? `（${t.memo}）` : ""}
+                        {whatLabel}
                       </td>
                       <td>{yen.format(numAmount(t.amount))}</td>
                     </tr>
@@ -390,7 +353,6 @@ export function SimpleKidDashboard() {
         </table>
       </div>
 
-      <FamilyChatDock title="かぞくチャット" variant="kid" />
     </div>
   );
 }

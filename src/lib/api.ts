@@ -386,11 +386,32 @@ export function normalizeFamilyRole(raw: unknown): FamilyRole {
   return "MEMBER";
 }
 
+/** API の familyId が空でも default_family_id があればチャット等に使えるよう正規化 */
+function resolveAuthFamilyId(raw: {
+  familyId?: unknown;
+  family_id?: unknown;
+  defaultFamilyId?: unknown;
+  default_family_id?: unknown;
+}): number | null {
+  const pick = (v: unknown): number | null => {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  return (
+    pick(raw.familyId ?? raw.family_id) ??
+    pick(raw.defaultFamilyId ?? raw.default_family_id)
+  );
+}
+
 /** ログイン・/auth/me 等の user を AuthContext 用に正規化（is_admin 表記ゆれ対策） */
 export function normalizeAuthContextUser(raw: {
   id: unknown;
   email: unknown;
   familyId?: unknown;
+  family_id?: unknown;
+  defaultFamilyId?: unknown;
+  default_family_id?: unknown;
   familyRole?: unknown;
   family_role?: unknown;
   kidTheme?: unknown;
@@ -421,7 +442,7 @@ export function normalizeAuthContextUser(raw: {
   return {
     id: Number(raw.id),
     email,
-    familyId: raw.familyId != null && raw.familyId !== "" ? Number(raw.familyId) : null,
+    familyId: resolveAuthFamilyId(raw),
     familyRole: normalizeFamilyRole(raw.familyRole ?? raw.family_role),
     kidTheme: normalizeKidTheme(raw.kidTheme ?? raw.kid_theme),
     // DB の is_admin と、指定メールアドレスの両方で管理者とみなす

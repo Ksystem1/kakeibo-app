@@ -22,6 +22,7 @@ import { useSupportChatUnreadBadge } from "../hooks/useSupportChatUnreadBadge";
 import "./AppLayout.nav.css";
 import { AdSlot } from "./AdSlot";
 import { AiAdvisorChat } from "./AiAdvisorChat";
+import { FamilyChatDock } from "./FamilyChatDock";
 import { HeaderAnnouncementBar } from "./HeaderAnnouncementBar";
 import { MobileAccessQr } from "./MobileAccessQr";
 
@@ -516,6 +517,16 @@ export function AppLayout() {
           </div>
         ) : null}
       </main>
+      {token &&
+      user?.familyId != null &&
+      Number.isFinite(Number(user.familyId)) &&
+      Number(user.familyId) > 0 ? (
+        <FamilyChatDock
+          title={isFamilyKid ? "かぞくチャット" : "家族チャット"}
+          variant={isFamilyKid ? "kid" : "default"}
+          fabClearAiAdvisor={!isFamilyKid}
+        />
+      ) : null}
       {token && !isFamilyKid ? <AiAdvisorChat /> : null}
       <AdSlot placement="footer" />
     </div>

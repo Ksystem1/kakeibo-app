@@ -17,7 +17,6 @@ import {
   updateTransaction,
 } from "../lib/api";
 import styles from "./KakeiboDashboard.module.css";
-import { FamilyChatDock } from "./FamilyChatDock";
 
 type Category = {
   id: number;
@@ -1202,7 +1201,6 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         ) : null}
       </div>
     </div>
-    <FamilyChatDock title="お小遣い帳 · 家族チャット" />
     </>
   );
 }

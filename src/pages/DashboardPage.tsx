@@ -2,7 +2,6 @@ import { PiggyBank, Wallet, WalletCards } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { FamilyChatDock } from "../components/FamilyChatDock";
 import { MetricCard } from "../components/demo/MetricCard";
 import { RecentTransactions } from "../components/demo/RecentTransactions";
 import { SpendingChart } from "../components/demo/SpendingChart";
@@ -230,7 +229,6 @@ export function DashboardPage() {
         <RecentTransactions items={recentItems} />
       </div>
     </main>
-    <FamilyChatDock title="家計簿ダッシュボード · 家族チャット" />
     </>
   );
 }
