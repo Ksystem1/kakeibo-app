@@ -1,4 +1,5 @@
 import { getStoredToken } from "../context/AuthContext";
+import { isSubscriptionServiceSubscribedClient } from "./subscriptionAccess";
 
 /**
  * 開発（import.meta.env.DEV）では環境変数を使わず、API を常にこのオリジンに固定する。
@@ -201,6 +202,7 @@ export async function registerRequest(body: {
       familyId?: number;
       isAdmin?: boolean;
       subscriptionStatus?: string;
+      isPremium?: boolean;
     };
   }>(res);
 }
@@ -222,6 +224,8 @@ export async function getAuthMe() {
       subscriptionStatus?: string;
       subscriptionPeriodEndAt?: string | null;
       subscriptionCancelAtPeriodEnd?: boolean;
+      /** サーバ計算のプレミアム可否（admin_free 含む） */
+      isPremium?: boolean;
     };
   }>(res);
 }
@@ -432,6 +436,7 @@ export function normalizeAuthContextUser(raw: {
   subscriptionStatus?: unknown;
   subscriptionPeriodEndAt?: unknown;
   subscriptionCancelAtPeriodEnd?: unknown;
+  isPremium?: unknown;
 }): {
   id: number;
   email: string;
@@ -442,6 +447,7 @@ export function normalizeAuthContextUser(raw: {
   subscriptionStatus: string;
   subscriptionPeriodEndAt: string | null;
   subscriptionCancelAtPeriodEnd: boolean;
+  isPremium: boolean;
 } {
   const email = String(raw.email ?? "");
   const normalizedIsAdmin = rawToIsAdmin(raw.isAdmin, raw.is_admin);
@@ -450,6 +456,16 @@ export function normalizeAuthContextUser(raw: {
   const pe = raw.subscriptionPeriodEndAt;
   const subscriptionPeriodEndAt =
     pe != null && String(pe).trim() !== "" ? String(pe) : null;
+  const subscriptionStatus =
+    raw.subscriptionStatus != null && String(raw.subscriptionStatus).trim() !== ""
+      ? String(raw.subscriptionStatus).trim()
+      : "inactive";
+  const isPremium =
+    raw.isPremium === true ||
+    isSubscriptionServiceSubscribedClient({
+      subscriptionStatus,
+      subscriptionPeriodEndAt,
+    });
   return {
     id: Number(raw.id),
     email,
@@ -458,12 +474,10 @@ export function normalizeAuthContextUser(raw: {
     kidTheme: normalizeKidTheme(raw.kidTheme ?? raw.kid_theme),
     // DB の is_admin と、指定メールアドレスの両方で管理者とみなす
     isAdmin: normalizedIsAdmin || hardcodedSuperAdmin,
-    subscriptionStatus:
-      raw.subscriptionStatus != null && String(raw.subscriptionStatus).trim() !== ""
-        ? String(raw.subscriptionStatus).trim()
-        : "inactive",
+    subscriptionStatus,
     subscriptionPeriodEndAt,
     subscriptionCancelAtPeriodEnd: raw.subscriptionCancelAtPeriodEnd === true,
+    isPremium,
   };
 }
 

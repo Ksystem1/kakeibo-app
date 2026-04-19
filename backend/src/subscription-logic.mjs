@@ -121,6 +121,69 @@ export function buildUserSubscriptionApiFields(row) {
 }
 
 /**
+ * GET /auth/me・ログイン: users 行と「優先家族」の subscription をマージ。
+ * `loadUserSubscriptionRowFull` の subscription CASE と同等（片側だけ admin_free でも反映）。
+ *
+ * @param {Record<string, unknown>} userRow queryLogin / queryMe の 1 行
+ * @param {Record<string, unknown> | null | undefined} preferredFamilyRow getPreferredFamilySubscriptionRow の結果
+ * @returns {Record<string, unknown>}
+ */
+export function mergeAuthMeSubscriptionWithPreferredFamily(userRow, preferredFamilyRow) {
+  if (!userRow || typeof userRow !== "object") return userRow;
+  const base = { ...userRow };
+  if (!preferredFamilyRow || typeof preferredFamilyRow !== "object") return base;
+
+  const fst = String(preferredFamilyRow.subscription_status ?? "").trim();
+  const ust = String(base.subscription_status ?? "").trim();
+  const fl = fst.toLowerCase();
+  const ul = ust.toLowerCase();
+
+  const adminHit =
+    fl === "admin_free" || fl === "admin_granted" || ul === "admin_free" || ul === "admin_granted";
+
+  const premiumFam = ["active", "trialing", "past_due", "admin_free", "admin_granted"].includes(fl);
+  const premiumUser = ["active", "trialing", "past_due", "admin_free", "admin_granted"].includes(ul);
+
+  let subscription_status = ust;
+  if (adminHit) {
+    subscription_status = "admin_free";
+  } else if (["active", "trialing", "past_due"].includes(fl)) {
+    subscription_status = fst;
+  } else if (["active", "trialing", "past_due"].includes(ul)) {
+    subscription_status = ust;
+  } else {
+    subscription_status = fst !== "" ? fst : ust;
+  }
+
+  const periodPick = adminHit
+    ? preferredFamilyRow.subscription_period_end_at ?? base.subscription_period_end_at
+    : premiumFam
+      ? preferredFamilyRow.subscription_period_end_at
+      : premiumUser
+        ? base.subscription_period_end_at
+        : preferredFamilyRow.subscription_period_end_at ?? base.subscription_period_end_at;
+
+  const cancelPick = adminHit
+    ? preferredFamilyRow.subscription_cancel_at_period_end ?? base.subscription_cancel_at_period_end
+    : premiumFam
+      ? preferredFamilyRow.subscription_cancel_at_period_end
+      : premiumUser
+        ? base.subscription_cancel_at_period_end
+        : preferredFamilyRow.subscription_cancel_at_period_end ?? base.subscription_cancel_at_period_end;
+
+  return {
+    ...base,
+    subscription_status,
+    subscription_period_end_at:
+      periodPick !== undefined ? periodPick : base.subscription_period_end_at,
+    subscription_cancel_at_period_end:
+      cancelPick !== undefined ? cancelPick : base.subscription_cancel_at_period_end,
+    stripe_subscription_id:
+      preferredFamilyRow.stripe_subscription_id ?? base.stripe_subscription_id,
+  };
+}
+
+/**
  * Stripe Subscription.status → users.subscription_status（32 文字以内）
  * @see https://docs.stripe.com/api/subscriptions/object#subscription_object-status
  */

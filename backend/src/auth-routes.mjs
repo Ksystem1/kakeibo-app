@@ -16,6 +16,8 @@ import {
   buildUserSubscriptionApiFields,
   deriveSubscriptionStatusFromDbRow,
   getEffectiveSubscriptionStatus,
+  mergeAuthMeSubscriptionWithPreferredFamily,
+  userHasPremiumSubscriptionAccess,
 } from "./subscription-logic.mjs";
 
 const FAM_JOIN_ON_U = sqlUserFamilyIdExpr("u");
@@ -607,22 +609,25 @@ export async function tryAuthRoutes(req, ctx) {
       const familyId = await resolveFamilyIdWithChatFallback(pool, u.id);
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, u.id);
       const kidTheme = await fetchUserKidTheme(pool, u.id);
+      const famSubLogin = await getPreferredFamilySubscriptionRow(pool, u.id);
+      const mergedLogin = mergeAuthMeSubscriptionWithPreferredFamily(u, famSubLogin);
       return json(
         200,
         {
           token,
           user: {
-            id: u.id,
-            email: u.email,
+            id: mergedLogin.id,
+            email: mergedLogin.email,
             familyId,
             familyRole,
             kidTheme,
-            isAdmin: Number(u.is_admin) === 1,
+            isAdmin: Number(mergedLogin.is_admin) === 1,
             subscriptionStatus: getEffectiveSubscriptionStatus(
-              deriveSubscriptionStatusFromDbRow(u),
-              u.id,
+              deriveSubscriptionStatusFromDbRow(mergedLogin),
+              mergedLogin.id,
             ),
-            ...buildUserSubscriptionApiFields(u),
+            ...buildUserSubscriptionApiFields(mergedLogin),
+            isPremium: userHasPremiumSubscriptionAccess(mergedLogin, u.id),
           },
         },
         hdrs,
@@ -752,21 +757,7 @@ export async function tryAuthRoutes(req, ctx) {
       const familyId = await resolveFamilyIdWithChatFallback(pool, uid);
       const row = rows[0] || {};
       const famSub = await getPreferredFamilySubscriptionRow(pool, uid);
-      const mergedRow = famSub
-        ? {
-            ...row,
-            subscription_status:
-              famSub.subscription_status ?? row.subscription_status ?? null,
-            subscription_period_end_at:
-              famSub.subscription_period_end_at ?? row.subscription_period_end_at ?? null,
-            subscription_cancel_at_period_end:
-              famSub.subscription_cancel_at_period_end ??
-              row.subscription_cancel_at_period_end ??
-              null,
-            stripe_subscription_id:
-              famSub.stripe_subscription_id ?? row.stripe_subscription_id ?? null,
-          }
-        : row;
+      const mergedRow = mergeAuthMeSubscriptionWithPreferredFamily(row, famSub);
       const {
         is_admin: isAdminRaw,
         subscription_status: _sub,
@@ -780,6 +771,7 @@ export async function tryAuthRoutes(req, ctx) {
       } = mergedRow;
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, uid);
       const kidTheme = await fetchUserKidTheme(pool, uid);
+      const isPremium = userHasPremiumSubscriptionAccess(mergedRow, uid);
       return json(
         200,
         {
@@ -794,6 +786,7 @@ export async function tryAuthRoutes(req, ctx) {
               mergedRow.id,
             ),
             ...buildUserSubscriptionApiFields(mergedRow),
+            isPremium,
           },
         },
         hdrs,

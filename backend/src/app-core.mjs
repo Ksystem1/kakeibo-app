@@ -4241,6 +4241,22 @@ export async function handleApiRequest(req, options = {}) {
               subscriptionActive = raw === "subscribed";
             }
           }
+          try {
+            const derivedSt = deriveSubscriptionStatusFromDbRow(subRow);
+            logger.info(
+              JSON.stringify({
+                event: "receipts.parse.subscription_gate",
+                userId,
+                subscriptionActive,
+                debugReceiptTierOverride,
+                derivedSubscriptionStatus: derivedSt,
+                dbSubscriptionStatus: subRow?.subscription_status ?? null,
+                receiptMode: subscriptionActive ? "premium_ai" : "standard",
+              }),
+            );
+          } catch {
+            /* ignore log serialization */
+          }
           const textractVendorBaseline = String(result?.summary?.vendorName ?? "").trim();
           const suggestedCategory = await suggestExpenseCategoryForReceipt(
             pool,

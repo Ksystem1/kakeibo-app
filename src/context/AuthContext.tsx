@@ -24,6 +24,8 @@ type User = {
   /** ISO 8601（Stripe current_period_end） */
   subscriptionPeriodEndAt?: string | null;
   subscriptionCancelAtPeriodEnd?: boolean;
+  /** GET /auth/me の isPremium（契約中・管理者付与 admin_free 等） */
+  isPremium?: boolean;
 };
 
 type AuthState = {
