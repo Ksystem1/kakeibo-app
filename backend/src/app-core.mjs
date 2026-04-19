@@ -1873,12 +1873,18 @@ export async function handleApiRequest(req, options = {}) {
     const catWhere = `(c.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (c.family_id IS NULL AND c.user_id = ?))`;
     const familyRoleUpper = await resolveUserFamilyRoleUpper(pool, userId);
     const isKidTxScope = familyRoleUpper === "KID";
+    // ADMIN/MEMBER の家族取引のみ（同一 family_id の KID お小遣い帳は除外）。KID は従来どおり本人分のみ。
+    const txCreatorIsAdultLedger =
+      "EXISTS (SELECT 1 FROM users u_tx WHERE u_tx.id = t.user_id AND UPPER(TRIM(COALESCE(u_tx.family_role, 'MEMBER'))) IN ('ADMIN', 'MEMBER'))";
     const txWhere = isKidTxScope
       ? `(t.user_id = ? AND (t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (t.family_id IS NULL AND t.user_id = ?)))`
-      : `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (t.family_id IS NULL AND t.user_id = ?))`;
+      : `((
+          t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?)
+          AND ${txCreatorIsAdultLedger}
+        ) OR (t.family_id IS NULL AND t.user_id = ?))`;
     const txWhereFamily = isKidTxScope
       ? `(t.user_id = ? AND t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?))`
-      : `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?))`;
+      : `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) AND ${txCreatorIsAdultLedger})`;
     const txP2 = isKidTxScope ? [userId, userId, userId] : [userId, userId];
     const txP1 = isKidTxScope ? [userId, userId] : [userId];
 
