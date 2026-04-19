@@ -849,40 +849,42 @@ export function SettingsPage() {
               ))}
             </div>
           </div>
-          <button
-            type="button"
-            className={styles.btn}
-            onClick={() =>
-              setFixedItems((prev) => [...prev, { id: `fixed-${Date.now()}-${prev.length}`, amount: 0, category: "固定費" }])
-            }
-          >
-            入力行を追加
-          </button>
-          <button
-            type="button"
-            className={`${styles.btn} ${styles.btnPrimary}`}
-            disabled={fixedSaveBusy}
-            onClick={async () => {
-              setFixedSaveBusy(true);
-              setFixedSaveMessage(null);
-              try {
-                await setFixedCostsForMonth(currentYm(), fixedItems);
-                setFixedSaveMessage(
-                  getApiBaseUrl() && canSendAuthenticatedRequest(token)
-                    ? "保存しました（家族で共有）。"
-                    : "保存しました（この端末のみ）。",
-                );
-              } catch (e) {
-                setFixedSaveMessage(
-                  e instanceof Error ? e.message : String(e),
-                );
-              } finally {
-                setFixedSaveBusy(false);
+          <div className={styles.settingsFixedCostFormActions}>
+            <button
+              type="button"
+              className={styles.btn}
+              onClick={() =>
+                setFixedItems((prev) => [...prev, { id: `fixed-${Date.now()}-${prev.length}`, amount: 0, category: "固定費" }])
               }
-            }}
-          >
-            {fixedSaveBusy ? "保存中…" : "保存"}
-          </button>
+            >
+              入力行を追加
+            </button>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              disabled={fixedSaveBusy}
+              onClick={async () => {
+                setFixedSaveBusy(true);
+                setFixedSaveMessage(null);
+                try {
+                  await setFixedCostsForMonth(currentYm(), fixedItems);
+                  setFixedSaveMessage(
+                    getApiBaseUrl() && canSendAuthenticatedRequest(token)
+                      ? "保存しました（家族で共有）。"
+                      : "保存しました（この端末のみ）。",
+                  );
+                } catch (e) {
+                  setFixedSaveMessage(
+                    e instanceof Error ? e.message : String(e),
+                  );
+                } finally {
+                  setFixedSaveBusy(false);
+                }
+              }}
+            >
+              {fixedSaveBusy ? "保存中…" : "保存"}
+            </button>
+          </div>
         </div>
         {fixedSaveMessage ? (
           <p className={styles.infoText}>{fixedSaveMessage}</p>

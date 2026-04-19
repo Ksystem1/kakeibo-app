@@ -1147,6 +1147,25 @@
   box-shadow: none;
 }
 
+/* 固定費フォーム末尾: グリッドの狭セルで「入力行を追加」が折り返さないよう全幅フレックス */
+.settingsFixedCostFormActions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+@media (min-width: 769px) {
+  .settingsFixedCostFormActions {
+    flex-wrap: nowrap;
+  }
+
+  .settingsFixedCostFormActions > .btn {
+    white-space: nowrap;
+  }
+}
+
 /* 設定の固定費: カテゴリは可変、金額は桁数＋大フォントでも切れない最小幅 */
 .fixedCostRow {
   display: grid;
