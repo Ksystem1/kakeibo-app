@@ -31,6 +31,8 @@ type AdminUser = {
   updated_at: string | null;
   last_login_at: string | null;
   default_family_id: number | null;
+  /** users.family_role（未対応 API では undefined） */
+  familyRole?: string;
   family_peers: string | null;
 };
 
@@ -58,6 +60,13 @@ const adminTableBtn = {
   fontSize: "0.8125rem",
   lineHeight: 1.2,
 };
+
+const FAMILY_ROLE_LABELS: Record<string, string> = {
+  ADMIN: "管理者（家計）",
+  MEMBER: "メンバー",
+  KID: "子ども（本人のみ）",
+};
+const ADMIN_FAMILY_ROLES = ["ADMIN", "MEMBER", "KID"] as const;
 
 function formatAdminApiError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e ?? "");
@@ -113,6 +122,8 @@ export function AdminPage() {
   const [savingUserId, setSavingUserId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [displayNameDrafts, setDisplayNameDrafts] = useState<Record<number, string>>({});
+  const [familyIdDrafts, setFamilyIdDrafts] = useState<Record<number, string>>({});
+  const [familyRoleDrafts, setFamilyRoleDrafts] = useState<Record<number, string>>({});
   const [tempPasswords, setTempPasswords] = useState<Record<number, string>>({});
   const [creating, setCreating] = useState(false);
   const [newEmail, setNewEmail] = useState("");
@@ -140,6 +151,21 @@ export function AdminPage() {
       setDisplayNameDrafts(
         Object.fromEntries(
           list.map((u) => [u.id, u.display_name ?? ""]),
+        ),
+      );
+      setFamilyIdDrafts(
+        Object.fromEntries(
+          list.map((u) => [u.id, u.default_family_id != null ? String(u.default_family_id) : ""]),
+        ),
+      );
+      setFamilyRoleDrafts(
+        Object.fromEntries(
+          list.map((u) => [
+            u.id,
+            String(u.familyRole ?? "MEMBER")
+              .trim()
+              .toUpperCase() || "MEMBER",
+          ]),
         ),
       );
       setAnnouncementDraft(typeof ann.text === "string" ? ann.text : "");
@@ -173,6 +199,59 @@ export function AdminPage() {
       }
     },
     [],
+  );
+
+  const onApplyFamilySettings = useCallback(
+    async (userId: number) => {
+      const u = items.find((x) => x.id === userId);
+      if (!u) return;
+      setSavingUserId(userId);
+      setError(null);
+      try {
+        const famRaw = (familyIdDrafts[userId] ?? "").trim();
+        let nextFam: number | null = null;
+        if (famRaw !== "") {
+          const n = Number(famRaw);
+          if (!Number.isFinite(n) || n <= 0) {
+            setError("家族IDは正の数で入力するか、空にしてください。");
+            setSavingUserId(null);
+            return;
+          }
+          nextFam = n;
+        }
+        const prevFam = u.default_family_id ?? null;
+        const nextRole = ((familyRoleDrafts[userId] ?? "MEMBER").trim().toUpperCase() || "MEMBER") as
+          | "ADMIN"
+          | "MEMBER"
+          | "KID";
+        const prevRole = (String(u.familyRole ?? "MEMBER").trim().toUpperCase() || "MEMBER") as
+          | "ADMIN"
+          | "MEMBER"
+          | "KID";
+
+        const body: {
+          defaultFamilyId?: number | null;
+          familyRole?: "ADMIN" | "MEMBER" | "KID";
+        } = {};
+        if (nextFam !== prevFam) {
+          body.defaultFamilyId = nextFam;
+        }
+        if (nextRole !== prevRole) {
+          body.familyRole = nextRole;
+        }
+        if (Object.keys(body).length === 0) {
+          setSavingUserId(null);
+          return;
+        }
+        await updateAdminUser(userId, body);
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "家族設定の更新に失敗しました");
+      } finally {
+        setSavingUserId(null);
+      }
+    },
+    [items, familyIdDrafts, familyRoleDrafts, load],
   );
 
   const onSetSubscriptionStatus = useCallback(
@@ -505,7 +584,7 @@ export function AdminPage() {
           style={{
             width: "100%",
             borderCollapse: "collapse",
-            minWidth: 1980,
+            minWidth: 1780,
             tableLayout: "auto",
           }}
         >
@@ -515,9 +594,11 @@ export function AdminPage() {
               <th style={{ ...adminTableTh, minWidth: 260 }}>メール</th>
               <th style={adminTableTh}>登録日</th>
               <th style={adminTableTh}>最終ログイン</th>
-              <th style={adminTableTh}>家族ID</th>
-              <th style={{ ...adminTableTh, minWidth: 400 }}>家族メンバー</th>
-              <th style={{ ...adminTableTh, minWidth: 220 }}>表示名</th>
+              <th style={{ ...adminTableTh, minWidth: "5.5rem" }}>家族ID</th>
+              <th style={{ ...adminTableTh, minWidth: "7rem" }}>役割</th>
+              {/* width:1% + 子の nowrap で列幅を内容に寄せ、表示名列との隙間を詰める */}
+              <th style={{ ...adminTableTh, width: "1%", whiteSpace: "nowrap" }}>家族メンバー</th>
+              <th style={{ ...adminTableTh, minWidth: 180 }}>表示名</th>
               <th style={{ ...adminTableTh, minWidth: 100 }}>ログイン名</th>
               <th style={{ ...adminTableTh, minWidth: 150 }}>サブスク</th>
               <th style={adminTableTh}>管理者</th>
@@ -537,13 +618,56 @@ export function AdminPage() {
                   {formatDateTime(u.last_login_at)}
                 </td>
                 <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
-                  {u.default_family_id != null ? u.default_family_id : "—"}
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    inputMode="numeric"
+                    placeholder="—"
+                    value={familyIdDrafts[u.id] ?? ""}
+                    disabled={savingUserId === u.id}
+                    onChange={(e) =>
+                      setFamilyIdDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
+                    }
+                    style={{ width: "4.5rem", padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+                    title="既定の家族（families.id）。空欄で未所属にできます（要マイグレーション v18）。"
+                  />
+                </td>
+                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
+                  <div style={{ display: "flex", flexWrap: "nowrap", gap: "0.3rem", alignItems: "center" }}>
+                    <select
+                      value={familyRoleDrafts[u.id] ?? "MEMBER"}
+                      disabled={savingUserId === u.id}
+                      onChange={(e) =>
+                        setFamilyRoleDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
+                      }
+                      style={{ minWidth: 120, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+                      title="KID: 取引一覧は本人の登録分のみ表示（users.family_role）"
+                    >
+                      {ADMIN_FAMILY_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {FAMILY_ROLE_LABELS[r] ?? r}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={savingUserId === u.id}
+                      onClick={() => {
+                        void onApplyFamilySettings(u.id);
+                      }}
+                      style={adminTableBtn}
+                    >
+                      反映
+                    </button>
+                  </div>
                 </td>
                 <td
                   style={{
                     ...adminTableTd,
-                    minWidth: 400,
-                    maxWidth: 560,
+                    width: "1%",
+                    paddingRight: "0.4rem",
+                    verticalAlign: "middle",
                   }}
                 >
                   {u.family_peers == null || String(u.family_peers).trim() === "" ? (
@@ -558,13 +682,14 @@ export function AdminPage() {
                     </div>
                   )}
                 </td>
-                <td style={adminTableTd}>
+                <td style={{ ...adminTableTd, paddingLeft: "0.35rem" }}>
                   <div
                     style={{
                       display: "flex",
                       flexWrap: "nowrap",
                       gap: "0.35rem",
                       alignItems: "center",
+                      justifyContent: "flex-start",
                     }}
                   >
                     <input
@@ -678,7 +803,7 @@ export function AdminPage() {
             ))}
             {!loading && items.length === 0 ? (
               <tr>
-                <td colSpan={12} style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                <td colSpan={13} style={{ padding: "1rem", color: "var(--text-muted)" }}>
                   ユーザーが見つかりません
                 </td>
               </tr>

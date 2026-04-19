@@ -810,6 +810,7 @@ export async function getAdminUsers() {
       updated_at: string | null;
       last_login_at: string | null;
       default_family_id: number | null;
+      familyRole?: string;
       family_peers: string | null;
     }>;
     meta?: { subscriptionStatusWritable?: boolean };
@@ -837,6 +838,9 @@ export async function updateAdminUser(
     isAdmin?: boolean;
     displayName?: string | null;
     subscriptionStatus?: string;
+    /** 既定の家族（families.id）。null で未所属扱い（family_members から外す） */
+    defaultFamilyId?: number | null;
+    familyRole?: "ADMIN" | "MEMBER" | "KID";
   },
 ) {
   const res = await apiFetch(`${BASE}/admin/users/${userId}`, {

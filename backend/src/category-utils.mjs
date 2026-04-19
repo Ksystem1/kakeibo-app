@@ -15,7 +15,12 @@ export function normalizeCategoryNameKey(name) {
  * 取引・予算・receipt_ocr_corrections を代表 ID に付け替え、他はアーカイブ。
  * @returns {Promise<{ merged: number }>}
  */
-export async function mergeDuplicateCategories(pool, userId, familyId, catWhere, txWhere) {
+/**
+ * @param {unknown[]|null|undefined} [txWhereParams] KID スコープ時は [userId,userId,userId]、通常は [userId,userId]
+ */
+export async function mergeDuplicateCategories(pool, userId, catWhere, txWhere, txWhereParams) {
+  const txp =
+    Array.isArray(txWhereParams) && txWhereParams.length > 0 ? txWhereParams : [userId, userId];
   const [rows] = await pool.query(
     `SELECT c.id, c.name, c.kind FROM categories c
      WHERE ${catWhere} AND c.is_archived = 0
@@ -51,7 +56,7 @@ export async function mergeDuplicateCategories(pool, userId, familyId, catWhere,
          FROM transactions t
          WHERE (${txWhere}) AND t.category_id IN (${placeholders})
          GROUP BY t.category_id`,
-        [userId, userId, ...ids],
+        [...txp, ...ids],
       );
       const countMap = new Map();
       for (const tr of txRows || []) {
@@ -76,7 +81,7 @@ export async function mergeDuplicateCategories(pool, userId, familyId, catWhere,
         await conn.query(
           `UPDATE transactions t SET t.category_id = ?, t.updated_at = NOW()
            WHERE (${txWhere}) AND t.category_id = ?`,
-          [keeper.id, userId, userId, dupeId],
+          [keeper.id, ...txp, dupeId],
         );
 
         try {

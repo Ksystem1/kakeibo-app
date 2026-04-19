@@ -703,11 +703,13 @@ const RECEIPT_NORMALIZED_SNAPSHOT_VENDOR_EXPR =
   "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(JSON_UNQUOTE(JSON_EXTRACT(r.ocr_snapshot_json, '$.vendorName'))), ' ', ''), '　', ''), '株式会社', ''), '(株)', ''))";
 
 /** 無料向け: 家族スコープの取引メモ（店名）一致で直近の支出カテゴリ */
-async function suggestExpenseCategoryFromTransactionHistory(pool, userId, txWhere, vendor) {
+async function suggestExpenseCategoryFromTransactionHistory(pool, userId, txWhere, vendor, txWhereParams) {
   const memo = String(vendor ?? "").trim();
   if (!memo) return null;
   const normMemo = normalizeVendorName(memo);
   if (!normMemo) return null;
+  const p =
+    Array.isArray(txWhereParams) && txWhereParams.length > 0 ? txWhereParams : [userId, userId];
 
   const [rows] = await pool.query(
     `SELECT t.category_id, c.name, t.transaction_date, t.id
@@ -721,7 +723,7 @@ async function suggestExpenseCategoryFromTransactionHistory(pool, userId, txWher
        AND ${RECEIPT_NORMALIZED_MEMO_EXPR} = ?
      ORDER BY t.transaction_date DESC, t.id DESC
      LIMIT 1`,
-    [userId, userId, normMemo],
+    [...p, normMemo],
   );
   if (Array.isArray(rows) && rows[0]?.category_id != null) {
     const top = rows[0];
@@ -868,10 +870,18 @@ async function suggestExpenseCategoryForReceipt(
   txWhere,
   vendor,
   items,
-  { usePersonalHistory = true, familyId = null, expenseCategories = null } = {},
+  { usePersonalHistory = true, familyId = null, expenseCategories = null, txWhereParams = null } = {},
 ) {
+  const twp =
+    Array.isArray(txWhereParams) && txWhereParams.length > 0 ? txWhereParams : [userId, userId];
   if (usePersonalHistory) {
-    const fromTx = await suggestExpenseCategoryFromTransactionHistory(pool, userId, txWhere, vendor);
+    const fromTx = await suggestExpenseCategoryFromTransactionHistory(
+      pool,
+      userId,
+      txWhere,
+      vendor,
+      twp,
+    );
     if (fromTx?.id) return fromTx;
   }
 
@@ -929,12 +939,15 @@ async function predictCategory({
   userId,
   familyId,
   txWhere,
+  txWhereParams,
   vendor,
   items,
   userExpenseCategories,
   subscriptionActive,
   aiCategoryName,
 }) {
+  const twp =
+    Array.isArray(txWhereParams) && txWhereParams.length > 0 ? txWhereParams : [userId, userId];
   if (subscriptionActive) {
     const fromFamilyCorr = await suggestExpenseCategoryFromFamilyReceiptCorrections(
       pool,
@@ -976,7 +989,13 @@ async function predictCategory({
       };
     }
   } else {
-    const fromTx = await suggestExpenseCategoryFromTransactionHistory(pool, userId, txWhere, vendor);
+    const fromTx = await suggestExpenseCategoryFromTransactionHistory(
+      pool,
+      userId,
+      txWhere,
+      vendor,
+      twp,
+    );
     if (fromTx?.id != null) {
       return { ...fromTx, lowConfidence: false };
     }
@@ -988,7 +1007,12 @@ async function predictCategory({
     txWhere,
     vendor,
     items,
-    { usePersonalHistory: false, familyId, expenseCategories: userExpenseCategories },
+    {
+      usePersonalHistory: false,
+      familyId,
+      expenseCategories: userExpenseCategories,
+      txWhereParams: twp,
+    },
   );
   if (fromKeywords?.id != null) {
     return { ...fromKeywords, lowConfidence: true };
@@ -1104,6 +1128,7 @@ const ADMIN_USERS_LIST_SQL_WITH_SUB_LEGACY = `SELECT
            u.updated_at,
            u.last_login_at,
            u.default_family_id,
+           COALESCE(u.family_role, 'MEMBER') AS family_role,
            (
              SELECT GROUP_CONCAT(
                CONCAT(
@@ -1134,6 +1159,7 @@ const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
            u.updated_at,
            u.last_login_at,
            u.default_family_id,
+           COALESCE(u.family_role, 'MEMBER') AS family_role,
            (
              SELECT GROUP_CONCAT(
                CONCAT(
@@ -1163,6 +1189,7 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
            u.updated_at,
            u.last_login_at,
            u.default_family_id,
+           COALESCE(u.family_role, 'MEMBER') AS family_role,
            (
              SELECT GROUP_CONCAT(
                CONCAT(
@@ -1247,6 +1274,30 @@ function isErBadFieldErrorAppCore(e) {
   return code === "ER_BAD_FIELD_ERROR" || errno === 1054;
 }
 
+/** users.family_role（未移行 DB は MEMBER 扱い） */
+async function resolveUserFamilyRoleUpper(pool, userId) {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT COALESCE(family_role, 'MEMBER') AS fr FROM users WHERE id = ? LIMIT 1`,
+      [userId],
+    );
+    const v = String(row?.fr ?? "MEMBER")
+      .trim()
+      .toUpperCase();
+    if (v === "KID" || v === "ADMIN") return v;
+    return "MEMBER";
+  } catch (e) {
+    if (isErBadFieldErrorAppCore(e)) return "MEMBER";
+    throw e;
+  }
+}
+
+function normalizeAdminFamilyRole(raw) {
+  const s = String(raw ?? "").trim().toUpperCase();
+  if (s === "ADMIN" || s === "MEMBER" || s === "KID") return s;
+  return null;
+}
+
 async function loadUserSubscriptionRowFull(pool, userId) {
   const queries = [
     `SELECT
@@ -1294,8 +1345,10 @@ async function loadUserSubscriptionRowFull(pool, userId) {
 /**
  * サブスク有料レシートAI向け: 家族スコープの最近の支出メモをヒントに渡す。
  */
-async function fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere, limit = 48) {
+async function fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere, limit = 48, txWhereParams) {
   const lim = Math.min(80, Math.max(8, Number(limit) || 48));
+  const p =
+    Array.isArray(txWhereParams) && txWhereParams.length > 0 ? txWhereParams : [userId, userId];
   const [rows] = await pool.query(
     `SELECT t.transaction_date AS d, t.memo, t.amount, c.name AS category_name
      FROM transactions t
@@ -1305,7 +1358,7 @@ async function fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere, limit
        AND TRIM(COALESCE(t.memo, '')) <> ''
      ORDER BY t.transaction_date DESC, t.id DESC
      LIMIT ?`,
-    [userId, userId, lim],
+    [...p, lim],
   );
   if (!Array.isArray(rows)) return [];
   return rows.map((r) => ({
@@ -1337,7 +1390,10 @@ async function suggestExpenseCategoryForMemo(
   memo,
   expenseCategories,
   subscriptionActive,
+  txWhereParams,
 ) {
+  const twp =
+    Array.isArray(txWhereParams) && txWhereParams.length > 0 ? txWhereParams : [userId, userId];
   const vendor = String(memo ?? "").trim();
   if (!vendor) return null;
   const cats =
@@ -1366,7 +1422,13 @@ async function suggestExpenseCategoryForMemo(
     const fromGlobal = await suggestExpenseCategoryFromGlobalMaster(pool, vendor, cats);
     if (fromGlobal?.id) return fromGlobal;
   } else {
-    const fromTx = await suggestExpenseCategoryFromTransactionHistory(pool, userId, txWhere, vendor);
+    const fromTx = await suggestExpenseCategoryFromTransactionHistory(
+      pool,
+      userId,
+      txWhere,
+      vendor,
+      twp,
+    );
     if (fromTx?.id) return fromTx;
   }
   const tokens = tokenizeMemo(vendor).map((name) => ({ name, amount: null }));
@@ -1374,6 +1436,7 @@ async function suggestExpenseCategoryForMemo(
     usePersonalHistory: false,
     familyId,
     expenseCategories: cats,
+    txWhereParams: twp,
   });
 }
 
@@ -1771,8 +1834,16 @@ export async function handleApiRequest(req, options = {}) {
     const familyId = await getDefaultFamilyId(pool, userId);
 
     const catWhere = `(c.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (c.family_id IS NULL AND c.user_id = ?))`;
-    const txWhere = `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (t.family_id IS NULL AND t.user_id = ?))`;
-    const txWhereFamily = `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?))`;
+    const familyRoleUpper = await resolveUserFamilyRoleUpper(pool, userId);
+    const isKidTxScope = familyRoleUpper === "KID";
+    const txWhere = isKidTxScope
+      ? `(t.user_id = ? AND (t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (t.family_id IS NULL AND t.user_id = ?)))`
+      : `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (t.family_id IS NULL AND t.user_id = ?))`;
+    const txWhereFamily = isKidTxScope
+      ? `(t.user_id = ? AND t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?))`
+      : `(t.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?))`;
+    const txP2 = isKidTxScope ? [userId, userId, userId] : [userId, userId];
+    const txP1 = isKidTxScope ? [userId, userId] : [userId];
 
     const normPath = path.replace(/\/$/, "") || "/";
     const txOneMatch = /^\/transactions\/(\d+)$/.exec(normPath);
@@ -1790,7 +1861,7 @@ export async function handleApiRequest(req, options = {}) {
       const [[existing]] = await pool.query(
         `SELECT id, user_id, family_id, kind, amount, transaction_date, memo, category_id
          FROM transactions t WHERE t.id = ? AND (${txWhere})`,
-        [txId, userId, userId],
+        [txId, ...txP2],
       );
       if (!existing) {
         return json(404, { error: "見つかりません" }, hdrs, skipCors);
@@ -1919,7 +1990,7 @@ export async function handleApiRequest(req, options = {}) {
       params.push(txId);
       await pool.query(
         `UPDATE transactions t SET ${fields.join(", ")} WHERE t.id = ? AND (${txWhere})`,
-        [...params, userId, userId],
+        [...params, ...txP2],
       );
       return json(200, { ok: true }, hdrs, skipCors);
     }
@@ -1928,7 +1999,7 @@ export async function handleApiRequest(req, options = {}) {
       const txId = Number(txOneMatch[1], 10);
       const [delRes] = await pool.query(
         `DELETE t FROM transactions t WHERE t.id = ? AND (${txWhere})`,
-        [txId, userId, userId],
+        [txId, ...txP2],
       );
       if (!delRes.affectedRows) {
         return json(404, { error: "見つかりません" }, hdrs, skipCors);
@@ -1954,6 +2025,9 @@ export async function handleApiRequest(req, options = {}) {
         updated_at: r.updated_at ?? null,
         last_login_at: r.last_login_at ?? null,
         default_family_id: r.default_family_id ?? null,
+        familyRole: String(r.family_role ?? "MEMBER")
+          .trim()
+          .toUpperCase(),
         family_peers: r.family_peers == null || r.family_peers === "" ? null : String(r.family_peers),
       }));
       return json(
@@ -2066,10 +2140,17 @@ export async function handleApiRequest(req, options = {}) {
       if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
         return json(400, { error: "ユーザーIDが不正です" }, hdrs, skipCors);
       }
+      const [[existsTarget]] = await pool.query(`SELECT id FROM users WHERE id = ? LIMIT 1`, [
+        targetUserId,
+      ]);
+      if (!existsTarget) {
+        return json(404, { error: "対象ユーザーが見つかりません" }, hdrs, skipCors);
+      }
       const b = JSON.parse(req.body || "{}");
       const updates = [];
       const params = [];
       let appliedFamilySub = false;
+      let appliedFamilyRelink = false;
 
       if (Object.prototype.hasOwnProperty.call(b, "isAdmin")) {
         if (typeof b.isAdmin !== "boolean") {
@@ -2134,19 +2215,64 @@ export async function handleApiRequest(req, options = {}) {
           params.push(normalizedSub);
         }
       }
-      if (updates.length === 0) {
-        if (appliedFamilySub) {
-          return json(200, { ok: true }, hdrs, skipCors);
+      if (
+        Object.prototype.hasOwnProperty.call(b, "defaultFamilyId") ||
+        Object.prototype.hasOwnProperty.call(b, "default_family_id")
+      ) {
+        const rawFam = b.defaultFamilyId ?? b.default_family_id;
+        let newFam = null;
+        if (rawFam !== null && rawFam !== undefined && String(rawFam).trim() !== "") {
+          newFam = Number(rawFam);
+          if (!Number.isFinite(newFam) || newFam <= 0) {
+            return json(400, { error: "defaultFamilyId が不正です" }, hdrs, skipCors);
+          }
+          const [[frow]] = await pool.query(`SELECT id FROM families WHERE id = ? LIMIT 1`, [newFam]);
+          if (!frow) {
+            return json(400, { error: "指定の家族（defaultFamilyId）が見つかりません" }, hdrs, skipCors);
+          }
         }
+        const conn = await pool.getConnection();
+        try {
+          await conn.beginTransaction();
+          await conn.query(`DELETE FROM family_members WHERE user_id = ?`, [targetUserId]);
+          if (newFam != null) {
+            await conn.query(
+              `INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, 'member')`,
+              [newFam, targetUserId],
+            );
+            await conn.query(`UPDATE users SET default_family_id = ? WHERE id = ?`, [newFam, targetUserId]);
+          } else {
+            await conn.query(`UPDATE users SET default_family_id = NULL WHERE id = ?`, [targetUserId]);
+          }
+          await conn.commit();
+          appliedFamilyRelink = true;
+        } catch (e) {
+          await conn.rollback();
+          throw e;
+        } finally {
+          conn.release();
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(b, "familyRole") || Object.prototype.hasOwnProperty.call(b, "family_role")) {
+        const nr = normalizeAdminFamilyRole(b.familyRole ?? b.family_role);
+        if (nr == null) {
+          return json(
+            400,
+            { error: "familyRole は ADMIN / MEMBER / KID のいずれかで指定してください" },
+            hdrs,
+            skipCors,
+          );
+        }
+        updates.push("family_role = ?");
+        params.push(nr);
+      }
+      if (updates.length === 0 && !appliedFamilySub && !appliedFamilyRelink) {
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
       }
       const [[exists]] = await pool.query(
         `SELECT id, is_admin FROM users WHERE id = ?`,
         [targetUserId],
       );
-      if (!exists) {
-        return json(404, { error: "対象ユーザーが見つかりません" }, hdrs, skipCors);
-      }
       if (
         Object.prototype.hasOwnProperty.call(b, "isAdmin") &&
         b.isAdmin === false &&
@@ -2159,25 +2285,39 @@ export async function handleApiRequest(req, options = {}) {
           return json(400, { error: "最後の管理者の権限は外せません" }, hdrs, skipCors);
         }
       }
-      try {
-        await pool.query(
-          `UPDATE users SET ${updates.join(", ")}, updated_at = NOW() WHERE id = ?`,
-          [...params, targetUserId],
-        );
-      } catch (e) {
-        if (isUnknownSubscriptionColumnError(e)) {
-          return json(
-            503,
-            {
-              error: "SubscriptionColumnMissing",
-              detail:
-                "users.subscription_status 列がありません。RDS に db/migration_v8_users_subscription_status.sql を適用してから、サブスク状態を変更してください。",
-            },
-            hdrs,
-            skipCors,
+      if (updates.length > 0) {
+        try {
+          await pool.query(
+            `UPDATE users SET ${updates.join(", ")}, updated_at = NOW() WHERE id = ?`,
+            [...params, targetUserId],
           );
+        } catch (e) {
+          if (isUnknownSubscriptionColumnError(e)) {
+            return json(
+              503,
+              {
+                error: "SubscriptionColumnMissing",
+                detail:
+                  "users.subscription_status 列がありません。RDS に db/migration_v8_users_subscription_status.sql を適用してから、サブスク状態を変更してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          if (isErBadFieldErrorAppCore(e) && String(e?.message || "").includes("family_role")) {
+            return json(
+              503,
+              {
+                error: "FamilyRoleColumnMissing",
+                detail:
+                  "users.family_role 列がありません。RDS に db/migration_v18_users_family_role.sql を適用してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          throw e;
         }
-        throw e;
       }
       return json(200, { ok: true }, hdrs, skipCors);
     }
@@ -2836,7 +2976,7 @@ export async function handleApiRequest(req, options = {}) {
       case "GET /categories": {
         await seedDefaultCategoriesIfEmpty(pool, userId, familyId);
         try {
-          await mergeDuplicateCategories(pool, userId, catWhere, txWhere);
+          await mergeDuplicateCategories(pool, userId, catWhere, txWhere, txP2);
         } catch (e) {
           logError("categories.merge_duplicates", e);
         }
@@ -3090,7 +3230,7 @@ export async function handleApiRequest(req, options = {}) {
         let sql = `SELECT t.id, t.account_id, t.category_id, t.kind, t.amount, t.transaction_date, t.memo, t.created_at, t.updated_at, t.user_id
                    FROM transactions t
                    WHERE ${txWhereForScope}`;
-        const params = familyScopeOnly ? [userId] : [userId, userId];
+        const params = familyScopeOnly ? txP1 : txP2;
         if (from) {
           sql += ` AND t.transaction_date >= ?`;
           params.push(from);
@@ -3223,7 +3363,7 @@ export async function handleApiRequest(req, options = {}) {
         }
         const [delRes] = await pool.query(
           `DELETE t FROM transactions t WHERE t.id = ? AND (${txWhere})`,
-          [txId, userId, userId],
+          [txId, ...txP2],
         );
         if (!delRes.affectedRows) {
           return json(404, { error: "見つかりません" }, hdrs, skipCors);
@@ -3235,7 +3375,7 @@ export async function handleApiRequest(req, options = {}) {
         const ym = q.year_month || q.yearMonth;
         const familyScopeOnly = String(q.scope ?? "").toLowerCase() === "family";
         const txWhereForScope = familyScopeOnly ? txWhereFamily : txWhere;
-        const txScopeParams = familyScopeOnly ? [userId] : [userId, userId];
+        const txScopeParams = familyScopeOnly ? txP1 : txP2;
         const bounds = ymBounds(ym);
         if (!bounds) {
           return json(
@@ -3326,7 +3466,7 @@ export async function handleApiRequest(req, options = {}) {
         }
         const familyScopeOnly = String(q.scope ?? "").toLowerCase() === "family";
         const txWhereForScope = familyScopeOnly ? txWhereFamily : txWhere;
-        const txScopeParams = familyScopeOnly ? [userId] : [userId, userId];
+        const txScopeParams = familyScopeOnly ? txP1 : txP2;
         const [[sumE]] = await pool.query(
           `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
            LEFT JOIN categories c ON c.id = t.category_id
@@ -3640,7 +3780,7 @@ export async function handleApiRequest(req, options = {}) {
         const monthOr = monthRanges
           .map(() => "(t.transaction_date >= ? AND t.transaction_date <= ?)")
           .join(" OR ");
-        const delParams = [userId, userId];
+        const delParams = [...txP2];
         for (const { from, to } of monthRanges) {
           delParams.push(from, to);
         }
@@ -3872,10 +4012,10 @@ export async function handleApiRequest(req, options = {}) {
             txWhere,
             result?.summary?.vendorName ?? "",
             result?.items ?? [],
-            { usePersonalHistory: true, expenseCategories: expenseCatRows },
+            { usePersonalHistory: true, expenseCategories: expenseCatRows, txWhereParams: txP2 },
           );
           const historyHints = subscriptionActive
-            ? await fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere)
+            ? await fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere, 48, txP2)
             : [];
           let aiReceipt = null;
           if (subscriptionActive) {
@@ -4045,6 +4185,7 @@ export async function handleApiRequest(req, options = {}) {
             userId,
             familyId,
             txWhere,
+            txWhereParams: txP2,
             vendor: adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
             items: result?.items ?? [],
             userExpenseCategories: expenseCatRows,
@@ -4285,7 +4426,7 @@ export async function handleApiRequest(req, options = {}) {
                AND TRIM(t.memo) <> ''
              ORDER BY t.transaction_date ASC, t.id ASC
              LIMIT ? OFFSET ?`,
-            [userId, userId, batchSize, offset],
+            [...txP2, batchSize, offset],
           );
           const list = Array.isArray(rows) ? rows : [];
           if (list.length === 0) break;
@@ -4305,13 +4446,14 @@ export async function handleApiRequest(req, options = {}) {
               memo,
               reclassExpenseCatRows,
               subscriptionActiveReclass,
+              txP2,
             );
             if (!suggestion?.id) continue;
             const [upd] = await pool.query(
               `UPDATE transactions t
                SET t.category_id = ?
                WHERE t.id = ? AND (${txWhere}) AND t.category_id IS NULL`,
-              [suggestion.id, txId, userId, userId],
+              [suggestion.id, txId, ...txP2],
             );
             if (upd?.affectedRows) {
               batchUpdated += 1;
