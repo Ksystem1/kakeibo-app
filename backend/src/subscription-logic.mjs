@@ -28,7 +28,12 @@ export function isUserIdForcedPremiumByEnv(userId) {
  */
 export function getEffectiveSubscriptionStatus(subscriptionStatus, userId) {
   if (isUserIdForcedPremiumByEnv(userId)) return "active";
-  return String(subscriptionStatus ?? "inactive");
+  const raw = String(subscriptionStatus ?? "inactive").trim();
+  if (raw === "") return "inactive";
+  const low = raw.toLowerCase();
+  /** 旧表記・外部連携用エイリアス（DB 正規値は admin_free） */
+  if (low === "admin_granted") return "admin_free";
+  return raw;
 }
 
 /**
@@ -38,7 +43,12 @@ export function deriveSubscriptionStatusFromDbRow(row) {
   if (!row || typeof row !== "object") return "inactive";
   if (row.is_premium != null && Number(row.is_premium) === 1) return "active";
   const st = row.subscription_status;
-  if (st != null && String(st).trim() !== "") return String(st).trim();
+  if (st != null && String(st).trim() !== "") {
+    const t = String(st).trim();
+    const low = t.toLowerCase();
+    if (low === "admin_granted") return "admin_free";
+    return t;
+  }
   return "inactive";
 }
 
@@ -76,7 +86,7 @@ export function isSubscriptionServiceSubscribed(row, userId, nowMs = Date.now())
   ).trim()
     .toLowerCase();
   /** 請求期間に依存しない管理者付与（期限なしでプレミアム同等） */
-  if (status === "admin_free") return true;
+  if (status === "admin_free" || status === "admin_granted") return true;
   const endMs = subscriptionPeriodEndMsFromRow(row);
   if (endMs != null && nowMs > endMs) return false;
   if (status === "active" || status === "past_due" || status === "trialing") return true;
@@ -86,6 +96,7 @@ export function isSubscriptionServiceSubscribed(row, userId, nowMs = Date.now())
 
 /**
  * プレミアム機能（ナビスキン・レシート AI 等）の利用可否。
+ * active / trialing / past_due / canceled（期間内）に加え、admin_free（管理者付与）も true。
  * @param {Record<string, unknown>} row users の一部（subscription_period_end_at 任意）
  * @param {number} userId
  */
@@ -144,7 +155,8 @@ export const ADMIN_SETTABLE_SUBSCRIPTION_STATUSES = new Set([
 export function normalizeAdminSettableSubscriptionStatus(raw) {
   const s = String(raw ?? "").trim().toLowerCase();
   if (!s || s.length > 32) return null;
-  return ADMIN_SETTABLE_SUBSCRIPTION_STATUSES.has(s) ? s : null;
+  const canon = s === "admin_granted" ? "admin_free" : s;
+  return ADMIN_SETTABLE_SUBSCRIPTION_STATUSES.has(canon) ? canon : null;
 }
 
 /** クライアントが users.subscription_status を書き換えようとしている疑いがある JSON ボディか */

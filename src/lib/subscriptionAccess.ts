@@ -23,7 +23,7 @@ export function isSubscriptionServiceSubscribedClient(
 ): boolean {
   if (!user) return false;
   const s = String(user.subscriptionStatus ?? "inactive").trim().toLowerCase();
-  if (s === "admin_free") return true;
+  if (s === "admin_free" || s === "admin_granted") return true;
   const endMs = subscriptionPeriodEndMsFromUser(user);
   if (endMs != null && nowMs > endMs) return false;
   if (s === "active" || s === "past_due" || s === "trialing") return true;
