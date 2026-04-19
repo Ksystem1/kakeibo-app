@@ -1,14 +1,16 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Candy, Gift, ShoppingCart, Sparkles } from "lucide-react";
+import { Candy, Gift, Pencil, ShoppingCart, Sparkles, Trash2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { celebrateKidTransactionSaved } from "../lib/kidConfetti";
 import {
   createTransaction,
+  deleteTransaction,
   ensureDefaultCategories,
   getApiBaseUrl,
   getCategories,
   getMonthSummary,
   getTransactions,
+  updateTransaction,
   type KidTheme,
 } from "../lib/api";
 import styles from "./SimpleKidDashboard.module.css";
@@ -86,10 +88,12 @@ export function SimpleKidDashboard() {
 
   const [formKind, setFormKind] = useState<"income" | "expense">("expense");
   const [formAmount, setFormAmount] = useState("");
-  /** 「なにに？」— カテゴリは選ばず、手入力の内容をメモとして保存 */
+  /** 「何に？」— カテゴリは選ばず、手入力の内容をメモとして保存 */
   const [formWhat, setFormWhat] = useState("");
   const [formDate, setFormDate] = useState(todayYmd);
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const { from, to } = useMemo(() => ymToRange(ym), [ym]);
 
@@ -138,12 +142,54 @@ export function SimpleKidDashboard() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setEditingId(null);
+    setFormAmount("");
+    setFormWhat("");
+    setFormDate(todayYmd());
+    setFormKind("expense");
+  }, [ym]);
+
   const incomeTotal = summary ? numAmount(summary.incomeTotal as string | number) : 0;
   const expenseTotal = summary ? numAmount(summary.expenseTotal as string | number) : 0;
   const balance =
     summary && summary.netMonthlyBalance != null && summary.netMonthlyBalance !== ""
       ? numAmount(summary.netMonthlyBalance as string | number)
       : incomeTotal - expenseTotal;
+
+  function cancelEdit() {
+    setEditingId(null);
+    setFormAmount("");
+    setFormWhat("");
+    setFormDate(todayYmd());
+    setFormKind("expense");
+    setError(null);
+  }
+
+  function beginEdit(t: Transaction) {
+    const k = String(t.kind).toLowerCase() === "income" ? "income" : "expense";
+    setEditingId(t.id);
+    setFormKind(k);
+    setFormAmount(String(Math.round(numAmount(t.amount))));
+    setFormDate(String(t.transaction_date).slice(0, 10));
+    setFormWhat(t.memo != null && String(t.memo).trim() !== "" ? String(t.memo).trim() : "");
+    setError(null);
+  }
+
+  async function onDeleteRow(id: number) {
+    if (!window.confirm("この記録を消しますか？")) return;
+    setDeletingId(id);
+    setError(null);
+    try {
+      await deleteTransaction(id);
+      if (editingId === id) cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -155,16 +201,27 @@ export function SimpleKidDashboard() {
     setSaving(true);
     setError(null);
     try {
-      await createTransaction({
-        kind: formKind,
-        amount,
-        transaction_date: formDate,
-        memo: formWhat.trim() || null,
-        category_id: null,
-      });
-      celebrateKidTransactionSaved(theme);
-      setFormAmount("");
-      setFormWhat("");
+      if (editingId != null) {
+        await updateTransaction(editingId, {
+          kind: formKind,
+          amount,
+          transaction_date: formDate,
+          memo: formWhat.trim() || null,
+        });
+        celebrateKidTransactionSaved(theme);
+        cancelEdit();
+      } else {
+        await createTransaction({
+          kind: formKind,
+          amount,
+          transaction_date: formDate,
+          memo: formWhat.trim() || null,
+          category_id: null,
+        });
+        celebrateKidTransactionSaved(theme);
+        setFormAmount("");
+        setFormWhat("");
+      }
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -217,7 +274,7 @@ export function SimpleKidDashboard() {
         </div>
       </div>
 
-      <h2 className={styles.sectionTitle}>記録する</h2>
+      <h2 className={styles.sectionTitle}>{editingId != null ? "記録を変更" : "記録する"}</h2>
       <form className={styles.addCard} onSubmit={onSubmit}>
         <div className={styles.kindRow}>
           <button
@@ -284,9 +341,16 @@ export function SimpleKidDashboard() {
             />
           </div>
         </div>
-        <button type="submit" className={styles.submitBtn} disabled={saving || loading}>
-          {saving ? "登録中…" : "登録！"}
-        </button>
+        <div className={styles.submitRow}>
+          {editingId != null ? (
+            <button type="button" className={styles.cancelBtn} disabled={saving} onClick={cancelEdit}>
+              戻る
+            </button>
+          ) : null}
+          <button type="submit" className={styles.submitBtn} disabled={saving || loading}>
+            {saving ? (editingId != null ? "保存中…" : "登録中…") : editingId != null ? "保存！" : "登録！"}
+          </button>
+        </div>
       </form>
 
       <h2 className={styles.sectionTitle}>これまでの記録</h2>
@@ -297,12 +361,15 @@ export function SimpleKidDashboard() {
               <th>日</th>
               <th>内容</th>
               <th>金額</th>
+              <th className={styles.thActions} scope="col">
+                操作
+              </th>
             </tr>
           </thead>
           <tbody>
             {transactions.length === 0 ? (
               <tr>
-                <td colSpan={3} style={{ textAlign: "center", color: "var(--kid-muted)" }}>
+                <td colSpan={4} style={{ textAlign: "center", color: "var(--kid-muted)" }}>
                   まだ記録がありません
                 </td>
               </tr>
@@ -326,7 +393,10 @@ export function SimpleKidDashboard() {
                   const whatLabel = memoStr || catLabel || "—";
                   const day = String(t.transaction_date).slice(0, 10);
                   return (
-                    <tr key={t.id}>
+                    <tr
+                      key={t.id}
+                      className={editingId === t.id ? styles.tableRowEditing : undefined}
+                    >
                       <td>{day}</td>
                       <td>
                         <span className={styles.txKindIcons} aria-hidden>
@@ -345,6 +415,30 @@ export function SimpleKidDashboard() {
                         {whatLabel}
                       </td>
                       <td>{yen.format(numAmount(t.amount))}</td>
+                      <td className={styles.tdActions}>
+                        <div className={styles.rowActions}>
+                          <button
+                            type="button"
+                            className={styles.rowActionBtn}
+                            disabled={loading || saving || deletingId != null}
+                            title="変更"
+                            aria-label="この記録を変更"
+                            onClick={() => beginEdit(t)}
+                          >
+                            <Pencil size={18} strokeWidth={2.2} />
+                          </button>
+                          <button
+                            type="button"
+                            className={`${styles.rowActionBtn} ${styles.rowActionBtnDelete}`}
+                            disabled={loading || saving || deletingId != null}
+                            title="削除"
+                            aria-label="この記録を削除"
+                            onClick={() => void onDeleteRow(t.id)}
+                          >
+                            <Trash2 size={18} strokeWidth={2.2} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })
