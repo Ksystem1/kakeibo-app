@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { SupportChatThread } from "../components/SupportChatThread";
 import {
@@ -7,9 +7,12 @@ import {
   getAdminSupportChatMessages,
   patchAdminSupportChatMessage,
   postAdminSupportChatMessage,
+  postAdminSupportChatRead,
   type AdminSupportChatFamilyRow,
+  type ChatReadState,
   type SupportChatMessage,
 } from "../lib/api";
+import { supportStaffOutgoingReadLabel } from "../lib/chatReadReceipt";
 import {
   familyNeedsAdminReply,
   notifyAdminSupportQueueChanged,
@@ -52,6 +55,7 @@ export function AdminSupportChatPage() {
 
   const [selectedFamilyId, setSelectedFamilyId] = useState<number | null>(null);
   const [items, setItems] = useState<SupportChatMessage[]>([]);
+  const [readStates, setReadStates] = useState<ChatReadState[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [nextBeforeId, setNextBeforeId] = useState<number | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -63,6 +67,17 @@ export function AdminSupportChatPage() {
   const [bodyEditId, setBodyEditId] = useState<number | null>(null);
   const [bodyEditDraft, setBodyEditDraft] = useState("");
   const [bodyEditBusy, setBodyEditBusy] = useState(false);
+  const itemsRef = useRef<SupportChatMessage[]>([]);
+  const lastPostedReadRef = useRef(0);
+
+  const memberUserIds = useMemo(() => {
+    if (selectedFamilyId == null) return [];
+    const f = families.find((x) => x.family_id === selectedFamilyId);
+    const mem = Array.isArray(f?.members) ? f.members : [];
+    return mem
+      .map((m) => Number(m.user_id))
+      .filter((id) => Number.isFinite(id));
+  }, [families, selectedFamilyId]);
 
   const loadFamilies = useCallback(async () => {
     setListLoading(true);
@@ -94,6 +109,7 @@ export function AdminSupportChatPage() {
         limit: PAGE_SIZE,
       });
       setItems(res.items);
+      setReadStates(res.read_states ?? []);
       setHasMore(res.has_more);
       setNextBeforeId(res.next_before_id);
     } catch (e) {
@@ -111,6 +127,33 @@ export function AdminSupportChatPage() {
   useEffect(() => {
     setBodyEditId(null);
     setBodyEditDraft("");
+  }, [selectedFamilyId]);
+
+  useEffect(() => {
+    lastPostedReadRef.current = 0;
+  }, [selectedFamilyId]);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  const flushAdminSupportRead = useCallback(() => {
+    if (selectedFamilyId == null) return;
+    const list = itemsRef.current;
+    if (list.length === 0) return;
+    const maxId = Math.max(...list.map((m) => m.id));
+    if (maxId <= lastPostedReadRef.current) return;
+    void (async () => {
+      try {
+        await postAdminSupportChatRead({
+          family_id: selectedFamilyId,
+          last_read_message_id: maxId,
+        });
+        lastPostedReadRef.current = maxId;
+      } catch {
+        /* ignore */
+      }
+    })();
   }, [selectedFamilyId]);
 
   useEffect(() => {
@@ -138,6 +181,7 @@ export function AdminSupportChatPage() {
       const seen = new Set(items.map((x) => x.id));
       const merged = [...res.items.filter((x) => !seen.has(x.id)), ...items];
       setItems(merged);
+      if (res.read_states) setReadStates(res.read_states);
       setHasMore(res.has_more);
       setNextBeforeId(res.next_before_id);
       requestAnimationFrame(() => {
@@ -157,8 +201,16 @@ export function AdminSupportChatPage() {
     if (!el || threadLoading || loadingOlder) return;
     if (el.scrollTop < 72 && hasMore && nextBeforeId != null) {
       void loadOlder();
+      return;
     }
-  }, [hasMore, nextBeforeId, loadOlder, threadLoading, loadingOlder]);
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+    if (nearBottom) flushAdminSupportRead();
+  }, [hasMore, nextBeforeId, loadOlder, threadLoading, loadingOlder, flushAdminSupportRead]);
+
+  useEffect(() => {
+    if (threadLoading || items.length === 0 || selectedFamilyId == null) return;
+    flushAdminSupportRead();
+  }, [threadLoading, items.length, selectedFamilyId, flushAdminSupportRead]);
 
   const onSend = useCallback(async () => {
     if (selectedFamilyId == null) return;
@@ -184,12 +236,13 @@ export function AdminSupportChatPage() {
         const box = scrollRef.current;
         if (box) box.scrollTop = box.scrollHeight;
       });
+      flushAdminSupportRead();
     } catch (e) {
       setThreadError(e instanceof Error ? e.message : "送信に失敗しました");
     } finally {
       setSending(false);
     }
-  }, [draft, sending, selectedFamilyId, markImportant, loadFamilies]);
+  }, [draft, sending, selectedFamilyId, markImportant, loadFamilies, flushAdminSupportRead]);
 
   const onDelete = useCallback(
     async (m: SupportChatMessage) => {
@@ -444,6 +497,9 @@ export function AdminSupportChatPage() {
                   <SupportChatThread
                     variant="admin"
                     items={items}
+                    readReceiptForMessage={(m) =>
+                      supportStaffOutgoingReadLabel(m, memberUserIds, readStates)
+                    }
                     messageActions={(m) => (
                       <span style={{ marginLeft: "0.35rem" }}>
                         {m.is_staff ? (

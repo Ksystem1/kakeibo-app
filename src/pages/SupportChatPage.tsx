@@ -3,12 +3,17 @@ import { Link } from "react-router-dom";
 import { SupportChatThread } from "../components/SupportChatThread";
 import { useAuth } from "../context/AuthContext";
 import {
+  deleteSupportChatMessage,
   getSupportChatMessages,
+  patchSupportChatMessage,
   postSupportChatMessage,
+  postSupportChatRead,
+  type ChatReadState,
   type SupportChatMessage,
 } from "../lib/api";
 import { notifyAdminSupportQueueChanged } from "../hooks/useAdminSupportNeedsReplyBadge";
 import { applySupportChatSeenFromMessages } from "../lib/supportChatSeen";
+import { supportUserOutgoingReadLabel } from "../lib/chatReadReceipt";
 import styles from "../components/KakeiboDashboard.module.css";
 
 const PAGE_SIZE = 40;
@@ -19,6 +24,7 @@ export function SupportChatPage() {
   const loadingOlderRef = useRef(false);
 
   const [items, setItems] = useState<SupportChatMessage[]>([]);
+  const [readStates, setReadStates] = useState<ChatReadState[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [nextBeforeId, setNextBeforeId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,11 +32,19 @@ export function SupportChatPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [bodyEditId, setBodyEditId] = useState<number | null>(null);
+  const [bodyEditDraft, setBodyEditDraft] = useState("");
+  const [bodyEditBusy, setBodyEditBusy] = useState(false);
+  const itemsRef = useRef<SupportChatMessage[]>([]);
+  const lastPostedReadRef = useRef(0);
 
   const familyId =
     user?.familyId != null && Number.isFinite(Number(user.familyId))
       ? Number(user.familyId)
       : undefined;
+
+  const selfUserId =
+    user?.id != null && Number.isFinite(Number(user.id)) ? Number(user.id) : null;
 
   const loadInitial = useCallback(async () => {
     setLoading(true);
@@ -41,6 +55,7 @@ export function SupportChatPage() {
         limit: PAGE_SIZE,
       });
       setItems(res.items);
+      setReadStates(res.read_states ?? []);
       setHasMore(res.has_more);
       setNextBeforeId(res.next_before_id);
       applySupportChatSeenFromMessages(res.family_id, res.items);
@@ -57,6 +72,10 @@ export function SupportChatPage() {
   useEffect(() => {
     void loadInitial();
   }, [loadInitial]);
+
+  useEffect(() => {
+    lastPostedReadRef.current = 0;
+  }, [familyId]);
 
   useEffect(() => {
     if (loading || items.length === 0) return;
@@ -81,6 +100,7 @@ export function SupportChatPage() {
       const seen = new Set(items.map((x) => x.id));
       const merged = [...res.items.filter((x) => !seen.has(x.id)), ...items];
       setItems(merged);
+      if (res.read_states) setReadStates(res.read_states);
       setHasMore(res.has_more);
       setNextBeforeId(res.next_before_id);
       applySupportChatSeenFromMessages(res.family_id, merged);
@@ -96,13 +116,43 @@ export function SupportChatPage() {
     }
   }, [familyId, hasMore, nextBeforeId, items]);
 
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  const flushReadReceipt = useCallback(() => {
+    const list = itemsRef.current;
+    if (list.length === 0) return;
+    const maxId = Math.max(...list.map((m) => m.id));
+    if (maxId <= lastPostedReadRef.current) return;
+    void (async () => {
+      try {
+        await postSupportChatRead({
+          ...(familyId != null ? { family_id: familyId } : {}),
+          last_read_message_id: maxId,
+        });
+        lastPostedReadRef.current = maxId;
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [familyId]);
+
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el || loading || loadingOlder) return;
     if (el.scrollTop < 72 && hasMore && nextBeforeId != null) {
       void loadOlder();
+      return;
     }
-  }, [hasMore, nextBeforeId, loadOlder, loading, loadingOlder]);
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+    if (nearBottom) flushReadReceipt();
+  }, [hasMore, nextBeforeId, loadOlder, loading, loadingOlder, flushReadReceipt]);
+
+  useEffect(() => {
+    if (loading || items.length === 0) return;
+    flushReadReceipt();
+  }, [loading, items, flushReadReceipt]);
 
   const onSend = useCallback(async () => {
     const text = draft.trim();
@@ -126,12 +176,46 @@ export function SupportChatPage() {
         const box = scrollRef.current;
         if (box) box.scrollTop = box.scrollHeight;
       });
+      flushReadReceipt();
     } catch (e) {
       setError(e instanceof Error ? e.message : "送信に失敗しました");
     } finally {
       setSending(false);
     }
-  }, [draft, sending, familyId]);
+  }, [draft, sending, familyId, flushReadReceipt]);
+
+  const onSaveBodyEdit = useCallback(async () => {
+    if (bodyEditId == null) return;
+    const text = bodyEditDraft.trim();
+    if (!text) return;
+    setBodyEditBusy(true);
+    setError(null);
+    try {
+      const res = await patchSupportChatMessage(bodyEditId, { body: text });
+      setItems((prev) => prev.map((x) => (x.id === bodyEditId ? res.message : x)));
+      setBodyEditId(null);
+      setBodyEditDraft("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "本文の更新に失敗しました");
+    } finally {
+      setBodyEditBusy(false);
+    }
+  }, [bodyEditId, bodyEditDraft]);
+
+  const onDeleteOwn = useCallback(
+    async (m: SupportChatMessage) => {
+      if (!window.confirm("このメッセージを削除しますか？")) return;
+      setError(null);
+      try {
+        await deleteSupportChatMessage(m.id);
+        setItems((prev) => prev.filter((x) => x.id !== m.id));
+        notifyAdminSupportQueueChanged();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "削除に失敗しました");
+      }
+    },
+    [],
+  );
 
   return (
     <div className={styles.wrap} style={{ maxWidth: 720, margin: "0 auto" }}>
@@ -203,7 +287,63 @@ export function SupportChatPage() {
               まだメッセージがありません。下の欄から送信してください。
             </p>
           ) : (
-            <SupportChatThread variant="user" items={items} />
+            <SupportChatThread
+              variant="user"
+              items={items}
+              readReceiptForMessage={(m) =>
+                selfUserId != null ? supportUserOutgoingReadLabel(m, selfUserId, readStates) : null
+              }
+              messageActions={(m) => {
+                if (
+                  selfUserId == null ||
+                  m.is_staff ||
+                  m.sender_user_id !== selfUserId
+                ) {
+                  return null;
+                }
+                return (
+                  <span style={{ marginLeft: "0.35rem" }}>
+                    <button
+                      type="button"
+                      title="編集"
+                      onClick={() => {
+                        setBodyEditId(m.id);
+                        setBodyEditDraft(m.body);
+                      }}
+                      style={{
+                        font: "inherit",
+                        fontSize: "0.72rem",
+                        cursor: "pointer",
+                        padding: "0.1rem 0.25rem",
+                        borderRadius: 4,
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-card)",
+                      }}
+                    >
+                      編集
+                    </button>{" "}
+                    <button
+                      type="button"
+                      title="削除"
+                      onClick={() => {
+                        void onDeleteOwn(m);
+                      }}
+                      style={{
+                        font: "inherit",
+                        fontSize: "0.72rem",
+                        cursor: "pointer",
+                        padding: "0.1rem 0.25rem",
+                        borderRadius: 4,
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-card)",
+                      }}
+                    >
+                      削除
+                    </button>
+                  </span>
+                );
+              }}
+            />
           )}
         </div>
         <div
@@ -252,6 +392,112 @@ export function SupportChatPage() {
           </button>
         </div>
       </div>
+
+      {bodyEditId != null ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="user-support-body-edit-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 43, 71, 0.45)",
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1rem",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !bodyEditBusy) {
+              setBodyEditId(null);
+              setBodyEditDraft("");
+            }
+          }}
+        >
+          <div
+            onClick={(ev) => {
+              ev.stopPropagation();
+            }}
+            style={{
+              width: "100%",
+              maxWidth: 440,
+              padding: "1rem",
+              borderRadius: 14,
+              border: "1px solid var(--border)",
+              background: "var(--bg-card)",
+              boxShadow: "0 12px 40px rgba(0, 0, 0, 0.22)",
+            }}
+          >
+            <h2 id="user-support-body-edit-title" style={{ margin: "0 0 0.65rem", fontSize: "1.05rem" }}>
+              メッセージを編集
+            </h2>
+            <textarea
+              value={bodyEditDraft}
+              onChange={(e) => setBodyEditDraft(e.target.value)}
+              rows={8}
+              disabled={bodyEditBusy}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                font: "inherit",
+                fontSize: "0.92rem",
+                padding: "0.5rem 0.55rem",
+                borderRadius: 10,
+                border: "1px solid var(--border)",
+                background: "var(--input-bg)",
+                color: "var(--text)",
+                resize: "vertical",
+              }}
+            />
+            <div
+              style={{
+                marginTop: "0.75rem",
+                display: "flex",
+                gap: "0.5rem",
+                justifyContent: "flex-end",
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                disabled={bodyEditBusy}
+                onClick={() => {
+                  setBodyEditId(null);
+                  setBodyEditDraft("");
+                }}
+                style={{
+                  font: "inherit",
+                  padding: "0.4rem 0.75rem",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  cursor: "pointer",
+                  background: "transparent",
+                }}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                disabled={bodyEditBusy || !bodyEditDraft.trim()}
+                onClick={() => {
+                  void onSaveBodyEdit();
+                }}
+                style={{
+                  font: "inherit",
+                  padding: "0.4rem 0.85rem",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  cursor: "pointer",
+                  background: "var(--accent-dim)",
+                }}
+              >
+                {bodyEditBusy ? "保存中…" : "保存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

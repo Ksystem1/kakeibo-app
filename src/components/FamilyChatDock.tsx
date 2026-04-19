@@ -2,11 +2,16 @@ import { Mail, MessageCircle, Rabbit, Send, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
+  deleteFamilyChatMessage,
   getFamilyChatMessages,
   getFamilyMembers,
+  patchFamilyChatMessage,
   postFamilyChatMessage,
+  postFamilyChatRead,
+  type ChatReadState,
   type SupportChatMessage,
 } from "../lib/api";
+import { familyOutgoingReadLabel } from "../lib/chatReadReceipt";
 import {
   applyFamilyChatSeenFromMessages,
   bumpFamilyChatSeenMaxMessageId,
@@ -62,7 +67,14 @@ export function FamilyChatDock({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [nameByUserId, setNameByUserId] = useState<Map<number, string>>(() => new Map());
+  const [memberUserIds, setMemberUserIds] = useState<number[]>([]);
+  const [readStates, setReadStates] = useState<ChatReadState[]>([]);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const itemsRef = useRef<SupportChatMessage[]>([]);
+  const lastPostedReadRef = useRef(0);
 
   const canUse = Boolean(token && familyId && userId != null);
 
@@ -71,9 +83,11 @@ export function FamilyChatDock({
     try {
       const res = await getFamilyMembers();
       const m = new Map<number, string>();
+      const ids: number[] = [];
       for (const it of res.items ?? []) {
         const id = Number(it.id);
         if (!Number.isFinite(id)) continue;
+        ids.push(id);
         const label =
           it.display_name != null && String(it.display_name).trim() !== ""
             ? String(it.display_name).trim()
@@ -82,6 +96,7 @@ export function FamilyChatDock({
               : `ユーザー${id}`;
         m.set(id, label);
       }
+      setMemberUserIds(ids);
       setNameByUserId(m);
     } catch {
       /* ignore */
@@ -98,6 +113,7 @@ export function FamilyChatDock({
         limit: 80,
       });
       setItems(res.items ?? []);
+      setReadStates(res.read_states ?? []);
       applyFamilyChatSeenFromMessages(familyId, res.items ?? []);
       void refreshUnread();
     } catch (e) {
@@ -119,6 +135,42 @@ export function FamilyChatDock({
     listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [open, items.length]);
 
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    if (!open) lastPostedReadRef.current = 0;
+  }, [open]);
+
+  const flushFamilyRead = useCallback(() => {
+    if (familyId == null) return;
+    const list = itemsRef.current;
+    if (list.length === 0) return;
+    const maxId = Math.max(...list.map((m) => m.id));
+    if (maxId <= lastPostedReadRef.current) return;
+    void (async () => {
+      try {
+        await postFamilyChatRead({ family_id: familyId, last_read_message_id: maxId });
+        lastPostedReadRef.current = maxId;
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [familyId]);
+
+  useEffect(() => {
+    if (!open || loading || items.length === 0) return;
+    flushFamilyRead();
+  }, [open, loading, items, flushFamilyRead]);
+
+  const onListScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (nearBottom) flushFamilyRead();
+  }, [flushFamilyRead]);
+
   const senderLabel = useCallback(
     (uid: number) => {
       if (userId != null && uid === userId) return "自分";
@@ -139,6 +191,7 @@ export function FamilyChatDock({
         setItems((prev) => [...prev, res.message]);
         bumpFamilyChatSeenMaxMessageId(familyId, res.message.id);
         void refreshUnread();
+        requestAnimationFrame(() => flushFamilyRead());
       } else {
         await loadMessages();
       }
@@ -147,7 +200,40 @@ export function FamilyChatDock({
     } finally {
       setSending(false);
     }
-  }, [draft, token, familyId, sending, loadMessages, refreshUnread]);
+  }, [draft, token, familyId, sending, loadMessages, refreshUnread, flushFamilyRead]);
+
+  const onSaveEdit = useCallback(async () => {
+    if (editId == null || familyId == null) return;
+    const text = editDraft.trim();
+    if (!text) return;
+    setEditBusy(true);
+    setError(null);
+    try {
+      const res = await patchFamilyChatMessage(editId, { body: text });
+      setItems((prev) => prev.map((x) => (x.id === editId ? res.message : x)));
+      setEditId(null);
+      setEditDraft("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "更新に失敗しました");
+    } finally {
+      setEditBusy(false);
+    }
+  }, [editId, editDraft, familyId]);
+
+  const onDeleteMine = useCallback(
+    async (m: SupportChatMessage) => {
+      if (!window.confirm("このメッセージを削除しますか？")) return;
+      setError(null);
+      try {
+        await deleteFamilyChatMessage(m.id);
+        setItems((prev) => prev.filter((x) => x.id !== m.id));
+        void refreshUnread();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "削除に失敗しました");
+      }
+    },
+    [refreshUnread],
+  );
 
   const bubbleClass = useMemo(
     () => ({
@@ -199,6 +285,7 @@ export function FamilyChatDock({
           ) : null}
           <div
             ref={listRef}
+            onScroll={onListScroll}
             className="max-h-[min(46vh,360px)] min-h-[180px] space-y-2 overflow-y-auto px-3 py-2"
           >
             {loading ? (
@@ -210,11 +297,40 @@ export function FamilyChatDock({
             ) : (
               items.map((m) => {
                 const mine = userId != null && m.sender_user_id === userId;
+                const readLabel =
+                  userId != null
+                    ? familyOutgoingReadLabel(m, userId, memberUserIds, readStates)
+                    : null;
                 return (
                   <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
-                    <div className="mb-0.5 flex items-center gap-2 text-[10px] text-slate-400">
+                    <div className="mb-0.5 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
                       <span>{senderLabel(m.sender_user_id)}</span>
                       <span>{formatChatTime(m.created_at)}</span>
+                      {m.edited_at ? <span>（編集済）</span> : null}
+                      {readLabel ? (
+                        <span className="font-semibold text-emerald-600">{readLabel}</span>
+                      ) : null}
+                      {mine ? (
+                        <span className="flex gap-1">
+                          <button
+                            type="button"
+                            className="rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50"
+                            onClick={() => {
+                              setEditId(m.id);
+                              setEditDraft(m.body);
+                            }}
+                          >
+                            編集
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] text-rose-600 hover:bg-rose-50"
+                            onClick={() => void onDeleteMine(m)}
+                          >
+                            削除
+                          </button>
+                        </span>
+                      ) : null}
                     </div>
                     <div className={mine ? bubbleClass.mine : bubbleClass.other}>{m.body}</div>
                   </div>
@@ -245,6 +361,56 @@ export function FamilyChatDock({
             >
               <Send size={18} />
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {open && editId != null ? (
+        <div
+          className="pointer-events-auto fixed inset-0 z-[1190] flex items-center justify-center bg-slate-900/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="メッセージを編集"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !editBusy) {
+              setEditId(null);
+              setEditDraft("");
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="mb-2 text-sm font-semibold text-slate-800">メッセージを編集</p>
+            <textarea
+              className="mb-3 min-h-[120px] w-full rounded-xl border border-slate-200 p-2 text-sm outline-none ring-emerald-500/30 focus:ring-2"
+              value={editDraft}
+              disabled={editBusy}
+              onChange={(e) => setEditDraft(e.target.value)}
+              maxLength={8000}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                disabled={editBusy}
+                onClick={() => {
+                  setEditId(null);
+                  setEditDraft("");
+                }}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-40"
+                disabled={editBusy || !editDraft.trim()}
+                onClick={() => void onSaveEdit()}
+              >
+                {editBusy ? "保存中…" : "保存"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

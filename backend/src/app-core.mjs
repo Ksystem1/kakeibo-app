@@ -1647,7 +1647,7 @@ function supportChatMigrationNeededResponseBody() {
   return {
     error: "SupportChatNotConfigured",
     detail:
-      "db/migration_v14_chat_messages.sql と db/migration_v19_chat_messages_chat_scope.sql を RDS に適用してください。",
+      "db/migration_v14_chat_messages.sql、db/migration_v19_chat_messages_chat_scope.sql、db/migration_v22_chat_read_and_edit.sql を RDS に適用してください。",
   };
 }
 
@@ -1666,8 +1666,57 @@ function isChatScopeColumnMissingError(e) {
   return msg.includes("chat_scope");
 }
 
+function isSupportChatReadStateTableMissingError(e) {
+  const code = e && typeof e === "object" ? String(e.code || "") : "";
+  if (code !== "ER_NO_SUCH_TABLE") return false;
+  const msg =
+    e && typeof e === "object" ? String(e.sqlMessage || "").toLowerCase() : "";
+  return msg.includes("chat_room_read_state");
+}
+
+function isChatEditedAtColumnMissingError(e) {
+  if (!isErBadFieldErrorAppCore(e)) return false;
+  const msg =
+    e && typeof e === "object" ? String(e.sqlMessage || "").toLowerCase() : "";
+  return msg.includes("edited_at");
+}
+
 function isSupportChatDbConfigError(e) {
-  return isSupportChatTableMissingError(e) || isChatScopeColumnMissingError(e);
+  return (
+    isSupportChatTableMissingError(e) ||
+    isChatScopeColumnMissingError(e) ||
+    isSupportChatReadStateTableMissingError(e) ||
+    isChatEditedAtColumnMissingError(e)
+  );
+}
+
+async function fetchChatReadStates(pool, familyId, chatScope) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT user_id, last_read_message_id FROM chat_room_read_state WHERE family_id = ? AND chat_scope = ?`,
+      [familyId, chatScope],
+    );
+    return (rows || []).map((r) => ({
+      user_id: Number(r.user_id),
+      last_read_message_id: Number(r.last_read_message_id ?? 0),
+    }));
+  } catch (e) {
+    if (isSupportChatReadStateTableMissingError(e)) return [];
+    throw e;
+  }
+}
+
+async function upsertChatRoomReadState(pool, familyId, userId, chatScope, lastReadMessageId) {
+  const lr = Number(lastReadMessageId);
+  if (!Number.isFinite(lr) || lr < 0) return;
+  await pool.query(
+    `INSERT INTO chat_room_read_state (family_id, user_id, chat_scope, last_read_message_id)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       last_read_message_id = GREATEST(last_read_message_id, ?),
+       updated_at = CURRENT_TIMESTAMP`,
+    [familyId, userId, chatScope, lr, lr],
+  );
 }
 
 async function userBelongsToFamily(pool, userId, familyId) {
@@ -1703,6 +1752,13 @@ function rowToChatMessageApi(r) {
   const created = r.created_at;
   const createdAt =
     created instanceof Date ? created.toISOString() : r.created_at ?? null;
+  const edited = r.edited_at;
+  const editedAt =
+    edited == null || edited === ""
+      ? null
+      : edited instanceof Date
+        ? edited.toISOString()
+        : String(r.edited_at);
   return {
     id: Number(r.id),
     family_id: Number(r.family_id),
@@ -1711,6 +1767,7 @@ function rowToChatMessageApi(r) {
     is_staff: Number(r.is_staff) === 1,
     is_important: Number(r.is_important) === 1,
     created_at: createdAt,
+    edited_at: editedAt,
   };
 }
 
@@ -1785,7 +1842,12 @@ export async function handleApiRequest(req, options = {}) {
             announcement: "/announcement",
             adminAnnouncement: "/admin/announcement",
             supportChatMessages: "/support/chat/messages",
+            supportChatRead: "/support/chat/read",
             familyChatMessages: "/family/chat/messages",
+            familyChatRead: "/family/chat/read",
+            adminSupportChatRead: "/admin/support/chat/read",
+            supportChatMessageById: "/support/chat/messages/{id}",
+            familyChatMessageById: "/family/chat/messages/{id}",
             adminSupportChatFamilies: "/admin/support/chat/families",
             adminSupportChatMessages: "/admin/support/chat/messages",
           },
@@ -1971,6 +2033,8 @@ export async function handleApiRequest(req, options = {}) {
     const adminUserResetPasswordMatch = /^\/admin\/users\/(\d+)\/reset-password$/.exec(normPath);
     const adminSupportChatMessageOneMatch =
       /^\/admin\/support\/chat\/messages\/(\d+)$/.exec(normPath);
+    const supportChatMessageOneMatch = /^\/support\/chat\/messages\/(\d+)$/.exec(normPath);
+    const familyChatMessageOneMatch = /^\/family\/chat\/messages\/(\d+)$/.exec(normPath);
 
     if (txOneMatch && method === "PATCH") {
       const txId = Number(txOneMatch[1], 10);
@@ -2621,7 +2685,7 @@ export async function handleApiRequest(req, options = {}) {
         const [rows] =
           beforeId == null
             ? await pool.query(
-                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
                  FROM chat_messages
                  WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL
                  ORDER BY id DESC
@@ -2629,7 +2693,7 @@ export async function handleApiRequest(req, options = {}) {
                 [targetFamilyId, fetchLimit],
               )
             : await pool.query(
-                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
                  FROM chat_messages
                  WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL AND id < ?
                  ORDER BY id DESC
@@ -2641,9 +2705,16 @@ export async function handleApiRequest(req, options = {}) {
         const items = page.map(rowToChatMessageApi).reverse();
         const nextBeforeId =
           hasMore && items.length > 0 ? Number(items[0].id) : null;
+        const read_states = await fetchChatReadStates(pool, targetFamilyId, "support");
         return json(
           200,
-          { family_id: targetFamilyId, items, has_more: hasMore, next_before_id: nextBeforeId },
+          {
+            family_id: targetFamilyId,
+            items,
+            read_states,
+            has_more: hasMore,
+            next_before_id: nextBeforeId,
+          },
           hdrs,
           skipCors,
         );
@@ -2693,7 +2764,7 @@ export async function handleApiRequest(req, options = {}) {
         );
         const newId = Number(ins.insertId);
         const [[row]] = await pool.query(
-          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
            FROM chat_messages WHERE id = ? LIMIT 1`,
           [newId],
         );
@@ -2760,7 +2831,7 @@ export async function handleApiRequest(req, options = {}) {
           beforeId == null
             ? roleUpper === "KID"
               ? await pool.query(
-                  `SELECT m.id, m.family_id, m.sender_user_id, m.body, m.is_staff, m.is_important, m.created_at
+                  `SELECT m.id, m.family_id, m.sender_user_id, m.body, m.is_staff, m.is_important, m.created_at, m.edited_at
                    FROM chat_messages m
                    WHERE m.family_id = ? AND m.chat_scope = 'family' AND m.deleted_at IS NULL
                    ${kidFilter}
@@ -2769,7 +2840,7 @@ export async function handleApiRequest(req, options = {}) {
                   [targetFamilyId, userId, targetFamilyId, userId, fetchLimit],
                 )
               : await pool.query(
-                  `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                  `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
                    FROM chat_messages
                    WHERE family_id = ? AND chat_scope = 'family' AND deleted_at IS NULL
                    ORDER BY id DESC
@@ -2778,7 +2849,7 @@ export async function handleApiRequest(req, options = {}) {
                 )
             : roleUpper === "KID"
               ? await pool.query(
-                  `SELECT m.id, m.family_id, m.sender_user_id, m.body, m.is_staff, m.is_important, m.created_at
+                  `SELECT m.id, m.family_id, m.sender_user_id, m.body, m.is_staff, m.is_important, m.created_at, m.edited_at
                    FROM chat_messages m
                    WHERE m.family_id = ? AND m.chat_scope = 'family' AND m.deleted_at IS NULL
                    ${kidFilter}
@@ -2788,7 +2859,7 @@ export async function handleApiRequest(req, options = {}) {
                   [targetFamilyId, userId, targetFamilyId, userId, beforeId, fetchLimit],
                 )
               : await pool.query(
-                  `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                  `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
                    FROM chat_messages
                    WHERE family_id = ? AND chat_scope = 'family' AND deleted_at IS NULL AND id < ?
                    ORDER BY id DESC
@@ -2800,9 +2871,16 @@ export async function handleApiRequest(req, options = {}) {
         const items = page.map(rowToChatMessageApi).reverse();
         const nextBeforeId =
           hasMore && items.length > 0 ? Number(items[0].id) : null;
+        const read_states = await fetchChatReadStates(pool, targetFamilyId, "family");
         return json(
           200,
-          { family_id: targetFamilyId, items, has_more: hasMore, next_before_id: nextBeforeId },
+          {
+            family_id: targetFamilyId,
+            items,
+            read_states,
+            has_more: hasMore,
+            next_before_id: nextBeforeId,
+          },
           hdrs,
           skipCors,
         );
@@ -2852,11 +2930,349 @@ export async function handleApiRequest(req, options = {}) {
         );
         const newId = Number(ins.insertId);
         const [[row]] = await pool.query(
-          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
            FROM chat_messages WHERE id = ? LIMIT 1`,
           [newId],
         );
         return json(201, { message: rowToChatMessageApi(row) }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatDbConfigError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (routeKey(method, path) === "POST /support/chat/read") {
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      const lr = Number(b.last_read_message_id ?? b.lastReadMessageId);
+      if (!Number.isFinite(lr) || lr < 0) {
+        return json(400, { error: "last_read_message_id が必要です" }, hdrs, skipCors);
+      }
+      let targetFamilyId = null;
+      const rawFam = b.family_id ?? b.familyId;
+      if (rawFam != null && String(rawFam).trim() !== "") {
+        const fid = Number(rawFam, 10);
+        if (!Number.isFinite(fid) || fid <= 0) {
+          return json(400, { error: "family_id が不正です" }, hdrs, skipCors);
+        }
+        const member = await userBelongsToFamily(pool, userId, fid);
+        if (!member) {
+          return json(403, { error: "この家族のチャットにアクセスできません" }, hdrs, skipCors);
+        }
+        targetFamilyId = fid;
+      } else {
+        const def = await getDefaultFamilyId(pool, userId);
+        if (!def) {
+          return json(400, { error: "家族が未設定です" }, hdrs, skipCors);
+        }
+        targetFamilyId = def;
+      }
+      try {
+        const [[mx]] = await pool.query(
+          `SELECT COALESCE(MAX(id), 0) AS mx FROM chat_messages WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL`,
+          [targetFamilyId],
+        );
+        const cap = Math.min(lr, Number(mx?.mx ?? 0));
+        await upsertChatRoomReadState(pool, targetFamilyId, userId, "support", cap);
+        return json(200, { ok: true, last_read_message_id: cap }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatDbConfigError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (routeKey(method, path) === "POST /family/chat/read") {
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      const lr = Number(b.last_read_message_id ?? b.lastReadMessageId);
+      if (!Number.isFinite(lr) || lr < 0) {
+        return json(400, { error: "last_read_message_id が必要です" }, hdrs, skipCors);
+      }
+      let targetFamilyId = null;
+      const rawFam = b.family_id ?? b.familyId;
+      if (rawFam != null && String(rawFam).trim() !== "") {
+        const fid = Number(rawFam, 10);
+        if (!Number.isFinite(fid) || fid <= 0) {
+          return json(400, { error: "family_id が不正です" }, hdrs, skipCors);
+        }
+        const member = await canAccessFamilyChat(pool, userId, fid);
+        if (!member) {
+          return json(403, { error: "この家族のチャットにアクセスできません" }, hdrs, skipCors);
+        }
+        targetFamilyId = fid;
+      } else {
+        const def = await resolveFamilyIdWithChatFallback(pool, userId);
+        if (!def) {
+          return json(400, { error: "家族が未設定です" }, hdrs, skipCors);
+        }
+        targetFamilyId = def;
+      }
+      try {
+        const [[mx]] = await pool.query(
+          `SELECT COALESCE(MAX(id), 0) AS mx FROM chat_messages WHERE family_id = ? AND chat_scope = 'family' AND deleted_at IS NULL`,
+          [targetFamilyId],
+        );
+        const cap = Math.min(lr, Number(mx?.mx ?? 0));
+        await upsertChatRoomReadState(pool, targetFamilyId, userId, "family", cap);
+        return json(200, { ok: true, last_read_message_id: cap }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatDbConfigError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (routeKey(method, path) === "POST /admin/support/chat/read") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      const lr = Number(b.last_read_message_id ?? b.lastReadMessageId);
+      if (!Number.isFinite(lr) || lr < 0) {
+        return json(400, { error: "last_read_message_id が必要です" }, hdrs, skipCors);
+      }
+      const rawFam = b.family_id ?? b.familyId;
+      const targetFamilyId = Number(rawFam, 10);
+      if (!Number.isFinite(targetFamilyId) || targetFamilyId <= 0) {
+        return json(400, { error: "family_id が必要です" }, hdrs, skipCors);
+      }
+      const [[fam]] = await pool.query(`SELECT id FROM families WHERE id = ? LIMIT 1`, [
+        targetFamilyId,
+      ]);
+      if (!fam) {
+        return json(404, { error: "家族が見つかりません" }, hdrs, skipCors);
+      }
+      try {
+        const [[mx]] = await pool.query(
+          `SELECT COALESCE(MAX(id), 0) AS mx FROM chat_messages WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL`,
+          [targetFamilyId],
+        );
+        const cap = Math.min(lr, Number(mx?.mx ?? 0));
+        await upsertChatRoomReadState(pool, targetFamilyId, userId, "support", cap);
+        return json(200, { ok: true, last_read_message_id: cap }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatDbConfigError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (supportChatMessageOneMatch && method === "PATCH") {
+      const msgId = Number(supportChatMessageOneMatch[1], 10);
+      if (!Number.isFinite(msgId) || msgId <= 0) {
+        return json(400, { error: "メッセージIDが不正です" }, hdrs, skipCors);
+      }
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      if (!Object.prototype.hasOwnProperty.call(b, "body")) {
+        return json(400, { error: "body が必要です" }, hdrs, skipCors);
+      }
+      const norm = normalizeSupportChatBody(b.body);
+      if (norm.error) {
+        return json(400, { error: norm.error }, hdrs, skipCors);
+      }
+      try {
+        const [[row]] = await pool.query(
+          `SELECT id, family_id, sender_user_id, chat_scope, deleted_at, is_staff
+           FROM chat_messages WHERE id = ? LIMIT 1`,
+          [msgId],
+        );
+        if (!row || row.deleted_at != null) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (String(row.chat_scope) !== "support") {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (Number(row.sender_user_id) !== Number(userId)) {
+          return json(403, { error: "自分のメッセージのみ編集できます" }, hdrs, skipCors);
+        }
+        if (Number(row.is_staff) === 1) {
+          return json(403, { error: "このメッセージは編集できません" }, hdrs, skipCors);
+        }
+        const fid = Number(row.family_id);
+        const member = await userBelongsToFamily(pool, userId, fid);
+        if (!member) {
+          return json(403, { error: "この家族のチャットを編集できません" }, hdrs, skipCors);
+        }
+        const [upd] = await pool.query(
+          `UPDATE chat_messages SET body = ?, edited_at = NOW() WHERE id = ? AND chat_scope = 'support' AND deleted_at IS NULL`,
+          [norm.body, msgId],
+        );
+        if (!upd?.affectedRows) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        const [[out]] = await pool.query(
+          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
+           FROM chat_messages WHERE id = ? LIMIT 1`,
+          [msgId],
+        );
+        return json(200, { message: rowToChatMessageApi(out) }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatDbConfigError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (supportChatMessageOneMatch && method === "DELETE") {
+      const msgId = Number(supportChatMessageOneMatch[1], 10);
+      if (!Number.isFinite(msgId) || msgId <= 0) {
+        return json(400, { error: "メッセージIDが不正です" }, hdrs, skipCors);
+      }
+      try {
+        const [[row]] = await pool.query(
+          `SELECT id, family_id, sender_user_id, chat_scope, deleted_at, is_staff
+           FROM chat_messages WHERE id = ? LIMIT 1`,
+          [msgId],
+        );
+        if (!row || row.deleted_at != null) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (String(row.chat_scope) !== "support") {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (Number(row.sender_user_id) !== Number(userId)) {
+          return json(403, { error: "自分のメッセージのみ削除できます" }, hdrs, skipCors);
+        }
+        if (Number(row.is_staff) === 1) {
+          return json(403, { error: "このメッセージは削除できません" }, hdrs, skipCors);
+        }
+        const fid = Number(row.family_id);
+        const member = await userBelongsToFamily(pool, userId, fid);
+        if (!member) {
+          return json(403, { error: "この家族のチャットを削除できません" }, hdrs, skipCors);
+        }
+        const [upd] = await pool.query(
+          `UPDATE chat_messages SET deleted_at = NOW() WHERE id = ? AND chat_scope = 'support' AND deleted_at IS NULL`,
+          [msgId],
+        );
+        if (!upd?.affectedRows) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        return json(200, { ok: true }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatDbConfigError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (familyChatMessageOneMatch && method === "PATCH") {
+      const msgId = Number(familyChatMessageOneMatch[1], 10);
+      if (!Number.isFinite(msgId) || msgId <= 0) {
+        return json(400, { error: "メッセージIDが不正です" }, hdrs, skipCors);
+      }
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      if (!Object.prototype.hasOwnProperty.call(b, "body")) {
+        return json(400, { error: "body が必要です" }, hdrs, skipCors);
+      }
+      const norm = normalizeSupportChatBody(b.body);
+      if (norm.error) {
+        return json(400, { error: norm.error }, hdrs, skipCors);
+      }
+      try {
+        const [[row]] = await pool.query(
+          `SELECT id, family_id, sender_user_id, chat_scope, deleted_at
+           FROM chat_messages WHERE id = ? LIMIT 1`,
+          [msgId],
+        );
+        if (!row || row.deleted_at != null) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (String(row.chat_scope) !== "family") {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (Number(row.sender_user_id) !== Number(userId)) {
+          return json(403, { error: "自分のメッセージのみ編集できます" }, hdrs, skipCors);
+        }
+        const fid = Number(row.family_id);
+        const member = await canAccessFamilyChat(pool, userId, fid);
+        if (!member) {
+          return json(403, { error: "この家族のチャットを編集できません" }, hdrs, skipCors);
+        }
+        const [upd] = await pool.query(
+          `UPDATE chat_messages SET body = ?, edited_at = NOW() WHERE id = ? AND chat_scope = 'family' AND deleted_at IS NULL`,
+          [norm.body, msgId],
+        );
+        if (!upd?.affectedRows) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        const [[out]] = await pool.query(
+          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
+           FROM chat_messages WHERE id = ? LIMIT 1`,
+          [msgId],
+        );
+        return json(200, { message: rowToChatMessageApi(out) }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatDbConfigError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (familyChatMessageOneMatch && method === "DELETE") {
+      const msgId = Number(familyChatMessageOneMatch[1], 10);
+      if (!Number.isFinite(msgId) || msgId <= 0) {
+        return json(400, { error: "メッセージIDが不正です" }, hdrs, skipCors);
+      }
+      try {
+        const [[row]] = await pool.query(
+          `SELECT id, family_id, sender_user_id, chat_scope, deleted_at
+           FROM chat_messages WHERE id = ? LIMIT 1`,
+          [msgId],
+        );
+        if (!row || row.deleted_at != null) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (String(row.chat_scope) !== "family") {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (Number(row.sender_user_id) !== Number(userId)) {
+          return json(403, { error: "自分のメッセージのみ削除できます" }, hdrs, skipCors);
+        }
+        const fid = Number(row.family_id);
+        const member = await canAccessFamilyChat(pool, userId, fid);
+        if (!member) {
+          return json(403, { error: "この家族のチャットを削除できません" }, hdrs, skipCors);
+        }
+        const [upd] = await pool.query(
+          `UPDATE chat_messages SET deleted_at = NOW() WHERE id = ? AND chat_scope = 'family' AND deleted_at IS NULL`,
+          [msgId],
+        );
+        if (!upd?.affectedRows) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        return json(200, { ok: true }, hdrs, skipCors);
       } catch (e) {
         if (isSupportChatDbConfigError(e)) {
           return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
@@ -2979,7 +3395,7 @@ export async function handleApiRequest(req, options = {}) {
         const [rows] =
           beforeId == null
             ? await pool.query(
-                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
                  FROM chat_messages
                  WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL
                  ORDER BY id DESC
@@ -2987,7 +3403,7 @@ export async function handleApiRequest(req, options = {}) {
                 [targetFamilyId, fetchLimit],
               )
             : await pool.query(
-                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
                  FROM chat_messages
                  WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL AND id < ?
                  ORDER BY id DESC
@@ -2999,9 +3415,16 @@ export async function handleApiRequest(req, options = {}) {
         const items = page.map(rowToChatMessageApi).reverse();
         const nextBeforeId =
           hasMore && items.length > 0 ? Number(items[0].id) : null;
+        const read_states = await fetchChatReadStates(pool, targetFamilyId, "support");
         return json(
           200,
-          { family_id: targetFamilyId, items, has_more: hasMore, next_before_id: nextBeforeId },
+          {
+            family_id: targetFamilyId,
+            items,
+            read_states,
+            has_more: hasMore,
+            next_before_id: nextBeforeId,
+          },
           hdrs,
           skipCors,
         );
@@ -3049,7 +3472,7 @@ export async function handleApiRequest(req, options = {}) {
         );
         const newId = Number(ins.insertId);
         const [[row]] = await pool.query(
-          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
            FROM chat_messages WHERE id = ? LIMIT 1`,
           [newId],
         );
@@ -3121,6 +3544,7 @@ export async function handleApiRequest(req, options = {}) {
         if (hasBody) {
           fields.push("body = ?");
           params.push(normalizedBody);
+          fields.push("edited_at = NOW()");
         }
         const [upd] = await pool.query(
           `UPDATE chat_messages SET ${fields.join(", ")} WHERE id = ? AND chat_scope = 'support' AND deleted_at IS NULL`,
@@ -3130,7 +3554,7 @@ export async function handleApiRequest(req, options = {}) {
           return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
         }
         const [[row]] = await pool.query(
-          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at, edited_at
            FROM chat_messages WHERE id = ? LIMIT 1`,
           [msgId],
         );

@@ -981,6 +981,11 @@ export async function deleteAdminUser(userId: number) {
   return parse<{ ok: boolean }>(res);
 }
 
+export type ChatReadState = {
+  user_id: number;
+  last_read_message_id: number;
+};
+
 /** サポートチャット 1 件（ユーザー・管理者共通） */
 export type SupportChatMessage = {
   id: number;
@@ -990,6 +995,7 @@ export type SupportChatMessage = {
   is_staff: boolean;
   is_important: boolean;
   created_at: string;
+  edited_at?: string | null;
 };
 
 export async function getSupportChatMessages(params?: {
@@ -1009,9 +1015,22 @@ export async function getSupportChatMessages(params?: {
   return parse<{
     family_id: number;
     items: SupportChatMessage[];
+    read_states?: ChatReadState[];
     has_more: boolean;
     next_before_id: number | null;
   }>(res);
+}
+
+export async function postSupportChatRead(body: {
+  family_id?: number;
+  last_read_message_id: number;
+}) {
+  const res = await apiFetch(`${BASE}/support/chat/read`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean; last_read_message_id: number }>(res);
 }
 
 export async function postSupportChatMessage(body: { body: string; family_id?: number }) {
@@ -1041,9 +1060,22 @@ export async function getFamilyChatMessages(params?: {
   return parse<{
     family_id: number;
     items: SupportChatMessage[];
+    read_states?: ChatReadState[];
     has_more: boolean;
     next_before_id: number | null;
   }>(res);
+}
+
+export async function postFamilyChatRead(body: {
+  family_id?: number;
+  last_read_message_id: number;
+}) {
+  const res = await apiFetch(`${BASE}/family/chat/read`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean; last_read_message_id: number }>(res);
 }
 
 export async function postFamilyChatMessage(body: { body: string; family_id?: number }) {
@@ -1100,9 +1132,22 @@ export async function getAdminSupportChatMessages(params: {
   return parse<{
     family_id: number;
     items: SupportChatMessage[];
+    read_states?: ChatReadState[];
     has_more: boolean;
     next_before_id: number | null;
   }>(res);
+}
+
+export async function postAdminSupportChatRead(body: {
+  family_id: number;
+  last_read_message_id: number;
+}) {
+  const res = await apiFetch(`${BASE}/admin/support/chat/read`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean; last_read_message_id: number }>(res);
 }
 
 export async function postAdminSupportChatMessage(body: {
@@ -1138,6 +1183,40 @@ export async function patchAdminSupportChatMessage(
 
 export async function deleteAdminSupportChatMessage(messageId: number) {
   const res = await apiFetch(`${BASE}/admin/support/chat/messages/${messageId}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+  });
+  return parse<{ ok: boolean }>(res);
+}
+
+export async function patchSupportChatMessage(messageId: number, body: { body: string }) {
+  const res = await apiFetch(`${BASE}/support/chat/messages/${messageId}`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ message: SupportChatMessage }>(res);
+}
+
+export async function deleteSupportChatMessage(messageId: number) {
+  const res = await apiFetch(`${BASE}/support/chat/messages/${messageId}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+  });
+  return parse<{ ok: boolean }>(res);
+}
+
+export async function patchFamilyChatMessage(messageId: number, body: { body: string }) {
+  const res = await apiFetch(`${BASE}/family/chat/messages/${messageId}`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ message: SupportChatMessage }>(res);
+}
+
+export async function deleteFamilyChatMessage(messageId: number) {
+  const res = await apiFetch(`${BASE}/family/chat/messages/${messageId}`, {
     method: "DELETE",
     headers: buildHeaders(),
   });

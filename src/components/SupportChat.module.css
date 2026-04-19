@@ -73,3 +73,18 @@
   font-weight: 700;
   color: #b45309;
 }
+
+.editedHint {
+  margin-left: 0.25rem;
+  opacity: 0.85;
+}
+
+.readReceipt {
+  margin-left: 0.35rem;
+  font-weight: 600;
+  color: #0d8f5f;
+}
+
+.rowStaff .readReceipt {
+  color: var(--accent, #0d8f5f);
+}

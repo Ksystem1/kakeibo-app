@@ -25,12 +25,15 @@ export function SupportChatThread(props: {
   variant: Variant;
   items: SupportChatMessage[];
   messageActions?: (m: SupportChatMessage) => ReactNode;
+  /** 送信者側に表示する短いラベル（例: 既読） */
+  readReceiptForMessage?: (m: SupportChatMessage) => string | null;
 }) {
-  const { variant, items, messageActions } = props;
+  const { variant, items, messageActions, readReceiptForMessage } = props;
   return (
     <div className={styles.thread}>
       {items.map((m) => {
         const userSide = isUserSide(variant, m);
+        const readLabel = readReceiptForMessage?.(m) ?? null;
         return (
           <div
             key={m.id}
@@ -49,6 +52,12 @@ export function SupportChatThread(props: {
               </div>
               <div className={styles.meta}>
                 {formatChatTime(m.created_at)}
+                {m.edited_at ? (
+                  <span className={styles.editedHint} title={m.edited_at}>
+                    （編集済）
+                  </span>
+                ) : null}
+                {readLabel ? <span className={styles.readReceipt}>{readLabel}</span> : null}
                 {messageActions ? messageActions(m) : null}
               </div>
             </div>

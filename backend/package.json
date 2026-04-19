@@ -22,6 +22,7 @@
     "db:migrate-v16": "node scripts/run-migration-v16.mjs",
     "db:migrate-v18": "node scripts/run-migration-v18.mjs",
     "db:migrate-v19": "node scripts/run-migration-v19.mjs",
+    "db:migrate-v22": "node scripts/run-migration-v22.mjs",
     "db:migrate-v20": "node scripts/run-migration-v20.mjs",
     "db:dev-user": "node scripts/ensure-dev-user.mjs",
     "test:bedrock": "node scripts/test-bedrock.mjs",
