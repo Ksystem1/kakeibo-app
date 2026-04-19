@@ -10,6 +10,7 @@ import {
 import { getPool } from "./db.mjs";
 import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
 import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
+import { canAccessFamilyChat, SINGLE_FAMILY_CHAT_ID } from "./family-chat-access.mjs";
 import {
   bodyContainsSubscriptionMutationFields,
   buildUserSubscriptionApiFields,
@@ -275,6 +276,16 @@ export async function getDefaultFamilyId(pool, userId) {
     [userId],
   );
   return rows[0]?.fid ?? null;
+}
+
+/** 家族チャット・/auth/me の familyId: members に無い家族 ADMIN / サイト管理者向けに SINGLE_FAMILY_CHAT_ID へフォールバック */
+export async function resolveFamilyIdWithChatFallback(pool, userId) {
+  const base = await getDefaultFamilyId(pool, userId);
+  if (base != null) return base;
+  if (await canAccessFamilyChat(pool, userId, SINGLE_FAMILY_CHAT_ID)) {
+    return SINGLE_FAMILY_CHAT_ID;
+  }
+  return null;
 }
 
 async function getPreferredFamilySubscriptionRow(pool, userId) {
@@ -593,7 +604,7 @@ export async function tryAuthRoutes(req, ctx) {
       );
 
       const token = signUserToken(u.id, u.email);
-      const familyId = await getDefaultFamilyId(pool, u.id);
+      const familyId = await resolveFamilyIdWithChatFallback(pool, u.id);
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, u.id);
       const kidTheme = await fetchUserKidTheme(pool, u.id);
       return json(
@@ -738,7 +749,7 @@ export async function tryAuthRoutes(req, ctx) {
       if (rows.length === 0) {
         return json(404, { error: "ユーザーが見つかりません" }, hdrs, skipCors);
       }
-      const familyId = await getDefaultFamilyId(pool, uid);
+      const familyId = await resolveFamilyIdWithChatFallback(pool, uid);
       const row = rows[0] || {};
       const famSub = await getPreferredFamilySubscriptionRow(pool, uid);
       const mergedRow = famSub
@@ -795,7 +806,7 @@ export async function tryAuthRoutes(req, ctx) {
       if (!uid) {
         return json(401, { error: "認証が必要です" }, hdrs, skipCors);
       }
-      const fid = await getDefaultFamilyId(pool, uid);
+      const fid = await resolveFamilyIdWithChatFallback(pool, uid);
       if (!fid) {
         return json(200, { items: [] }, hdrs, skipCors);
       }

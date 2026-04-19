@@ -16,6 +16,7 @@ import {
   getHeaderAnnouncement,
   normalizeAuthContextUser,
   normalizeFamilyRole,
+  shouldShowFamilyChatDock,
 } from "../lib/api";
 import { useAdminSupportNeedsReplyBadge } from "../hooks/useAdminSupportNeedsReplyBadge";
 import { useSupportChatUnreadBadge } from "../hooks/useSupportChatUnreadBadge";
@@ -517,10 +518,7 @@ export function AppLayout() {
           </div>
         ) : null}
       </main>
-      {token &&
-      user?.familyId != null &&
-      Number.isFinite(Number(user.familyId)) &&
-      Number(user.familyId) > 0 ? (
+      {token && shouldShowFamilyChatDock(user) ? (
         <FamilyChatDock
           title={isFamilyKid ? "かぞくチャット" : "家族チャット"}
           variant={isFamilyKid ? "kid" : "default"}

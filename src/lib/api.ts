@@ -386,6 +386,17 @@ export function normalizeFamilyRole(raw: unknown): FamilyRole {
   return "MEMBER";
 }
 
+/** 家族チャット FAB を出すか（familyId あり ＋ 家族ロールが ADMIN / MEMBER / KID） */
+export function shouldShowFamilyChatDock(
+  user: { familyId?: number | null; familyRole?: unknown } | null | undefined,
+): boolean {
+  if (!user) return false;
+  const fid = Number(user.familyId);
+  if (!Number.isFinite(fid) || fid <= 0) return false;
+  const role = normalizeFamilyRole(user.familyRole);
+  return role === "ADMIN" || role === "MEMBER" || role === "KID";
+}
+
 /** API の familyId が空でも default_family_id があればチャット等に使えるよう正規化 */
 function resolveAuthFamilyId(raw: {
   familyId?: unknown;

@@ -3,7 +3,12 @@
  */
 import crypto from "node:crypto";
 import { stripApiPathPrefix } from "./api-path.mjs";
-import { tryAuthRoutes, getDefaultFamilyId } from "./auth-routes.mjs";
+import {
+  tryAuthRoutes,
+  getDefaultFamilyId,
+  resolveFamilyIdWithChatFallback,
+} from "./auth-routes.mjs";
+import { canAccessFamilyChat } from "./family-chat-access.mjs";
 import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { hashPassword, resolveUserId, validatePassword } from "./auth-logic.mjs";
 import { buildCorsHeaders } from "./cors-config.mjs";
@@ -2618,13 +2623,13 @@ export async function handleApiRequest(req, options = {}) {
         if (!Number.isFinite(fid) || fid <= 0) {
           return json(400, { error: "family_id が不正です" }, hdrs, skipCors);
         }
-        const member = await userBelongsToFamily(pool, userId, fid);
+        const member = await canAccessFamilyChat(pool, userId, fid);
         if (!member) {
           return json(403, { error: "この家族のチャットを表示できません" }, hdrs, skipCors);
         }
         targetFamilyId = fid;
       } else {
-        const def = await getDefaultFamilyId(pool, userId);
+        const def = await resolveFamilyIdWithChatFallback(pool, userId);
         if (!def) {
           return json(400, { error: "家族が未設定です" }, hdrs, skipCors);
         }
@@ -2732,13 +2737,13 @@ export async function handleApiRequest(req, options = {}) {
         if (!Number.isFinite(fid) || fid <= 0) {
           return json(400, { error: "family_id が不正です" }, hdrs, skipCors);
         }
-        const member = await userBelongsToFamily(pool, userId, fid);
+        const member = await canAccessFamilyChat(pool, userId, fid);
         if (!member) {
           return json(403, { error: "この家族のチャットに投稿できません" }, hdrs, skipCors);
         }
         targetFamilyId = fid;
       } else {
-        const def = await getDefaultFamilyId(pool, userId);
+        const def = await resolveFamilyIdWithChatFallback(pool, userId);
         if (!def) {
           return json(400, { error: "家族が未設定です" }, hdrs, skipCors);
         }
