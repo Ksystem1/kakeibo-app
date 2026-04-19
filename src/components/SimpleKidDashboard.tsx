@@ -119,8 +119,8 @@ export function SimpleKidDashboard() {
         }
       }
       const [txRes, sumRes] = await Promise.all([
-        getTransactions(from, to, { scope: "family" }),
-        getMonthSummary(ym, { scope: "family" }),
+        getTransactions(from, to),
+        getMonthSummary(ym),
       ]);
       setCategories(normalizeCategories(items));
       setTransactions((txRes.items ?? []) as Transaction[]);
@@ -177,12 +177,12 @@ export function SimpleKidDashboard() {
     <div className={rootClass}>
       <div className={styles.hero}>
         <h1 className={styles.heroTitle}>お小遣い帳</h1>
-        <p className={styles.heroSub}>かんたんにきろくしよう！</p>
+        <p className={styles.heroSub}>簡単に記録しよう！</p>
       </div>
 
       <div className={styles.monthRow}>
         <label htmlFor="kid-month" className={styles.field}>
-          <span className={styles.cardLabel}>つき</span>
+          <span className={styles.cardLabel}>月</span>
           <input
             id="kid-month"
             className={styles.monthInput}
@@ -192,7 +192,7 @@ export function SimpleKidDashboard() {
           />
         </label>
         <button type="button" className={styles.reloadBtn} disabled={loading} onClick={() => void load()}>
-          {loading ? "よみこみ中…" : "あたらしくする"}
+          {loading ? "読み込み中…" : "更新"}
         </button>
       </div>
 
@@ -208,16 +208,16 @@ export function SimpleKidDashboard() {
           <div className={styles.cardValue}>{yen.format(incomeTotal)}</div>
         </div>
         <div className={styles.card}>
-          <div className={styles.cardLabel}>つかった</div>
+          <div className={styles.cardLabel}>使った</div>
           <div className={styles.cardValue}>{yen.format(expenseTotal)}</div>
         </div>
         <div className={styles.card}>
-          <div className={styles.cardLabel}>のこり</div>
+          <div className={styles.cardLabel}>残り</div>
           <div className={styles.cardValue}>{yen.format(balance)}</div>
         </div>
       </div>
 
-      <h2 className={styles.sectionTitle}>きろくする</h2>
+      <h2 className={styles.sectionTitle}>記録する</h2>
       <form className={styles.addCard} onSubmit={onSubmit}>
         <div className={styles.kindRow}>
           <button
@@ -240,12 +240,12 @@ export function SimpleKidDashboard() {
               <ShoppingCart className={styles.kindLucideMain} strokeWidth={2.25} />
               <Candy className={styles.kindLucideAccent} strokeWidth={2.4} />
             </span>
-            つかった
+            使った
           </button>
         </div>
         <div className={styles.fieldRow}>
           <div className={styles.field}>
-            <label htmlFor="kid-amt">おかね（えん）</label>
+            <label htmlFor="kid-amt">お金（円）</label>
             <input
               id="kid-amt"
               className={styles.input}
@@ -259,7 +259,7 @@ export function SimpleKidDashboard() {
             />
           </div>
           <div className={styles.field}>
-            <label htmlFor="kid-day">ひづけ</label>
+            <label htmlFor="kid-day">日付</label>
             <input
               id="kid-day"
               className={styles.input}
@@ -285,25 +285,25 @@ export function SimpleKidDashboard() {
           </div>
         </div>
         <button type="submit" className={styles.submitBtn} disabled={saving || loading}>
-          {saving ? "とうろく中…" : "とうろく！"}
+          {saving ? "登録中…" : "登録！"}
         </button>
       </form>
 
-      <h2 className={styles.sectionTitle}>いままでのきろく</h2>
+      <h2 className={styles.sectionTitle}>これまでの記録</h2>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
             <tr>
-              <th>ひ</th>
-              <th>なに</th>
-              <th>きんがく</th>
+              <th>日</th>
+              <th>内容</th>
+              <th>金額</th>
             </tr>
           </thead>
           <tbody>
             {transactions.length === 0 ? (
               <tr>
                 <td colSpan={3} style={{ textAlign: "center", color: "var(--kid-muted)" }}>
-                  まだないよ
+                  まだ記録がありません
                 </td>
               </tr>
             ) : (

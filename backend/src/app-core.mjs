@@ -3646,7 +3646,7 @@ export async function handleApiRequest(req, options = {}) {
           [...txScopeParams, from, to],
         );
         let fixedCostFromSettings = 0;
-        if (familyScopeOnly && familyId) {
+        if (familyScopeOnly && familyId && !isKidTxScope) {
           const memberOkSum = await verifyUserInFamily(pool, userId, familyId);
           if (memberOkSum) {
             fixedCostFromSettings = await familyFixedCostMonthlySum(pool, familyId);
@@ -3706,7 +3706,7 @@ export async function handleApiRequest(req, options = {}) {
         const expenseVariableTotal = Number(sumE?.total ?? 0);
         const incomeTotal = Number(sumI?.total ?? 0);
         let balance = incomeTotal - expenseVariableTotal;
-        if (familyScopeOnly && familyId) {
+        if (familyScopeOnly && familyId && !isKidTxScope) {
           const memberOkBal = await verifyUserInFamily(pool, userId, familyId);
           if (memberOkBal) {
             const fixedSum = await familyFixedCostMonthlySum(pool, familyId);
@@ -3739,6 +3739,9 @@ export async function handleApiRequest(req, options = {}) {
       }
 
       case "GET /settings/fixed-costs": {
+        if (isKidTxScope) {
+          return json(403, { error: "この操作はできません" }, hdrs, skipCors);
+        }
         if (!familyId) {
           return json(
             400,
@@ -3762,6 +3765,9 @@ export async function handleApiRequest(req, options = {}) {
       }
 
       case "PUT /settings/fixed-costs": {
+        if (isKidTxScope) {
+          return json(403, { error: "この操作はできません" }, hdrs, skipCors);
+        }
         if (!familyId) {
           return json(
             400,
