@@ -1151,7 +1151,7 @@ const ADMIN_USERS_LIST_SQL_WITH_SUB_LEGACY = `SELECT
            ) AS family_peers
          FROM users u
          LEFT JOIN families f ON f.id = u.default_family_id
-         ORDER BY u.id ASC
+         ORDER BY (u.default_family_id IS NULL), u.default_family_id ASC, u.id ASC
          LIMIT 1000`;
 
 const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
@@ -1183,7 +1183,7 @@ const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
            ) AS family_peers
          FROM users u
          LEFT JOIN families f ON f.id = ${FAM_JOIN_ADMIN}
-         ORDER BY u.id ASC
+         ORDER BY (u.default_family_id IS NULL), u.default_family_id ASC, u.id ASC
          LIMIT 1000`;
 
 const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
@@ -1214,7 +1214,7 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
            ) AS family_peers
          FROM users u
          LEFT JOIN families f ON f.id = ${FAM_JOIN_ADMIN}
-         ORDER BY u.id ASC
+         ORDER BY (u.default_family_id IS NULL), u.default_family_id ASC, u.id ASC
          LIMIT 1000`;
 
 /**
