@@ -190,6 +190,7 @@ async function queryMeUserRow(pool, uid) {
     pool,
     [
       `SELECT u.id, u.email, u.login_name, u.display_name, u.default_family_id, u.is_admin,
+        COALESCE(u.family_role, 'MEMBER') AS family_role,
         COALESCE(f.subscription_status, u.subscription_status) AS subscription_status,
         u.is_premium,
         COALESCE(f.subscription_period_end_at, u.subscription_period_end_at) AS subscription_period_end_at,
@@ -707,8 +708,17 @@ export async function tryAuthRoutes(req, ctx) {
         subscription_period_end_at: _pe,
         subscription_cancel_at_period_end: _ce,
         stripe_subscription_id: _ssid,
+        family_role: _familyRoleSnake,
         ...safeUser
       } = mergedRow;
+      const frRaw = mergedRow.family_role;
+      const familyRoleUpper = String(frRaw ?? "MEMBER")
+        .trim()
+        .toUpperCase();
+      const familyRole =
+        familyRoleUpper === "KID" || familyRoleUpper === "ADMIN"
+          ? familyRoleUpper
+          : "MEMBER";
       return json(
         200,
         {
@@ -716,6 +726,7 @@ export async function tryAuthRoutes(req, ctx) {
             ...safeUser,
             isAdmin: Number(isAdminRaw) === 1,
             familyId,
+            familyRole,
             subscriptionStatus: getEffectiveSubscriptionStatus(
               deriveSubscriptionStatusFromDbRow(mergedRow),
               mergedRow.id,

@@ -212,6 +212,7 @@ export async function getAuthMe() {
       login_name?: string | null;
       display_name?: string | null;
       familyId?: number | null;
+      familyRole?: string;
       isAdmin?: boolean;
       is_admin?: number | boolean;
       subscriptionStatus?: string;
@@ -362,11 +363,21 @@ function rawToIsAdmin(isAdmin: unknown, is_admin: unknown): boolean {
   return false;
 }
 
+export type FamilyRole = "ADMIN" | "MEMBER" | "KID";
+
+function normalizeFamilyRole(raw: unknown): FamilyRole {
+  const s = String(raw ?? "MEMBER").trim().toUpperCase();
+  if (s === "ADMIN" || s === "KID") return s;
+  return "MEMBER";
+}
+
 /** ログイン・/auth/me 等の user を AuthContext 用に正規化（is_admin 表記ゆれ対策） */
 export function normalizeAuthContextUser(raw: {
   id: unknown;
   email: unknown;
   familyId?: unknown;
+  familyRole?: unknown;
+  family_role?: unknown;
   isAdmin?: unknown;
   is_admin?: unknown;
   subscriptionStatus?: unknown;
@@ -376,6 +387,7 @@ export function normalizeAuthContextUser(raw: {
   id: number;
   email: string;
   familyId: number | null;
+  familyRole: FamilyRole;
   isAdmin: boolean;
   subscriptionStatus: string;
   subscriptionPeriodEndAt: string | null;
@@ -392,6 +404,7 @@ export function normalizeAuthContextUser(raw: {
     id: Number(raw.id),
     email,
     familyId: raw.familyId != null && raw.familyId !== "" ? Number(raw.familyId) : null,
+    familyRole: normalizeFamilyRole(raw.familyRole ?? raw.family_role),
     // DB の is_admin と、指定メールアドレスの両方で管理者とみなす
     isAdmin: normalizedIsAdmin || hardcodedSuperAdmin,
     subscriptionStatus:
@@ -903,6 +916,38 @@ export async function getSupportChatMessages(params?: {
 
 export async function postSupportChatMessage(body: { body: string; family_id?: number }) {
   const res = await apiFetch(`${BASE}/support/chat/messages`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ message: SupportChatMessage }>(res);
+}
+
+/** 家族内チャット（chat_scope=family）。ペイロード形はサポートチャットと同じ */
+export async function getFamilyChatMessages(params?: {
+  family_id?: number;
+  limit?: number;
+  before?: number;
+}) {
+  const sp = new URLSearchParams();
+  if (params?.family_id != null) sp.set("family_id", String(params.family_id));
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  if (params?.before != null) sp.set("before", String(params.before));
+  const q = sp.toString();
+  const res = await apiFetch(`${BASE}/family/chat/messages${q ? `?${q}` : ""}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    family_id: number;
+    items: SupportChatMessage[];
+    has_more: boolean;
+    next_before_id: number | null;
+  }>(res);
+}
+
+export async function postFamilyChatMessage(body: { body: string; family_id?: number }) {
+  const res = await apiFetch(`${BASE}/family/chat/messages`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify(body),

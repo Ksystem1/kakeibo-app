@@ -1564,7 +1564,8 @@ const SUPPORT_CHAT_BODY_MAX = 8000;
 function supportChatMigrationNeededResponseBody() {
   return {
     error: "SupportChatNotConfigured",
-    detail: "db/migration_v14_chat_messages.sql を RDS に適用してください。",
+    detail:
+      "db/migration_v14_chat_messages.sql と db/migration_v19_chat_messages_chat_scope.sql を RDS に適用してください。",
   };
 }
 
@@ -1574,6 +1575,17 @@ function isSupportChatTableMissingError(e) {
   const msg =
     e && typeof e === "object" ? String(e.sqlMessage || "").toLowerCase() : "";
   return msg.includes("chat_messages");
+}
+
+function isChatScopeColumnMissingError(e) {
+  if (!isErBadFieldErrorAppCore(e)) return false;
+  const msg =
+    e && typeof e === "object" ? String(e.sqlMessage || "").toLowerCase() : "";
+  return msg.includes("chat_scope");
+}
+
+function isSupportChatDbConfigError(e) {
+  return isSupportChatTableMissingError(e) || isChatScopeColumnMissingError(e);
 }
 
 async function userBelongsToFamily(pool, userId, familyId) {
@@ -1691,6 +1703,7 @@ export async function handleApiRequest(req, options = {}) {
             announcement: "/announcement",
             adminAnnouncement: "/admin/announcement",
             supportChatMessages: "/support/chat/messages",
+            familyChatMessages: "/family/chat/messages",
             adminSupportChatFamilies: "/admin/support/chat/families",
             adminSupportChatMessages: "/admin/support/chat/messages",
           },
@@ -2469,7 +2482,7 @@ export async function handleApiRequest(req, options = {}) {
             ? await pool.query(
                 `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
                  FROM chat_messages
-                 WHERE family_id = ? AND deleted_at IS NULL
+                 WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL
                  ORDER BY id DESC
                  LIMIT ?`,
                 [targetFamilyId, fetchLimit],
@@ -2477,7 +2490,7 @@ export async function handleApiRequest(req, options = {}) {
             : await pool.query(
                 `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
                  FROM chat_messages
-                 WHERE family_id = ? AND deleted_at IS NULL AND id < ?
+                 WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL AND id < ?
                  ORDER BY id DESC
                  LIMIT ?`,
                 [targetFamilyId, beforeId, fetchLimit],
@@ -2494,7 +2507,7 @@ export async function handleApiRequest(req, options = {}) {
           skipCors,
         );
       } catch (e) {
-        if (isSupportChatTableMissingError(e)) {
+        if (isSupportChatDbConfigError(e)) {
           return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
         }
         throw e;
@@ -2533,8 +2546,8 @@ export async function handleApiRequest(req, options = {}) {
       }
       try {
         const [ins] = await pool.query(
-          `INSERT INTO chat_messages (family_id, sender_user_id, body, is_staff, is_important)
-           VALUES (?, ?, ?, 0, 0)`,
+          `INSERT INTO chat_messages (family_id, sender_user_id, body, is_staff, is_important, chat_scope)
+           VALUES (?, ?, ?, 0, 0, 'support')`,
           [targetFamilyId, userId, normBody.body],
         );
         const newId = Number(ins.insertId);
@@ -2545,7 +2558,166 @@ export async function handleApiRequest(req, options = {}) {
         );
         return json(201, { message: rowToChatMessageApi(row) }, hdrs, skipCors);
       } catch (e) {
-        if (isSupportChatTableMissingError(e)) {
+        if (isSupportChatDbConfigError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (routeKey(method, path) === "GET /family/chat/messages") {
+      let targetFamilyId = null;
+      const rawFam = q.family_id ?? q.familyId;
+      if (rawFam != null && String(rawFam).trim() !== "") {
+        const fid = Number(rawFam, 10);
+        if (!Number.isFinite(fid) || fid <= 0) {
+          return json(400, { error: "family_id が不正です" }, hdrs, skipCors);
+        }
+        const member = await userBelongsToFamily(pool, userId, fid);
+        if (!member) {
+          return json(403, { error: "この家族のチャットを表示できません" }, hdrs, skipCors);
+        }
+        targetFamilyId = fid;
+      } else {
+        const def = await getDefaultFamilyId(pool, userId);
+        if (!def) {
+          return json(400, { error: "家族が未設定です" }, hdrs, skipCors);
+        }
+        targetFamilyId = def;
+      }
+      const limit = clampSupportChatLimit(q.limit, 50);
+      const beforeRaw = q.before ?? q.before_id;
+      const beforeId =
+        beforeRaw != null && String(beforeRaw).trim() !== ""
+          ? Number(beforeRaw, 10)
+          : null;
+      if (beforeId != null && (!Number.isFinite(beforeId) || beforeId <= 0)) {
+        return json(400, { error: "before が不正です" }, hdrs, skipCors);
+      }
+      const fetchLimit = limit + 1;
+      const roleUpper = await resolveUserFamilyRoleUpper(pool, userId);
+      const kidFilter =
+        roleUpper === "KID"
+          ? `AND (
+              m.sender_user_id = ?
+              OR m.sender_user_id IN (
+                SELECT u2.id FROM family_members fm2
+                INNER JOIN users u2 ON u2.id = fm2.user_id
+                WHERE fm2.family_id = ?
+                  AND (
+                    UPPER(TRIM(COALESCE(u2.family_role, 'MEMBER'))) IN ('ADMIN', 'MEMBER')
+                    OR (
+                      UPPER(TRIM(COALESCE(u2.family_role, 'MEMBER'))) = 'KID'
+                      AND u2.id <> ?
+                    )
+                  )
+              )
+            )`
+          : "";
+      try {
+        const [rows] =
+          beforeId == null
+            ? roleUpper === "KID"
+              ? await pool.query(
+                  `SELECT m.id, m.family_id, m.sender_user_id, m.body, m.is_staff, m.is_important, m.created_at
+                   FROM chat_messages m
+                   WHERE m.family_id = ? AND m.chat_scope = 'family' AND m.deleted_at IS NULL
+                   ${kidFilter}
+                   ORDER BY m.id DESC
+                   LIMIT ?`,
+                  [targetFamilyId, userId, targetFamilyId, userId, fetchLimit],
+                )
+              : await pool.query(
+                  `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                   FROM chat_messages
+                   WHERE family_id = ? AND chat_scope = 'family' AND deleted_at IS NULL
+                   ORDER BY id DESC
+                   LIMIT ?`,
+                  [targetFamilyId, fetchLimit],
+                )
+            : roleUpper === "KID"
+              ? await pool.query(
+                  `SELECT m.id, m.family_id, m.sender_user_id, m.body, m.is_staff, m.is_important, m.created_at
+                   FROM chat_messages m
+                   WHERE m.family_id = ? AND m.chat_scope = 'family' AND m.deleted_at IS NULL
+                   ${kidFilter}
+                   AND m.id < ?
+                   ORDER BY m.id DESC
+                   LIMIT ?`,
+                  [targetFamilyId, userId, targetFamilyId, userId, beforeId, fetchLimit],
+                )
+              : await pool.query(
+                  `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+                   FROM chat_messages
+                   WHERE family_id = ? AND chat_scope = 'family' AND deleted_at IS NULL AND id < ?
+                   ORDER BY id DESC
+                   LIMIT ?`,
+                  [targetFamilyId, beforeId, fetchLimit],
+                );
+        const hasMore = rows.length > limit;
+        const page = hasMore ? rows.slice(0, limit) : rows;
+        const items = page.map(rowToChatMessageApi).reverse();
+        const nextBeforeId =
+          hasMore && items.length > 0 ? Number(items[0].id) : null;
+        return json(
+          200,
+          { family_id: targetFamilyId, items, has_more: hasMore, next_before_id: nextBeforeId },
+          hdrs,
+          skipCors,
+        );
+      } catch (e) {
+        if (isSupportChatDbConfigError(e)) {
+          return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (routeKey(method, path) === "POST /family/chat/messages") {
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      let targetFamilyId = null;
+      const rawFam = b.family_id ?? b.familyId;
+      if (rawFam != null && String(rawFam).trim() !== "") {
+        const fid = Number(rawFam, 10);
+        if (!Number.isFinite(fid) || fid <= 0) {
+          return json(400, { error: "family_id が不正です" }, hdrs, skipCors);
+        }
+        const member = await userBelongsToFamily(pool, userId, fid);
+        if (!member) {
+          return json(403, { error: "この家族のチャットに投稿できません" }, hdrs, skipCors);
+        }
+        targetFamilyId = fid;
+      } else {
+        const def = await getDefaultFamilyId(pool, userId);
+        if (!def) {
+          return json(400, { error: "家族が未設定です" }, hdrs, skipCors);
+        }
+        targetFamilyId = def;
+      }
+      const normBody = normalizeSupportChatBody(b.body);
+      if (normBody.error) {
+        return json(400, { error: normBody.error }, hdrs, skipCors);
+      }
+      try {
+        const [ins] = await pool.query(
+          `INSERT INTO chat_messages (family_id, sender_user_id, body, is_staff, is_important, chat_scope)
+           VALUES (?, ?, ?, 0, 0, 'family')`,
+          [targetFamilyId, userId, normBody.body],
+        );
+        const newId = Number(ins.insertId);
+        const [[row]] = await pool.query(
+          `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
+           FROM chat_messages WHERE id = ? LIMIT 1`,
+          [newId],
+        );
+        return json(201, { message: rowToChatMessageApi(row) }, hdrs, skipCors);
+      } catch (e) {
+        if (isSupportChatDbConfigError(e)) {
           return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
         }
         throw e;
@@ -2572,7 +2744,7 @@ export async function handleApiRequest(req, options = {}) {
              INNER JOIN (
                SELECT family_id, MAX(id) AS max_id
                FROM chat_messages
-               WHERE deleted_at IS NULL
+               WHERE deleted_at IS NULL AND chat_scope = 'support'
                GROUP BY family_id
              ) x ON m.family_id = x.family_id AND m.id = x.max_id
            ) lm ON lm.family_id = f.id
@@ -2628,7 +2800,7 @@ export async function handleApiRequest(req, options = {}) {
         });
         return json(200, { items }, hdrs, skipCors);
       } catch (e) {
-        if (isSupportChatTableMissingError(e)) {
+        if (isSupportChatDbConfigError(e)) {
           return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
         }
         throw e;
@@ -2668,7 +2840,7 @@ export async function handleApiRequest(req, options = {}) {
             ? await pool.query(
                 `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
                  FROM chat_messages
-                 WHERE family_id = ? AND deleted_at IS NULL
+                 WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL
                  ORDER BY id DESC
                  LIMIT ?`,
                 [targetFamilyId, fetchLimit],
@@ -2676,7 +2848,7 @@ export async function handleApiRequest(req, options = {}) {
             : await pool.query(
                 `SELECT id, family_id, sender_user_id, body, is_staff, is_important, created_at
                  FROM chat_messages
-                 WHERE family_id = ? AND deleted_at IS NULL AND id < ?
+                 WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL AND id < ?
                  ORDER BY id DESC
                  LIMIT ?`,
                 [targetFamilyId, beforeId, fetchLimit],
@@ -2693,7 +2865,7 @@ export async function handleApiRequest(req, options = {}) {
           skipCors,
         );
       } catch (e) {
-        if (isSupportChatTableMissingError(e)) {
+        if (isSupportChatDbConfigError(e)) {
           return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
         }
         throw e;
@@ -2730,8 +2902,8 @@ export async function handleApiRequest(req, options = {}) {
         b.important === true;
       try {
         const [ins] = await pool.query(
-          `INSERT INTO chat_messages (family_id, sender_user_id, body, is_staff, is_important)
-           VALUES (?, ?, ?, 1, ?)`,
+          `INSERT INTO chat_messages (family_id, sender_user_id, body, is_staff, is_important, chat_scope)
+           VALUES (?, ?, ?, 1, ?, 'support')`,
           [targetFamilyId, userId, normBody.body, isImportant ? 1 : 0],
         );
         const newId = Number(ins.insertId);
@@ -2742,7 +2914,7 @@ export async function handleApiRequest(req, options = {}) {
         );
         return json(201, { message: rowToChatMessageApi(row) }, hdrs, skipCors);
       } catch (e) {
-        if (isSupportChatTableMissingError(e)) {
+        if (isSupportChatDbConfigError(e)) {
           return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
         }
         throw e;
@@ -2784,7 +2956,7 @@ export async function handleApiRequest(req, options = {}) {
       }
       try {
         const [[exists]] = await pool.query(
-          `SELECT is_staff FROM chat_messages WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+          `SELECT is_staff FROM chat_messages WHERE id = ? AND chat_scope = 'support' AND deleted_at IS NULL LIMIT 1`,
           [msgId],
         );
         if (!exists) {
@@ -2810,7 +2982,7 @@ export async function handleApiRequest(req, options = {}) {
           params.push(normalizedBody);
         }
         const [upd] = await pool.query(
-          `UPDATE chat_messages SET ${fields.join(", ")} WHERE id = ? AND deleted_at IS NULL`,
+          `UPDATE chat_messages SET ${fields.join(", ")} WHERE id = ? AND chat_scope = 'support' AND deleted_at IS NULL`,
           [...params, msgId],
         );
         if (!upd?.affectedRows) {
@@ -2823,7 +2995,7 @@ export async function handleApiRequest(req, options = {}) {
         );
         return json(200, { message: rowToChatMessageApi(row) }, hdrs, skipCors);
       } catch (e) {
-        if (isSupportChatTableMissingError(e)) {
+        if (isSupportChatDbConfigError(e)) {
           return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
         }
         throw e;
@@ -2839,7 +3011,7 @@ export async function handleApiRequest(req, options = {}) {
       }
       try {
         const [upd] = await pool.query(
-          `UPDATE chat_messages SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`,
+          `UPDATE chat_messages SET deleted_at = NOW() WHERE id = ? AND chat_scope = 'support' AND deleted_at IS NULL`,
           [msgId],
         );
         if (!upd?.affectedRows) {
@@ -2847,7 +3019,7 @@ export async function handleApiRequest(req, options = {}) {
         }
         return json(200, { ok: true }, hdrs, skipCors);
       } catch (e) {
-        if (isSupportChatTableMissingError(e)) {
+        if (isSupportChatDbConfigError(e)) {
           return json(503, supportChatMigrationNeededResponseBody(), hdrs, skipCors);
         }
         throw e;

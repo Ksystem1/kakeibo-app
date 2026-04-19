@@ -1,5 +1,6 @@
 import { PiggyBank, Wallet, WalletCards } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { FamilyChatDock } from "../components/FamilyChatDock";
 import { MetricCard } from "../components/demo/MetricCard";
 import { RecentTransactions } from "../components/demo/RecentTransactions";
 import { SpendingChart } from "../components/demo/SpendingChart";
@@ -164,6 +165,7 @@ export function DashboardPage() {
     }));
 
   return (
+    <>
     <main className="mx-auto min-h-screen w-full max-w-6xl bg-gradient-to-b from-white to-slate-50 px-4 pb-20 pt-6 text-slate-900 md:px-6">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -220,5 +222,7 @@ export function DashboardPage() {
         <RecentTransactions items={recentItems} />
       </div>
     </main>
+    <FamilyChatDock title="家計簿ダッシュボード · 家族チャット" />
+    </>
   );
 }
