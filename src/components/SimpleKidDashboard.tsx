@@ -233,7 +233,7 @@ export function SimpleKidDashboard() {
   return (
     <div className={rootClass}>
       <div className={styles.hero}>
-        <h1 className={styles.heroTitle}>お小遣い帳</h1>
+        <h1 className={styles.heroTitle}>おこづかい帳</h1>
         <p className={styles.heroSub}>簡単に記録しよう！</p>
       </div>
 

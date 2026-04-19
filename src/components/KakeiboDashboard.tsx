@@ -116,7 +116,7 @@ function yearOptions() {
 export type KakeiboLedgerMode = "default" | "kidAllowance";
 
 type KakeiboDashboardProps = {
-  /** kidAllowance: 子ども向けお小遣い帳（見出し・一部の親向けセクションを省略） */
+  /** kidAllowance: 子ども向けおこづかい帳（見出し・一部の親向けセクションを省略） */
   ledgerMode?: KakeiboLedgerMode;
 };
 
@@ -492,7 +492,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     <div className={styles.wrap}>
       <header className={styles.header}>
         <div>
-          <h1 className={styles.title}>{isKidAllowance ? "お小遣い帳" : "家計簿"}</h1>
+          <h1 className={styles.title}>{isKidAllowance ? "おこづかい帳" : "家計簿"}</h1>
           {isKidAllowance ? (
             <p className={styles.sub} style={{ marginTop: "0.35rem", maxWidth: "36rem" }}>
               自分の入出金と残金です。保護者やきょうだいとは「家族チャット」からメッセージできます。
