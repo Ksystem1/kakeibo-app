@@ -271,7 +271,7 @@ export function SimpleKidDashboard() {
         </div>
         <div className={styles.fieldRow}>
           <div className={styles.field} style={{ flex: "1 1 100%", maxWidth: "100%" }}>
-            <label htmlFor="kid-what">なにに？</label>
+            <label htmlFor="kid-what">何に？</label>
             <input
               id="kid-what"
               className={styles.input}
