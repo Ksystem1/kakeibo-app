@@ -113,6 +113,34 @@ function isErBadFieldError(e) {
 }
 
 /**
+ * GET /auth/me 用: users.family_role を直接取得する。
+ * queryMeUserRow がフォールバッククエリに落ちたとき SELECT に family_role が無く MEMBER 扱いになるのを防ぐ。
+ * @returns {Promise<"ADMIN" | "MEMBER" | "KID">}
+ */
+function coerceMysqlEnumToUpperString(v) {
+  if (v == null) return "";
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(v)) {
+    return v.toString("utf8").trim().toUpperCase();
+  }
+  return String(v).trim().toUpperCase();
+}
+
+async function fetchUserFamilyRoleUpperForMe(pool, userId) {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT COALESCE(family_role, 'MEMBER') AS fr FROM users WHERE id = ? LIMIT 1`,
+      [userId],
+    );
+    const v = coerceMysqlEnumToUpperString(row?.fr ?? "MEMBER") || "MEMBER";
+    if (v === "KID" || v === "ADMIN") return v;
+    return "MEMBER";
+  } catch (e) {
+    if (isErBadFieldError(e)) return "MEMBER";
+    throw e;
+  }
+}
+
+/**
  * @param {import("mysql2/promise").Pool} pool
  * @param {string[]} queries
  * @param {unknown[]} params
@@ -543,6 +571,7 @@ export async function tryAuthRoutes(req, ctx) {
 
       const token = signUserToken(u.id, u.email);
       const familyId = await getDefaultFamilyId(pool, u.id);
+      const familyRole = await fetchUserFamilyRoleUpperForMe(pool, u.id);
       return json(
         200,
         {
@@ -551,6 +580,7 @@ export async function tryAuthRoutes(req, ctx) {
             id: u.id,
             email: u.email,
             familyId,
+            familyRole,
             isAdmin: Number(u.is_admin) === 1,
             subscriptionStatus: getEffectiveSubscriptionStatus(
               deriveSubscriptionStatusFromDbRow(u),
@@ -711,14 +741,7 @@ export async function tryAuthRoutes(req, ctx) {
         family_role: _familyRoleSnake,
         ...safeUser
       } = mergedRow;
-      const frRaw = mergedRow.family_role;
-      const familyRoleUpper = String(frRaw ?? "MEMBER")
-        .trim()
-        .toUpperCase();
-      const familyRole =
-        familyRoleUpper === "KID" || familyRoleUpper === "ADMIN"
-          ? familyRoleUpper
-          : "MEMBER";
+      const familyRole = await fetchUserFamilyRoleUpperForMe(pool, uid);
       return json(
         200,
         {

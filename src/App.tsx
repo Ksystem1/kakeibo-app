@@ -4,7 +4,7 @@ import { PwaInstallBar } from "./components/PwaInstallBar";
 import { AppLayout } from "./components/AppLayout";
 import { AdminRoute } from "./components/AdminRoute";
 import { ProtectedRoute } from "./components/ProtectedRoute";
-import { KakeiboDashboard } from "./components/KakeiboDashboard";
+import { HomeLedgerGate } from "./components/HomeLedgerGate";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ImportCsvPage } from "./pages/ImportCsvPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -30,7 +30,7 @@ export default function App() {
       <Route path="/demo-dashboard" element={<DemoDashboardPage />} />
       <Route element={<AppLayout />}>
         <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<KakeiboDashboard />} />
+          <Route path="/" element={<HomeLedgerGate />} />
           <Route path="/import" element={<ImportCsvPage />} />
           <Route path="/receipt" element={<ReceiptPage />} />
           <Route path="/members" element={<Navigate to="/settings" replace />} />

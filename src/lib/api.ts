@@ -170,7 +170,9 @@ export async function loginRequest(login: string, password: string) {
     user: {
       id: number;
       email: string;
-      familyId?: number;
+      familyId?: number | null;
+      familyRole?: string;
+      family_role?: string;
       isAdmin?: boolean;
       subscriptionStatus?: string;
     };
@@ -365,7 +367,8 @@ function rawToIsAdmin(isAdmin: unknown, is_admin: unknown): boolean {
 
 export type FamilyRole = "ADMIN" | "MEMBER" | "KID";
 
-function normalizeFamilyRole(raw: unknown): FamilyRole {
+/** /auth/me 等の familyRole / family_role を FamilyRole に正規化 */
+export function normalizeFamilyRole(raw: unknown): FamilyRole {
   const s = String(raw ?? "MEMBER").trim().toUpperCase();
   if (s === "ADMIN" || s === "KID") return s;
   return "MEMBER";

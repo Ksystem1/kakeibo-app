@@ -15,6 +15,7 @@ import {
   getAuthMe,
   getHeaderAnnouncement,
   normalizeAuthContextUser,
+  normalizeFamilyRole,
 } from "../lib/api";
 import { useAdminSupportNeedsReplyBadge } from "../hooks/useAdminSupportNeedsReplyBadge";
 import { useSupportChatUnreadBadge } from "../hooks/useSupportChatUnreadBadge";
@@ -125,7 +126,15 @@ export function AppLayout() {
     void getAuthMe()
       .then((res) => {
         if (cancelled || !res?.user) return;
-        setUser(normalizeAuthContextUser(res.user));
+        const normalizedUser = normalizeAuthContextUser(res.user);
+        if (
+          Boolean(import.meta.env?.DEV) ||
+          String(import.meta.env?.VITE_DEBUG_AUTH ?? "").trim() === "1"
+        ) {
+          // eslint-disable-next-line no-console
+          console.info("[kakeibo:auth] /auth/me normalized user", normalizedUser);
+        }
+        setUser(normalizedUser);
       })
       .catch(() => {
         /* no-op: オフライン時はログイン応答の user のみ */
@@ -153,6 +162,8 @@ export function AppLayout() {
   const isAdminUser =
     Boolean(user?.isAdmin) ||
     user?.email?.toLowerCase() === "script_00123@yahoo.co.jp";
+  /** 家族ロール KID は親向け「家族ダッシュボード」ナビを出さない（お小遣い帳は `/`） */
+  const isFamilyKid = normalizeFamilyRole(user?.familyRole) === "KID";
   const { needsReplyCount: adminSupportNeedsReply, refresh: refreshAdminSupportQueue } =
     useAdminSupportNeedsReplyBadge({
       token,
@@ -337,26 +348,36 @@ export function AppLayout() {
         >
           {token ? (
             <>
-              <NavLink
-                to="/dashboard"
-                className={navIconLinkClassName}
-                aria-label="ダッシュボード"
-                onClick={onMobileIconNavClick("/dashboard")}
-              >
-                <img className="nav-icon-img" src={navIconPaths.dashboard} alt="" aria-hidden="true" onError={withDefaultIconFallback("dashboard")} />
-              </NavLink>
-              {useMobileInlineOutlet ? (
-                <MobileInlineOutlet
-                  path="/dashboard"
-                  pathname={location.pathname}
-                  visible={showMobileInlineOutlet}
-                />
+              {!isFamilyKid ? (
+                <>
+                  <NavLink
+                    to="/dashboard"
+                    className={navIconLinkClassName}
+                    aria-label="ダッシュボード"
+                    onClick={onMobileIconNavClick("/dashboard")}
+                  >
+                    <img
+                      className="nav-icon-img"
+                      src={navIconPaths.dashboard}
+                      alt=""
+                      aria-hidden="true"
+                      onError={withDefaultIconFallback("dashboard")}
+                    />
+                  </NavLink>
+                  {useMobileInlineOutlet ? (
+                    <MobileInlineOutlet
+                      path="/dashboard"
+                      pathname={location.pathname}
+                      visible={showMobileInlineOutlet}
+                    />
+                  ) : null}
+                </>
               ) : null}
               <NavLink
                 to="/"
                 className={navIconLinkClassName}
                 end
-                aria-label="家計簿"
+                aria-label={isFamilyKid ? "お小遣い帳" : "家計簿"}
                 onClick={onMobileIconNavClick("/", true)}
               >
                 <img className="nav-icon-img" src={navIconPaths.kakeibo} alt="" aria-hidden="true" onError={withDefaultIconFallback("kakeibo")} />

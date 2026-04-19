@@ -2,6 +2,13 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { loginRequest, normalizeAuthContextUser } from "../lib/api";
+
+function shouldLogAuthDebug() {
+  return (
+    Boolean(import.meta.env?.DEV) ||
+    String(import.meta.env?.VITE_DEBUG_AUTH ?? "").trim() === "1"
+  );
+}
 import { AuthHeroAside } from "../components/AuthHeroAside";
 import styles from "../components/LoginScreen.module.css";
 import { MobileAccessQr } from "../components/MobileAccessQr";
@@ -30,7 +37,12 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       const r = await loginRequest(trimmed, password);
-      setSession(r.token, normalizeAuthContextUser(r.user));
+      const normalizedUser = normalizeAuthContextUser(r.user);
+      if (shouldLogAuthDebug()) {
+        // eslint-disable-next-line no-console
+        console.info("[kakeibo:auth] login normalized user", normalizedUser);
+      }
+      setSession(r.token, normalizedUser);
       if (!remember) {
         /* 将来: セッションのみ */
       }

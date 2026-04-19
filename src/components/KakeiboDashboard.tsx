@@ -114,7 +114,16 @@ function yearOptions() {
   return out;
 }
 
-export function KakeiboDashboard() {
+export type KakeiboLedgerMode = "default" | "kidAllowance";
+
+type KakeiboDashboardProps = {
+  /** kidAllowance: 子ども向けお小遣い帳（見出し・一部の親向けセクションを省略） */
+  ledgerMode?: KakeiboLedgerMode;
+};
+
+export function KakeiboDashboard(props?: KakeiboDashboardProps) {
+  const { ledgerMode = "default" } = props ?? {};
+  const isKidAllowance = ledgerMode === "kidAllowance";
   const { fixedCostsByMonth } = useSettings();
   const location = useLocation();
   const routerNavigate = useNavigate();
@@ -484,7 +493,12 @@ export function KakeiboDashboard() {
     <div className={styles.wrap}>
       <header className={styles.header}>
         <div>
-          <h1 className={styles.title}>家計簿</h1>
+          <h1 className={styles.title}>{isKidAllowance ? "お小遣い帳" : "家計簿"}</h1>
+          {isKidAllowance ? (
+            <p className={styles.sub} style={{ marginTop: "0.35rem", maxWidth: "36rem" }}>
+              自分の入出金と残金です。保護者やきょうだいとは「家族チャット」からメッセージできます。
+            </p>
+          ) : null}
         </div>
         <div className={styles.actions}>
           <label htmlFor={txMobileNarrow ? undefined : "kb-month"} className={styles.monthRow}>
@@ -597,7 +611,7 @@ export function KakeiboDashboard() {
         </div>
       </div>
 
-      {summary && expenseRowsOrdered.length > 0 ? (
+      {!isKidAllowance && summary && expenseRowsOrdered.length > 0 ? (
         <>
           <h2 className={styles.sectionTitle}>品目別・支出（API集計）</h2>
           <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
@@ -620,7 +634,7 @@ export function KakeiboDashboard() {
           </div>
         </>
       ) : null}
-      {fixedCostItemsForMonth.length > 0 ? (
+      {!isKidAllowance && fixedCostItemsForMonth.length > 0 ? (
         <>
           <div
             style={{
@@ -677,7 +691,7 @@ export function KakeiboDashboard() {
           </div>
         </>
       ) : null}
-      {summary && summary.incomesByCategory.length > 0 ? (
+      {!isKidAllowance && summary && summary.incomesByCategory.length > 0 ? (
         <>
           <h2 className={styles.sectionTitle}>品目別・収入（API集計）</h2>
           <div className={styles.tableWrap} style={{ marginBottom: "1.25rem" }}>

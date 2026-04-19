@@ -1,10 +1,12 @@
 import { PiggyBank, Wallet, WalletCards } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Navigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { FamilyChatDock } from "../components/FamilyChatDock";
 import { MetricCard } from "../components/demo/MetricCard";
 import { RecentTransactions } from "../components/demo/RecentTransactions";
 import { SpendingChart } from "../components/demo/SpendingChart";
-import { getMonthSummary, getTransactions } from "../lib/api";
+import { getMonthSummary, getTransactions, normalizeFamilyRole } from "../lib/api";
 
 type TxRow = {
   id: number;
@@ -68,7 +70,8 @@ function netMonthlyFromSummary(s: MonthSummaryLike | null): number {
 }
 
 export function DashboardPage() {
-  const [ym, setYm] = useState(currentYm);
+  const { user } = useAuth();
+  const [ym, setYm] = useState(() => currentYm());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<{
@@ -163,6 +166,11 @@ export function DashboardPage() {
       amount: Math.round(num(t.amount)),
       time: md(t.transaction_date),
     }));
+
+  /** 子ども（KID）は家族ダッシュボードではなくお小遣い帳（ルート `/`）へ（hooks の後で判定） */
+  if (normalizeFamilyRole(user?.familyRole) === "KID") {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <>
