@@ -1129,6 +1129,7 @@ const ADMIN_USERS_LIST_SQL_WITH_SUB_LEGACY = `SELECT
            u.last_login_at,
            u.default_family_id,
            COALESCE(u.family_role, 'MEMBER') AS family_role,
+           u.kid_theme AS kid_theme,
            (
              SELECT GROUP_CONCAT(
                CONCAT(
@@ -1160,6 +1161,7 @@ const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
            u.last_login_at,
            u.default_family_id,
            COALESCE(u.family_role, 'MEMBER') AS family_role,
+           u.kid_theme AS kid_theme,
            (
              SELECT GROUP_CONCAT(
                CONCAT(
@@ -1190,6 +1192,7 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
            u.last_login_at,
            u.default_family_id,
            COALESCE(u.family_role, 'MEMBER') AS family_role,
+           u.kid_theme AS kid_theme,
            (
              SELECT GROUP_CONCAT(
                CONCAT(
@@ -1296,6 +1299,13 @@ function normalizeAdminFamilyRole(raw) {
   const s = String(raw ?? "").trim().toUpperCase();
   if (s === "ADMIN" || s === "MEMBER" || s === "KID") return s;
   return null;
+}
+
+function normalizeAdminKidTheme(raw) {
+  if (raw === null || raw === undefined || String(raw).trim() === "") return null;
+  const s = String(raw).trim().toLowerCase();
+  if (s === "pink" || s === "blue") return s;
+  return "__invalid__";
 }
 
 async function loadUserSubscriptionRowFull(pool, userId) {
@@ -2041,6 +2051,12 @@ export async function handleApiRequest(req, options = {}) {
         familyRole: String(r.family_role ?? "MEMBER")
           .trim()
           .toUpperCase(),
+        kidTheme:
+          r.kid_theme == null || String(r.kid_theme).trim() === ""
+            ? null
+            : String(r.kid_theme).trim().toLowerCase() === "pink"
+              ? "pink"
+              : "blue",
         family_peers: r.family_peers == null || r.family_peers === "" ? null : String(r.family_peers),
       }));
       return json(
@@ -2279,6 +2295,23 @@ export async function handleApiRequest(req, options = {}) {
         updates.push("family_role = ?");
         params.push(nr);
       }
+      if (Object.prototype.hasOwnProperty.call(b, "kidTheme") || Object.prototype.hasOwnProperty.call(b, "kid_theme")) {
+        const kt = normalizeAdminKidTheme(b.kidTheme ?? b.kid_theme);
+        if (kt === "__invalid__") {
+          return json(
+            400,
+            { error: "kidTheme は blue / pink、または null（未設定）で指定してください" },
+            hdrs,
+            skipCors,
+          );
+        }
+        if (kt == null) {
+          updates.push("kid_theme = NULL");
+        } else {
+          updates.push("kid_theme = ?");
+          params.push(kt);
+        }
+      }
       if (updates.length === 0 && !appliedFamilySub && !appliedFamilyRelink) {
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
       }
@@ -2324,6 +2357,18 @@ export async function handleApiRequest(req, options = {}) {
                 error: "FamilyRoleColumnMissing",
                 detail:
                   "users.family_role 列がありません。RDS に db/migration_v18_users_family_role.sql を適用してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          if (isErBadFieldErrorAppCore(e) && String(e?.message || "").includes("kid_theme")) {
+            return json(
+              503,
+              {
+                error: "KidThemeColumnMissing",
+                detail:
+                  "users.kid_theme 列がありません。RDS に db/migration_v20_users_kid_theme.sql を適用してください。",
               },
               hdrs,
               skipCors,

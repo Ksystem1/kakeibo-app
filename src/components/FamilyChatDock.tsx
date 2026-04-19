@@ -1,4 +1,4 @@
-import { MessageCircle, Send, X } from "lucide-react";
+import { Mail, MessageCircle, Rabbit, Send, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -16,6 +16,8 @@ import { useFamilyChatUnreadBadge } from "../hooks/useFamilyChatUnreadBadge";
 type Props = {
   /** ヘッダー文言（親用 / 子用で差し替え可） */
   title?: string;
+  /** 子ども画面: 大きな FAB とアイコンをやわらかく */
+  variant?: "default" | "kid";
 };
 
 function formatChatTime(iso: string | null | undefined) {
@@ -29,7 +31,7 @@ function formatChatTime(iso: string | null | undefined) {
   return `${mo}/${da} ${hh}:${mm}`;
 }
 
-export function FamilyChatDock({ title = "家族チャット" }: Props) {
+export function FamilyChatDock({ title = "家族チャット", variant = "default" }: Props) {
   const { token, user } = useAuth();
   const userId = user?.id;
   const familyId =
@@ -149,8 +151,14 @@ export function FamilyChatDock({ title = "家族チャット" }: Props) {
 
   if (!canUse) return null;
 
+  const isKid = variant === "kid";
+
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-2">
+    <div
+      className={`pointer-events-none fixed z-[60] flex flex-col items-end gap-2 ${
+        isKid ? "bottom-5 right-5" : "bottom-4 right-4"
+      }`}
+    >
       {open ? (
         <div className="pointer-events-auto flex w-[min(92vw,340px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2">
@@ -224,13 +232,33 @@ export function FamilyChatDock({ title = "家族チャット" }: Props) {
 
       <button
         type="button"
-        className="pointer-events-auto relative inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg ring-2 ring-white hover:bg-emerald-700"
+        className={
+          isKid
+            ? "pointer-events-auto relative inline-flex h-[4.75rem] w-[4.75rem] min-h-[4.75rem] min-w-[4.75rem] items-center justify-center rounded-full bg-gradient-to-br from-violet-200 via-fuchsia-100 to-amber-100 text-violet-950 shadow-[0_10px_28px_rgba(196,181,253,0.55)] ring-[3px] ring-white/95 ring-offset-2 ring-offset-violet-100/90 hover:from-violet-100 hover:via-fuchsia-50 hover:to-amber-50 active:scale-[0.97]"
+            : "pointer-events-auto relative inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg ring-2 ring-white hover:bg-emerald-700"
+        }
         aria-label={title}
         onClick={() => setOpen((v) => !v)}
       >
-        <MessageCircle size={22} />
+        {isKid ? (
+          <span className="relative inline-flex h-11 w-11 items-center justify-center" aria-hidden>
+            <Rabbit className="h-9 w-9 drop-shadow-sm" strokeWidth={2.1} />
+            <Mail
+              className="absolute -bottom-0.5 -right-0.5 h-[1.35rem] w-[1.35rem] rounded-md bg-white/95 p-0.5 text-fuchsia-600 shadow-sm"
+              strokeWidth={2.35}
+            />
+          </span>
+        ) : (
+          <MessageCircle size={22} />
+        )}
         {unread && !open ? (
-          <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-rose-500 ring-2 ring-white" />
+          <span
+            className={
+              isKid
+                ? "absolute -right-0.5 -top-0.5 h-4 w-4 rounded-full bg-rose-500 ring-[3px] ring-white"
+                : "absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-rose-500 ring-2 ring-white"
+            }
+          />
         ) : null}
       </button>
     </div>

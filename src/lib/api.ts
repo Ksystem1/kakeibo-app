@@ -173,6 +173,8 @@ export async function loginRequest(login: string, password: string) {
       familyId?: number | null;
       familyRole?: string;
       family_role?: string;
+      kidTheme?: string | null;
+      kid_theme?: string | null;
       isAdmin?: boolean;
       subscriptionStatus?: string;
     };
@@ -367,6 +369,16 @@ function rawToIsAdmin(isAdmin: unknown, is_admin: unknown): boolean {
 
 export type FamilyRole = "ADMIN" | "MEMBER" | "KID";
 
+export type KidTheme = "blue" | "pink";
+
+/** 子どもきせかえテーマ（未設定は null → UI は blue 扱い） */
+export function normalizeKidTheme(raw: unknown): KidTheme | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "pink") return "pink";
+  if (s === "blue") return "blue";
+  return null;
+}
+
 /** /auth/me 等の familyRole / family_role を FamilyRole に正規化 */
 export function normalizeFamilyRole(raw: unknown): FamilyRole {
   const s = String(raw ?? "MEMBER").trim().toUpperCase();
@@ -381,6 +393,8 @@ export function normalizeAuthContextUser(raw: {
   familyId?: unknown;
   familyRole?: unknown;
   family_role?: unknown;
+  kidTheme?: unknown;
+  kid_theme?: unknown;
   isAdmin?: unknown;
   is_admin?: unknown;
   subscriptionStatus?: unknown;
@@ -391,6 +405,7 @@ export function normalizeAuthContextUser(raw: {
   email: string;
   familyId: number | null;
   familyRole: FamilyRole;
+  kidTheme: KidTheme | null;
   isAdmin: boolean;
   subscriptionStatus: string;
   subscriptionPeriodEndAt: string | null;
@@ -408,6 +423,7 @@ export function normalizeAuthContextUser(raw: {
     email,
     familyId: raw.familyId != null && raw.familyId !== "" ? Number(raw.familyId) : null,
     familyRole: normalizeFamilyRole(raw.familyRole ?? raw.family_role),
+    kidTheme: normalizeKidTheme(raw.kidTheme ?? raw.kid_theme),
     // DB の is_admin と、指定メールアドレスの両方で管理者とみなす
     isAdmin: normalizedIsAdmin || hardcodedSuperAdmin,
     subscriptionStatus:
@@ -827,6 +843,7 @@ export async function getAdminUsers() {
       last_login_at: string | null;
       default_family_id: number | null;
       familyRole?: string;
+      kidTheme?: "blue" | "pink" | null;
       family_peers: string | null;
     }>;
     meta?: { subscriptionStatusWritable?: boolean };
@@ -857,6 +874,7 @@ export async function updateAdminUser(
     /** 既定の家族（families.id）。null で未所属扱い（family_members から外す） */
     defaultFamilyId?: number | null;
     familyRole?: "ADMIN" | "MEMBER" | "KID";
+    kidTheme?: "blue" | "pink" | null;
   },
 ) {
   const res = await apiFetch(`${BASE}/admin/users/${userId}`, {

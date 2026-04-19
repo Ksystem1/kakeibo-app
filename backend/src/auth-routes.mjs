@@ -141,6 +141,29 @@ async function fetchUserFamilyRoleUpperForMe(pool, userId) {
 }
 
 /**
+ * 子ども向けきせかえテーマ（users.kid_theme）。未設定は null（フロントで blue 相当）。
+ * @returns {Promise<"blue" | "pink" | null>}
+ */
+async function fetchUserKidTheme(pool, userId) {
+  try {
+    const [[row]] = await pool.query(`SELECT kid_theme AS kt FROM users WHERE id = ? LIMIT 1`, [
+      userId,
+    ]);
+    const raw = row?.kt;
+    if (raw == null || String(raw).trim() === "") return null;
+    const s0 =
+      typeof Buffer !== "undefined" && Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw);
+    const s = s0.trim().toLowerCase();
+    if (s === "pink") return "pink";
+    if (s === "blue") return "blue";
+    return null;
+  } catch (e) {
+    if (isErBadFieldError(e)) return null;
+    throw e;
+  }
+}
+
+/**
  * @param {import("mysql2/promise").Pool} pool
  * @param {string[]} queries
  * @param {unknown[]} params
@@ -572,6 +595,7 @@ export async function tryAuthRoutes(req, ctx) {
       const token = signUserToken(u.id, u.email);
       const familyId = await getDefaultFamilyId(pool, u.id);
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, u.id);
+      const kidTheme = await fetchUserKidTheme(pool, u.id);
       return json(
         200,
         {
@@ -581,6 +605,7 @@ export async function tryAuthRoutes(req, ctx) {
             email: u.email,
             familyId,
             familyRole,
+            kidTheme,
             isAdmin: Number(u.is_admin) === 1,
             subscriptionStatus: getEffectiveSubscriptionStatus(
               deriveSubscriptionStatusFromDbRow(u),
@@ -739,9 +764,11 @@ export async function tryAuthRoutes(req, ctx) {
         subscription_cancel_at_period_end: _ce,
         stripe_subscription_id: _ssid,
         family_role: _familyRoleSnake,
+        kid_theme: _kidThemeSnake,
         ...safeUser
       } = mergedRow;
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, uid);
+      const kidTheme = await fetchUserKidTheme(pool, uid);
       return json(
         200,
         {
@@ -750,6 +777,7 @@ export async function tryAuthRoutes(req, ctx) {
             isAdmin: Number(isAdminRaw) === 1,
             familyId,
             familyRole,
+            kidTheme,
             subscriptionStatus: getEffectiveSubscriptionStatus(
               deriveSubscriptionStatusFromDbRow(mergedRow),
               mergedRow.id,

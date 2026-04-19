@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { FamilyRole } from "../lib/api";
+import type { FamilyRole, KidTheme } from "../lib/api";
 
 const STORAGE_KEY = "kakeibo_token";
 
@@ -16,6 +16,8 @@ type User = {
   familyId?: number | null;
   /** サーバ users.family_role（未返却時は MEMBER 扱い） */
   familyRole?: FamilyRole;
+  /** KID きせかえ（users.kid_theme）。未設定は null */
+  kidTheme?: KidTheme | null;
   isAdmin?: boolean;
   /** サーバ users.subscription_status（例: active / inactive） */
   subscriptionStatus?: string;

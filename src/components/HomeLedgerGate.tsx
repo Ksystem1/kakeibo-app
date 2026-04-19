@@ -1,7 +1,7 @@
 import { useAuth } from "../context/AuthContext";
 import { normalizeFamilyRole } from "../lib/api";
 import { KakeiboDashboard } from "./KakeiboDashboard";
-import { KidAllowanceLedgerPage } from "../pages/KidAllowanceLedgerPage";
+import { SimpleKidDashboard } from "./SimpleKidDashboard";
 
 /**
  * `/` の入口: KID はお小遣い帳専用ページ、それ以外は従来の家計簿ダッシュ。
@@ -27,7 +27,7 @@ export function HomeLedgerGate() {
   }
 
   if (normalizeFamilyRole(user?.familyRole) === "KID") {
-    return <KidAllowanceLedgerPage />;
+    return <SimpleKidDashboard />;
   }
 
   return <KakeiboDashboard />;

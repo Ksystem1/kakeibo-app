@@ -85,6 +85,8 @@ export function AppLayout() {
   const navigate = useNavigate();
   const mobile = useIsMobile();
   const location = useLocation();
+  /** 子どもアカウント: ヘッダー・ナビを親向けから大幅に省略 */
+  const isFamilyKid = normalizeFamilyRole(user?.familyRole) === "KID";
   const [mobileMainHidden, setMobileMainHidden] = useState(false);
   const prevPathnameRef = useRef<string | null>(null);
 
@@ -145,9 +147,9 @@ export function AppLayout() {
   }, [token, setUser]);
 
   const showMobileInlineOutlet = Boolean(
-    mobile && token && !mobileMainHidden,
+    mobile && token && !mobileMainHidden && !isFamilyKid,
   );
-  const useMobileInlineOutlet = Boolean(mobile && token);
+  const useMobileInlineOutlet = Boolean(mobile && token && !isFamilyKid);
 
   const supportFamilyId =
     user?.familyId != null && Number.isFinite(Number(user.familyId))
@@ -162,8 +164,6 @@ export function AppLayout() {
   const isAdminUser =
     Boolean(user?.isAdmin) ||
     user?.email?.toLowerCase() === "script_00123@yahoo.co.jp";
-  /** 家族ロール KID は親向け「家族ダッシュボード」ナビを出さない（お小遣い帳は `/`） */
-  const isFamilyKid = normalizeFamilyRole(user?.familyRole) === "KID";
   const { needsReplyCount: adminSupportNeedsReply, refresh: refreshAdminSupportQueue } =
     useAdminSupportNeedsReplyBadge({
       token,
@@ -185,14 +185,24 @@ export function AppLayout() {
   }, []);
 
   useEffect(() => {
+    if (isFamilyKid) {
+      setHeaderAnnouncement("");
+      return;
+    }
     fetchHeaderAnnouncement();
-  }, [fetchHeaderAnnouncement, location.pathname]);
+  }, [fetchHeaderAnnouncement, location.pathname, isFamilyKid]);
 
   useEffect(() => {
-    const onUpdated = () => fetchHeaderAnnouncement();
+    const onUpdated = () => {
+      if (isFamilyKid) {
+        setHeaderAnnouncement("");
+        return;
+      }
+      fetchHeaderAnnouncement();
+    };
     window.addEventListener("kakeibo:header-announcement-updated", onUpdated);
     return () => window.removeEventListener("kakeibo:header-announcement-updated", onUpdated);
-  }, [fetchHeaderAnnouncement]);
+  }, [fetchHeaderAnnouncement, isFamilyKid]);
 
   return (
     <>
@@ -265,8 +275,10 @@ export function AppLayout() {
               🐷 Kakeibo
             </strong>
           </div>
-          {!mobile ? <HeaderAnnouncementBar text={headerAnnouncement} /> : null}
-          {token ? (
+          {!mobile && !isFamilyKid ? (
+            <HeaderAnnouncementBar text={headerAnnouncement} />
+          ) : null}
+          {token && !isFamilyKid ? (
             <NavLink
               to="/support"
               end
@@ -300,7 +312,9 @@ export function AppLayout() {
               marginLeft: "auto",
             }}
           >
-            {!mobile ? <MobileAccessQr fixedPath={`${import.meta.env.BASE_URL}login`} compact /> : null}
+            {!mobile && !isFamilyKid ? (
+              <MobileAccessQr fixedPath={`${import.meta.env.BASE_URL}login`} compact />
+            ) : null}
             {token ? (
               <button
                 type="button"
@@ -326,12 +340,13 @@ export function AppLayout() {
             ) : null}
           </div>
         </div>
-        {mobile && headerAnnouncement.trim() ? (
+        {mobile && !isFamilyKid && headerAnnouncement.trim() ? (
           <div className="header-announcement-mobile-row">
             <HeaderAnnouncementBar text={headerAnnouncement} />
           </div>
         ) : null}
-        {/* 2段目: ナビゲーション */}
+        {/* 2段目: ナビゲーション（KID は親向けアイコン行ごと非表示） */}
+        {token && isFamilyKid ? null : (
         <nav
           className={token && mobile ? "app-nav--mobile-column" : undefined}
           style={{
@@ -348,36 +363,32 @@ export function AppLayout() {
         >
           {token ? (
             <>
-              {!isFamilyKid ? (
-                <>
-                  <NavLink
-                    to="/dashboard"
-                    className={navIconLinkClassName}
-                    aria-label="ダッシュボード"
-                    onClick={onMobileIconNavClick("/dashboard")}
-                  >
-                    <img
-                      className="nav-icon-img"
-                      src={navIconPaths.dashboard}
-                      alt=""
-                      aria-hidden="true"
-                      onError={withDefaultIconFallback("dashboard")}
-                    />
-                  </NavLink>
-                  {useMobileInlineOutlet ? (
-                    <MobileInlineOutlet
-                      path="/dashboard"
-                      pathname={location.pathname}
-                      visible={showMobileInlineOutlet}
-                    />
-                  ) : null}
-                </>
+              <NavLink
+                to="/dashboard"
+                className={navIconLinkClassName}
+                aria-label="ダッシュボード"
+                onClick={onMobileIconNavClick("/dashboard")}
+              >
+                <img
+                  className="nav-icon-img"
+                  src={navIconPaths.dashboard}
+                  alt=""
+                  aria-hidden="true"
+                  onError={withDefaultIconFallback("dashboard")}
+                />
+              </NavLink>
+              {useMobileInlineOutlet ? (
+                <MobileInlineOutlet
+                  path="/dashboard"
+                  pathname={location.pathname}
+                  visible={showMobileInlineOutlet}
+                />
               ) : null}
               <NavLink
                 to="/"
                 className={navIconLinkClassName}
                 end
-                aria-label={isFamilyKid ? "お小遣い帳" : "家計簿"}
+                aria-label="家計簿"
                 onClick={onMobileIconNavClick("/", true)}
               >
                 <img className="nav-icon-img" src={navIconPaths.kakeibo} alt="" aria-hidden="true" onError={withDefaultIconFallback("kakeibo")} />
@@ -484,7 +495,8 @@ export function AppLayout() {
             </>
           )}
         </nav>
-        {mobile && token && mobileMainHidden ? (
+        )}
+        {mobile && token && !isFamilyKid && mobileMainHidden ? (
           <div hidden aria-hidden>
             <Outlet />
           </div>
@@ -492,19 +504,19 @@ export function AppLayout() {
       </header>
       <main
         style={{
-          flex: mobile && token ? 0 : 1,
+          flex: mobile && token && !isFamilyKid ? 0 : 1,
           minHeight: 0,
-          display: mobile && token ? "none" : undefined,
+          display: mobile && token && !isFamilyKid ? "none" : undefined,
         }}
-        aria-hidden={mobile && token ? true : undefined}
+        aria-hidden={mobile && token && !isFamilyKid ? true : undefined}
       >
-        {!(mobile && token) ? (
+        {!(mobile && token && !isFamilyKid) ? (
           <div style={{ display: "block", minHeight: "100%" }}>
             <Outlet />
           </div>
         ) : null}
       </main>
-      {token ? <AiAdvisorChat /> : null}
+      {token && !isFamilyKid ? <AiAdvisorChat /> : null}
       <AdSlot placement="footer" />
     </div>
     </>

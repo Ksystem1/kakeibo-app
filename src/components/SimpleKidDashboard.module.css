@@ -1,0 +1,312 @@
+/* 子ども向けお小遣い帳（きせかえ: blue / pink） */
+
+.shell {
+  min-height: 100%;
+  padding: 1rem 1rem 7.5rem;
+  font-size: 1.12rem;
+  line-height: 1.45;
+  transition: background 0.25s ease, color 0.2s ease;
+}
+
+.rootBlue {
+  composes: shell;
+  --kid-bg: linear-gradient(165deg, #e8f4ff 0%, #f3f0ff 42%, #fff8f0 100%);
+  --kid-surface: rgba(255, 255, 255, 0.9);
+  --kid-accent: #6b93d6;
+  --kid-accent2: #a8c8f0;
+  --kid-text: #3d4f6f;
+  --kid-muted: #6a7d99;
+  --kid-icon-inline: #5b7eb8;
+  background: var(--kid-bg);
+  color: var(--kid-text);
+}
+
+.rootPink {
+  composes: shell;
+  --kid-bg: linear-gradient(165deg, #fff0f7 0%, #fff5fb 45%, #fffbeb 100%);
+  --kid-surface: rgba(255, 255, 255, 0.9);
+  --kid-accent: #e88aaf;
+  --kid-accent2: #ffc4d9;
+  --kid-text: #7a3d58;
+  --kid-muted: #9b5c78;
+  --kid-icon-inline: #c45b8a;
+  background: var(--kid-bg);
+  color: var(--kid-text);
+}
+
+.hero {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.heroTitle {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.35rem;
+}
+
+.heroSub {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--kid-muted);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  background: var(--kid-surface);
+  border-radius: 1.35rem;
+  padding: 0.85rem 0.65rem;
+  text-align: center;
+  box-shadow: 0 8px 22px rgba(125, 145, 180, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+}
+
+.cardLabel {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--kid-muted);
+  margin-bottom: 0.25rem;
+}
+
+.cardValue {
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.sectionTitle {
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin: 0 0 0.65rem;
+  text-align: center;
+}
+
+.addCard {
+  background: var(--kid-surface);
+  border-radius: 1.5rem;
+  padding: 1rem 1rem 1.1rem;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 10px 26px rgba(125, 145, 180, 0.14);
+  border: 3px dashed color-mix(in srgb, var(--kid-accent) 28%, transparent);
+}
+
+.rootPink .addCard {
+  border-color: color-mix(in srgb, var(--kid-accent) 30%, transparent);
+}
+
+.kindRow {
+  display: flex;
+  gap: 0.65rem;
+  justify-content: center;
+  margin-bottom: 0.85rem;
+}
+
+.kindBtn {
+  flex: 1;
+  max-width: 11rem;
+  border: none;
+  border-radius: 1.25rem;
+  padding: 0.75rem 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: 0 4px 0 rgba(15, 23, 42, 0.12);
+}
+
+.kindBtn:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 rgba(15, 23, 42, 0.12);
+}
+
+.kindBtnIncome {
+  composes: kindBtn;
+  background: linear-gradient(180deg, #fff9e6 0%, #ffeec8 100%);
+  color: #8a6520;
+  box-shadow: 0 4px 0 rgba(180, 160, 120, 0.2);
+}
+
+.kindBtnExpense {
+  composes: kindBtn;
+  background: linear-gradient(180deg, #e8faf3 0%, #d2f5e8 100%);
+  color: #2a6b5c;
+  box-shadow: 0 4px 0 rgba(120, 170, 150, 0.22);
+}
+
+.rootPink .kindBtnExpense {
+  background: linear-gradient(180deg, #f0e8ff 0%, #e4dcff 100%);
+  color: #5c4680;
+  box-shadow: 0 4px 0 rgba(150, 130, 190, 0.2);
+}
+
+.kindBtnSelected {
+  outline: 3px solid color-mix(in srgb, var(--kid-accent) 75%, white);
+  outline-offset: 2px;
+}
+
+.kindIconRow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.1rem;
+  height: 2.2rem;
+}
+
+.kindLucideMain {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+}
+
+.kindLucideAccent {
+  position: absolute;
+  right: -0.15rem;
+  top: -0.15rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  opacity: 0.95;
+}
+
+.txKindIcons {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.12rem;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  color: var(--kid-icon-inline);
+}
+
+.fieldRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: flex-end;
+  justify-content: center;
+  margin-bottom: 0.65rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.field label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--kid-muted);
+}
+
+.input,
+.select {
+  font: inherit;
+  font-size: 1.1rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 1rem;
+  border: 2px solid color-mix(in srgb, var(--kid-accent) 22%, white);
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.submitBtn {
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 800;
+  padding: 0.65rem 1.5rem;
+  border: none;
+  border-radius: 1.35rem;
+  background: linear-gradient(180deg, var(--kid-accent2) 0%, var(--kid-accent) 100%);
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  box-shadow: 0 5px 0 color-mix(in srgb, var(--kid-accent) 45%, #334155);
+  width: 100%;
+  max-width: 20rem;
+  margin: 0.35rem auto 0;
+  display: block;
+}
+
+.submitBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.err {
+  background: #fff1f2;
+  color: #c2415c;
+  padding: 0.65rem 0.85rem;
+  border-radius: 1rem;
+  margin-bottom: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  border: 2px solid #fecdd3;
+}
+
+.tableWrap {
+  background: var(--kid-surface);
+  border-radius: 1.35rem;
+  overflow: auto;
+  box-shadow: 0 8px 22px rgba(125, 145, 180, 0.12);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1.02rem;
+}
+
+.table th,
+.table td {
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.table th {
+  font-size: 0.95rem;
+  color: var(--kid-muted);
+}
+
+.monthRow {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.monthInput {
+  font: inherit;
+  font-size: 1.1rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 1rem;
+  border: 2px solid rgba(15, 23, 42, 0.12);
+}
+
+.reloadBtn {
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.45rem 0.85rem;
+  border-radius: 1rem;
+  border: 2px solid rgba(15, 23, 42, 0.12);
+  background: var(--kid-surface);
+  cursor: pointer;
+}
