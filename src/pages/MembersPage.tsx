@@ -1,10 +1,12 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
   createChildProfile,
+  deleteChildProfile,
   getChildProfiles,
   getFamilyMembers,
   linkExistingChildProfile,
   searchExistingChildByEmail,
+  updateChildProfile,
   type GradeGroup,
 } from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
@@ -40,6 +42,9 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
     parent_id: number | null;
     grade_group: GradeGroup | null;
   } | null>(null);
+  const [editingChildId, setEditingChildId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editGradeGroup, setEditGradeGroup] = useState<GradeGroup>("1-2");
 
   const load = useCallback(async () => {
     setErr(null);
@@ -119,6 +124,54 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
+  function beginEditChild(childId: number, name: string | null, gg: GradeGroup | null) {
+    setEditingChildId(childId);
+    setEditName((name ?? "").trim());
+    setEditGradeGroup(gg ?? "1-2");
+  }
+
+  function cancelEditChild() {
+    setEditingChildId(null);
+    setEditName("");
+    setEditGradeGroup("1-2");
+  }
+
+  async function onSaveChildProfile(childId: number) {
+    setMsg(null);
+    setErr(null);
+    setLoading(true);
+    try {
+      await updateChildProfile(childId, {
+        display_name: editName.trim(),
+        grade_group: editGradeGroup,
+      });
+      setMsg("子供プロフィールを更新しました。");
+      cancelEditChild();
+      await load();
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onDeleteChildProfile(childId: number) {
+    if (!window.confirm("本当に削除しますか？")) return;
+    setMsg(null);
+    setErr(null);
+    setLoading(true);
+    try {
+      await deleteChildProfile(childId);
+      setMsg("子供プロフィールを削除しました。");
+      if (editingChildId === childId) cancelEditChild();
+      await load();
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const content = (
     <>
       {err ? (
@@ -157,18 +210,81 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
             <tr>
               <th>名前</th>
               <th>学年グループ</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {children.length === 0 ? (
               <tr>
-                <td colSpan={2}>まだ子供プロフィールがありません</td>
+                <td colSpan={3}>まだ子供プロフィールがありません</td>
               </tr>
             ) : (
               children.map((c) => (
                 <tr key={c.id}>
-                  <td>{c.display_name ?? `子供${c.id}`}</td>
-                  <td>{c.grade_group === "1-2" ? "1-2年生" : c.grade_group === "3-4" ? "3-4年生" : "5-6年生"}</td>
+                  <td>
+                    {editingChildId === c.id ? (
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className={styles.monthInput}
+                        style={{ minWidth: 160 }}
+                      />
+                    ) : (
+                      c.display_name ?? `子供${c.id}`
+                    )}
+                  </td>
+                  <td>
+                    {editingChildId === c.id ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                        <label><input type="radio" name={`edit-grade-${c.id}`} checked={editGradeGroup === "1-2"} onChange={() => setEditGradeGroup("1-2")} /> 1-2年生</label>
+                        <label><input type="radio" name={`edit-grade-${c.id}`} checked={editGradeGroup === "3-4"} onChange={() => setEditGradeGroup("3-4")} /> 3-4年生</label>
+                        <label><input type="radio" name={`edit-grade-${c.id}`} checked={editGradeGroup === "5-6"} onChange={() => setEditGradeGroup("5-6")} /> 5-6年生</label>
+                      </div>
+                    ) : c.grade_group === "1-2" ? (
+                      "1-2年生"
+                    ) : c.grade_group === "3-4" ? (
+                      "3-4年生"
+                    ) : (
+                      "5-6年生"
+                    )}
+                  </td>
+                  <td>
+                    {editingChildId === c.id ? (
+                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className={`${styles.btn} ${styles.btnPrimary}`}
+                          disabled={loading}
+                          onClick={() => void onSaveChildProfile(c.id)}
+                        >
+                          保存
+                        </button>
+                        <button type="button" className={styles.btn} disabled={loading} onClick={cancelEditChild}>
+                          キャンセル
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className={styles.btn}
+                          disabled={loading}
+                          onClick={() => beginEditChild(c.id, c.display_name, c.grade_group)}
+                        >
+                          編集
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.btn}
+                          disabled={loading}
+                          onClick={() => void onDeleteChildProfile(c.id)}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))
             )}

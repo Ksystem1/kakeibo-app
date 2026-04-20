@@ -33,6 +33,8 @@ const AUTH_ROUTE_KEYS = new Set([
   "POST /families/invite",
   "GET /families/children",
   "POST /families/children",
+  "PATCH /families/children/:id",
+  "DELETE /families/children/:id",
   "GET /families/children/search",
   "POST /families/children/link-existing",
   "POST /auth/child-session",
@@ -404,8 +406,10 @@ export async function tryAuthRoutes(req, ctx) {
   const method = req.method.toUpperCase();
   const path = stripApiPathPrefix(req.path.split("?")[0] || "/");
   const key = routeKey(method, path);
+  const childOneMatch = /^\/families\/children\/(\d+)$/.exec(path);
 
-  if (!AUTH_ROUTE_KEYS.has(key)) {
+  const isChildOneRoute = childOneMatch != null && (method === "PATCH" || method === "DELETE");
+  if (!AUTH_ROUTE_KEYS.has(key) && !isChildOneRoute) {
     return null;
   }
 
@@ -993,6 +997,75 @@ export async function tryAuthRoutes(req, ctx) {
         throw e;
       } finally {
         conn.release();
+      }
+    }
+
+    if (isChildOneRoute && childOneMatch) {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const viewerRole = await fetchUserFamilyRoleUpperForMe(pool, uid);
+      if (viewerRole === "KID") {
+        return json(403, { error: "この操作はできません" }, hdrs, skipCors);
+      }
+      const targetChildId = Number(childOneMatch[1]);
+      if (!Number.isFinite(targetChildId) || targetChildId <= 0) {
+        return json(400, { error: "child id が不正です" }, hdrs, skipCors);
+      }
+      const [rows] = await pool.query(
+        `SELECT id, parent_id, COALESCE(is_child, 0) AS is_child
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [targetChildId],
+      );
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return json(404, { error: "子供プロフィールが見つかりません" }, hdrs, skipCors);
+      }
+      const target = rows[0];
+      if (Number(target.parent_id) !== uid || Number(target.is_child) !== 1) {
+        return json(403, { error: "この子供プロフィールを操作する権限がありません" }, hdrs, skipCors);
+      }
+
+      if (method === "PATCH") {
+        const b = JSON.parse(req.body || "{}");
+        const displayNameRaw = String(b.display_name ?? b.name ?? "").trim();
+        const gradeGroup = normalizeGradeGroup(b.grade_group);
+        if (displayNameRaw.length < 1 || displayNameRaw.length > 100) {
+          return json(400, { error: "名前は1〜100文字で入力してください" }, hdrs, skipCors);
+        }
+        if (!gradeGroup) {
+          return json(400, { error: "学年グループは 1-2 / 3-4 / 5-6 を指定してください" }, hdrs, skipCors);
+        }
+        await pool.query(
+          `UPDATE users
+           SET display_name = ?, grade_group = ?, updated_at = NOW()
+           WHERE id = ?`,
+          [displayNameRaw, gradeGroup, targetChildId],
+        );
+        return json(
+          200,
+          { ok: true, id: targetChildId, display_name: displayNameRaw, grade_group: gradeGroup },
+          hdrs,
+          skipCors,
+        );
+      }
+
+      if (method === "DELETE") {
+        const conn = await pool.getConnection();
+        try {
+          await conn.beginTransaction();
+          await conn.query(`DELETE FROM family_members WHERE user_id = ?`, [targetChildId]);
+          await conn.query(`DELETE FROM users WHERE id = ?`, [targetChildId]);
+          await conn.commit();
+          return json(200, { ok: true, id: targetChildId }, hdrs, skipCors);
+        } catch (e) {
+          await conn.rollback();
+          throw e;
+        } finally {
+          conn.release();
+        }
       }
     }
 

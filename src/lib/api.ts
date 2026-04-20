@@ -937,6 +937,31 @@ export async function createChildProfile(body: {
   }>(res);
 }
 
+export async function updateChildProfile(
+  childId: number,
+  body: { display_name: string; grade_group: GradeGroup },
+) {
+  const res = await apiFetch(`${BASE}/families/children/${childId}`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{
+    ok: boolean;
+    id: number;
+    display_name: string;
+    grade_group: GradeGroup;
+  }>(res);
+}
+
+export async function deleteChildProfile(childId: number) {
+  const res = await apiFetch(`${BASE}/families/children/${childId}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+  });
+  return parse<{ ok: boolean; id: number }>(res);
+}
+
 export async function searchExistingChildByEmail(email: string) {
   const q = new URLSearchParams({ email: email.trim().toLowerCase() });
   const res = await apiFetch(`${BASE}/families/children/search?${q.toString()}`, {
