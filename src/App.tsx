@@ -17,6 +17,7 @@ import { SupportChatPage } from "./pages/SupportChatPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { DemoDashboardPage } from "./pages/DemoDashboardPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { ChildProfileSelectPage } from "./pages/ChildProfileSelectPage";
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/categories" element={<Navigate to="/settings" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/support" element={<SupportChatPage />} />
+          <Route path="/child-select" element={<ChildProfileSelectPage />} />
           <Route element={<AdminRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/admin" element={<AdminPage />} />

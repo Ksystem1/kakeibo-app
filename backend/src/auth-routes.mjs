@@ -31,6 +31,9 @@ const AUTH_ROUTE_KEYS = new Set([
   "GET /auth/me",
   "GET /families/members",
   "POST /families/invite",
+  "GET /families/children",
+  "POST /families/children",
+  "POST /auth/child-session",
 ]);
 
 const RETRYABLE_DB_CODES = new Set([
@@ -113,6 +116,12 @@ function isErBadFieldError(e) {
   const code = String(e.code || "");
   const errno = Number(e.errno);
   return code === "ER_BAD_FIELD_ERROR" || errno === 1054;
+}
+
+function normalizeGradeGroup(raw) {
+  const s = String(raw ?? "").trim();
+  if (s === "1-2" || s === "3-4" || s === "5-6") return s;
+  return null;
 }
 
 /**
@@ -210,6 +219,9 @@ async function queryLoginUserRow(pool, login) {
     pool,
     [
       `SELECT u.id, u.email, u.password_hash, u.is_admin,
+        COALESCE(u.is_child, 0) AS is_child,
+        u.parent_id,
+        u.grade_group,
         COALESCE(f.subscription_status, u.subscription_status) AS subscription_status,
         u.is_premium,
         COALESCE(f.subscription_period_end_at, u.subscription_period_end_at) AS subscription_period_end_at,
@@ -218,7 +230,7 @@ async function queryLoginUserRow(pool, login) {
        FROM users u
        LEFT JOIN families f ON f.id = ${FAM_JOIN_ON_U}
        ${wAliased}`,
-      `SELECT id, email, password_hash, is_admin, subscription_status, is_premium, subscription_period_end_at, subscription_cancel_at_period_end, stripe_subscription_id FROM users ${w}`,
+      `SELECT id, email, password_hash, is_admin, is_child, parent_id, grade_group, subscription_status, is_premium, subscription_period_end_at, subscription_cancel_at_period_end, stripe_subscription_id FROM users ${w}`,
       `SELECT id, email, password_hash, is_admin, subscription_status, is_premium FROM users ${w}`,
       `SELECT id, email, password_hash, is_admin, subscription_status FROM users ${w}`,
       `SELECT id, email, password_hash, is_admin FROM users ${w}`,
@@ -245,6 +257,9 @@ async function queryMeUserRow(pool, uid) {
     [
       `SELECT u.id, u.email, u.login_name, u.display_name, u.default_family_id, u.is_admin,
         COALESCE(u.family_role, 'MEMBER') AS family_role,
+        COALESCE(u.is_child, 0) AS is_child,
+        u.parent_id,
+        u.grade_group,
         COALESCE(f.subscription_status, u.subscription_status) AS subscription_status,
         u.is_premium,
         COALESCE(f.subscription_period_end_at, u.subscription_period_end_at) AS subscription_period_end_at,
@@ -253,7 +268,7 @@ async function queryMeUserRow(pool, uid) {
        FROM users u
        LEFT JOIN families f ON f.id = ${FAM_JOIN_ON_U}
        WHERE u.id = ?`,
-      `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status, is_premium, subscription_period_end_at, subscription_cancel_at_period_end, stripe_subscription_id FROM users WHERE id = ?`,
+      `SELECT id, email, login_name, display_name, default_family_id, is_admin, is_child, parent_id, grade_group, subscription_status, is_premium, subscription_period_end_at, subscription_cancel_at_period_end, stripe_subscription_id FROM users WHERE id = ?`,
       `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status, is_premium FROM users WHERE id = ?`,
       `SELECT id, email, login_name, display_name, default_family_id, is_admin, subscription_status FROM users WHERE id = ?`,
       `SELECT id, email, login_name, display_name, default_family_id, is_admin FROM users WHERE id = ?`,
@@ -617,10 +632,16 @@ export async function tryAuthRoutes(req, ctx) {
           token,
           user: {
             id: mergedLogin.id,
-            email: mergedLogin.email,
+            email: mergedLogin.email ?? "",
             familyId,
             familyRole,
             kidTheme,
+            isChild: Number(mergedLogin.is_child) === 1,
+            parentId:
+              mergedLogin.parent_id != null && Number.isFinite(Number(mergedLogin.parent_id))
+                ? Number(mergedLogin.parent_id)
+                : null,
+            gradeGroup: normalizeGradeGroup(mergedLogin.grade_group),
             isAdmin: Number(mergedLogin.is_admin) === 1,
             subscriptionStatus: getEffectiveSubscriptionStatus(
               deriveSubscriptionStatusFromDbRow(mergedLogin),
@@ -781,6 +802,12 @@ export async function tryAuthRoutes(req, ctx) {
             familyId,
             familyRole,
             kidTheme,
+            isChild: Number(mergedRow.is_child) === 1,
+            parentId:
+              mergedRow.parent_id != null && Number.isFinite(Number(mergedRow.parent_id))
+                ? Number(mergedRow.parent_id)
+                : null,
+            gradeGroup: normalizeGradeGroup(mergedRow.grade_group),
             subscriptionStatus: getEffectiveSubscriptionStatus(
               deriveSubscriptionStatusFromDbRow(mergedRow),
               mergedRow.id,
@@ -814,6 +841,138 @@ export async function tryAuthRoutes(req, ctx) {
         [fid],
       );
       return json(200, { familyId: fid, items: members }, hdrs, skipCors);
+    }
+
+    if (key === "GET /families/children") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const viewerRole = await fetchUserFamilyRoleUpperForMe(pool, uid);
+      if (viewerRole === "KID") {
+        return json(403, { error: "この操作はできません" }, hdrs, skipCors);
+      }
+      const [rows] = await pool.query(
+        `SELECT id, display_name, grade_group, kid_theme
+         FROM users
+         WHERE parent_id = ? AND COALESCE(is_child, 0) = 1
+         ORDER BY id ASC`,
+        [uid],
+      );
+      return json(200, { items: rows }, hdrs, skipCors);
+    }
+
+    if (key === "POST /families/children") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const viewerRole = await fetchUserFamilyRoleUpperForMe(pool, uid);
+      if (viewerRole === "KID") {
+        return json(403, { error: "この操作はできません" }, hdrs, skipCors);
+      }
+      const b = JSON.parse(req.body || "{}");
+      const displayNameRaw = String(b.display_name ?? b.name ?? "").trim();
+      const gradeGroup = normalizeGradeGroup(b.grade_group);
+      if (displayNameRaw.length < 1 || displayNameRaw.length > 100) {
+        return json(400, { error: "名前は1〜100文字で入力してください" }, hdrs, skipCors);
+      }
+      if (!gradeGroup) {
+        return json(400, { error: "学年グループは 1-2 / 3-4 / 5-6 を指定してください" }, hdrs, skipCors);
+      }
+      const parentFamilyId = await getDefaultFamilyId(pool, uid);
+      if (!parentFamilyId) {
+        return json(400, { error: "親ユーザーの家族設定が見つかりません" }, hdrs, skipCors);
+      }
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [ins] = await conn.query(
+          `INSERT INTO users (email, login_name, password_hash, display_name, default_family_id, family_role, is_child, parent_id, grade_group, is_admin)
+           VALUES (NULL, NULL, NULL, ?, ?, 'KID', 1, ?, ?, 0)`,
+          [displayNameRaw, parentFamilyId, uid, gradeGroup],
+        );
+        const childUserId = Number(ins.insertId);
+        await conn.query(
+          `INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, 'member')`,
+          [parentFamilyId, childUserId],
+        );
+        await conn.commit();
+        await seedDefaultCategoriesIfEmpty(pool, childUserId, parentFamilyId);
+        return json(
+          201,
+          {
+            id: childUserId,
+            display_name: displayNameRaw,
+            grade_group: gradeGroup,
+            parent_id: uid,
+          },
+          hdrs,
+          skipCors,
+        );
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      } finally {
+        conn.release();
+      }
+    }
+
+    if (key === "POST /auth/child-session") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const viewerRole = await fetchUserFamilyRoleUpperForMe(pool, uid);
+      if (viewerRole === "KID") {
+        return json(403, { error: "この操作はできません" }, hdrs, skipCors);
+      }
+      const b = JSON.parse(req.body || "{}");
+      const childId = Number(b.child_id ?? b.childId);
+      if (!Number.isFinite(childId) || childId <= 0) {
+        return json(400, { error: "child_id が不正です" }, hdrs, skipCors);
+      }
+      const [rows] = await pool.query(
+        `SELECT u.id, u.email, u.display_name, u.default_family_id, u.is_admin,
+                COALESCE(u.family_role, 'MEMBER') AS family_role,
+                COALESCE(u.is_child, 0) AS is_child, u.parent_id, u.grade_group, u.kid_theme
+         FROM users u
+         WHERE u.id = ? AND u.parent_id = ? AND COALESCE(u.is_child, 0) = 1
+         LIMIT 1`,
+        [childId, uid],
+      );
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return json(404, { error: "子供プロフィールが見つかりません" }, hdrs, skipCors);
+      }
+      const child = rows[0];
+      const token = signUserToken(
+        child.id,
+        child.email == null || String(child.email).trim() === ""
+          ? `child-${child.id}@local.invalid`
+          : String(child.email),
+      );
+      return json(
+        200,
+        {
+          token,
+          user: {
+            id: child.id,
+            email: child.email ?? "",
+            familyId: child.default_family_id ?? null,
+            familyRole: "KID",
+            kidTheme:
+              String(child.kid_theme ?? "").trim().toLowerCase() === "pink" ? "pink" : "blue",
+            isChild: true,
+            parentId: Number(child.parent_id),
+            gradeGroup: normalizeGradeGroup(child.grade_group),
+            isAdmin: false,
+            subscriptionStatus: "inactive",
+            isPremium: false,
+          },
+        },
+        hdrs,
+        skipCors,
+      );
     }
 
     if (key === "POST /families/invite") {

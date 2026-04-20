@@ -10,7 +10,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 CREATE TABLE IF NOT EXISTS users (
   id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   cognito_sub     CHAR(36) NULL COMMENT 'Cognito Username (sub) — UNIQUE 制約は下記',
-  email           VARCHAR(255) NOT NULL,
+  email           VARCHAR(255) NULL,
   is_admin        TINYINT(1) NOT NULL DEFAULT 0 COMMENT '管理者フラグ（1=true）',
   subscription_status VARCHAR(32) NOT NULL DEFAULT 'inactive' COMMENT 'Stripe/admin: active trialing past_due canceled unpaid paused inactive admin_free',
   stripe_customer_id VARCHAR(255) NULL COMMENT 'Stripe Customer id (cus_...) Webhook 突合',
@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS users (
   subscription_cancel_at_period_end TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Stripe cancel_at_period_end',
   is_premium      TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=プレミアム（任意。active と併用可）',
   display_name    VARCHAR(100) NULL,
+  is_child        TINYINT(1) NOT NULL DEFAULT 0 COMMENT '子供サブプロファイル（1=true）',
+  parent_id       BIGINT UNSIGNED NULL COMMENT '親ユーザーID（users.id）',
+  grade_group     ENUM('1-2','3-4','5-6') NULL COMMENT '学年グループ',
   timezone        VARCHAR(64) NOT NULL DEFAULT 'Asia/Tokyo',
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -26,8 +29,12 @@ CREATE TABLE IF NOT EXISTS users (
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_cognito_sub (cognito_sub),
   UNIQUE KEY uq_users_email (email),
+  KEY idx_users_parent_id (parent_id),
   KEY idx_users_stripe_customer_id (stripe_customer_id),
-  KEY idx_users_created_at (created_at)
+  KEY idx_users_created_at (created_at),
+  CONSTRAINT fk_users_parent
+    FOREIGN KEY (parent_id) REFERENCES users (id)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------

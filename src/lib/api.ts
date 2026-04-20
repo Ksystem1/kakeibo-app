@@ -176,6 +176,12 @@ export async function loginRequest(login: string, password: string) {
       family_role?: string;
       kidTheme?: string | null;
       kid_theme?: string | null;
+      isChild?: boolean;
+      is_child?: boolean;
+      parentId?: number | null;
+      parent_id?: number | null;
+      gradeGroup?: string | null;
+      grade_group?: string | null;
       isAdmin?: boolean;
       subscriptionStatus?: string;
     };
@@ -220,6 +226,9 @@ export async function getAuthMe() {
       familyId?: number | null;
       familyRole?: string;
       isAdmin?: boolean;
+      isChild?: boolean;
+      parentId?: number | null;
+      gradeGroup?: string | null;
       is_admin?: number | boolean;
       subscriptionStatus?: string;
       subscriptionPeriodEndAt?: string | null;
@@ -372,6 +381,7 @@ function rawToIsAdmin(isAdmin: unknown, is_admin: unknown): boolean {
 }
 
 export type FamilyRole = "ADMIN" | "MEMBER" | "KID";
+export type GradeGroup = "1-2" | "3-4" | "5-6";
 
 export type KidTheme = "blue" | "pink";
 
@@ -380,6 +390,12 @@ export function normalizeKidTheme(raw: unknown): KidTheme | null {
   const s = String(raw ?? "").trim().toLowerCase();
   if (s === "pink") return "pink";
   if (s === "blue") return "blue";
+  return null;
+}
+
+export function normalizeGradeGroup(raw: unknown): GradeGroup | null {
+  const s = String(raw ?? "").trim();
+  if (s === "1-2" || s === "3-4" || s === "5-6") return s;
   return null;
 }
 
@@ -433,6 +449,12 @@ export function normalizeAuthContextUser(raw: {
   kid_theme?: unknown;
   isAdmin?: unknown;
   is_admin?: unknown;
+  isChild?: unknown;
+  is_child?: unknown;
+  parentId?: unknown;
+  parent_id?: unknown;
+  gradeGroup?: unknown;
+  grade_group?: unknown;
   subscriptionStatus?: unknown;
   subscriptionPeriodEndAt?: unknown;
   subscriptionCancelAtPeriodEnd?: unknown;
@@ -444,6 +466,9 @@ export function normalizeAuthContextUser(raw: {
   familyRole: FamilyRole;
   kidTheme: KidTheme | null;
   isAdmin: boolean;
+  isChild: boolean;
+  parentId: number | null;
+  gradeGroup: GradeGroup | null;
   subscriptionStatus: string;
   subscriptionPeriodEndAt: string | null;
   subscriptionCancelAtPeriodEnd: boolean;
@@ -474,6 +499,14 @@ export function normalizeAuthContextUser(raw: {
     kidTheme: normalizeKidTheme(raw.kidTheme ?? raw.kid_theme),
     // DB の is_admin と、指定メールアドレスの両方で管理者とみなす
     isAdmin: normalizedIsAdmin || hardcodedSuperAdmin,
+    isChild: raw.isChild === true || Number(raw.is_child) === 1,
+    parentId:
+      raw.parentId != null && Number.isFinite(Number(raw.parentId))
+        ? Number(raw.parentId)
+        : raw.parent_id != null && Number.isFinite(Number(raw.parent_id))
+          ? Number(raw.parent_id)
+          : null,
+    gradeGroup: normalizeGradeGroup(raw.gradeGroup ?? raw.grade_group),
     subscriptionStatus,
     subscriptionPeriodEndAt,
     subscriptionCancelAtPeriodEnd: raw.subscriptionCancelAtPeriodEnd === true,
@@ -862,7 +895,69 @@ export async function getFamilyMembers() {
       familyRole?: string;
       kid_theme?: string | null;
       kidTheme?: string | null;
+      is_child?: number | boolean;
+      isChild?: boolean;
+      parent_id?: number | null;
+      parentId?: number | null;
+      grade_group?: string | null;
+      gradeGroup?: string | null;
     }>;
+  }>(res);
+}
+
+export async function getChildProfiles() {
+  const res = await apiFetch(`${BASE}/families/children`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    items: Array<{
+      id: number;
+      display_name: string | null;
+      grade_group: GradeGroup | null;
+      kid_theme?: "blue" | "pink" | null;
+    }>;
+  }>(res);
+}
+
+export async function createChildProfile(body: {
+  display_name: string;
+  grade_group: GradeGroup;
+}) {
+  const res = await apiFetch(`${BASE}/families/children`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{
+    id: number;
+    display_name: string;
+    grade_group: GradeGroup;
+    parent_id: number;
+  }>(res);
+}
+
+export async function createChildSession(childId: number) {
+  const res = await apiFetch(`${BASE}/auth/child-session`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({ child_id: childId }),
+  });
+  return parse<{
+    token: string;
+    user: {
+      id: number;
+      email: string;
+      familyId?: number | null;
+      familyRole?: string;
+      kidTheme?: string | null;
+      isChild?: boolean;
+      parentId?: number | null;
+      gradeGroup?: string | null;
+      isAdmin?: boolean;
+      subscriptionStatus?: string;
+      isPremium?: boolean;
+    };
   }>(res);
 }
 

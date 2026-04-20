@@ -25,6 +25,7 @@
     "db:migrate-v20": "node scripts/run-migration-v20.mjs",
     "db:migrate-v21": "node scripts/no-migration-v21.mjs",
     "db:migrate-v22": "node scripts/run-migration-v22.mjs",
+    "db:migrate-v23": "node scripts/run-migration-v23.mjs",
     "db:dev-user": "node scripts/ensure-dev-user.mjs",
     "test:bedrock": "node scripts/test-bedrock.mjs",
     "test:bedrock:lucky": "node scripts/test-bedrock-lucky-food.mjs",

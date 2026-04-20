@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { loginRequest, normalizeAuthContextUser } from "../lib/api";
+import { getChildProfiles, loginRequest, normalizeAuthContextUser, normalizeFamilyRole } from "../lib/api";
 
 function shouldLogAuthDebug() {
   return (
@@ -43,6 +43,19 @@ export function LoginPage() {
         console.info("[kakeibo:auth] login normalized user", normalizedUser);
       }
       setSession(r.token, normalizedUser);
+      const role = normalizeFamilyRole(normalizedUser.familyRole);
+      const canPickChildProfile = role === "ADMIN" || role === "MEMBER";
+      if (canPickChildProfile) {
+        try {
+          const kids = await getChildProfiles();
+          if (Array.isArray(kids.items) && kids.items.length > 0) {
+            navigate("/child-select", { replace: true });
+            return;
+          }
+        } catch {
+          /* 子供プロフィール取得に失敗した場合は通常導線へ */
+        }
+      }
       if (!remember) {
         /* 将来: セッションのみ */
       }

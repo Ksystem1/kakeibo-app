@@ -1,0 +1,71 @@
+.wrap {
+  margin-top: 1rem;
+  border: 2px solid var(--kid-border);
+  border-radius: 14px;
+  padding: 0.85rem;
+  background: #fffef7;
+}
+
+.title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.hint {
+  margin: 0 0 0.5rem;
+  color: #475569;
+}
+
+.coinLanes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.45rem;
+}
+
+.laneButton {
+  min-height: 54px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.laneSelected {
+  border-color: #0ea5e9;
+  background: #e0f2fe;
+}
+
+.playBtn {
+  margin-top: 0.6rem;
+  border-radius: 999px;
+  border: 0;
+  background: #22c55e;
+  color: #fff;
+  font-weight: 700;
+  padding: 0.45rem 0.8rem;
+}
+
+.question {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0.45rem 0;
+}
+
+.choiceRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.choiceBtn {
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  padding: 0.45rem 0.7rem;
+  font-weight: 700;
+}
+
+.score {
+  margin: 0.6rem 0 0;
+  font-weight: 700;
+}

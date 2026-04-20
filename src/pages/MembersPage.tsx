@@ -1,6 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import QRCode from "react-qr-code";
-import { getFamilyMembers, inviteFamilyMember } from "../lib/api";
+import { createChildProfile, getChildProfiles, getFamilyMembers, type GradeGroup } from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
 
 export function MembersPage({ embedded = false }: { embedded?: boolean }) {
@@ -12,14 +11,16 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
       role: string;
     }>
   >([]);
-  const [email, setEmail] = useState("");
+  const [childName, setChildName] = useState("");
+  const [gradeGroup, setGradeGroup] = useState<GradeGroup>("1-2");
+  const [children, setChildren] = useState<
+    Array<{
+      id: number;
+      display_name: string | null;
+      grade_group: GradeGroup | null;
+    }>
+  >([]);
   const [msg, setMsg] = useState<string | null>(null);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const [lineShareUrl, setLineShareUrl] = useState<string | null>(null);
-  const [lineMessageShareUrl, setLineMessageShareUrl] = useState<string | null>(
-    null,
-  );
-  const [inviteTargetEmail, setInviteTargetEmail] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -28,6 +29,8 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
     try {
       const r = await getFamilyMembers();
       setItems(r.items ?? []);
+      const kids = await getChildProfiles();
+      setChildren(kids.items ?? []);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -37,39 +40,18 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
     void load();
   }, [load]);
 
-  async function onInvite(e: FormEvent) {
+  async function onCreateChild(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
     setErr(null);
     setLoading(true);
-    const targetEmail = email.trim().toLowerCase();
     try {
-      const r = await inviteFamilyMember(targetEmail);
-      let m = r.message ?? "招待しました";
-      if (r.debug_invite_token) {
-        m += `（開発トークン: ${r.debug_invite_token}）`;
-      }
-      setMsg(m);
-      const url = r.invite_url ?? null;
-      setInviteUrl(url);
-      setLineShareUrl(
-        r.line_share_url ??
-          (url
-            ? `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(url)}`
-            : null),
-      );
-      const lineTextFallback =
-        url &&
-        `https://line.me/R/msg/text/?${encodeURIComponent(
-          [
-            "【家計簿 Kakeibo】家族への招待です。",
-            `登録時はこのメールアドレスを使ってください: ${targetEmail}`,
-            url,
-          ].join("\n"),
-        )}`;
-      setLineMessageShareUrl(r.line_message_share_url ?? lineTextFallback ?? null);
-      setInviteTargetEmail(targetEmail);
-      setEmail("");
+      await createChildProfile({
+        display_name: childName.trim(),
+        grade_group: gradeGroup,
+      });
+      setMsg("子供プロフィールを追加しました。");
+      setChildName("");
       await load();
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
@@ -86,75 +68,6 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
         </p>
       ) : null}
       {msg ? <p style={{ color: "var(--accent)" }}>{msg}</p> : null}
-      {inviteUrl ? (
-        <div
-          style={{
-            marginBottom: "1rem",
-            padding: "0.85rem",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            background: "rgba(255,255,255,0.03)",
-          }}
-        >
-          <p className={styles.sub} style={{ marginBottom: "0.55rem" }}>
-            招待URL（メール・QR・LINE）
-          </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
-            <a
-              href={inviteUrl}
-              target="_blank"
-              rel="noreferrer"
-              style={{ color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}
-            >
-              招待URLを開く
-            </a>
-            <button
-              type="button"
-              className={styles.btn}
-              onClick={async () => {
-                await navigator.clipboard.writeText(inviteUrl);
-                setMsg("招待URLをコピーしました");
-              }}
-            >
-              URLをコピー
-            </button>
-            {inviteTargetEmail ? (
-              <a
-                href={`mailto:${inviteTargetEmail}?subject=${encodeURIComponent("家計簿への招待")}&body=${encodeURIComponent(
-                  `以下のリンクから登録してください:\n${inviteUrl}`,
-                )}`}
-                className={styles.btn}
-              >
-                招待メールを作成
-              </a>
-            ) : null}
-            {lineShareUrl ? (
-              <a
-                href={lineShareUrl}
-                target="_blank"
-                rel="noreferrer"
-                className={`${styles.btn} ${styles.btnLine}`}
-              >
-                LINEで送る（リンク）
-              </a>
-            ) : null}
-            {lineMessageShareUrl ? (
-              <a
-                href={lineMessageShareUrl}
-                target="_blank"
-                rel="noreferrer"
-                className={`${styles.btn} ${styles.btnLine}`}
-                style={{ opacity: 0.95 }}
-              >
-                LINEで送る（案内文付き）
-              </a>
-            ) : null}
-            <div style={{ padding: 6, borderRadius: 8, background: "#fff", lineHeight: 0 }}>
-              <QRCode value={inviteUrl} size={90} level="M" fgColor="#0f1419" bgColor="#ffffff" />
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <h2 className={styles.sectionTitle}>メンバー一覧</h2>
       <div className={styles.tableWrap}>
@@ -178,25 +91,55 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
         </table>
       </div>
 
-      <h2 className={styles.sectionTitle}>メールアドレスを登録して招待（LINE可）</h2>
+      <h2 className={styles.sectionTitle}>子供プロフィール</h2>
+      <div className={styles.tableWrap} style={{ marginBottom: "0.75rem" }}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>名前</th>
+              <th>学年グループ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {children.length === 0 ? (
+              <tr>
+                <td colSpan={2}>まだ子供プロフィールがありません</td>
+              </tr>
+            ) : (
+              children.map((c) => (
+                <tr key={c.id}>
+                  <td>{c.display_name ?? `子供${c.id}`}</td>
+                  <td>{c.grade_group === "1-2" ? "1-2年生" : c.grade_group === "3-4" ? "3-4年生" : "5-6年生"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 className={styles.sectionTitle}>子供を追加</h2>
       <form
-        onSubmit={onInvite}
-        style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}
+        onSubmit={onCreateChild}
+        style={{ display: "grid", gap: "0.5rem" }}
       >
         <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="partner@example.com"
+          type="text"
+          value={childName}
+          onChange={(e) => setChildName(e.target.value)}
+          placeholder="名前"
           className={styles.monthInput}
-          style={{ flex: "1 1 220px" }}
         />
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem" }}>
+          <label><input type="radio" name="grade-group" value="1-2" checked={gradeGroup === "1-2"} onChange={() => setGradeGroup("1-2")} /> 1-2年生</label>
+          <label><input type="radio" name="grade-group" value="3-4" checked={gradeGroup === "3-4"} onChange={() => setGradeGroup("3-4")} /> 3-4年生</label>
+          <label><input type="radio" name="grade-group" value="5-6" checked={gradeGroup === "5-6"} onChange={() => setGradeGroup("5-6")} /> 5-6年生</label>
+        </div>
         <button
           type="submit"
           className={`${styles.btn} ${styles.btnPrimary}`}
           disabled={loading}
         >
-          招待を登録
+          子供を追加
         </button>
       </form>
     </>
@@ -208,7 +151,7 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
     <div className={styles.wrap}>
       <h1 className={styles.title}>家族・利用ユーザー</h1>
       <p className={styles.sub}>
-        同じ家族に紐づいた人は取引の入力・閲覧ができます。招待する方のメールアドレスを入力のうえ、URLをメール・QR・LINEで送れます（LINEはリンク共有または案内文付きのどちらでも可）。
+        親アカウントに子供プロフィールを追加できます。メール招待は使いません。
       </p>
       {content}
     </div>

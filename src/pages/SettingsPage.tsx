@@ -324,7 +324,7 @@ export function SettingsPage() {
       <div className={styles.settingsPanel} style={{ marginTop: "0.75rem", maxWidth: 980 }}>
         <h2 className={styles.sectionTitle}>家族・利用ユーザー</h2>
         <p className={styles.reclassifyHint}>
-          同じ家族に紐づいた人は取引の入力・閲覧ができます。メール登録で招待URLを発行します。
+          子供プロフィールを親アカウント内に追加できます。メール招待は使いません。
         </p>
         <MembersPage embedded />
       </div>

@@ -13,6 +13,7 @@ import {
   updateTransaction,
   type KidTheme,
 } from "../lib/api";
+import { ChildGame } from "./ChildGame";
 import styles from "./SimpleKidDashboard.module.css";
 
 type Category = { id: number; name: string; kind: "income" | "expense" };
@@ -94,6 +95,7 @@ export function SimpleKidDashboard() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [showGameReward, setShowGameReward] = useState(false);
 
   const { from, to } = useMemo(() => ymToRange(ym), [ym]);
 
@@ -222,6 +224,7 @@ export function SimpleKidDashboard() {
         setFormAmount("");
         setFormWhat("");
       }
+      setShowGameReward(true);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -352,6 +355,19 @@ export function SimpleKidDashboard() {
           </button>
         </div>
       </form>
+      {showGameReward ? (
+        <ChildGame gradeGroup={user?.gradeGroup} />
+      ) : (
+        <div style={{ marginTop: "0.85rem" }}>
+          <button
+            type="button"
+            className={styles.submitBtn}
+            onClick={() => setShowGameReward(true)}
+          >
+            ごほうびゲームをあそぶ
+          </button>
+        </div>
+      )}
 
       <h2 className={styles.sectionTitle}>これまでの記録</h2>
       <div className={styles.tableWrap}>
