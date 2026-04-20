@@ -297,6 +297,23 @@ export function AdminSupportChatPage() {
     }
   }, [bodyEditId, bodyEditDraft, loadFamilies]);
 
+  const onMarkSelectedAsRead = useCallback(async () => {
+    if (selectedFamilyId == null || items.length === 0) return;
+    setThreadError(null);
+    const maxId = Math.max(...items.map((m) => m.id));
+    try {
+      await postAdminSupportChatRead({
+        family_id: selectedFamilyId,
+        last_read_message_id: maxId,
+      });
+      lastPostedReadRef.current = Math.max(lastPostedReadRef.current, maxId);
+      await loadFamilies();
+      notifyAdminSupportQueueChanged();
+    } catch (e) {
+      setThreadError(e instanceof Error ? e.message : "既読更新に失敗しました");
+    }
+  }, [selectedFamilyId, items, loadFamilies]);
+
   const selectedName =
     selectedFamilyId == null
       ? ""
@@ -455,12 +472,36 @@ export function AdminSupportChatPage() {
                   padding: "0.55rem 0.75rem",
                   borderBottom: "1px solid var(--border)",
                   fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "0.5rem",
                 }}
               >
-                {selectedName}{" "}
-                <span style={{ fontWeight: 400, color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                  (ID {selectedFamilyId})
-                </span>
+                <div>
+                  {selectedName}{" "}
+                  <span style={{ fontWeight: 400, color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                    (ID {selectedFamilyId})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onMarkSelectedAsRead();
+                  }}
+                  disabled={threadLoading || items.length === 0}
+                  style={{
+                    font: "inherit",
+                    fontSize: "0.8rem",
+                    padding: "0.24rem 0.6rem",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-card)",
+                    cursor: threadLoading || items.length === 0 ? "default" : "pointer",
+                  }}
+                >
+                  既読にする
+                </button>
               </div>
               {threadError ? (
                 <p style={{ color: "#b91c1c", padding: "0 0.75rem", fontSize: "0.88rem" }} role="alert">

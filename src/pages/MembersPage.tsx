@@ -1,11 +1,11 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import QRCode from "react-qr-code";
 import {
   createChildProfile,
   deleteChildProfile,
   getChildProfiles,
   getFamilyMembers,
-  linkExistingChildProfile,
-  searchExistingChildByEmail,
+  inviteFamilyMember,
   updateChildProfile,
   type GradeGroup,
 } from "../lib/api";
@@ -32,19 +32,12 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [linkEmail, setLinkEmail] = useState("");
-  const [linkGradeGroup, setLinkGradeGroup] = useState<GradeGroup>("5-6");
-  const [linkTarget, setLinkTarget] = useState<{
-    id: number;
-    email: string;
-    display_name: string | null;
-    is_child: boolean;
-    parent_id: number | null;
-    grade_group: GradeGroup | null;
-  } | null>(null);
   const [editingChildId, setEditingChildId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editGradeGroup, setEditGradeGroup] = useState<GradeGroup>("1-2");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [inviteTargetEmail, setInviteTargetEmail] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -82,40 +75,22 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
-  async function onSearchExistingChild(e: FormEvent) {
+  async function onInviteAdultByEmail(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
     setErr(null);
     setLoading(true);
-    setLinkTarget(null);
     try {
-      const r = await searchExistingChildByEmail(linkEmail);
-      if (!r.found || !r.user) {
-        setMsg("該当ユーザーは見つかりませんでした。");
-        return;
+      const targetEmail = inviteEmail.trim().toLowerCase();
+      if (!targetEmail || !targetEmail.includes("@")) {
+        throw new Error("招待するメールアドレスを正しく入力してください。");
       }
-      setLinkTarget(r.user);
-      setMsg("既存アカウントが見つかりました。内容を確認して紐付けしてください。");
-    } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : String(ex));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function onLinkExistingChild() {
-    if (!linkTarget) return;
-    setMsg(null);
-    setErr(null);
-    setLoading(true);
-    try {
-      await linkExistingChildProfile({
-        email: linkTarget.email,
-        grade_group: linkGradeGroup,
-      });
-      setMsg("既存アカウントを子供プロフィールとして紐付けました。過去履歴はそのまま引き継がれます。");
-      setLinkTarget(null);
-      setLinkEmail("");
+      const r = await inviteFamilyMember(targetEmail);
+      const url = r.invite_url ?? null;
+      setInviteUrl(url);
+      setInviteTargetEmail(targetEmail);
+      setInviteEmail("");
+      setMsg(r.message ?? "招待URLを発行しました。メールまたはQRで共有できます。");
       await load();
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
@@ -292,6 +267,64 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
         </table>
       </div>
 
+      <h2 className={styles.sectionTitle}>夫・妻など大人を招待（メール / QR）</h2>
+      <form onSubmit={onInviteAdultByEmail} style={{ display: "grid", gap: "0.5rem" }}>
+        <input
+          type="email"
+          value={inviteEmail}
+          onChange={(e) => setInviteEmail(e.target.value)}
+          placeholder="partner@example.com"
+          className={styles.monthInput}
+        />
+        <button
+          type="submit"
+          className={`${styles.btn} ${styles.btnPrimary}`}
+          disabled={loading}
+        >
+          招待URLを発行
+        </button>
+      </form>
+      {inviteUrl ? (
+        <div
+          className={styles.settingsPanel}
+          style={{
+            marginTop: "0.6rem",
+            padding: "0.75rem",
+            border: "1px solid var(--border)",
+          }}
+        >
+          <p style={{ margin: "0 0 0.45rem", fontWeight: 600 }}>招待URL（大人向け）</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", alignItems: "center" }}>
+            <a href={inviteUrl} target="_blank" rel="noreferrer" className={styles.btn}>
+              招待URLを開く
+            </a>
+            <button
+              type="button"
+              className={styles.btn}
+              onClick={async () => {
+                await navigator.clipboard.writeText(inviteUrl);
+                setMsg("招待URLをコピーしました。");
+              }}
+            >
+              URLをコピー
+            </button>
+            {inviteTargetEmail ? (
+              <a
+                href={`mailto:${inviteTargetEmail}?subject=${encodeURIComponent("家計簿への招待")}&body=${encodeURIComponent(
+                  `以下のリンクから登録してください:\n${inviteUrl}`,
+                )}`}
+                className={`${styles.btn} ${styles.btnPrimary}`}
+              >
+                メール作成
+              </a>
+            ) : null}
+            <div style={{ padding: 6, borderRadius: 8, background: "#fff", lineHeight: 0 }}>
+              <QRCode value={inviteUrl} size={96} level="M" fgColor="#0f1419" bgColor="#ffffff" />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <h2 className={styles.sectionTitle}>子供を追加</h2>
       <form
         onSubmit={onCreateChild}
@@ -318,40 +351,6 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
         </button>
       </form>
 
-      <h2 className={styles.sectionTitle} style={{ marginTop: "1rem" }}>
-        既存アカウントの紐付け（移行）
-      </h2>
-      <form onSubmit={onSearchExistingChild} style={{ display: "grid", gap: "0.5rem" }}>
-        <input
-          type="email"
-          value={linkEmail}
-          onChange={(e) => setLinkEmail(e.target.value)}
-          placeholder="子供アカウントのメールアドレス"
-          className={styles.monthInput}
-        />
-        <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled={loading}>
-          メールで検索
-        </button>
-      </form>
-      {linkTarget ? (
-        <div className={styles.settingsPanel} style={{ marginTop: "0.6rem" }}>
-          <p style={{ margin: "0 0 0.45rem" }}>
-            対象: {linkTarget.display_name ?? "（表示名なし）"} / {linkTarget.email}
-          </p>
-          <p style={{ margin: "0 0 0.45rem", fontSize: "0.9rem" }}>
-            現在: is_child={linkTarget.is_child ? "true" : "false"}, parent_id=
-            {linkTarget.parent_id ?? "null"}
-          </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginBottom: "0.45rem" }}>
-            <label><input type="radio" name="link-grade-group" checked={linkGradeGroup === "1-2"} onChange={() => setLinkGradeGroup("1-2")} /> 1-2年生</label>
-            <label><input type="radio" name="link-grade-group" checked={linkGradeGroup === "3-4"} onChange={() => setLinkGradeGroup("3-4")} /> 3-4年生</label>
-            <label><input type="radio" name="link-grade-group" checked={linkGradeGroup === "5-6"} onChange={() => setLinkGradeGroup("5-6")} /> 5-6年生</label>
-          </div>
-          <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void onLinkExistingChild()} disabled={loading}>
-            このアカウントを紐付ける
-          </button>
-        </div>
-      ) : null}
     </>
   );
 

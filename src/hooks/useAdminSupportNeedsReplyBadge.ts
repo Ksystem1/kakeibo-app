@@ -3,6 +3,7 @@ import { getAdminSupportChatFamilies, type AdminSupportChatFamilyRow } from "../
 
 /** 管理者が返信すべき状態（最新が利用者側） */
 export function familyNeedsAdminReply(row: AdminSupportChatFamilyRow): boolean {
+  if (typeof row.has_unread === "boolean") return row.has_unread;
   return Boolean(row.last_message && !row.last_message.is_staff);
 }
 

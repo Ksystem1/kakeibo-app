@@ -11,7 +11,8 @@ type Props = {
 function gradeTitle(grade: GradeGroup | null | undefined) {
   if (grade === "1-2") return "1-2年生ゲーム";
   if (grade === "3-4") return "3-4年生ゲーム";
-  return "5-6年生ゲーム";
+  if (grade === "5-6") return "5-6年生ゲーム";
+  return "3-4年生ゲーム";
 }
 
 export function ChildGame({ gradeGroup, ledgerHint }: Props) {
@@ -82,6 +83,32 @@ export function ChildGame({ gradeGroup, ledgerHint }: Props) {
   }
 
   if (gradeGroup === "3-4") {
+    return (
+      <div className={styles.wrap}>
+        <h3 className={styles.title}>{gradeTitle(gradeGroup)}</h3>
+        <p className={styles.hint}>イラストの値段をあてよう</p>
+        <p className={styles.question}>この「{currentQuiz.item}」はいくら？</p>
+        <div className={styles.choiceRow}>
+          {currentQuiz.choices.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={styles.choiceBtn}
+              onClick={() => {
+                if (c === currentQuiz.answer) setQuizScore((s) => s + 1);
+                setQuizIndex((i) => i + 1);
+              }}
+            >
+              {c}円
+            </button>
+          ))}
+        </div>
+        <p className={styles.score}>せいかい: {quizScore} 問</p>
+      </div>
+    );
+  }
+
+  if (gradeGroup !== "5-6") {
     return (
       <div className={styles.wrap}>
         <h3 className={styles.title}>{gradeTitle(gradeGroup)}</h3>

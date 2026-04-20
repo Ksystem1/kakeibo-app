@@ -69,6 +69,7 @@ export function FamilyChatDock({
   const [nameByUserId, setNameByUserId] = useState<Map<number, string>>(() => new Map());
   const [memberUserIds, setMemberUserIds] = useState<number[]>([]);
   const [readStates, setReadStates] = useState<ChatReadState[]>([]);
+  const [isOwnerMember, setIsOwnerMember] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [editBusy, setEditBusy] = useState(false);
@@ -84,10 +85,14 @@ export function FamilyChatDock({
       const res = await getFamilyMembers();
       const m = new Map<number, string>();
       const ids: number[] = [];
+      let owner = false;
       for (const it of res.items ?? []) {
         const id = Number(it.id);
         if (!Number.isFinite(id)) continue;
         ids.push(id);
+        if (userId != null && id === userId && String(it.role ?? "").toLowerCase() === "owner") {
+          owner = true;
+        }
         const label =
           it.display_name != null && String(it.display_name).trim() !== ""
             ? String(it.display_name).trim()
@@ -98,10 +103,12 @@ export function FamilyChatDock({
       }
       setMemberUserIds(ids);
       setNameByUserId(m);
+      setIsOwnerMember(owner);
     } catch {
       /* ignore */
+      setIsOwnerMember(false);
     }
-  }, [token]);
+  }, [token, userId]);
 
   const loadMessages = useCallback(async () => {
     if (!token || familyId == null) return;
@@ -297,6 +304,7 @@ export function FamilyChatDock({
             ) : (
               items.map((m) => {
                 const mine = userId != null && m.sender_user_id === userId;
+                const canManageMessage = mine || isOwnerMember;
                 const readLabel =
                   userId != null
                     ? familyOutgoingReadLabel(m, userId, memberUserIds, readStates)
@@ -310,7 +318,7 @@ export function FamilyChatDock({
                       {readLabel ? (
                         <span className="font-semibold text-emerald-600">{readLabel}</span>
                       ) : null}
-                      {mine ? (
+                      {canManageMessage ? (
                         <span className="flex gap-1">
                           <button
                             type="button"

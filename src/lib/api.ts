@@ -394,8 +394,18 @@ export function normalizeKidTheme(raw: unknown): KidTheme | null {
 }
 
 export function normalizeGradeGroup(raw: unknown): GradeGroup | null {
-  const s = String(raw ?? "").trim();
+  if (raw == null) return null;
+  const s0 =
+    typeof Buffer !== "undefined" &&
+    typeof Buffer.isBuffer === "function" &&
+    Buffer.isBuffer(raw)
+      ? raw.toString("utf8")
+      : String(raw);
+  const s = s0.trim();
   if (s === "1-2" || s === "3-4" || s === "5-6") return s;
+  if (s === "1-2年生") return "1-2";
+  if (s === "3-4年生") return "3-4";
+  if (s === "5-6年生") return "5-6";
   return null;
 }
 
@@ -1260,6 +1270,7 @@ export type AdminSupportChatFamilyRow = {
   family_id: number;
   family_name: string;
   members: AdminSupportChatFamilyMember[];
+  has_unread?: boolean;
   last_message: null | {
     id: number;
     body: string;

@@ -4,9 +4,8 @@ import {
 } from "../context/SettingsContext";
 import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
-import { useSupportChatUnreadBadge } from "../hooks/useSupportChatUnreadBadge";
 import {
   DEFAULT_NAV_SKIN_ID,
   PREMIUM_NAV_SKIN_ID,
@@ -275,16 +274,6 @@ export function SettingsPage() {
     return `当月末解約済です。但し、プレミアムプランは ${endLabel} まで利用可能です`;
   }, [effectiveUser]);
 
-  const supportFamilyIdForUnread =
-    effectiveUser?.familyId != null && Number.isFinite(Number(effectiveUser.familyId))
-      ? Number(effectiveUser.familyId)
-      : null;
-  const { unread: supportChatUnreadSettings } = useSupportChatUnreadBadge({
-    token,
-    familyId: supportFamilyIdForUnread,
-    enabled: Boolean(token && canSendAuthenticatedRequest(token)),
-  });
-
   const navPreviewOrder: Array<keyof NavIconPaths> = [
     "dashboard",
     "kakeibo",
@@ -340,37 +329,6 @@ export function SettingsPage() {
           子供プロフィールを親アカウント内に追加できます。メール招待は使いません。
         </p>
         <MembersPage embedded />
-      </div>
-      <div className={styles.settingsPanel} style={{ marginTop: "0.75rem", maxWidth: 980 }}>
-        <h2 className={styles.sectionTitle}>運営サポート</h2>
-        <p className={styles.reclassifyHint}>
-          ご不明点や不具合は家族単位のチャットでお問い合わせいただけます。
-        </p>
-        <span style={{ position: "relative", display: "inline-block" }}>
-          <Link
-            to="/support"
-            className={`${styles.btn} ${styles.btnPrimary}`}
-            style={{ display: "inline-block", textDecoration: "none", textAlign: "center" }}
-          >
-            サポートチャットを開く
-          </Link>
-          {supportChatUnreadSettings ? (
-            <span
-              title="運営からの新着メッセージがあります"
-              aria-label="未読あり"
-              style={{
-                position: "absolute",
-                top: -3,
-                right: -3,
-                width: 11,
-                height: 11,
-                borderRadius: "50%",
-                background: "#e11d48",
-                boxShadow: "0 0 0 2px var(--bg-card, #fff)",
-              }}
-            />
-          ) : null}
-        </span>
       </div>
       <div className={styles.settingsPanel} style={{ maxWidth: 820 }}>
         <p className={styles.sub} style={{ margin: "0 0 0.5rem" }}>
@@ -819,7 +777,11 @@ export function SettingsPage() {
       >
         <h2 className={styles.sectionTitle}>固定費設定（全月共通）</h2>
         <p className={styles.reclassifyHint}>
-          毎月おおよそ同じ金額になる項目は、ここに入力してください。家計簿の取引として毎月入力する運用は想定していません（変動する支出だけを取引に記録すると集計が一致しやすくなります）。
+          家賃・保険・サブスクなど、毎月ほぼ同じ金額の支出をここに登録します。
+          <br />
+          ここで登録した固定費は、毎月の集計に自動で反映されます。
+          <br />
+          そのため、固定費を取引一覧に毎月くり返し入力する必要はありません（変動する支出だけを記録すると管理しやすくなります）。
         </p>
         {!getApiBaseUrl() || !canSendAuthenticatedRequest(token) ? (
           <p className={styles.reclassifyHint}>

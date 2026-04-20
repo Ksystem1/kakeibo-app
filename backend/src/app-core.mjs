@@ -1300,6 +1300,20 @@ async function resolveUserFamilyRoleUpper(pool, userId) {
   }
 }
 
+async function isFamilyOwnerMember(pool, userId, familyId) {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT role FROM family_members WHERE user_id = ? AND family_id = ? LIMIT 1`,
+      [userId, familyId],
+    );
+    return String(row?.role ?? "")
+      .trim()
+      .toLowerCase() === "owner";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 保護者が ?ledger_view=kid_watch で子の家族取引のみ参照するモード（scope=family と併用）。
  * KID ログイン時はパラメータが付いていても無視（403 にしない）。
@@ -3211,13 +3225,17 @@ export async function handleApiRequest(req, options = {}) {
         if (String(row.chat_scope) !== "family") {
           return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
         }
-        if (Number(row.sender_user_id) !== Number(userId)) {
-          return json(403, { error: "自分のメッセージのみ編集できます" }, hdrs, skipCors);
-        }
         const fid = Number(row.family_id);
         const member = await canAccessFamilyChat(pool, userId, fid);
         if (!member) {
           return json(403, { error: "この家族のチャットを編集できません" }, hdrs, skipCors);
+        }
+        const mine = Number(row.sender_user_id) === Number(userId);
+        if (!mine) {
+          const owner = await isFamilyOwnerMember(pool, userId, fid);
+          if (!owner) {
+            return json(403, { error: "自分のメッセージのみ編集できます" }, hdrs, skipCors);
+          }
         }
         const [upd] = await pool.query(
           `UPDATE chat_messages SET body = ?, edited_at = NOW() WHERE id = ? AND chat_scope = 'family' AND deleted_at IS NULL`,
@@ -3257,13 +3275,17 @@ export async function handleApiRequest(req, options = {}) {
         if (String(row.chat_scope) !== "family") {
           return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
         }
-        if (Number(row.sender_user_id) !== Number(userId)) {
-          return json(403, { error: "自分のメッセージのみ削除できます" }, hdrs, skipCors);
-        }
         const fid = Number(row.family_id);
         const member = await canAccessFamilyChat(pool, userId, fid);
         if (!member) {
           return json(403, { error: "この家族のチャットを削除できません" }, hdrs, skipCors);
+        }
+        const mine = Number(row.sender_user_id) === Number(userId);
+        if (!mine) {
+          const owner = await isFamilyOwnerMember(pool, userId, fid);
+          if (!owner) {
+            return json(403, { error: "自分のメッセージのみ削除できます" }, hdrs, skipCors);
+          }
         }
         const [upd] = await pool.query(
           `UPDATE chat_messages SET deleted_at = NOW() WHERE id = ? AND chat_scope = 'family' AND deleted_at IS NULL`,
@@ -3293,7 +3315,8 @@ export async function handleApiRequest(req, options = {}) {
                   lm.created_at AS last_message_at,
                   lm.sender_user_id AS last_sender_user_id,
                   lm.is_staff AS last_is_staff,
-                  lm.is_important AS last_is_important
+                  lm.is_important AS last_is_important,
+                  rs.last_read_message_id AS admin_last_read_message_id
            FROM families f
            LEFT JOIN (
              SELECT m.*
@@ -3305,7 +3328,12 @@ export async function handleApiRequest(req, options = {}) {
                GROUP BY family_id
              ) x ON m.family_id = x.family_id AND m.id = x.max_id
            ) lm ON lm.family_id = f.id
+           LEFT JOIN chat_room_read_state rs
+             ON rs.family_id = f.id
+            AND rs.user_id = ?
+            AND rs.chat_scope = 'support'
            ORDER BY f.id DESC`,
+          [userId],
         );
         const familyIds = rows
           .map((r) => Number(r.family_id))
@@ -3353,6 +3381,10 @@ export async function handleApiRequest(req, options = {}) {
                     is_staff: Number(r.last_is_staff) === 1,
                     is_important: Number(r.last_is_important) === 1,
                   },
+            has_unread:
+              r.last_message_id != null &&
+              Number(r.last_is_staff) === 0 &&
+              Number(r.last_message_id) > Number(r.admin_last_read_message_id ?? 0),
           };
         });
         return json(200, { items }, hdrs, skipCors);
