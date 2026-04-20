@@ -126,6 +126,59 @@ function normalizeGradeGroup(raw) {
   return null;
 }
 
+async function queryChildProfilesByParent(pool, parentUserId) {
+  const queries = [
+    `SELECT id, display_name, grade_group, kid_theme
+     FROM users
+     WHERE parent_id = ? AND COALESCE(is_child, 0) = 1
+     ORDER BY id ASC`,
+    `SELECT id, display_name, NULL AS grade_group, kid_theme
+     FROM users
+     WHERE parent_id = ?
+       AND UPPER(TRIM(COALESCE(family_role, 'MEMBER'))) = 'KID'
+     ORDER BY id ASC`,
+    `SELECT id, display_name, NULL AS grade_group, NULL AS kid_theme
+     FROM users
+     WHERE parent_id = ?
+     ORDER BY id ASC`,
+  ];
+  let lastErr;
+  for (const sql of queries) {
+    try {
+      const [rows] = await pool.query(sql, [parentUserId]);
+      return rows;
+    } catch (e) {
+      lastErr = e;
+      if (!isErBadFieldError(e)) throw e;
+    }
+  }
+  throw lastErr;
+}
+
+async function queryUserByEmailForChildSearch(pool, emailLower) {
+  const queries = [
+    `SELECT id, email, display_name, COALESCE(is_child, 0) AS is_child, parent_id, grade_group
+     FROM users
+     WHERE LOWER(email) = ?
+     LIMIT 1`,
+    `SELECT id, email, display_name, 0 AS is_child, parent_id, NULL AS grade_group
+     FROM users
+     WHERE LOWER(email) = ?
+     LIMIT 1`,
+  ];
+  let lastErr;
+  for (const sql of queries) {
+    try {
+      const [rows] = await pool.query(sql, [emailLower]);
+      return rows;
+    } catch (e) {
+      lastErr = e;
+      if (!isErBadFieldError(e)) throw e;
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * GET /auth/me 用: users.family_role を直接取得する。
  * queryMeUserRow がフォールバッククエリに落ちたとき SELECT に family_role が無く MEMBER 扱いになるのを防ぐ。
@@ -854,13 +907,7 @@ export async function tryAuthRoutes(req, ctx) {
       if (viewerRole === "KID") {
         return json(403, { error: "この操作はできません" }, hdrs, skipCors);
       }
-      const [rows] = await pool.query(
-        `SELECT id, display_name, grade_group, kid_theme
-         FROM users
-         WHERE parent_id = ? AND COALESCE(is_child, 0) = 1
-         ORDER BY id ASC`,
-        [uid],
-      );
+      const rows = await queryChildProfilesByParent(pool, uid);
       return json(200, { items: rows }, hdrs, skipCors);
     }
 
@@ -889,11 +936,28 @@ export async function tryAuthRoutes(req, ctx) {
       const conn = await pool.getConnection();
       try {
         await conn.beginTransaction();
-        const [ins] = await conn.query(
-          `INSERT INTO users (email, login_name, password_hash, display_name, default_family_id, family_role, is_child, parent_id, grade_group, is_admin)
-           VALUES (NULL, NULL, NULL, ?, ?, 'KID', 1, ?, ?, 0)`,
-          [displayNameRaw, parentFamilyId, uid, gradeGroup],
-        );
+        let ins;
+        try {
+          [ins] = await conn.query(
+            `INSERT INTO users (email, login_name, password_hash, display_name, default_family_id, family_role, is_child, parent_id, grade_group, is_admin)
+             VALUES (NULL, NULL, NULL, ?, ?, 'KID', 1, ?, ?, 0)`,
+            [displayNameRaw, parentFamilyId, uid, gradeGroup],
+          );
+        } catch (e) {
+          if (isErBadFieldError(e)) {
+            await conn.rollback();
+            return json(
+              400,
+              {
+                error:
+                  "子供プロフィール作成に必要な users.is_child / users.parent_id / users.grade_group 列が不足しています。db/migration_v23_child_profiles.sql を適用してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          throw e;
+        }
         const childUserId = Number(ins.insertId);
         await conn.query(
           `INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, 'member')`,
@@ -935,13 +999,7 @@ export async function tryAuthRoutes(req, ctx) {
       if (!qEmail || !qEmail.includes("@")) {
         return json(400, { error: "検索するメールアドレスが不正です" }, hdrs, skipCors);
       }
-      const [rows] = await pool.query(
-        `SELECT id, email, display_name, COALESCE(is_child, 0) AS is_child, parent_id, grade_group
-         FROM users
-         WHERE LOWER(email) = ?
-         LIMIT 1`,
-        [qEmail],
-      );
+      const rows = await queryUserByEmailForChildSearch(pool, qEmail);
       if (!Array.isArray(rows) || rows.length === 0) {
         return json(200, { found: false }, hdrs, skipCors);
       }
@@ -1012,12 +1070,28 @@ export async function tryAuthRoutes(req, ctx) {
           return json(400, { error: "自分自身は紐付けできません" }, hdrs, skipCors);
         }
 
-        await conn.query(
-          `UPDATE users
-           SET parent_id = ?, is_child = 1, family_role = 'KID', default_family_id = ?, grade_group = COALESCE(?, grade_group), updated_at = NOW()
-           WHERE id = ?`,
-          [uid, parentFamilyId, gradeGroup, targetUserId],
-        );
+        try {
+          await conn.query(
+            `UPDATE users
+             SET parent_id = ?, is_child = 1, family_role = 'KID', default_family_id = ?, grade_group = COALESCE(?, grade_group), updated_at = NOW()
+             WHERE id = ?`,
+            [uid, parentFamilyId, gradeGroup, targetUserId],
+          );
+        } catch (e) {
+          if (isErBadFieldError(e)) {
+            await conn.rollback();
+            return json(
+              400,
+              {
+                error:
+                  "子供プロフィール移行に必要な users.is_child / users.parent_id / users.grade_group 列が不足しています。db/migration_v23_child_profiles.sql を適用してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          throw e;
+        }
 
         await conn.query(`DELETE FROM family_members WHERE user_id = ?`, [targetUserId]);
         await conn.query(
