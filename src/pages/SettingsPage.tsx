@@ -63,6 +63,13 @@ function itemsForFixedCostEditor(
   return [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }];
 }
 
+function formatJaDate(isoLike: string | null | undefined): string | null {
+  if (!isoLike) return null;
+  const d = new Date(isoLike);
+  if (!Number.isFinite(d.getTime())) return null;
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
 export function SettingsPage() {
   const location = useLocation();
   const pwaTarget = usePwaTargetDevice();
@@ -261,6 +268,12 @@ export function SettingsPage() {
       effectiveUser ? formatSettingsSubscriptionSummary(effectiveUser).trim() : "",
     [effectiveUser],
   );
+  const cancelAtPeriodEndNote = useMemo(() => {
+    if (!effectiveUser?.subscriptionCancelAtPeriodEnd) return null;
+    const endLabel = formatJaDate(effectiveUser.subscriptionPeriodEndAt ?? null);
+    if (!endLabel) return null;
+    return `当月末解約済です。但し、プレミアムプランは ${endLabel} まで利用可能です`;
+  }, [effectiveUser]);
 
   const supportFamilyIdForUnread =
     effectiveUser?.familyId != null && Number.isFinite(Number(effectiveUser.familyId))
@@ -536,31 +549,38 @@ export function SettingsPage() {
               {isSubscriptionServiceSubscribedClient(effectiveUser) &&
               getApiBaseUrl() &&
               canSendAuthenticatedRequest(token) ? (
-                <button
-                  type="button"
-                  className={styles.btn}
-                  disabled={portalBusy}
-                  onClick={async () => {
-                    setPortalMessage(null);
-                    setPortalBusy(true);
-                    try {
-                      const base =
-                        typeof window !== "undefined"
-                          ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "") || ""}`
-                          : "";
-                      const { url } = await postBillingPortalSession({
-                        returnUrl: `${base}/settings?portal=return`,
-                      });
-                      window.location.assign(url);
-                    } catch (e) {
-                      setPortalMessage(e instanceof Error ? e.message : String(e));
-                    } finally {
-                      setPortalBusy(false);
-                    }
-                  }}
-                >
-                  {portalBusy ? "準備中…" : "解約（プラン管理）"}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className={styles.btn}
+                    disabled={portalBusy}
+                    onClick={async () => {
+                      setPortalMessage(null);
+                      setPortalBusy(true);
+                      try {
+                        const base =
+                          typeof window !== "undefined"
+                            ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "") || ""}`
+                            : "";
+                        const { url } = await postBillingPortalSession({
+                          returnUrl: `${base}/settings?portal=return`,
+                        });
+                        window.location.assign(url);
+                      } catch (e) {
+                        setPortalMessage(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setPortalBusy(false);
+                      }
+                    }}
+                  >
+                    {portalBusy ? "準備中…" : "解約（プラン管理）"}
+                  </button>
+                  {cancelAtPeriodEndNote ? (
+                    <span style={{ color: "#8b1f1f", fontSize: "0.82rem", fontWeight: 600 }}>
+                      {cancelAtPeriodEndNote}
+                    </span>
+                  ) : null}
+                </>
               ) : null}
             </div>
             {premiumSubscriptionSummaryLine ? (
