@@ -69,3 +69,124 @@
   margin: 0.6rem 0 0;
   font-weight: 700;
 }
+
+.ruinsWrap {
+  margin-top: 1rem;
+  border: 2px solid #7c5b3a;
+  border-radius: 14px;
+  padding: 0.9rem;
+  background: linear-gradient(180deg, #f5ead8 0%, #e7d4b4 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.ruinsWall {
+  margin-top: 0.4rem;
+  border: 1px solid #9e7a53;
+  border-radius: 10px;
+  padding: 0.7rem;
+  background: linear-gradient(180deg, #d9bd92 0%, #c8a173 100%);
+  color: #3c2b1b;
+}
+
+.ruinsStory {
+  margin: 0 0 0.45rem;
+  font-size: 0.93rem;
+  font-weight: 600;
+}
+
+.wallHint {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.wallHintNumbers {
+  margin-top: 0.35rem;
+  font-size: 0.84rem;
+  color: #5b4631;
+}
+
+.doorArea {
+  margin-top: 0.75rem;
+  border: 2px solid #4a3a29;
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: linear-gradient(180deg, #8f6f4e 0%, #6d5238 100%);
+}
+
+.doorOpen {
+  animation: doorOpen 600ms ease-out forwards;
+}
+
+.doorTrap {
+  animation: trapShake 280ms ease-in-out 2;
+}
+
+.dialRow {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  margin-bottom: 0.6rem;
+}
+
+.dialLabel {
+  display: grid;
+  gap: 0.2rem;
+  color: #f5eee5;
+  font-weight: 700;
+  text-align: center;
+}
+
+.dialInput {
+  width: 64px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid #d7c4aa;
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.successText {
+  margin: 0.55rem 0 0;
+  color: #166534;
+  font-weight: 800;
+}
+
+.failText {
+  margin: 0.55rem 0 0;
+  color: #991b1b;
+  font-weight: 800;
+}
+
+@keyframes trapShake {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  50% {
+    transform: translateX(6px);
+  }
+  75% {
+    transform: translateX(-4px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes doorOpen {
+  0% {
+    filter: brightness(1);
+    transform: scale(1);
+  }
+  60% {
+    filter: brightness(1.2);
+    transform: scale(1.01);
+  }
+  100% {
+    filter: brightness(1.35);
+    transform: scale(1.015);
+  }
+}

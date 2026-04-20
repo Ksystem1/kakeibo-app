@@ -13,6 +13,7 @@ import {
   updateTransaction,
   type KidTheme,
 } from "../lib/api";
+import type { PuzzleHint } from "../lib/generateMathPuzzle";
 import { ChildGame } from "./ChildGame";
 import styles from "./SimpleKidDashboard.module.css";
 
@@ -96,6 +97,7 @@ export function SimpleKidDashboard() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [showGameReward, setShowGameReward] = useState(false);
+  const [latestGameHint, setLatestGameHint] = useState<PuzzleHint | null>(null);
 
   const { from, to } = useMemo(() => ymToRange(ym), [ym]);
 
@@ -152,6 +154,21 @@ export function SimpleKidDashboard() {
     setFormKind("expense");
   }, [ym]);
 
+  useEffect(() => {
+    if (latestGameHint) return;
+    const latestExpense = [...transactions]
+      .filter((t) => String(t.kind).toLowerCase() === "expense")
+      .sort(
+        (a, b) =>
+          String(b.transaction_date).localeCompare(String(a.transaction_date)) || b.id - a.id,
+      )[0];
+    if (!latestExpense) return;
+    setLatestGameHint({
+      amount: Math.max(0, Math.round(numAmount(latestExpense.amount))),
+      memo: latestExpense.memo,
+    });
+  }, [transactions, latestGameHint]);
+
   const incomeTotal = summary ? numAmount(summary.incomeTotal as string | number) : 0;
   const expenseTotal = summary ? numAmount(summary.expenseTotal as string | number) : 0;
   const balance =
@@ -202,6 +219,10 @@ export function SimpleKidDashboard() {
     }
     setSaving(true);
     setError(null);
+    const newHint: PuzzleHint = {
+      amount,
+      memo: formWhat.trim() || null,
+    };
     try {
       if (editingId != null) {
         await updateTransaction(editingId, {
@@ -225,6 +246,7 @@ export function SimpleKidDashboard() {
         setFormWhat("");
       }
       setShowGameReward(true);
+      setLatestGameHint(newHint);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -356,7 +378,7 @@ export function SimpleKidDashboard() {
         </div>
       </form>
       {showGameReward ? (
-        <ChildGame gradeGroup={user?.gradeGroup} />
+        <ChildGame gradeGroup={user?.gradeGroup} ledgerHint={latestGameHint} />
       ) : (
         <div style={{ marginTop: "0.85rem" }}>
           <button
