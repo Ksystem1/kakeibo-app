@@ -141,17 +141,29 @@ async function queryChildProfilesByParent(pool, parentUserId) {
      FROM users
      WHERE parent_id = ?
      ORDER BY id ASC`,
+    `SELECT u.id, u.display_name, NULL AS grade_group, NULL AS kid_theme
+     FROM family_members fm_self
+     INNER JOIN family_members fm_kid ON fm_kid.family_id = fm_self.family_id
+     INNER JOIN users u ON u.id = fm_kid.user_id
+     WHERE fm_self.user_id = ?
+       AND fm_kid.user_id <> ?
+       AND UPPER(TRIM(COALESCE(u.family_role, 'MEMBER'))) = 'KID'
+     GROUP BY u.id, u.display_name
+     ORDER BY u.id ASC`,
   ];
   let lastErr;
   for (const sql of queries) {
     try {
-      const [rows] = await pool.query(sql, [parentUserId]);
+      const usesSelfAndKid = sql.includes("fm_kid.user_id <> ?");
+      const params = usesSelfAndKid ? [parentUserId, parentUserId] : [parentUserId];
+      const [rows] = await pool.query(sql, params);
       return rows;
     } catch (e) {
       lastErr = e;
       if (!isErBadFieldError(e)) throw e;
     }
   }
+  if (isErBadFieldError(lastErr)) return [];
   throw lastErr;
 }
 
