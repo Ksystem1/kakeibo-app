@@ -1,5 +1,12 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { createChildProfile, getChildProfiles, getFamilyMembers, type GradeGroup } from "../lib/api";
+import {
+  createChildProfile,
+  getChildProfiles,
+  getFamilyMembers,
+  linkExistingChildProfile,
+  searchExistingChildByEmail,
+  type GradeGroup,
+} from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
 
 export function MembersPage({ embedded = false }: { embedded?: boolean }) {
@@ -23,6 +30,16 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [linkEmail, setLinkEmail] = useState("");
+  const [linkGradeGroup, setLinkGradeGroup] = useState<GradeGroup>("5-6");
+  const [linkTarget, setLinkTarget] = useState<{
+    id: number;
+    email: string;
+    display_name: string | null;
+    is_child: boolean;
+    parent_id: number | null;
+    grade_group: GradeGroup | null;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -52,6 +69,48 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
       });
       setMsg("子供プロフィールを追加しました。");
       setChildName("");
+      await load();
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onSearchExistingChild(e: FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    setErr(null);
+    setLoading(true);
+    setLinkTarget(null);
+    try {
+      const r = await searchExistingChildByEmail(linkEmail);
+      if (!r.found || !r.user) {
+        setMsg("該当ユーザーは見つかりませんでした。");
+        return;
+      }
+      setLinkTarget(r.user);
+      setMsg("既存アカウントが見つかりました。内容を確認して紐付けしてください。");
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onLinkExistingChild() {
+    if (!linkTarget) return;
+    setMsg(null);
+    setErr(null);
+    setLoading(true);
+    try {
+      await linkExistingChildProfile({
+        email: linkTarget.email,
+        grade_group: linkGradeGroup,
+      });
+      setMsg("既存アカウントを子供プロフィールとして紐付けました。過去履歴はそのまま引き継がれます。");
+      setLinkTarget(null);
+      setLinkEmail("");
       await load();
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
@@ -142,6 +201,41 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
           子供を追加
         </button>
       </form>
+
+      <h2 className={styles.sectionTitle} style={{ marginTop: "1rem" }}>
+        既存アカウントの紐付け（移行）
+      </h2>
+      <form onSubmit={onSearchExistingChild} style={{ display: "grid", gap: "0.5rem" }}>
+        <input
+          type="email"
+          value={linkEmail}
+          onChange={(e) => setLinkEmail(e.target.value)}
+          placeholder="子供アカウントのメールアドレス"
+          className={styles.monthInput}
+        />
+        <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled={loading}>
+          メールで検索
+        </button>
+      </form>
+      {linkTarget ? (
+        <div className={styles.settingsPanel} style={{ marginTop: "0.6rem" }}>
+          <p style={{ margin: "0 0 0.45rem" }}>
+            対象: {linkTarget.display_name ?? "（表示名なし）"} / {linkTarget.email}
+          </p>
+          <p style={{ margin: "0 0 0.45rem", fontSize: "0.9rem" }}>
+            現在: is_child={linkTarget.is_child ? "true" : "false"}, parent_id=
+            {linkTarget.parent_id ?? "null"}
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginBottom: "0.45rem" }}>
+            <label><input type="radio" name="link-grade-group" checked={linkGradeGroup === "1-2"} onChange={() => setLinkGradeGroup("1-2")} /> 1-2年生</label>
+            <label><input type="radio" name="link-grade-group" checked={linkGradeGroup === "3-4"} onChange={() => setLinkGradeGroup("3-4")} /> 3-4年生</label>
+            <label><input type="radio" name="link-grade-group" checked={linkGradeGroup === "5-6"} onChange={() => setLinkGradeGroup("5-6")} /> 5-6年生</label>
+          </div>
+          <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void onLinkExistingChild()} disabled={loading}>
+            このアカウントを紐付ける
+          </button>
+        </div>
+      ) : null}
     </>
   );
 

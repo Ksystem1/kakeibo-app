@@ -937,6 +937,44 @@ export async function createChildProfile(body: {
   }>(res);
 }
 
+export async function searchExistingChildByEmail(email: string) {
+  const q = new URLSearchParams({ email: email.trim().toLowerCase() });
+  const res = await apiFetch(`${BASE}/families/children/search?${q.toString()}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    found: boolean;
+    user?: {
+      id: number;
+      email: string;
+      display_name: string | null;
+      is_child: boolean;
+      parent_id: number | null;
+      grade_group: GradeGroup | null;
+    };
+  }>(res);
+}
+
+export async function linkExistingChildProfile(body: {
+  email: string;
+  grade_group?: GradeGroup;
+}) {
+  const res = await apiFetch(`${BASE}/families/children/link-existing`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{
+    ok: boolean;
+    linked_user_id: number;
+    email: string;
+    parent_id: number;
+    family_id: number;
+    grade_group: GradeGroup | null;
+  }>(res);
+}
+
 export async function createChildSession(childId: number) {
   const res = await apiFetch(`${BASE}/auth/child-session`, {
     method: "POST",

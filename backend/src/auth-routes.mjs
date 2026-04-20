@@ -33,6 +33,8 @@ const AUTH_ROUTE_KEYS = new Set([
   "POST /families/invite",
   "GET /families/children",
   "POST /families/children",
+  "GET /families/children/search",
+  "POST /families/children/link-existing",
   "POST /auth/child-session",
 ]);
 
@@ -906,6 +908,139 @@ export async function tryAuthRoutes(req, ctx) {
             display_name: displayNameRaw,
             grade_group: gradeGroup,
             parent_id: uid,
+          },
+          hdrs,
+          skipCors,
+        );
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      } finally {
+        conn.release();
+      }
+    }
+
+    if (key === "GET /families/children/search") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const viewerRole = await fetchUserFamilyRoleUpperForMe(pool, uid);
+      if (viewerRole === "KID") {
+        return json(403, { error: "この操作はできません" }, hdrs, skipCors);
+      }
+      const qEmail = String(req.queryStringParameters?.email ?? "")
+        .trim()
+        .toLowerCase();
+      if (!qEmail || !qEmail.includes("@")) {
+        return json(400, { error: "検索するメールアドレスが不正です" }, hdrs, skipCors);
+      }
+      const [rows] = await pool.query(
+        `SELECT id, email, display_name, COALESCE(is_child, 0) AS is_child, parent_id, grade_group
+         FROM users
+         WHERE LOWER(email) = ?
+         LIMIT 1`,
+        [qEmail],
+      );
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return json(200, { found: false }, hdrs, skipCors);
+      }
+      const r = rows[0];
+      return json(
+        200,
+        {
+          found: true,
+          user: {
+            id: Number(r.id),
+            email: String(r.email ?? ""),
+            display_name: r.display_name == null ? null : String(r.display_name),
+            is_child: Number(r.is_child) === 1,
+            parent_id:
+              r.parent_id != null && Number.isFinite(Number(r.parent_id))
+                ? Number(r.parent_id)
+                : null,
+            grade_group: normalizeGradeGroup(r.grade_group),
+          },
+        },
+        hdrs,
+        skipCors,
+      );
+    }
+
+    if (key === "POST /families/children/link-existing") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const viewerRole = await fetchUserFamilyRoleUpperForMe(pool, uid);
+      if (viewerRole === "KID") {
+        return json(403, { error: "この操作はできません" }, hdrs, skipCors);
+      }
+      const b = JSON.parse(req.body || "{}");
+      const targetEmail = String(b.email ?? "").trim().toLowerCase();
+      const gradeGroup = normalizeGradeGroup(b.grade_group);
+      if (!targetEmail || !targetEmail.includes("@")) {
+        return json(400, { error: "紐付けるメールアドレスが不正です" }, hdrs, skipCors);
+      }
+      const parentFamilyId = await getDefaultFamilyId(pool, uid);
+      if (!parentFamilyId) {
+        return json(400, { error: "親ユーザーの家族設定が見つかりません" }, hdrs, skipCors);
+      }
+
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [targetRows] = await conn.query(
+          `SELECT id, email, default_family_id
+           FROM users
+           WHERE LOWER(email) = ?
+           LIMIT 1`,
+          [targetEmail],
+        );
+        if (!Array.isArray(targetRows) || targetRows.length === 0) {
+          await conn.rollback();
+          return json(404, { error: "該当ユーザーが見つかりません" }, hdrs, skipCors);
+        }
+        const target = targetRows[0];
+        const targetUserId = Number(target.id);
+        if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
+          await conn.rollback();
+          return json(400, { error: "対象ユーザーが不正です" }, hdrs, skipCors);
+        }
+        if (targetUserId === uid) {
+          await conn.rollback();
+          return json(400, { error: "自分自身は紐付けできません" }, hdrs, skipCors);
+        }
+
+        await conn.query(
+          `UPDATE users
+           SET parent_id = ?, is_child = 1, family_role = 'KID', default_family_id = ?, grade_group = COALESCE(?, grade_group), updated_at = NOW()
+           WHERE id = ?`,
+          [uid, parentFamilyId, gradeGroup, targetUserId],
+        );
+
+        await conn.query(`DELETE FROM family_members WHERE user_id = ?`, [targetUserId]);
+        await conn.query(
+          `INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, 'member')`,
+          [parentFamilyId, targetUserId],
+        );
+
+        // 既存の取引履歴は user_id を維持したまま family_id を親の家族に寄せる。
+        await conn.query(`UPDATE transactions SET family_id = ? WHERE user_id = ?`, [
+          parentFamilyId,
+          targetUserId,
+        ]);
+
+        await conn.commit();
+        return json(
+          200,
+          {
+            ok: true,
+            linked_user_id: targetUserId,
+            email: String(target.email ?? targetEmail),
+            parent_id: uid,
+            family_id: parentFamilyId,
+            grade_group: gradeGroup,
           },
           hdrs,
           skipCors,
