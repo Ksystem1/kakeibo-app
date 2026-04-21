@@ -73,12 +73,6 @@ export function SettingsPage() {
   const location = useLocation();
   const pwaTarget = usePwaTargetDevice();
   const [pwaBannerHidden, setPwaBannerHidden] = useState(isPwaInstallBannerHidden);
-  const settingsBookmarkUrl = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    const base = import.meta.env.BASE_URL.replace(/\/$/, "") || "";
-    return `${window.location.origin}${base}/settings`;
-  }, []);
-
   useEffect(() => subscribePwaInstallPrefs(() => setPwaBannerHidden(isPwaInstallBannerHidden())), []);
 
   useEffect(() => {
@@ -727,23 +721,20 @@ export function SettingsPage() {
           style={{ marginTop: "1.5rem", maxWidth: 720 }}
         >
           <h2 className={styles.sectionTitle}>ホーム画面に追加（アプリのように使う）</h2>
-          <p className={styles.reclassifyHint}>
-            スマホ・タブレットでは、ブラウザを開かずに起動できるようにできます。下のリンクをブックマークしたり、ホームに追加した場合は、画面下の案内は表示しなくて構いません。
-          </p>
-          <ul className={styles.reclassifyHint} style={{ marginTop: "0.35rem", paddingLeft: "1.1rem" }}>
-            <li>
-              <strong>Android（Chrome）</strong>: メニュー（⋮）の「アプリをインストール」または「ホーム画面に追加」、または画面下の「ホームに追加」から追加できます。
-            </li>
-            <li>
-              <strong>iPhone / iPad（Safari）</strong>: 共有ボタンから「ホーム画面に追加」を選びます。
-            </li>
-          </ul>
-          <p className={styles.reclassifyHint} style={{ marginTop: "0.5rem" }}>
-            この設定ページへのリンク:{" "}
-            <a href={settingsBookmarkUrl} style={{ wordBreak: "break-all" }}>
-              {settingsBookmarkUrl || "（読み込み中）"}
-            </a>
-          </p>
+          <img
+            src="/pwa-install-guide.png"
+            alt="ホーム画面への追加手順"
+            loading="lazy"
+            style={{
+              width: "100%",
+              maxWidth: 620,
+              borderRadius: 14,
+              border: "1px solid var(--border)",
+              background: "#fff",
+              display: "block",
+              margin: "0.25rem auto 0.35rem",
+            }}
+          />
           <div className={styles.modeRow} style={{ marginTop: "0.65rem", flexWrap: "wrap" }}>
             {pwaBannerHidden ? (
               <button

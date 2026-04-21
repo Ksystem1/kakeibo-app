@@ -157,8 +157,8 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
       {msg ? <p style={{ color: "var(--accent)" }}>{msg}</p> : null}
 
       <h2 className={styles.sectionTitle}>メンバー一覧</h2>
-      <div className={styles.tableWrap}>
-        <table className={styles.table}>
+      <div className={`${styles.tableWrap} ${styles.membersTableWrap}`}>
+        <table className={`${styles.table} ${styles.membersTable}`}>
           <thead>
             <tr>
               <th>メール</th>

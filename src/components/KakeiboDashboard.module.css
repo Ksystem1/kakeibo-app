@@ -463,6 +463,23 @@
   color: var(--text);
 }
 
+.membersTableWrap {
+  overflow-x: auto;
+}
+
+.membersTable {
+  min-width: 520px;
+  table-layout: auto;
+}
+
+.membersTable th,
+.membersTable td {
+  white-space: nowrap;
+  line-height: 1.45;
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+
 .txDateCell {
   font-variant-numeric: tabular-nums;
 }
@@ -577,6 +594,23 @@
   .tableWrap {
     overflow-x: hidden;
     border-radius: 8px;
+  }
+
+  .membersTableWrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .membersTable {
+    min-width: 500px;
+  }
+
+  .membersTable th,
+  .membersTable td {
+    white-space: nowrap;
+    line-height: 1.45;
+    padding-top: 0.62rem;
+    padding-bottom: 0.62rem;
   }
 
   .table.txTable {
