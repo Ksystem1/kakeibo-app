@@ -647,6 +647,34 @@ function normalizeReceiptAiPayload(data) {
   return { vendorName, date, totalAmount, categoryName, reason };
 }
 
+function normalizeHybridReceiptPayload(data) {
+  if (!data || typeof data !== "object") return null;
+  const storeRaw = data.storeName ?? data.vendorName ?? data.store ?? null;
+  const storeName =
+    storeRaw == null || String(storeRaw).trim() === ""
+      ? null
+      : String(storeRaw).trim().slice(0, 120);
+  const dateRaw = data.date ?? null;
+  const date =
+    dateRaw != null && /^\d{4}-\d{2}-\d{2}$/.test(String(dateRaw).trim())
+      ? String(dateRaw).trim()
+      : null;
+  const totalRaw = Number(data.totalAmount ?? data.total ?? NaN);
+  const totalAmount = Number.isFinite(totalRaw) && totalRaw > 0 ? Math.round(totalRaw) : null;
+  const srcItems = Array.isArray(data.items) ? data.items : [];
+  const items = srcItems
+    .map((x) => {
+      const name = String(x?.name ?? x?.itemName ?? "").trim();
+      const unitRaw = Number(x?.unitPrice ?? x?.price ?? x?.amount ?? NaN);
+      const unitPrice = Number.isFinite(unitRaw) && unitRaw >= 0 ? Math.round(unitRaw) : null;
+      if (!name && unitPrice == null) return null;
+      return { name: name || "（品目）", unitPrice };
+    })
+    .filter(Boolean)
+    .slice(0, 120);
+  return { storeName, date, totalAmount, items };
+}
+
 /**
  * @param {object} opts
  * @param {boolean} opts.subscriptionActive
@@ -821,4 +849,39 @@ export async function askBedrockReceiptAssistant(input = {}) {
     return { ok: false, code: "InvalidModelJson", message: "Receipt AI JSON parse failed" };
   }
   return { ok: true, data, receiptAiSource, receiptAiTier };
+}
+
+/**
+ * Textract AnalyzeExpense の抽出結果を Claude に渡し、構造化 JSON（店名/日付/合計/品目）へ整形する。
+ * @param {object} input
+ * @param {Record<string, unknown>} [input.textract]
+ */
+export async function askBedrockHybridReceiptFromTextract(input = {}) {
+  const textract = input?.textract && typeof input.textract === "object" ? input.textract : {};
+  const systemPrompt = [
+    "あなたはレシートOCR補助AIです。",
+    "必ず JSON オブジェクトのみを返してください。説明文やMarkdownは禁止です。",
+    "JSONキーは storeName, date, totalAmount, items の4つのみ。",
+    "items は { name, unitPrice } の配列とし、unitPrice は数値または null。",
+  ].join("\n");
+  const userPrompt = [
+    "以下のレシートデータから、【店名、日付(YYYY-MM-DD)、合計金額(数値のみ)、品目ごとの単価と名前】を抽出し、JSON形式で出力してください。",
+    "印字が不鮮明な箇所は、合計額や単価から論理的に推論して補完してください。余計な解説は不要です。",
+    "",
+    "入力データ(JSON):",
+    JSON.stringify(textract),
+  ].join("\n");
+  const out = await invokeBedrockText({
+    systemPrompt,
+    userPrompt,
+    maxTokens: 900,
+    temperature: 0.1,
+  });
+  if (!out?.ok) return out;
+  const parsed = parseJsonBlock(out.reply);
+  const data = normalizeHybridReceiptPayload(parsed);
+  if (!data) {
+    return { ok: false, code: "InvalidHybridJson", message: "Hybrid receipt JSON parse failed" };
+  }
+  return { ok: true, data };
 }

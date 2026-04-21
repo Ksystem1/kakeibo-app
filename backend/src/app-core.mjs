@@ -35,6 +35,7 @@ import {
 } from "./category-utils.mjs";
 import {
   askBedrockAdvisor,
+  askBedrockHybridReceiptFromTextract,
   askBedrockReceiptAssistant,
   inferReceiptImageMediaTypeFromBuffer,
 } from "./ai-advisor-service.mjs";
@@ -4799,6 +4800,19 @@ export async function handleApiRequest(req, options = {}) {
         try {
           const buf = decodeImageBuffer(b.imageBase64);
           const result = await analyzeReceiptImageBytes(buf, { logError });
+          let hybridReceipt = null;
+          try {
+            hybridReceipt = await askBedrockHybridReceiptFromTextract({
+              textract: {
+                summary: result?.summary ?? {},
+                items: result?.items ?? [],
+                ocrLines: result?.ocrLines ?? [],
+                textractRaw: result?.textractRaw ?? {},
+              },
+            });
+          } catch (e) {
+            logError("receipts.parse.hybrid_ocr", e);
+          }
           const [expenseCats] = await pool.query(
             `SELECT c.id, c.name
              FROM categories c
@@ -4874,6 +4888,33 @@ export async function handleApiRequest(req, options = {}) {
           }
 
           let adjustedSummary = { ...(result?.summary ?? {}) };
+          if (hybridReceipt?.ok && hybridReceipt.data) {
+            const hs = hybridReceipt.data;
+            if (hs.storeName && String(hs.storeName).trim()) {
+              adjustedSummary.vendorName = String(hs.storeName).trim().slice(0, 120);
+            }
+            if (hs.date && /^\d{4}-\d{2}-\d{2}$/.test(String(hs.date))) {
+              adjustedSummary.date = String(hs.date);
+            }
+            if (Number.isFinite(Number(hs.totalAmount)) && Number(hs.totalAmount) > 0) {
+              adjustedSummary.totalAmount = Math.round(Number(hs.totalAmount));
+            }
+            if (Array.isArray(hs.items) && hs.items.length > 0) {
+              const hasTextractAmounts = Array.isArray(result?.items)
+                ? result.items.some((x) => Number.isFinite(Number(x?.amount ?? NaN)) && Number(x?.amount ?? NaN) > 0)
+                : false;
+              if (!hasTextractAmounts) {
+                result.items = hs.items.map((x, idx) => ({
+                  name: String(x?.name ?? "（品目）").trim() || `（品目${idx + 1}）`,
+                  amount:
+                    Number.isFinite(Number(x?.unitPrice ?? NaN)) && Number(x?.unitPrice ?? NaN) >= 0
+                      ? Math.round(Number(x.unitPrice))
+                      : null,
+                  confidence: null,
+                }));
+              }
+            }
+          }
           let aiCategoryId = null;
           let aiCategoryName = null;
           if (aiReceipt?.ok && aiReceipt.data) {
@@ -4986,6 +5027,11 @@ export async function handleApiRequest(req, options = {}) {
             if (learnCorrectionHit && (learnedCategoryId != null || learnedMemoPresent)) {
               receiptAdvancedParsingMessages.push(
                 "過去に保存した修正パターンに基づき、カテゴリやメモを提案しました。",
+              );
+            }
+            if (hybridReceipt?.ok) {
+              receiptAdvancedParsingMessages.push(
+                "Textract抽出結果をBedrockで補正し、店名・日付・合計・明細の推定を強化しました。",
               );
             }
             if (reconcileAdjusted && reconcilePremiumNote) {
@@ -5122,6 +5168,7 @@ export async function handleApiRequest(req, options = {}) {
           const receiptAdvancedParsingApplied =
             Boolean(subscriptionActive) &&
             (Boolean(aiReceipt?.ok) ||
+              Boolean(hybridReceipt?.ok) ||
               learnCorrectionHit ||
               reconcileAdjusted ||
               finalSource === "history" ||

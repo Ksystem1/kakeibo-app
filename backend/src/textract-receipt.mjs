@@ -4,13 +4,16 @@
  * - 一時的なネットワーク異常は限定リトライ（標準 DNS / Node の lookup を使用）
  */
 import { AnalyzeExpenseCommand, TextractClient } from "@aws-sdk/client-textract";
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { Agent as HttpsAgent } from "node:https";
+import crypto from "node:crypto";
 
 const DEFAULT_REGION = "ap-northeast-1";
 const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 const DEFAULT_SEND_RETRIES = 4;
+const DEFAULT_S3_PREFIX = "receipts/raw";
 
 function envInt(name, fallback) {
   const v = process.env[name];
@@ -30,8 +33,20 @@ function getDefaultAwsConfig() {
     keepAlive: true,
     maxSockets: 50,
   });
+  const accessKeyId = String(process.env.AWS_ACCESS_KEY_ID ?? "").trim();
+  const secretAccessKey = String(process.env.AWS_SECRET_ACCESS_KEY ?? "").trim();
+  const sessionToken = String(process.env.AWS_SESSION_TOKEN ?? "").trim();
+  const credentials =
+    accessKeyId && secretAccessKey
+      ? {
+          accessKeyId,
+          secretAccessKey,
+          ...(sessionToken ? { sessionToken } : {}),
+        }
+      : undefined;
   return {
     region,
+    ...(credentials ? { credentials } : {}),
     maxAttempts: Math.max(1, envInt("TEXTRACT_MAX_ATTEMPTS", 2)),
     requestHandler: new NodeHttpHandler({
       httpsAgent,
@@ -39,6 +54,20 @@ function getDefaultAwsConfig() {
       socketTimeout: Math.max(1, envInt("TEXTRACT_SOCKET_TIMEOUT_MS", 12_000)),
     }),
   };
+}
+
+function textractUseS3Mode() {
+  const v = String(process.env.TEXTRACT_USE_S3 ?? "true").trim().toLowerCase();
+  return v !== "0" && v !== "false" && v !== "no";
+}
+
+function textractS3Bucket() {
+  return String(process.env.TEXTRACT_SOURCE_S3_BUCKET ?? "").trim();
+}
+
+function textractS3Prefix() {
+  const raw = String(process.env.TEXTRACT_SOURCE_S3_PREFIX ?? DEFAULT_S3_PREFIX).trim();
+  return raw.replace(/^\/+|\/+$/g, "");
 }
 
 function textractDisabled() {
@@ -582,6 +611,13 @@ export function createReceiptAnalyzer(ctx = {}) {
     0,
     ctx.sendRetries ?? envInt("TEXTRACT_SEND_RETRIES", DEFAULT_SEND_RETRIES),
   );
+  const useS3Mode = ctx.useS3Mode ?? textractUseS3Mode();
+  const sourceBucket = String(ctx.sourceBucket ?? textractS3Bucket()).trim();
+  const sourcePrefix = String(ctx.sourcePrefix ?? textractS3Prefix()).trim();
+  const s3Client =
+    useS3Mode && sourceBucket
+      ? new S3Client(awsConfig)
+      : null;
 
   return async function analyzeReceiptImageBytes(imageBytes) {
     if (imageBytes.length > maxBytes) {
@@ -597,25 +633,81 @@ export function createReceiptAnalyzer(ctx = {}) {
       throw err;
     }
 
-    const command = new AnalyzeExpenseCommand({
-      Document: { Bytes: new Uint8Array(imageBytes) },
-    });
+    if (useS3Mode && !sourceBucket) {
+      const err = new Error(
+        "TEXTRACT_USE_S3=true ですが TEXTRACT_SOURCE_S3_BUCKET が未設定です。",
+      );
+      err.code = "TextractS3BucketMissing";
+      err.statusCode = 503;
+      throw err;
+    }
+
+    const s3Key = useS3Mode
+      ? `${sourcePrefix || DEFAULT_S3_PREFIX}/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${crypto
+          .randomBytes(6)
+          .toString("hex")}.bin`
+      : null;
+
+    if (useS3Mode && s3Client && s3Key) {
+      try {
+        await s3Client.send(
+          new PutObjectCommand({
+            Bucket: sourceBucket,
+            Key: s3Key,
+            Body: imageBytes,
+            ContentType: "application/octet-stream",
+          }),
+        );
+      } catch (e) {
+        const err = new Error(`Textract入力画像のS3保存に失敗しました: ${String(e?.message ?? e)}`);
+        err.code = "TextractS3UploadFailed";
+        err.statusCode = 502;
+        throw err;
+      }
+    }
+
+    const command = new AnalyzeExpenseCommand(
+      useS3Mode && s3Key
+        ? {
+            Document: {
+              S3Object: { Bucket: sourceBucket, Name: s3Key },
+            },
+          }
+        : {
+            Document: { Bytes: new Uint8Array(imageBytes) },
+          },
+    );
 
     let response;
-    for (let attempt = 1; attempt <= sendRetries + 1; attempt += 1) {
-      try {
-        response = await client.send(command, {
-          abortSignal: AbortSignal.timeout(timeoutMs),
-        });
-        break;
-      } catch (e) {
-        const retryable = isTransientNetworkError(e);
-        if (retryable && attempt <= sendRetries) {
-          logError("textract.network_retry", e, { attempt, sendRetries });
-          await sleep(backoffMs(attempt));
-          continue;
+    try {
+      for (let attempt = 1; attempt <= sendRetries + 1; attempt += 1) {
+        try {
+          response = await client.send(command, {
+            abortSignal: AbortSignal.timeout(timeoutMs),
+          });
+          break;
+        } catch (e) {
+          const retryable = isTransientNetworkError(e);
+          if (retryable && attempt <= sendRetries) {
+            logError("textract.network_retry", e, { attempt, sendRetries });
+            await sleep(backoffMs(attempt));
+            continue;
+          }
+          throw mapTextractSdkError(e, timeoutMs, logError);
         }
-        throw mapTextractSdkError(e, timeoutMs, logError);
+      }
+    } finally {
+      if (useS3Mode && s3Client && s3Key) {
+        try {
+          await s3Client.send(
+            new DeleteObjectCommand({
+              Bucket: sourceBucket,
+              Key: s3Key,
+            }),
+          );
+        } catch (e) {
+          logError("textract.s3_cleanup_failed", e, { key: s3Key });
+        }
       }
     }
 
@@ -685,6 +777,17 @@ export function createReceiptAnalyzer(ctx = {}) {
       },
       items,
       ocrLines,
+      textractRaw: {
+        expenseIndex: doc.ExpenseIndex ?? null,
+        summaryFields: Array.isArray(doc?.SummaryFields)
+          ? doc.SummaryFields.map((f) => ({
+              type: fieldType(f),
+              label: fieldLabel(f),
+              text: fieldText(f),
+              confidence: fieldConfidence01(f),
+            }))
+          : [],
+      },
       notice,
       expenseIndex: doc.ExpenseIndex ?? null,
     };
