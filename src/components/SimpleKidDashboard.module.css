@@ -8,7 +8,7 @@
   transition: background 0.25s ease, color 0.2s ease;
 }
 
-.rootBlue {
+.root {
   composes: shell;
   --kid-bg: linear-gradient(165deg, #e8f4ff 0%, #f3f0ff 42%, #fff8f0 100%);
   --kid-surface: rgba(255, 255, 255, 0.9);
@@ -21,17 +21,78 @@
   color: var(--kid-text);
 }
 
-.rootPink {
-  composes: shell;
-  --kid-bg: linear-gradient(165deg, #fff0f7 0%, #fff5fb 45%, #fffbeb 100%);
-  --kid-surface: rgba(255, 255, 255, 0.9);
-  --kid-accent: #e88aaf;
-  --kid-accent2: #ffc4d9;
-  --kid-text: #7a3d58;
-  --kid-muted: #9b5c78;
-  --kid-icon-inline: #c45b8a;
-  background: var(--kid-bg);
-  color: var(--kid-text);
+.themePanel {
+  background: var(--kid-surface);
+  border-radius: 1.25rem;
+  padding: 0.85rem;
+  border: 2px solid color-mix(in srgb, var(--kid-accent) 28%, white);
+  margin-bottom: 0.95rem;
+}
+
+.themePanelTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.themePanelSub {
+  margin: 0.25rem 0 0.65rem;
+  font-size: 0.88rem;
+  color: var(--kid-muted);
+}
+
+.themeChoices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.themeChoice {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 2px solid color-mix(in srgb, var(--kid-accent) 18%, white);
+  border-radius: 0.95rem;
+  padding: 0.35rem 0.45rem;
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  text-align: left;
+}
+
+.themeChoice:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.themeChoiceSelected {
+  border-color: color-mix(in srgb, var(--kid-accent) 70%, white);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--kid-accent) 20%, transparent);
+}
+
+.themePreview {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
+  flex-shrink: 0;
+}
+
+.themeChoiceText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.04rem;
+}
+
+.themeChoiceText strong {
+  font-size: 0.87rem;
+  line-height: 1.15;
+}
+
+.themeChoiceText small {
+  font-size: 0.72rem;
+  color: var(--kid-muted);
+  line-height: 1.2;
 }
 
 .hero {
@@ -102,10 +163,6 @@
   border: 3px dashed color-mix(in srgb, var(--kid-accent) 28%, transparent);
 }
 
-.rootPink .addCard {
-  border-color: color-mix(in srgb, var(--kid-accent) 30%, transparent);
-}
-
 .kindRow {
   display: flex;
   gap: 0.65rem;
@@ -147,12 +204,6 @@
   background: linear-gradient(180deg, #e8faf3 0%, #d2f5e8 100%);
   color: #2a6b5c;
   box-shadow: 0 4px 0 rgba(120, 170, 150, 0.22);
-}
-
-.rootPink .kindBtnExpense {
-  background: linear-gradient(180deg, #f0e8ff 0%, #e4dcff 100%);
-  color: #5c4680;
-  box-shadow: 0 4px 0 rgba(150, 130, 190, 0.2);
 }
 
 .kindBtnSelected {

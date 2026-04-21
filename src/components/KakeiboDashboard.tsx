@@ -148,7 +148,18 @@ function memberRowFamilyRoleRaw(x: FamilyMemberRow): unknown {
 
 function memberRowHasKidTheme(x: FamilyMemberRow): boolean {
   const t = String(x.kid_theme ?? x.kidTheme ?? "").trim().toLowerCase();
-  return t === "blue" || t === "pink";
+  return (
+    t === "pink" ||
+    t === "lavender" ||
+    t === "pastel_yellow" ||
+    t === "mint_green" ||
+    t === "floral" ||
+    t === "blue" ||
+    t === "navy" ||
+    t === "dino_green" ||
+    t === "space_black" ||
+    t === "sky_red"
+  );
 }
 
 /** 見守り用の子候補。KID / kid_theme 設定、またはロール列欠落時は自分以外を暫定表示 */

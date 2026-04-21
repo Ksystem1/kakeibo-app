@@ -29,6 +29,7 @@ const AUTH_ROUTE_KEYS = new Set([
   "POST /auth/forgot-password",
   "POST /auth/reset-password",
   "GET /auth/me",
+  "PATCH /auth/me/kid-theme",
   "GET /families/members",
   "POST /families/invite",
   "GET /families/children",
@@ -229,7 +230,7 @@ async function fetchUserFamilyRoleUpperForMe(pool, userId) {
 
 /**
  * 子ども向けきせかえテーマ（users.kid_theme）。未設定は null（フロントで blue 相当）。
- * @returns {Promise<"blue" | "pink" | null>}
+ * @returns {Promise<"pink"|"lavender"|"pastel_yellow"|"mint_green"|"floral"|"blue"|"navy"|"dino_green"|"space_black"|"sky_red"|null>}
  */
 async function fetchUserKidTheme(pool, userId) {
   try {
@@ -242,12 +243,35 @@ async function fetchUserKidTheme(pool, userId) {
       typeof Buffer !== "undefined" && Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw);
     const s = s0.trim().toLowerCase();
     if (s === "pink") return "pink";
+    if (s === "lavender") return "lavender";
+    if (s === "pastel_yellow") return "pastel_yellow";
+    if (s === "mint_green") return "mint_green";
+    if (s === "floral") return "floral";
     if (s === "blue") return "blue";
+    if (s === "navy") return "navy";
+    if (s === "dino_green") return "dino_green";
+    if (s === "space_black") return "space_black";
+    if (s === "sky_red") return "sky_red";
     return null;
   } catch (e) {
     if (isErBadFieldError(e)) return null;
     throw e;
   }
+}
+
+function normalizeKidThemeInput(raw) {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "pink") return "pink";
+  if (s === "lavender") return "lavender";
+  if (s === "pastel_yellow") return "pastel_yellow";
+  if (s === "mint_green") return "mint_green";
+  if (s === "floral") return "floral";
+  if (s === "blue") return "blue";
+  if (s === "navy") return "navy";
+  if (s === "dino_green") return "dino_green";
+  if (s === "space_black") return "space_black";
+  if (s === "sky_red") return "sky_red";
+  return null;
 }
 
 /**
@@ -898,6 +922,54 @@ export async function tryAuthRoutes(req, ctx) {
       );
     }
 
+    if (key === "PATCH /auth/me/kid-theme") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const b = JSON.parse(req.body || "{}");
+      const nextTheme = normalizeKidThemeInput(b.kidTheme ?? b.kid_theme);
+      if (!nextTheme) {
+        return json(
+          400,
+          {
+            error:
+              "kidTheme は pink / lavender / pastel_yellow / mint_green / floral / blue / navy / dino_green / space_black / sky_red のいずれかで指定してください",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+      const role = await fetchUserFamilyRoleUpperForMe(pool, uid);
+      if (role !== "KID") {
+        return json(403, { error: "子どもアカウントのみ変更できます" }, hdrs, skipCors);
+      }
+      try {
+        const [upd] = await pool.query(
+          `UPDATE users SET kid_theme = ?, updated_at = NOW() WHERE id = ? LIMIT 1`,
+          [nextTheme, uid],
+        );
+        if (!upd?.affectedRows) {
+          return json(404, { error: "ユーザーが見つかりません" }, hdrs, skipCors);
+        }
+      } catch (e) {
+        if (isErBadFieldError(e) && String(e?.message || "").includes("kid_theme")) {
+          return json(
+            503,
+            {
+              error: "KidThemeColumnMissing",
+              detail:
+                "users.kid_theme 列がありません。RDS に db/migration_v20_users_kid_theme.sql を適用してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        throw e;
+      }
+      return json(200, { ok: true, kidTheme: nextTheme }, hdrs, skipCors);
+    }
+
     if (key === "GET /families/members") {
       const uid = resolveUserId(req.headers);
       if (!uid) {
@@ -1260,8 +1332,7 @@ export async function tryAuthRoutes(req, ctx) {
             email: child.email ?? "",
             familyId: child.default_family_id ?? null,
             familyRole: "KID",
-            kidTheme:
-              String(child.kid_theme ?? "").trim().toLowerCase() === "pink" ? "pink" : "blue",
+            kidTheme: normalizeKidThemeInput(child.kid_theme) ?? "blue",
             isChild: true,
             parentId: Number(child.parent_id),
             gradeGroup: normalizeGradeGroup(child.grade_group),

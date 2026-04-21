@@ -23,7 +23,14 @@ const PASTEL_PINK = [
 
 /** 取引保存成功のご褒美演出（パステル紙吹雪） */
 export function celebrateKidTransactionSaved(theme: KidTheme) {
-  const colors = theme === "pink" ? PASTEL_PINK : PASTEL_BLUE;
+  const colors =
+    theme === "pink" ||
+    theme === "lavender" ||
+    theme === "pastel_yellow" ||
+    theme === "mint_green" ||
+    theme === "floral"
+      ? PASTEL_PINK
+      : PASTEL_BLUE;
   const base = {
     colors,
     ticks: 240,

@@ -1381,7 +1381,20 @@ function normalizeAdminFamilyRole(raw) {
 function normalizeAdminKidTheme(raw) {
   if (raw === null || raw === undefined || String(raw).trim() === "") return null;
   const s = String(raw).trim().toLowerCase();
-  if (s === "pink" || s === "blue") return s;
+  if (
+    s === "pink" ||
+    s === "lavender" ||
+    s === "pastel_yellow" ||
+    s === "mint_green" ||
+    s === "floral" ||
+    s === "blue" ||
+    s === "navy" ||
+    s === "dino_green" ||
+    s === "space_black" ||
+    s === "sky_red"
+  ) {
+    return s;
+  }
   return "__invalid__";
 }
 
@@ -2228,9 +2241,9 @@ export async function handleApiRequest(req, options = {}) {
         kidTheme:
           r.kid_theme == null || String(r.kid_theme).trim() === ""
             ? null
-            : String(r.kid_theme).trim().toLowerCase() === "pink"
-              ? "pink"
-              : "blue",
+            : normalizeAdminKidTheme(r.kid_theme) === "__invalid__"
+              ? null
+              : normalizeAdminKidTheme(r.kid_theme),
         family_peers: r.family_peers == null || r.family_peers === "" ? null : String(r.family_peers),
       }));
       return json(
@@ -2474,7 +2487,10 @@ export async function handleApiRequest(req, options = {}) {
         if (kt === "__invalid__") {
           return json(
             400,
-            { error: "kidTheme は blue / pink、または null（未設定）で指定してください" },
+            {
+              error:
+                "kidTheme は pink / lavender / pastel_yellow / mint_green / floral / blue / navy / dino_green / space_black / sky_red、または null（未設定）で指定してください",
+            },
             hdrs,
             skipCors,
           );

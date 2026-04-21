@@ -19,6 +19,7 @@ import {
   NEW_PASSWORD_LABEL,
   NEW_PASSWORD_TOOLTIP,
 } from "../lib/passwordPolicy";
+import type { KidTheme } from "../lib/api";
 
 type AdminUser = {
   id: number;
@@ -34,8 +35,15 @@ type AdminUser = {
   /** users.family_role（未対応 API では undefined） */
   familyRole?: string;
   /** KID きせかえ（users.kid_theme） */
-  kidTheme?: "blue" | "pink" | null;
+  kidTheme?: KidTheme | null;
   family_peers: string | null;
+};
+
+type AdminFamilyGroup = {
+  familyKey: string;
+  familyId: number | null;
+  members: AdminUser[];
+  memberLabelLines: string[];
 };
 
 const LOGIN_ID_RE = /^[a-zA-Z0-9]{1,15}$/;
@@ -72,9 +80,36 @@ const ADMIN_FAMILY_ROLES = ["ADMIN", "MEMBER", "KID"] as const;
 
 const KID_THEME_OPTIONS: { value: string; label: string }[] = [
   { value: "", label: "未設定（端末はブルー寄り）" },
-  { value: "blue", label: "ブルー（男の子向け）" },
   { value: "pink", label: "ピンク（女の子向け）" },
+  { value: "lavender", label: "ラベンダー（女の子向け）" },
+  { value: "pastel_yellow", label: "パステルイエロー（女の子向け）" },
+  { value: "mint_green", label: "ミントグリーン（女の子向け）" },
+  { value: "floral", label: "フローラル（女の子向け）" },
+  { value: "blue", label: "ブルー（男の子向け）" },
+  { value: "navy", label: "ネイビー（男の子向け）" },
+  { value: "dino_green", label: "ダイナソーグリーン（男の子向け）" },
+  { value: "space_black", label: "スペースブラック（男の子向け）" },
+  { value: "sky_red", label: "スカイレッド（男の子向け）" },
 ];
+
+function normalizeKidThemeDraft(raw: unknown): KidTheme | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (
+    s === "pink" ||
+    s === "lavender" ||
+    s === "pastel_yellow" ||
+    s === "mint_green" ||
+    s === "floral" ||
+    s === "blue" ||
+    s === "navy" ||
+    s === "dino_green" ||
+    s === "space_black" ||
+    s === "sky_red"
+  ) {
+    return s;
+  }
+  return null;
+}
 
 function formatAdminApiError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e ?? "");
@@ -124,6 +159,24 @@ function formatDateOnly(value: string | null | undefined): string {
   }).format(d);
 }
 
+const FAMILY_LABELS_STORAGE_KEY = "kakeibo_admin_family_labels";
+
+function readFamilyLabelsFromStorage(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(FAMILY_LABELS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === "string") out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 export function AdminPage() {
   const [items, setItems] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -145,6 +198,17 @@ export function AdminPage() {
   const [announcementDraft, setAnnouncementDraft] = useState("");
   const [announcementBusy, setAnnouncementBusy] = useState(false);
   const [announcementMessage, setAnnouncementMessage] = useState<string | null>(null);
+  const [familyLabelDrafts, setFamilyLabelDrafts] = useState<Record<string, string>>(() =>
+    readFamilyLabelsFromStorage(),
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FAMILY_LABELS_STORAGE_KEY, JSON.stringify(familyLabelDrafts));
+    } catch {
+      /* ignore */
+    }
+  }, [familyLabelDrafts]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -180,8 +244,8 @@ export function AdminPage() {
       setKidThemeDrafts(
         Object.fromEntries(
           list.map((u) => {
-            const kt = u.kidTheme === "pink" || u.kidTheme === "blue" ? u.kidTheme : "";
-            return [u.id, kt];
+            const kt = normalizeKidThemeDraft(u.kidTheme);
+            return [u.id, kt ?? ""];
           }),
         ),
       );
@@ -199,6 +263,42 @@ export function AdminPage() {
   }, [load]);
 
   const adminCount = useMemo(() => items.filter((x) => x.isAdmin).length, [items]);
+
+  const familyGroups = useMemo<AdminFamilyGroup[]>(() => {
+    const m = new Map<string, AdminFamilyGroup>();
+    for (const u of items) {
+      const familyId = u.default_family_id != null ? Number(u.default_family_id) : null;
+      const familyKey = familyId != null && Number.isFinite(familyId) ? `fid:${familyId}` : `solo:${u.id}`;
+      const existing = m.get(familyKey);
+      if (existing) {
+        existing.members.push(u);
+      } else {
+        m.set(familyKey, {
+          familyKey,
+          familyId: familyId != null && Number.isFinite(familyId) ? familyId : null,
+          members: [u],
+          memberLabelLines: [],
+        });
+      }
+    }
+    const groups = Array.from(m.values());
+    for (const g of groups) {
+      const set = new Set<string>();
+      for (const member of g.members) {
+        const lines = familyPeersToLines(String(member.family_peers ?? ""));
+        for (const line of lines) set.add(line);
+      }
+      g.memberLabelLines = Array.from(set);
+      g.members.sort((a, b) => a.id - b.id);
+    }
+    groups.sort((a, b) => {
+      if (a.familyId == null && b.familyId == null) return a.members[0].id - b.members[0].id;
+      if (a.familyId == null) return 1;
+      if (b.familyId == null) return -1;
+      return a.familyId - b.familyId;
+    });
+    return groups;
+  }, [items]);
 
   const onToggleAdmin = useCallback(
     async (userId: number, nextValue: boolean) => {
@@ -246,15 +346,14 @@ export function AdminPage() {
           | "MEMBER"
           | "KID";
 
-        const prevKid = u.kidTheme === "pink" || u.kidTheme === "blue" ? u.kidTheme : null;
+        const prevKid = normalizeKidThemeDraft(u.kidTheme);
         const draftKidRaw = (kidThemeDrafts[userId] ?? "").trim().toLowerCase();
-        const nextKid =
-          draftKidRaw === "pink" ? "pink" : draftKidRaw === "blue" ? "blue" : null;
+        const nextKid = normalizeKidThemeDraft(draftKidRaw);
 
         const body: {
           defaultFamilyId?: number | null;
           familyRole?: "ADMIN" | "MEMBER" | "KID";
-          kidTheme?: "blue" | "pink" | null;
+          kidTheme?: KidTheme | null;
         } = {};
         if (nextFam !== prevFam) {
           body.defaultFamilyId = nextFam;
@@ -618,7 +717,7 @@ export function AdminPage() {
         >
           <thead>
             <tr style={{ background: "var(--panel-bg)" }}>
-              <th style={{ ...adminTableTh, width: "2.5rem" }}>ID</th>
+              <th style={{ ...adminTableTh, width: "2.5rem" }}>ユーザーID</th>
               <th style={{ ...adminTableTh, minWidth: 260 }}>メール</th>
               <th style={adminTableTh}>登録日</th>
               <th style={adminTableTh}>最終ログイン</th>
@@ -636,224 +735,263 @@ export function AdminPage() {
             </tr>
           </thead>
           <tbody>
-            {items.map((u) => (
-              <tr key={u.id} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>{u.id}</td>
-                <td style={{ ...adminTableTd, minWidth: 260, wordBreak: "break-all" }}>{u.email}</td>
-                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
-                  {formatDateOnly(u.created_at)}
-                </td>
-                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
-                  {formatDateTime(u.last_login_at)}
-                </td>
-                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
-                    inputMode="numeric"
-                    placeholder="—"
-                    value={familyIdDrafts[u.id] ?? ""}
-                    disabled={savingUserId === u.id}
-                    onChange={(e) =>
-                      setFamilyIdDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
-                    }
-                    style={{ width: "4.5rem", padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
-                    title="既定の家族（families.id）。空欄で未所属にできます（要マイグレーション v18）。"
-                  />
-                </td>
-                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
-                  <div style={{ display: "flex", flexWrap: "nowrap", gap: "0.3rem", alignItems: "center" }}>
-                    <select
-                      value={familyRoleDrafts[u.id] ?? "MEMBER"}
-                      disabled={savingUserId === u.id}
-                      onChange={(e) =>
-                        setFamilyRoleDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
-                      }
-                      style={{ minWidth: 120, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
-                      title="KID: 取引一覧は本人の登録分のみ表示（users.family_role）"
-                    >
-                      {ADMIN_FAMILY_ROLES.map((r) => (
-                        <option key={r} value={r}>
-                          {FAMILY_ROLE_LABELS[r] ?? r}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      disabled={savingUserId === u.id}
-                      onClick={() => {
-                        void onApplyFamilySettings(u.id);
-                      }}
-                      style={adminTableBtn}
-                    >
-                      反映
-                    </button>
-                  </div>
-                </td>
-                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
-                  {(familyRoleDrafts[u.id] ?? "MEMBER").trim().toUpperCase() === "KID" ? (
-                    <select
-                      value={kidThemeDrafts[u.id] ?? ""}
-                      disabled={savingUserId === u.id}
-                      onChange={(e) =>
-                        setKidThemeDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
-                      }
-                      style={{ minWidth: 200, maxWidth: 240, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
-                      title="子ども（KID）のおこづかい帳のきせかえ色。反映は左の「反映」で家族・役割とまとめて保存されます。"
-                    >
-                      {KID_THEME_OPTIONS.map((o) => (
-                        <option key={o.value || "unset"} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span style={{ color: "var(--text-muted)" }}>—</span>
-                  )}
-                </td>
-                <td
-                  style={{
-                    ...adminTableTd,
-                    width: "1%",
-                    paddingRight: "0.4rem",
-                    verticalAlign: "middle",
-                  }}
-                >
-                  {u.family_peers == null || String(u.family_peers).trim() === "" ? (
-                    "—"
-                  ) : (
-                    <div style={{ lineHeight: 1.15 }}>
-                      {familyPeersToLines(String(u.family_peers)).map((line, i) => (
-                        <div key={i} style={{ whiteSpace: "nowrap" }}>
-                          {line}
-                        </div>
-                      ))}
+            {familyGroups.flatMap((group) => {
+              const familyTitle =
+                group.familyId != null ? `家族ID ${group.familyId}` : `未所属（ユーザー ${group.members[0]?.id ?? "—"}）`;
+              const familyLabelKey = group.familyId != null ? String(group.familyId) : group.familyKey;
+              const familyLabel = (familyLabelDrafts[familyLabelKey] ?? "").trim();
+              const parentRow = (
+                <tr key={`family-${group.familyKey}`} style={{ borderTop: "2px solid var(--border)", background: "var(--panel-bg)" }}>
+                  <td colSpan={14} style={{ ...adminTableTd, paddingTop: "0.45rem", paddingBottom: "0.45rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.8rem", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", flexWrap: "wrap" }}>
+                        <strong>{familyTitle}</strong>
+                        <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
+                          メンバー {group.members.length}名
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="家族ラベル（表示用）"
+                          value={familyLabelDrafts[familyLabelKey] ?? ""}
+                          onChange={(e) =>
+                            setFamilyLabelDrafts((prev) => ({ ...prev, [familyLabelKey]: e.target.value }))
+                          }
+                          style={{ minWidth: 170, padding: "0.18rem 0.35rem", fontSize: "0.8rem" }}
+                        />
+                        {familyLabel ? (
+                          <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
+                            ラベル: {familyLabel}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                  )}
-                </td>
-                <td style={{ ...adminTableTd, paddingLeft: "0.35rem" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "nowrap",
-                      gap: "0.35rem",
-                      alignItems: "center",
-                      justifyContent: "flex-start",
-                    }}
-                  >
+                  </td>
+                </tr>
+              );
+              const memberRows = group.members.map((u) => (
+                <tr key={u.id} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>{u.id}</td>
+                  <td style={{ ...adminTableTd, minWidth: 260, wordBreak: "break-all" }}>{u.email}</td>
+                  <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
+                    {formatDateOnly(u.created_at)}
+                  </td>
+                  <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
+                    {formatDateTime(u.last_login_at)}
+                  </td>
+                  <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
                     <input
-                      type="text"
-                      value={displayNameDrafts[u.id] ?? ""}
+                      type="number"
+                      min={1}
+                      step={1}
+                      inputMode="numeric"
+                      placeholder="—"
+                      value={familyIdDrafts[u.id] ?? ""}
                       disabled={savingUserId === u.id}
                       onChange={(e) =>
-                        setDisplayNameDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
+                        setFamilyIdDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
                       }
-                      style={{ minWidth: 120, maxWidth: 160, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+                      style={{ width: "4.5rem", padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+                      title="既定の家族（families.id）。空欄で未所属にできます（要マイグレーション v18）。"
                     />
-                    <button
-                      type="button"
-                      disabled={savingUserId === u.id}
-                      onClick={() => {
-                        void onSaveDisplayName(u.id);
-                      }}
-                      style={adminTableBtn}
-                    >
-                      保存
-                    </button>
-                  </div>
-                </td>
-                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>{u.login_name ?? "-"}</td>
-                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
-                  <select
-                    value={u.subscriptionStatus ?? "inactive"}
-                    disabled={savingUserId === u.id || !subscriptionStatusWritable}
-                    onChange={(e) => {
-                      void onSetSubscriptionStatus(u.id, e.target.value);
-                    }}
+                  </td>
+                  <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
+                    <div style={{ display: "flex", flexWrap: "nowrap", gap: "0.3rem", alignItems: "center" }}>
+                      <select
+                        value={familyRoleDrafts[u.id] ?? "MEMBER"}
+                        disabled={savingUserId === u.id}
+                        onChange={(e) =>
+                          setFamilyRoleDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
+                        }
+                        style={{ minWidth: 120, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+                        title="KID: 取引一覧は本人の登録分のみ表示（users.family_role）"
+                      >
+                        {ADMIN_FAMILY_ROLES.map((r) => (
+                          <option key={r} value={r}>
+                            {FAMILY_ROLE_LABELS[r] ?? r}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={savingUserId === u.id}
+                        onClick={() => {
+                          void onApplyFamilySettings(u.id);
+                        }}
+                        style={adminTableBtn}
+                      >
+                        反映
+                      </button>
+                    </div>
+                  </td>
+                  <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
+                    {(familyRoleDrafts[u.id] ?? "MEMBER").trim().toUpperCase() === "KID" ? (
+                      <select
+                        value={kidThemeDrafts[u.id] ?? ""}
+                        disabled={savingUserId === u.id}
+                        onChange={(e) =>
+                          setKidThemeDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
+                        }
+                        style={{ minWidth: 200, maxWidth: 240, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+                        title="子ども（KID）のおこづかい帳のきせかえ色。反映は左の「反映」で家族・役割とまとめて保存されます。"
+                      >
+                        {KID_THEME_OPTIONS.map((o) => (
+                          <option key={o.value || "unset"} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span style={{ color: "var(--text-muted)" }}>—</span>
+                    )}
+                  </td>
+                  <td
                     style={{
-                      minWidth: 150,
-                      maxWidth: 220,
-                      padding: "0.2rem 0.35rem",
-                      fontSize: "0.8125rem",
+                      ...adminTableTd,
+                      width: "1%",
+                      paddingRight: "0.4rem",
+                      verticalAlign: "middle",
                     }}
-                    title={
-                      !subscriptionStatusWritable
-                        ? "subscription_status 列が無いため変更できません（v8 マイグレーションを適用してください）"
-                        : undefined
-                    }
                   >
-                    {Array.from(
-                      new Set([...ADMIN_SUBSCRIPTION_STATUSES, u.subscriptionStatus ?? "inactive"]),
-                    )
-                      .filter((s) => s.length > 0)
-                      .sort((a, b) =>
-                        subscriptionStatusLabelJa(a).localeCompare(
-                          subscriptionStatusLabelJa(b),
-                          "ja",
-                        ),
-                      )
-                      .map((s) => (
-                        <option key={s} value={s}>
-                          {subscriptionStatusLabelJa(s)}
-                        </option>
-                      ))}
-                  </select>
-                </td>
-                <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
-                  <label style={{ display: "inline-flex", gap: "0.35rem", alignItems: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={u.isAdmin}
-                      disabled={savingUserId === u.id}
-                      onChange={(e) => {
-                        void onToggleAdmin(u.id, e.target.checked);
-                      }}
-                    />
-                    {u.isAdmin ? "admin" : "user"}
-                  </label>
-                </td>
-                <td style={adminTableTd}>
-                  <button
-                    type="button"
-                    disabled={savingUserId === u.id}
-                    onClick={() => {
-                      void onResetPassword(u.id, u.email);
-                    }}
-                    style={adminTableBtn}
-                  >
-                    初期化
-                  </button>
-                  {tempPasswords[u.id] ? (
+                    {group.memberLabelLines.length === 0 ? (
+                      "—"
+                    ) : (
+                      <div style={{ lineHeight: 1.15 }}>
+                        {group.memberLabelLines.map((line, i) => {
+                          const currentName = (displayNameDrafts[u.id] ?? u.display_name ?? "").trim();
+                          const isCurrent = currentName.length > 0 && line.includes(currentName);
+                          return (
+                            <div key={i} style={{ whiteSpace: "nowrap", fontWeight: isCurrent ? 700 : 400 }}>
+                              {line}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ ...adminTableTd, paddingLeft: "0.35rem" }}>
                     <div
                       style={{
-                        marginTop: "0.2rem",
-                        color: "var(--text-muted)",
-                        fontSize: "0.75rem",
-                        lineHeight: 1.2,
+                        display: "flex",
+                        flexWrap: "nowrap",
+                        gap: "0.35rem",
+                        alignItems: "center",
+                        justifyContent: "flex-start",
                       }}
                     >
-                      一時PW: <code>{tempPasswords[u.id]}</code>
+                      <input
+                        type="text"
+                        value={displayNameDrafts[u.id] ?? ""}
+                        disabled={savingUserId === u.id}
+                        onChange={(e) =>
+                          setDisplayNameDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
+                        }
+                        style={{ minWidth: 120, maxWidth: 160, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+                      />
+                      <button
+                        type="button"
+                        disabled={savingUserId === u.id}
+                        onClick={() => {
+                          void onSaveDisplayName(u.id);
+                        }}
+                        style={adminTableBtn}
+                      >
+                        保存
+                      </button>
                     </div>
-                  ) : null}
-                </td>
-                <td style={adminTableTd}>
-                  <button
-                    type="button"
-                    disabled={savingUserId === u.id}
-                    onClick={() => {
-                      void onDeleteUser(u.id, u.email);
-                    }}
-                    style={{ ...adminTableBtn, color: "#b42318" }}
-                  >
-                    削除
-                  </button>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>{u.login_name ?? "-"}</td>
+                  <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
+                    <select
+                      value={u.subscriptionStatus ?? "inactive"}
+                      disabled={savingUserId === u.id || !subscriptionStatusWritable}
+                      onChange={(e) => {
+                        void onSetSubscriptionStatus(u.id, e.target.value);
+                      }}
+                      style={{
+                        minWidth: 150,
+                        maxWidth: 220,
+                        padding: "0.2rem 0.35rem",
+                        fontSize: "0.8125rem",
+                      }}
+                      title={
+                        !subscriptionStatusWritable
+                          ? "subscription_status 列が無いため変更できません（v8 マイグレーションを適用してください）"
+                          : undefined
+                      }
+                    >
+                      {Array.from(
+                        new Set([...ADMIN_SUBSCRIPTION_STATUSES, u.subscriptionStatus ?? "inactive"]),
+                      )
+                        .filter((s) => s.length > 0)
+                        .sort((a, b) =>
+                          subscriptionStatusLabelJa(a).localeCompare(
+                            subscriptionStatusLabelJa(b),
+                            "ja",
+                          ),
+                        )
+                        .map((s) => (
+                          <option key={s} value={s}>
+                            {subscriptionStatusLabelJa(s)}
+                          </option>
+                        ))}
+                    </select>
+                  </td>
+                  <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
+                    <label style={{ display: "inline-flex", gap: "0.35rem", alignItems: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={u.isAdmin}
+                        disabled={savingUserId === u.id}
+                        onChange={(e) => {
+                          void onToggleAdmin(u.id, e.target.checked);
+                        }}
+                      />
+                      {u.isAdmin ? "admin" : "user"}
+                    </label>
+                  </td>
+                  <td style={adminTableTd}>
+                    <button
+                      type="button"
+                      disabled={savingUserId === u.id}
+                      onClick={() => {
+                        void onResetPassword(u.id, u.email);
+                      }}
+                      style={adminTableBtn}
+                    >
+                      初期化
+                    </button>
+                    {tempPasswords[u.id] ? (
+                      <div
+                        style={{
+                          marginTop: "0.2rem",
+                          color: "var(--text-muted)",
+                          fontSize: "0.75rem",
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        一時PW: <code>{tempPasswords[u.id]}</code>
+                      </div>
+                    ) : null}
+                  </td>
+                  <td style={adminTableTd}>
+                    <button
+                      type="button"
+                      disabled={savingUserId === u.id}
+                      onClick={() => {
+                        void onDeleteUser(u.id, u.email);
+                      }}
+                      style={{ ...adminTableBtn, color: "#b42318" }}
+                    >
+                      削除
+                    </button>
+                  </td>
+                </tr>
+              ));
+              return [parentRow, ...memberRows];
+            })}
             {!loading && items.length === 0 ? (
               <tr>
-                <td colSpan={13} style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                <td colSpan={14} style={{ padding: "1rem", color: "var(--text-muted)" }}>
                   ユーザーが見つかりません
                 </td>
               </tr>

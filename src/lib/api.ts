@@ -383,13 +383,31 @@ function rawToIsAdmin(isAdmin: unknown, is_admin: unknown): boolean {
 export type FamilyRole = "ADMIN" | "MEMBER" | "KID";
 export type GradeGroup = "1-2" | "3-4" | "5-6";
 
-export type KidTheme = "blue" | "pink";
+export type KidTheme =
+  | "pink"
+  | "lavender"
+  | "pastel_yellow"
+  | "mint_green"
+  | "floral"
+  | "blue"
+  | "navy"
+  | "dino_green"
+  | "space_black"
+  | "sky_red";
 
 /** 子どもきせかえテーマ（未設定は null → UI は blue 扱い） */
 export function normalizeKidTheme(raw: unknown): KidTheme | null {
   const s = String(raw ?? "").trim().toLowerCase();
   if (s === "pink") return "pink";
+  if (s === "lavender") return "lavender";
+  if (s === "pastel_yellow") return "pastel_yellow";
+  if (s === "mint_green") return "mint_green";
+  if (s === "floral") return "floral";
   if (s === "blue") return "blue";
+  if (s === "navy") return "navy";
+  if (s === "dino_green") return "dino_green";
+  if (s === "space_black") return "space_black";
+  if (s === "sky_red") return "sky_red";
   return null;
 }
 
@@ -915,6 +933,15 @@ export async function getFamilyMembers() {
   }>(res);
 }
 
+export async function updateMyKidTheme(kidTheme: KidTheme) {
+  const res = await apiFetch(`${BASE}/auth/me/kid-theme`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify({ kidTheme }),
+  });
+  return parse<{ ok: boolean; kidTheme: KidTheme }>(res);
+}
+
 export async function getChildProfiles() {
   const res = await apiFetch(`${BASE}/families/children`, {
     headers: buildHeaders(),
@@ -925,7 +952,7 @@ export async function getChildProfiles() {
       id: number;
       display_name: string | null;
       grade_group: GradeGroup | null;
-      kid_theme?: "blue" | "pink" | null;
+      kid_theme?: KidTheme | null;
     }>;
   }>(res);
 }
@@ -1094,7 +1121,7 @@ export async function getAdminUsers() {
       last_login_at: string | null;
       default_family_id: number | null;
       familyRole?: string;
-      kidTheme?: "blue" | "pink" | null;
+      kidTheme?: KidTheme | null;
       family_peers: string | null;
     }>;
     meta?: { subscriptionStatusWritable?: boolean };
@@ -1125,7 +1152,7 @@ export async function updateAdminUser(
     /** 既定の家族（families.id）。null で未所属扱い（family_members から外す） */
     defaultFamilyId?: number | null;
     familyRole?: "ADMIN" | "MEMBER" | "KID";
-    kidTheme?: "blue" | "pink" | null;
+    kidTheme?: KidTheme | null;
   },
 ) {
   const res = await apiFetch(`${BASE}/admin/users/${userId}`, {

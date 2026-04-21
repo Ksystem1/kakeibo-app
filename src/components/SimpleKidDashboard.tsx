@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Candy, Gift, Pencil, ShoppingCart, Sparkles, Trash2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { celebrateKidTransactionSaved } from "../lib/kidConfetti";
@@ -10,6 +10,7 @@ import {
   getCategories,
   getMonthSummary,
   getTransactions,
+  updateMyKidTheme,
   updateTransaction,
   type KidTheme,
 } from "../lib/api";
@@ -71,11 +72,137 @@ function normalizeCategories(raw: unknown[]): Category[] {
   return out;
 }
 
+type KidThemeDefinition = {
+  label: string;
+  familyLabel: string;
+  bg: string;
+  surface: string;
+  accent: string;
+  accent2: string;
+  text: string;
+  muted: string;
+  iconInline: string;
+};
+
+const KID_THEME_DEFINITIONS: Record<KidTheme, KidThemeDefinition> = {
+  pink: {
+    label: "ピンク",
+    familyLabel: "女の子向け",
+    bg: "linear-gradient(165deg, #fff0f7 0%, #fff5fb 45%, #fffbeb 100%)",
+    surface: "rgba(255, 255, 255, 0.9)",
+    accent: "#e88aaf",
+    accent2: "#ffc4d9",
+    text: "#7a3d58",
+    muted: "#9b5c78",
+    iconInline: "#c45b8a",
+  },
+  lavender: {
+    label: "ラベンダー",
+    familyLabel: "女の子向け",
+    bg: "linear-gradient(165deg, #f3ecff 0%, #f8f4ff 48%, #fff9f0 100%)",
+    surface: "rgba(255, 255, 255, 0.92)",
+    accent: "#9a7de0",
+    accent2: "#d8c8ff",
+    text: "#4f3a76",
+    muted: "#766194",
+    iconInline: "#7e67bf",
+  },
+  pastel_yellow: {
+    label: "パステルイエロー",
+    familyLabel: "女の子向け",
+    bg: "linear-gradient(165deg, #fffbe0 0%, #fffdf2 45%, #fff4ea 100%)",
+    surface: "rgba(255, 255, 255, 0.9)",
+    accent: "#e5be52",
+    accent2: "#f9df92",
+    text: "#6f5830",
+    muted: "#8f7447",
+    iconInline: "#c79f32",
+  },
+  mint_green: {
+    label: "ミントグリーン",
+    familyLabel: "女の子向け",
+    bg: "linear-gradient(165deg, #e8fff5 0%, #f2fff9 45%, #f0faff 100%)",
+    surface: "rgba(255, 255, 255, 0.92)",
+    accent: "#5bbf9f",
+    accent2: "#9be7cf",
+    text: "#2f6d5c",
+    muted: "#4b8f7c",
+    iconInline: "#419a80",
+  },
+  floral: {
+    label: "フローラル",
+    familyLabel: "女の子向け",
+    bg: "linear-gradient(165deg, #fff1f7 0%, #f4fff3 40%, #fff7ec 100%)",
+    surface: "rgba(255, 255, 255, 0.9)",
+    accent: "#d979a4",
+    accent2: "#f5b8d7",
+    text: "#674057",
+    muted: "#8f6480",
+    iconInline: "#ba5e88",
+  },
+  blue: {
+    label: "ブルー",
+    familyLabel: "男の子向け",
+    bg: "linear-gradient(165deg, #e8f4ff 0%, #f3f0ff 42%, #fff8f0 100%)",
+    surface: "rgba(255, 255, 255, 0.9)",
+    accent: "#6b93d6",
+    accent2: "#a8c8f0",
+    text: "#3d4f6f",
+    muted: "#6a7d99",
+    iconInline: "#5b7eb8",
+  },
+  navy: {
+    label: "ネイビー",
+    familyLabel: "男の子向け",
+    bg: "linear-gradient(165deg, #dfe8ff 0%, #edf3ff 44%, #f7f8ff 100%)",
+    surface: "rgba(255, 255, 255, 0.9)",
+    accent: "#4961b9",
+    accent2: "#8ea2eb",
+    text: "#273561",
+    muted: "#4d5f8a",
+    iconInline: "#394f97",
+  },
+  dino_green: {
+    label: "ダイナソーグリーン",
+    familyLabel: "男の子向け",
+    bg: "linear-gradient(165deg, #e7ffe8 0%, #f0fff0 45%, #ecfff8 100%)",
+    surface: "rgba(255, 255, 255, 0.9)",
+    accent: "#52a66d",
+    accent2: "#9ed8ad",
+    text: "#2f5f3d",
+    muted: "#4f7f5a",
+    iconInline: "#3e8754",
+  },
+  space_black: {
+    label: "スペースブラック",
+    familyLabel: "男の子向け",
+    bg: "linear-gradient(165deg, #0f172a 0%, #1e293b 45%, #111827 100%)",
+    surface: "rgba(30, 41, 59, 0.82)",
+    accent: "#6366f1",
+    accent2: "#818cf8",
+    text: "#e5e7eb",
+    muted: "#c7d2fe",
+    iconInline: "#a5b4fc",
+  },
+  sky_red: {
+    label: "スカイレッド",
+    familyLabel: "男の子向け",
+    bg: "linear-gradient(165deg, #e8f2ff 0%, #f4f8ff 35%, #ffe9e5 100%)",
+    surface: "rgba(255, 255, 255, 0.9)",
+    accent: "#de5f52",
+    accent2: "#f29d95",
+    text: "#6b3731",
+    muted: "#94605a",
+    iconInline: "#bf4d42",
+  },
+};
+
 export function SimpleKidDashboard() {
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   const base = getApiBaseUrl();
-  const theme: KidTheme = user?.kidTheme === "pink" ? "pink" : "blue";
-  const rootClass = theme === "pink" ? styles.rootPink : styles.rootBlue;
+  const theme: KidTheme = user?.kidTheme ?? "blue";
+  const themeDef = KID_THEME_DEFINITIONS[theme] ?? KID_THEME_DEFINITIONS.blue;
+  const [themeSaving, setThemeSaving] = useState(false);
 
   const [ym, setYm] = useState(currentYm);
   const [loading, setLoading] = useState(false);
@@ -256,10 +383,62 @@ export function SimpleKidDashboard() {
   }
 
   return (
-    <div className={rootClass}>
+    <div
+      className={styles.root}
+      style={
+        {
+          "--kid-bg": themeDef.bg,
+          "--kid-surface": themeDef.surface,
+          "--kid-accent": themeDef.accent,
+          "--kid-accent2": themeDef.accent2,
+          "--kid-text": themeDef.text,
+          "--kid-muted": themeDef.muted,
+          "--kid-icon-inline": themeDef.iconInline,
+        } as CSSProperties
+      }
+    >
       <div className={styles.hero}>
         <h1 className={styles.heroTitle}>おこづかい帳</h1>
         <p className={styles.heroSub}>簡単に記録しよう！</p>
+      </div>
+
+      <div className={styles.themePanel}>
+        <h2 className={styles.themePanelTitle}>テーマ変更</h2>
+        <p className={styles.themePanelSub}>好きな色を選ぶと、すぐに画面に反映されます。</p>
+        <div className={styles.themeChoices} role="radiogroup" aria-label="おこづかい帳のテーマ">
+          {(Object.entries(KID_THEME_DEFINITIONS) as Array<[KidTheme, KidThemeDefinition]>).map(
+            ([themeId, def]) => (
+              <button
+                key={themeId}
+                type="button"
+                className={`${styles.themeChoice} ${theme === themeId ? styles.themeChoiceSelected : ""}`}
+                onClick={async () => {
+                  if (themeId === theme || themeSaving) return;
+                  setThemeSaving(true);
+                  setError(null);
+                  try {
+                    await updateMyKidTheme(themeId);
+                    setUser(user ? { ...user, kidTheme: themeId } : user);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err));
+                  } finally {
+                    setThemeSaving(false);
+                  }
+                }}
+                disabled={themeSaving}
+                aria-checked={theme === themeId}
+                role="radio"
+                title={`${def.label}（${def.familyLabel}）`}
+              >
+                <span className={styles.themePreview} style={{ background: def.bg }} aria-hidden />
+                <span className={styles.themeChoiceText}>
+                  <strong>{def.label}</strong>
+                  <small>{def.familyLabel}</small>
+                </span>
+              </button>
+            ),
+          )}
+        </div>
       </div>
 
       <div className={styles.monthRow}>
