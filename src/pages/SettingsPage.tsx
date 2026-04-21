@@ -83,6 +83,7 @@ export function SettingsPage() {
   const location = useLocation();
   const pwaTarget = usePwaTargetDevice();
   const [pwaBannerHidden, setPwaBannerHidden] = useState(isPwaInstallBannerHidden);
+  const [pwaGuideImageError, setPwaGuideImageError] = useState(false);
   useEffect(() => subscribePwaInstallPrefs(() => setPwaBannerHidden(isPwaInstallBannerHidden())), []);
 
   useEffect(() => {
@@ -295,6 +296,12 @@ export function SettingsPage() {
     }
     return `ℹ 解約手続き済み（有効期限：${periodEnd ?? "不明"}まで）`;
   }, [effectiveUser]);
+
+  const premiumPeriodInfo = useMemo(() => {
+    const end = formatSlashDate(effectiveUser?.subscriptionPeriodEndAt ?? null);
+    if (!end) return null;
+    return `ℹ 有効期限：${end}まで`;
+  }, [effectiveUser?.subscriptionPeriodEndAt]);
 
   const navPreviewOrder: Array<keyof NavIconPaths> = [
     "dashboard",
@@ -568,6 +575,17 @@ export function SettingsPage() {
                       {premiumCancelInfo}
                     </span>
                   ) : null}
+                  {!premiumCancelInfo && premiumPeriodInfo ? (
+                    <span
+                      style={{
+                        color: "var(--text-muted)",
+                        fontSize: "0.82rem",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {premiumPeriodInfo}
+                    </span>
+                  ) : null}
                   {cancelAtPeriodEndNote && !premiumCancelInfo ? (
                     <span style={{ color: "#8b1f1f", fontSize: "0.82rem", fontWeight: 600 }}>
                       {cancelAtPeriodEndNote}
@@ -755,17 +773,18 @@ export function SettingsPage() {
         ) : null}
       </div>
 
-      {pwaTarget ? (
-        <div
-          id="pwa-install-help"
-          className={styles.settingsPanel}
-          style={{ marginTop: "1.5rem", maxWidth: 720 }}
-        >
-          <h2 className={styles.sectionTitle}>ホーム画面に追加（アプリのように使う）</h2>
+      <div
+        id="pwa-install-help"
+        className={styles.settingsPanel}
+        style={{ marginTop: "1.5rem", maxWidth: 720 }}
+      >
+        <h2 className={styles.sectionTitle}>ホーム画面に追加（アプリのように使う）</h2>
+        {!pwaGuideImageError ? (
           <img
-            src="/pwa-install-guide.png"
+            src={`${import.meta.env.BASE_URL}pwa-install-guide.png`}
             alt="ホーム画面への追加手順"
             loading="lazy"
+            onError={() => setPwaGuideImageError(true)}
             style={{
               width: "100%",
               maxWidth: 620,
@@ -776,6 +795,16 @@ export function SettingsPage() {
               margin: "0.25rem auto 0.35rem",
             }}
           />
+        ) : (
+          <p className={styles.reclassifyHint} style={{ marginTop: "0.3rem" }}>
+            ガイド画像を読み込めませんでした。再読み込みしても表示されない場合は、管理者にお問い合わせください。
+          </p>
+        )}
+        {!pwaTarget ? (
+          <p className={styles.reclassifyHint} style={{ marginTop: "0.4rem" }}>
+            この端末ではインストール案内バーの対象外ですが、手順ガイドは参照できます。
+          </p>
+        ) : null}
           <div className={styles.modeRow} style={{ marginTop: "0.65rem", flexWrap: "wrap" }}>
             {pwaBannerHidden ? (
               <button
@@ -799,8 +828,7 @@ export function SettingsPage() {
               </button>
             )}
           </div>
-        </div>
-      ) : null}
+      </div>
 
       <div
         id="fixed-cost-settings"
