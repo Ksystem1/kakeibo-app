@@ -62,7 +62,19 @@ function textractUseS3Mode() {
 }
 
 function textractS3Bucket() {
-  return String(process.env.TEXTRACT_SOURCE_S3_BUCKET ?? "").trim();
+  const candidates = [
+    process.env.TEXTRACT_SOURCE_S3_BUCKET,
+    process.env.TEXTRACT_S3_BUCKET,
+    process.env.RECEIPT_SOURCE_S3_BUCKET,
+    process.env.AWS_S3_BUCKET,
+    process.env.S3_BUCKET,
+    process.env.TEXTRACT_SOURCE_S3_BUCKET_DEFAULT,
+  ];
+  for (const v of candidates) {
+    const s = String(v ?? "").trim();
+    if (s) return s;
+  }
+  return "";
 }
 
 function textractS3Prefix() {
@@ -633,22 +645,21 @@ export function createReceiptAnalyzer(ctx = {}) {
       throw err;
     }
 
-    if (useS3Mode && !sourceBucket) {
-      const err = new Error(
-        "TEXTRACT_USE_S3=true ですが TEXTRACT_SOURCE_S3_BUCKET が未設定です。",
-      );
-      err.code = "TextractS3BucketMissing";
-      err.statusCode = 503;
-      throw err;
+    const effectiveUseS3 = useS3Mode && sourceBucket.length > 0;
+    if (useS3Mode && !effectiveUseS3) {
+      logError("textract.s3_bucket_missing_fallback", new Error("S3 bucket missing"), {
+        detail:
+          "TEXTRACT_USE_S3=true ですがバケット未設定のため、AnalyzeExpense を Bytes モードへフォールバックします。TEXTRACT_SOURCE_S3_BUCKET（または TEXTRACT_S3_BUCKET / RECEIPT_SOURCE_S3_BUCKET / AWS_S3_BUCKET）を設定してください。",
+      });
     }
 
-    const s3Key = useS3Mode
+    const s3Key = effectiveUseS3
       ? `${sourcePrefix || DEFAULT_S3_PREFIX}/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${crypto
           .randomBytes(6)
           .toString("hex")}.bin`
       : null;
 
-    if (useS3Mode && s3Client && s3Key) {
+    if (effectiveUseS3 && s3Client && s3Key) {
       try {
         await s3Client.send(
           new PutObjectCommand({
@@ -666,8 +677,10 @@ export function createReceiptAnalyzer(ctx = {}) {
       }
     }
 
-    const command = new AnalyzeExpenseCommand(
-      useS3Mode && s3Key
+    const s3EnabledByConfig = effectiveUseS3 && Boolean(s3Client);
+
+    const commandForAnalyze = new AnalyzeExpenseCommand(
+      s3EnabledByConfig && s3Key
         ? {
             Document: {
               S3Object: { Bucket: sourceBucket, Name: s3Key },
@@ -682,7 +695,7 @@ export function createReceiptAnalyzer(ctx = {}) {
     try {
       for (let attempt = 1; attempt <= sendRetries + 1; attempt += 1) {
         try {
-          response = await client.send(command, {
+          response = await client.send(commandForAnalyze, {
             abortSignal: AbortSignal.timeout(timeoutMs),
           });
           break;
@@ -697,7 +710,7 @@ export function createReceiptAnalyzer(ctx = {}) {
         }
       }
     } finally {
-      if (useS3Mode && s3Client && s3Key) {
+      if (s3EnabledByConfig && s3Client && s3Key) {
         try {
           await s3Client.send(
             new DeleteObjectCommand({

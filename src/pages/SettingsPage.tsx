@@ -69,6 +69,16 @@ function formatJaDate(isoLike: string | null | undefined): string | null {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
+function formatSlashDate(isoLike: string | null | undefined): string | null {
+  if (!isoLike) return null;
+  const d = new Date(isoLike);
+  if (!Number.isFinite(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${day}`;
+}
+
 export function SettingsPage() {
   const location = useLocation();
   const pwaTarget = usePwaTargetDevice();
@@ -266,6 +276,24 @@ export function SettingsPage() {
     const endLabel = formatJaDate(effectiveUser.subscriptionPeriodEndAt ?? null);
     if (!endLabel) return null;
     return `当月末解約済です。但し、プレミアムプランは ${endLabel} まで利用可能です`;
+  }, [effectiveUser]);
+
+  const premiumCancelInfo = useMemo(() => {
+    const user = effectiveUser;
+    if (!user) return null;
+    const status = String(user.subscriptionStatus ?? "").trim().toLowerCase();
+    const periodEnd = formatSlashDate(user.subscriptionPeriodEndAt ?? null);
+    const cancelReserved = user.subscriptionCancelAtPeriodEnd === true;
+    const canceled = status === "canceled" || status === "cancelled";
+
+    if (!cancelReserved && !canceled) return null;
+
+    if (canceled) {
+      const canceledAtText = periodEnd ?? "不明日";
+      const validUntilText = periodEnd ?? "不明";
+      return `ℹ ${canceledAtText}に解約済み（有効期限：${validUntilText}まで）`;
+    }
+    return `ℹ 解約手続き済み（有効期限：${periodEnd ?? "不明"}まで）`;
   }, [effectiveUser]);
 
   const navPreviewOrder: Array<keyof NavIconPaths> = [
@@ -502,32 +530,45 @@ export function SettingsPage() {
               getApiBaseUrl() &&
               canSendAuthenticatedRequest(token) ? (
                 <>
-                  <button
-                    type="button"
-                    className={styles.btn}
-                    disabled={portalBusy}
-                    onClick={async () => {
-                      setPortalMessage(null);
-                      setPortalBusy(true);
-                      try {
-                        const base =
-                          typeof window !== "undefined"
-                            ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "") || ""}`
-                            : "";
-                        const { url } = await postBillingPortalSession({
-                          returnUrl: `${base}/settings?portal=return`,
-                        });
-                        window.location.assign(url);
-                      } catch (e) {
-                        setPortalMessage(e instanceof Error ? e.message : String(e));
-                      } finally {
-                        setPortalBusy(false);
-                      }
-                    }}
-                  >
-                    {portalBusy ? "準備中…" : "解約（プラン管理）"}
-                  </button>
-                  {cancelAtPeriodEndNote ? (
+                  {!premiumCancelInfo ? (
+                    <button
+                      type="button"
+                      className={styles.btn}
+                      disabled={portalBusy}
+                      onClick={async () => {
+                        setPortalMessage(null);
+                        setPortalBusy(true);
+                        try {
+                          const base =
+                            typeof window !== "undefined"
+                              ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "") || ""}`
+                              : "";
+                          const { url } = await postBillingPortalSession({
+                            returnUrl: `${base}/settings?portal=return`,
+                          });
+                          window.location.assign(url);
+                        } catch (e) {
+                          setPortalMessage(e instanceof Error ? e.message : String(e));
+                        } finally {
+                          setPortalBusy(false);
+                        }
+                      }}
+                    >
+                      {portalBusy ? "準備中…" : "解約（プラン管理）"}
+                    </button>
+                  ) : null}
+                  {premiumCancelInfo ? (
+                    <span
+                      style={{
+                        color: "var(--text-muted)",
+                        fontSize: "0.82rem",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {premiumCancelInfo}
+                    </span>
+                  ) : null}
+                  {cancelAtPeriodEndNote && !premiumCancelInfo ? (
                     <span style={{ color: "#8b1f1f", fontSize: "0.82rem", fontWeight: 600 }}>
                       {cancelAtPeriodEndNote}
                     </span>
