@@ -649,6 +649,16 @@ function normalizeReceiptAiPayload(data) {
 
 function normalizeHybridReceiptPayload(data) {
   if (!data || typeof data !== "object") return null;
+  const allowedItemCategories = new Set([
+    "食費",
+    "日用品",
+    "衣類",
+    "娯楽",
+    "医療",
+    "教育",
+    "交通費",
+    "その他",
+  ]);
   const storeRaw = data.storeName ?? data.vendorName ?? data.store ?? null;
   const storeName =
     storeRaw == null || String(storeRaw).trim() === ""
@@ -667,12 +677,37 @@ function normalizeHybridReceiptPayload(data) {
       const name = String(x?.name ?? x?.itemName ?? "").trim();
       const unitRaw = Number(x?.unitPrice ?? x?.price ?? x?.amount ?? NaN);
       const unitPrice = Number.isFinite(unitRaw) && unitRaw >= 0 ? Math.round(unitRaw) : null;
+      const categoryRaw = String(x?.category ?? "").trim();
+      const category = allowedItemCategories.has(categoryRaw) ? categoryRaw : "その他";
       if (!name && unitPrice == null) return null;
-      return { name: name || "（品目）", unitPrice };
+      return { name: name || "（品目）", unitPrice, category };
     })
     .filter(Boolean)
     .slice(0, 120);
-  return { storeName, date, totalAmount, items };
+  const mainCategoryRaw = String(data.mainCategory ?? "").trim();
+  const mainCategory = allowedItemCategories.has(mainCategoryRaw)
+    ? mainCategoryRaw
+    : inferMainCategoryFromItems(items);
+  return { storeName, date, totalAmount, items, mainCategory };
+}
+
+function inferMainCategoryFromItems(items) {
+  const score = new Map();
+  for (const it of Array.isArray(items) ? items : []) {
+    const cat = String(it?.category ?? "").trim() || "その他";
+    const p = Number(it?.unitPrice ?? NaN);
+    const add = Number.isFinite(p) && p > 0 ? p : 1;
+    score.set(cat, (score.get(cat) ?? 0) + add);
+  }
+  let best = "その他";
+  let bestValue = -1;
+  for (const [cat, v] of score.entries()) {
+    if (v > bestValue) {
+      bestValue = v;
+      best = cat;
+    }
+  }
+  return best;
 }
 
 /**
@@ -861,12 +896,18 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
   const systemPrompt = [
     "あなたはレシートOCR補助AIです。",
     "必ず JSON オブジェクトのみを返してください。説明文やMarkdownは禁止です。",
-    "JSONキーは storeName, date, totalAmount, items の4つのみ。",
-    "items は { name, unitPrice } の配列とし、unitPrice は数値または null。",
+    "JSONキーは storeName, date, totalAmount, items, mainCategory の5つのみ。",
+    "カテゴリ定義: [食費、日用品、衣類、娯楽、医療、教育、交通費、その他]。",
+    "items は { name, unitPrice, category } の配列とし、unitPrice は数値または null。",
+    "各 item.category は必ずカテゴリ定義から1つを選ぶ。",
+    "品目名だけで曖昧な場合は storeName やレシート全体文脈から推論して分類する。",
+    "mainCategory はレシート全体のメインカテゴリで、金額合計が最大のカテゴリを返す。",
   ].join("\n");
   const userPrompt = [
-    "以下のレシートデータから、【店名、日付(YYYY-MM-DD)、合計金額(数値のみ)、品目ごとの単価と名前】を抽出し、JSON形式で出力してください。",
+    "以下のレシートデータから、【店名、日付(YYYY-MM-DD)、合計金額(数値のみ)、品目ごとの単価・名前・カテゴリ】を抽出し、JSON形式で出力してください。",
     "印字が不鮮明な箇所は、合計額や単価から論理的に推論して補完してください。余計な解説は不要です。",
+    "カテゴリは item ごとに必ず1つ付与し、曖昧なら storeName や全体文脈も使って判定してください。",
+    "mainCategory には、item の金額合計が最も高いカテゴリを設定してください。",
     "",
     "入力データ(JSON):",
     JSON.stringify(textract),

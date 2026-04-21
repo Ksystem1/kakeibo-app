@@ -830,7 +830,13 @@ export async function parseReceiptImage(
           date: string | null;
           fieldConfidence?: Record<string, number | null | undefined>;
         };
-        items: Array<{ name: string; amount: number | null; confidence?: number }>;
+        items: Array<{
+          name: string;
+          amount: number | null;
+          confidence?: number;
+          category?: string | null;
+        }>;
+        mainCategory?: string | null;
         notice?: string | null;
         expenseIndex?: number | null;
         suggestedCategoryId?: number | null;

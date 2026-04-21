@@ -4910,10 +4910,17 @@ export async function handleApiRequest(req, options = {}) {
                     Number.isFinite(Number(x?.unitPrice ?? NaN)) && Number(x?.unitPrice ?? NaN) >= 0
                       ? Math.round(Number(x.unitPrice))
                       : null,
+                  category: String(x?.category ?? "").trim() || "その他",
                   confidence: null,
                 }));
               }
             }
+          }
+          if (Array.isArray(result?.items)) {
+            result.items = result.items.map((x) => ({
+              ...x,
+              category: String(x?.category ?? "").trim() || "その他",
+            }));
           }
           let aiCategoryId = null;
           let aiCategoryName = null;
@@ -5181,6 +5188,7 @@ export async function handleApiRequest(req, options = {}) {
             demo: false,
             summary: adjustedSummary,
             items: result.items,
+            mainCategory: String(hybridReceipt?.data?.mainCategory ?? "").trim() || null,
             notice: result.notice,
             expenseIndex: result.expenseIndex,
             learnCorrectionHit,
@@ -5236,6 +5244,7 @@ export async function handleApiRequest(req, options = {}) {
                 demo: false,
                 summary: { vendorName: null, totalAmount: null, date: null, fieldConfidence: {} },
                 items: [],
+                mainCategory: null,
                 notice:
                   "自動解析を一時的に利用できませんでした。店舗名・金額・日付を手入力して登録できます。",
                 expenseIndex: null,

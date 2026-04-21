@@ -31,6 +31,25 @@ function todayYmd() {
 }
 
 type ExpenseCategory = { id: number; name: string; kind: "expense" | "income" };
+type ReceiptItemCategory =
+  | "食費"
+  | "日用品"
+  | "衣類"
+  | "娯楽"
+  | "医療"
+  | "教育"
+  | "交通費"
+  | "その他";
+const RECEIPT_ITEM_CATEGORIES: ReceiptItemCategory[] = [
+  "食費",
+  "日用品",
+  "衣類",
+  "娯楽",
+  "医療",
+  "教育",
+  "交通費",
+  "その他",
+];
 
 const CATEGORY_TAGS = {
   food: ["食費", "食品", "食料品", "飲食", "スーパー", "グロサリー", "grocery", "food"],
@@ -204,8 +223,14 @@ export function ReceiptPage() {
   const [draftTotal, setDraftTotal] = useState("");
   const [draftDate, setDraftDate] = useState("");
   const [items, setItems] = useState<
-    Array<{ name: string; amount: number | null; confidence?: number }>
+    Array<{
+      name: string;
+      amount: number | null;
+      confidence?: number;
+      category?: ReceiptItemCategory;
+    }>
   >([]);
+  const [receiptMainCategory, setReceiptMainCategory] = useState<ReceiptItemCategory | null>(null);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [draftCategoryId, setDraftCategoryId] = useState<number | null>(null);
   const [categorySuggestSource, setCategorySuggestSource] = useState<
@@ -248,6 +273,24 @@ export function ReceiptPage() {
   const categoryTouchedByUserRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const displayMainCategory = useMemo(() => {
+    const score = new Map<ReceiptItemCategory, number>();
+    for (const it of items) {
+      const category = (it.category ?? "その他") as ReceiptItemCategory;
+      const amt = Number(it.amount ?? NaN);
+      score.set(category, (score.get(category) ?? 0) + (Number.isFinite(amt) && amt > 0 ? amt : 0));
+    }
+    let best: ReceiptItemCategory | null = null;
+    let bestScore = 0;
+    for (const c of RECEIPT_ITEM_CATEGORIES) {
+      const s = score.get(c) ?? 0;
+      if (s > bestScore) {
+        bestScore = s;
+        best = c;
+      }
+    }
+    return best ?? receiptMainCategory;
+  }, [items, receiptMainCategory]);
   const [receiptDebugTier, setReceiptDebugTierState] = useState(() =>
     getReceiptDebugTier(),
   );
@@ -358,6 +401,7 @@ export function ReceiptPage() {
     setLastParsePremium(false);
     setReceiptDictionaryHits(0);
     setItems([]);
+    setReceiptMainCategory(null);
     setLastOcrForLearn(null);
     setLoadedReceiptBaseline(null);
     categoryTouchedByUserRef.current = false;
@@ -373,7 +417,19 @@ export function ReceiptPage() {
           ? r.receiptGlobalDictionaryHitCount
           : 0,
       );
-      setItems(r.items ?? []);
+      setItems(
+        (r.items ?? []).map((it) => ({
+          ...it,
+          category: RECEIPT_ITEM_CATEGORIES.includes((it.category ?? "その他") as ReceiptItemCategory)
+            ? ((it.category ?? "その他") as ReceiptItemCategory)
+            : "その他",
+        })),
+      );
+      setReceiptMainCategory(
+        RECEIPT_ITEM_CATEGORIES.includes((r.mainCategory ?? "") as ReceiptItemCategory)
+          ? ((r.mainCategory ?? "") as ReceiptItemCategory)
+          : null,
+      );
       const s = r.summary;
       if (s && typeof s === "object") {
         setLastOcrForLearn({
@@ -454,6 +510,7 @@ export function ReceiptPage() {
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
       setItems([]);
+      setReceiptMainCategory(null);
       setLastParsePremium(false);
       setReceiptDictionaryHits(0);
     } finally {
@@ -699,6 +756,52 @@ export function ReceiptPage() {
             disabled={loading}
           />
         </div>
+        {items.length > 0 ? (
+          <div className={`${styles.field} ${styles.receiptMemoField}`}>
+            <label style={{ marginBottom: "0.35rem" }}>明細カテゴリ（自動判定・手動修正可）</label>
+            {displayMainCategory ? (
+              <p className={styles.receiptSummaryHint} style={{ marginBottom: "0.5rem" }}>
+                レシート全体メインカテゴリ: {displayMainCategory}
+              </p>
+            ) : null}
+            <div style={{ display: "grid", gap: "0.45rem" }}>
+              {items.map((it, idx) => (
+                <div
+                  key={`${it.name}-${idx}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0,1fr) auto",
+                    gap: "0.45rem",
+                    alignItems: "center",
+                  }}
+                >
+                  <span className={styles.sub}>
+                    {it.name}
+                    {Number.isFinite(Number(it.amount ?? NaN))
+                      ? `（¥${Number(it.amount).toLocaleString("ja-JP")}）`
+                      : ""}
+                  </span>
+                  <select
+                    value={it.category ?? "その他"}
+                    onChange={(e) => {
+                      const next = e.target.value as ReceiptItemCategory;
+                      setItems((prev) =>
+                        prev.map((row, i) => (i === idx ? { ...row, category: next } : row)),
+                      );
+                    }}
+                    disabled={loading}
+                  >
+                    {RECEIPT_ITEM_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <button
           type="button"
