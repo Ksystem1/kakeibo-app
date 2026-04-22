@@ -9,6 +9,13 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import styles from "../components/KakeiboDashboard.module.css";
 
 const COMBINE_SAME_TIME_PAYMENTS_KEY = "combine_same_time_payments";
+const PAYPAY_REQUIRED_HEADERS = ["取引日", "取引内容", "取引先", "取引番号"];
+
+function looksLikePayPayCsv(text: string): boolean {
+  const firstLine = String(text ?? "").split(/\r?\n/, 1)[0] ?? "";
+  if (!firstLine.trim()) return false;
+  return PAYPAY_REQUIRED_HEADERS.every((h) => firstLine.includes(h));
+}
 
 export function ImportCsvPage() {
   const mobile = useIsMobile();
@@ -67,6 +74,15 @@ export function ImportCsvPage() {
 
   async function onSelectPayPayFile(file: File) {
     const textContent = await file.text();
+    if (!looksLikePayPayCsv(textContent)) {
+      setPaypayText("");
+      setPaypayPreview(null);
+      setPaypayMsg(null);
+      setPaypayErr(
+        "選択したファイルはPayPay取引CSVの形式ではありません。CSVまたは拡張子なしの正しいPayPayデータを選択してください。",
+      );
+      return;
+    }
     setPaypayText(textContent);
     setPaypayErr(null);
     setPaypayMsg(null);
@@ -86,7 +102,12 @@ export function ImportCsvPage() {
         `プレビュー完了: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
       );
     } catch (ex) {
-      setPaypayErr(ex instanceof Error ? ex.message : String(ex));
+      const m = ex instanceof Error ? ex.message : String(ex);
+      setPaypayErr(
+        /PayPay|必須列|CSV/.test(m)
+          ? `${m} 別のファイルを選択してください。`
+          : `PayPay CSV の読み取りに失敗しました。ファイル内容を確認し、別のファイルを選択してください。`,
+      );
     } finally {
       setPaypayLoading(false);
     }
@@ -105,7 +126,12 @@ export function ImportCsvPage() {
         `取込完了: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
       );
     } catch (ex) {
-      setPaypayErr(ex instanceof Error ? ex.message : String(ex));
+      const m = ex instanceof Error ? ex.message : String(ex);
+      setPaypayErr(
+        /PayPay|必須列|CSV/.test(m)
+          ? `${m} 別のファイルを選択してください。`
+          : `PayPay CSV の取り込みに失敗しました。ファイル内容を確認し、別のファイルを選択してください。`,
+      );
     } finally {
       setPaypayLoading(false);
     }
@@ -132,7 +158,7 @@ export function ImportCsvPage() {
         <div style={{ margin: "0.4rem 0 0.55rem" }}>
           <input
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.CSV,text/csv,application/vnd.ms-excel,*/*"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) return;
