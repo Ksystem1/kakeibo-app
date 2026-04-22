@@ -1860,6 +1860,13 @@ async function saveMonitorRecruitmentSettings(pool, { enabled, normalizedText })
   if (affected > 0) {
     return { mode: "update" };
   }
+  // MySQL は行はマッチしても値が変わらないと affectedRows=0 になる。既に id=1 があるのに INSERT すると重複で 500 になる。
+  const [[existsRow]] = await pool.query(
+    `SELECT 1 AS ok FROM site_settings WHERE id = 1 LIMIT 1`,
+  );
+  if (existsRow) {
+    return { mode: "update" };
+  }
   await pool.query(
     `INSERT INTO site_settings
        (id, header_announcement, monitor_recruitment_enabled, monitor_recruitment_text)
