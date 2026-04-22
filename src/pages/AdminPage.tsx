@@ -205,6 +205,7 @@ export function AdminPage() {
   const [monitorRecruitmentText, setMonitorRecruitmentText] = useState("");
   const [monitorRecruitmentBusy, setMonitorRecruitmentBusy] = useState(false);
   const [monitorRecruitmentMessage, setMonitorRecruitmentMessage] = useState<string | null>(null);
+  const [monitorRecruitmentLoadError, setMonitorRecruitmentLoadError] = useState<string | null>(null);
   const [familyLabelDrafts, setFamilyLabelDrafts] = useState<Record<string, string>>(() =>
     readFamilyLabelsFromStorage(),
   );
@@ -236,11 +237,30 @@ export function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [res, ann, monitorRecruitment] = await Promise.all([
+      const [res, ann] = await Promise.all([
         getAdminUsers(),
         getAdminAnnouncement().catch(() => ({ text: "" })),
-        getAdminMonitorRecruitmentSettings().catch(() => ({ enabled: false, text: "" })),
       ]);
+      setMonitorRecruitmentLoadError(null);
+      let monitorRecruitment: { enabled: boolean; text: string; migrationMissing?: boolean } = {
+        enabled: false,
+        text: "",
+      };
+      try {
+        monitorRecruitment = await getAdminMonitorRecruitmentSettings();
+        if (monitorRecruitment.migrationMissing) {
+          setMonitorRecruitmentLoadError(
+            "DB に db/migration_v25_monitor_recruitment_settings.sql が未適用の可能性があります。",
+          );
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setMonitorRecruitmentLoadError(msg);
+        if (import.meta.env.DEV) {
+          // eslint-disable-next-line no-console
+          console.error("[Admin] getAdminMonitorRecruitmentSettings", e);
+        }
+      }
       const monitor = await getAdminPayPayImportSummary().catch((e) => {
         const msg = e instanceof Error ? e.message : String(e);
         setPaypayMonitorError(
@@ -633,6 +653,11 @@ export function AdminPage() {
         <p style={{ margin: "0 0 0.65rem", fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
           管理者向けのモニター募集案内をON/OFFできます。募集文は最大512文字です。
         </p>
+        {monitorRecruitmentLoadError ? (
+          <p style={{ margin: "0 0 0.55rem", fontSize: "0.86rem", color: "var(--danger, #c44)" }} role="alert">
+            {monitorRecruitmentLoadError}
+          </p>
+        ) : null}
         <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.6rem" }}>
           <input
             type="checkbox"
@@ -673,11 +698,35 @@ export function AdminPage() {
               setError(null);
               try {
                 const normalized = monitorRecruitmentText.replace(/\s+/g, " ").trim().slice(0, 512);
-                await putAdminMonitorRecruitmentSettings({
+                if (import.meta.env.DEV) {
+                  // eslint-disable-next-line no-console
+                  console.log("[Admin] save monitor recruitment (request)", {
+                    enabled: monitorRecruitmentEnabled,
+                    textLength: normalized.length,
+                  });
+                }
+                const putOut = await putAdminMonitorRecruitmentSettings({
                   enabled: monitorRecruitmentEnabled,
                   text: normalized,
                 });
-                setMonitorRecruitmentText(normalized);
+                if (import.meta.env.DEV) {
+                  // eslint-disable-next-line no-console
+                  console.log("[Admin] save monitor recruitment (PUT result)", putOut);
+                }
+                const verify = await getAdminMonitorRecruitmentSettings();
+                if (import.meta.env.DEV) {
+                  // eslint-disable-next-line no-console
+                  console.log("[Admin] save monitor recruitment (verify GET)", verify);
+                }
+                setMonitorRecruitmentEnabled(verify.enabled === true);
+                setMonitorRecruitmentText(
+                  typeof verify.text === "string" ? verify.text : normalized,
+                );
+                setMonitorRecruitmentLoadError(
+                  verify.migrationMissing
+                    ? "DB に db/migration_v25_monitor_recruitment_settings.sql が未適用の可能性があります。"
+                    : null,
+                );
                 setMonitorRecruitmentMessage("保存しました。");
               } catch (e) {
                 setError(e instanceof Error ? e.message : "モニター募集設定の保存に失敗しました");
@@ -689,7 +738,13 @@ export function AdminPage() {
             {monitorRecruitmentBusy ? "保存中…" : "モニター募集設定を保存"}
           </button>
           {monitorRecruitmentMessage ? (
-            <span style={{ fontSize: "0.88rem", color: "var(--text-muted)" }}>{monitorRecruitmentMessage}</span>
+            <span
+              style={{ fontSize: "0.88rem", color: "var(--accent)" }}
+              role="status"
+              aria-live="polite"
+            >
+              {monitorRecruitmentMessage}
+            </span>
           ) : null}
         </div>
       </div>

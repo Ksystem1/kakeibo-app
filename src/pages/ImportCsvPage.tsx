@@ -5,7 +5,6 @@ import {
   previewPayPayCsvImport,
   type PayPayImportResult,
 } from "../lib/api";
-import { useIsMobile } from "../hooks/useIsMobile";
 import styles from "../components/KakeiboDashboard.module.css";
 
 const COMBINE_SAME_TIME_PAYMENTS_KEY = "combine_same_time_payments";
@@ -17,20 +16,7 @@ function looksLikePayPayCsv(text: string): boolean {
   return PAYPAY_REQUIRED_HEADERS.every((h) => firstLine.includes(h));
 }
 
-function isCsvLikeFileName(name: string): boolean {
-  const n = String(name ?? "").trim().toLowerCase();
-  if (!n) return false;
-  return n.endsWith(".csv");
-}
-
-function hasExtension(name: string): boolean {
-  const base = String(name ?? "").trim();
-  const idx = base.lastIndexOf(".");
-  return idx > 0 && idx < base.length - 1;
-}
-
 export function ImportCsvPage() {
-  const mobile = useIsMobile();
   const [text, setText] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -86,17 +72,15 @@ export function ImportCsvPage() {
 
   async function onSelectPayPayFile(file: File) {
     const fileName = String(file?.name ?? "").trim();
-    const extExists = hasExtension(fileName);
-    // MIME は iOS で不安定なため見ず、拡張子が .csv なら常に許可。
-    if (extExists && !isCsvLikeFileName(fileName)) {
-      setPaypayText("");
-      setPaypayPreview(null);
-      setPaypayMsg(null);
-      setPaypayErr(
-        "CSVファイルを選択してください（拡張子なしファイルも選択できます）。",
-      );
-      return;
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console -- デバッグ（iOS MIME が空・変わる件の切り分け用）
+      console.log("[ImportCsv] PayPay file", {
+        name: fileName,
+        type: file.type,
+        size: file.size,
+      });
     }
+    // MIME（file.type）には依存しない。iOS では拡張子 .csv でも空になることがある。
     const textContent = await file.text();
     if (!looksLikePayPayCsv(textContent)) {
       setPaypayText("");
@@ -173,16 +157,6 @@ export function ImportCsvPage() {
     }
   }
 
-  if (mobile) {
-    return (
-      <div className={styles.wrap}>
-        <p className={styles.empty}>
-          CSV 取込は画面幅の広いPC向けにしています。パソコンで開くか、メニューから家計簿へ。
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className={styles.wrap}>
       <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
@@ -194,7 +168,7 @@ export function ImportCsvPage() {
         <div style={{ margin: "0.4rem 0 0.55rem" }}>
           <input
             type="file"
-            accept=".csv,text/csv,application/vnd.ms-excel,text/plain"
+            accept=".csv, text/csv, text/comma-separated-values, text/plain, application/vnd.ms-excel"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) return;
@@ -203,7 +177,8 @@ export function ImportCsvPage() {
           />
         </div>
         <p className={styles.reclassifyHint} style={{ margin: "0 0 0.45rem" }}>
-          iPhone の「ファイル」制約を避けるため、ファイル種別フィルタは使っていません。選択できない場合は、下の欄へCSV本文を貼り付けても取り込めます（PayPay形式以外は自動で取込不可）。
+          iOS では <code>accept</code> に拡張子と代表的な MIME の両方を指定しています。それでも灰色の場合は下の欄に CSV 本文を貼り付けて取り込めます（中身の形式は PayPay 取引 CSV である必要があります）。ファイルの
+          MIME 種別（file.type）は使わず、中身の1行目で形式を判定します。
         </p>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: "0.55rem" }}>
           <input

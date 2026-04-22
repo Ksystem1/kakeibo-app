@@ -1843,6 +1843,45 @@ async function getMonitorRecruitmentSettings(pool) {
   }
 }
 
+/**
+ * モニター募集設定の保存。既存行があれば UPDATE を優先し、ヘッダーお知らせを上書きしない。
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {{ enabled: boolean, normalizedText: string }} param1
+ * @returns {Promise<{ mode: "update" | "insert" }>}
+ */
+async function saveMonitorRecruitmentSettings(pool, { enabled, normalizedText }) {
+  const [upd] = await pool.query(
+    `UPDATE site_settings
+     SET monitor_recruitment_enabled = ?, monitor_recruitment_text = ?, updated_at = NOW()
+     WHERE id = 1`,
+    [enabled ? 1 : 0, normalizedText],
+  );
+  const affected = upd && typeof upd.affectedRows === "number" ? upd.affectedRows : 0;
+  if (affected > 0) {
+    return { mode: "update" };
+  }
+  await pool.query(
+    `INSERT INTO site_settings
+       (id, header_announcement, monitor_recruitment_enabled, monitor_recruitment_text)
+     VALUES (1, '', ?, ?)`,
+    [enabled ? 1 : 0, normalizedText],
+  );
+  return { mode: "insert" };
+}
+
+/**
+ * フロントの boolean / 1 / "true" 等を有効化フラグに解釈する
+ * @param {unknown} v
+ * @returns {boolean}
+ */
+function parseMonitorRecruitmentEnabled(v) {
+  if (v === true || v === 1) return true;
+  if (v === false || v === 0) return false;
+  if (v == null) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === "1" || s === "true" || s === "on" || s === "yes";
+}
+
 function generateAdminTempPassword() {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let out = "";
@@ -2730,7 +2769,10 @@ export async function handleApiRequest(req, options = {}) {
       );
     }
 
-    if (routeKey(method, path) === "PUT /admin/monitor-recruitment-settings") {
+    if (
+      routeKey(method, path) === "PUT /admin/monitor-recruitment-settings" ||
+      routeKey(method, path) === "POST /admin/monitor-recruitment-settings"
+    ) {
       const admin = await ensureAdmin(pool, userId);
       if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
       let b = {};
@@ -2739,19 +2781,16 @@ export async function handleApiRequest(req, options = {}) {
       } catch {
         return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
       }
-      const enabled = b.enabled === true;
+      const enabled = parseMonitorRecruitmentEnabled(b.enabled);
       const rawText = b.text != null ? String(b.text) : "";
       const normalizedText = rawText.replace(/\s+/g, " ").trim().slice(0, 512);
+      let saveMode = "update";
       try {
-        await pool.query(
-          `INSERT INTO site_settings
-             (id, header_announcement, monitor_recruitment_enabled, monitor_recruitment_text)
-           VALUES (1, '', ?, ?)
-           ON DUPLICATE KEY UPDATE
-             monitor_recruitment_enabled = VALUES(monitor_recruitment_enabled),
-             monitor_recruitment_text = VALUES(monitor_recruitment_text)`,
-          [enabled ? 1 : 0, normalizedText],
-        );
+        const result = await saveMonitorRecruitmentSettings(pool, {
+          enabled,
+          normalizedText,
+        });
+        saveMode = result.mode;
       } catch (e) {
         const code = e && typeof e === "object" ? e.code : "";
         if (code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_FIELD_ERROR") {
@@ -2768,7 +2807,14 @@ export async function handleApiRequest(req, options = {}) {
         }
         throw e;
       }
-      return json(200, { ok: true, enabled, text: normalizedText }, hdrs, skipCors);
+      logger.info("admin.monitor_recruitment.saved", {
+        userId,
+        method,
+        mode: saveMode,
+        enabled,
+        textLength: normalizedText.length,
+      });
+      return json(200, { ok: true, enabled, text: normalizedText, saveMode }, hdrs, skipCors);
     }
 
     if (routeKey(method, path) === "GET /support/chat/messages") {

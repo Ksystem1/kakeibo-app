@@ -1176,23 +1176,50 @@ export async function putAdminAnnouncement(body: { text: string }) {
 }
 
 export async function getAdminMonitorRecruitmentSettings() {
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.log("[api] GET", `${BASE}/admin/monitor-recruitment-settings`);
+  }
   const res = await apiFetch(`${BASE}/admin/monitor-recruitment-settings`, {
     headers: buildHeaders(),
     cache: "no-store",
   });
-  return parse<{ enabled: boolean; text: string; migrationMissing?: boolean }>(res);
+  const data = await parse<{
+    enabled: boolean;
+    text: string;
+    migrationMissing?: boolean;
+  }>(res);
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.log("[api] GET monitor-recruitment result", data);
+  }
+  return data;
 }
 
 export async function putAdminMonitorRecruitmentSettings(body: {
   enabled: boolean;
   text: string;
 }) {
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.log("[api] PUT monitor-recruitment", body);
+  }
   const res = await apiFetch(`${BASE}/admin/monitor-recruitment-settings`, {
     method: "PUT",
     headers: buildHeaders(),
     body: JSON.stringify(body),
   });
-  return parse<{ ok: boolean; enabled: boolean; text: string }>(res);
+  const out = await parse<{
+    ok: boolean;
+    enabled: boolean;
+    text: string;
+    saveMode?: string;
+  }>(res);
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.log("[api] PUT monitor-recruitment response", out);
+  }
+  return out;
 }
 
 export async function getAdminUsers() {
