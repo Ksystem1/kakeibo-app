@@ -92,6 +92,12 @@ export function ImportCsvPage() {
   async function onPreviewPayPay() {
     setPaypayErr(null);
     setPaypayMsg(null);
+    if (!looksLikePayPayCsv(paypayText)) {
+      setPaypayErr(
+        "PayPay CSVの形式を確認できませんでした。別ファイルを選ぶか、PayPayの取引CSV本文をそのまま貼り付けてください。",
+      );
+      return;
+    }
     setPaypayLoading(true);
     try {
       const r = await previewPayPayCsvImport(paypayText, {
@@ -116,6 +122,12 @@ export function ImportCsvPage() {
   async function onCommitPayPay() {
     setPaypayErr(null);
     setPaypayMsg(null);
+    if (!looksLikePayPayCsv(paypayText)) {
+      setPaypayErr(
+        "PayPay CSVの形式を確認できませんでした。別ファイルを選ぶか、PayPayの取引CSV本文をそのまま貼り付けてください。",
+      );
+      return;
+    }
     setPaypayLoading(true);
     try {
       const r = await commitPayPayCsvImport(paypayText, {
@@ -158,7 +170,7 @@ export function ImportCsvPage() {
         <div style={{ margin: "0.4rem 0 0.55rem" }}>
           <input
             type="file"
-            accept=".csv,text/csv,text/plain,application/octet-stream"
+            accept=".csv,text/csv,application/vnd.ms-excel,text/plain"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) return;
@@ -167,7 +179,7 @@ export function ImportCsvPage() {
           />
         </div>
         <p className={styles.reclassifyHint} style={{ margin: "0 0 0.45rem" }}>
-          iPhone の「ファイル」向けに CSV/プレーンテキスト/汎用バイナリを選択可能にしています。PayPay形式でないファイルは自動で取込不可になります。
+          iPhone の「ファイル」制約を避けるため、ファイル種別フィルタは使っていません。選択できない場合は、下の欄へCSV本文を貼り付けても取り込めます（PayPay形式以外は自動で取込不可）。
         </p>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: "0.55rem" }}>
           <input
