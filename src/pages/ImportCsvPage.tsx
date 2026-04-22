@@ -17,6 +17,18 @@ function looksLikePayPayCsv(text: string): boolean {
   return PAYPAY_REQUIRED_HEADERS.every((h) => firstLine.includes(h));
 }
 
+function isCsvLikeFileName(name: string): boolean {
+  const n = String(name ?? "").trim().toLowerCase();
+  if (!n) return false;
+  return n.endsWith(".csv");
+}
+
+function hasExtension(name: string): boolean {
+  const base = String(name ?? "").trim();
+  const idx = base.lastIndexOf(".");
+  return idx > 0 && idx < base.length - 1;
+}
+
 export function ImportCsvPage() {
   const mobile = useIsMobile();
   const [text, setText] = useState("");
@@ -73,6 +85,18 @@ export function ImportCsvPage() {
   }
 
   async function onSelectPayPayFile(file: File) {
+    const fileName = String(file?.name ?? "").trim();
+    const extExists = hasExtension(fileName);
+    // MIME は iOS で不安定なため見ず、拡張子が .csv なら常に許可。
+    if (extExists && !isCsvLikeFileName(fileName)) {
+      setPaypayText("");
+      setPaypayPreview(null);
+      setPaypayMsg(null);
+      setPaypayErr(
+        "CSVファイルを選択してください（拡張子なしファイルも選択できます）。",
+      );
+      return;
+    }
     const textContent = await file.text();
     if (!looksLikePayPayCsv(textContent)) {
       setPaypayText("");

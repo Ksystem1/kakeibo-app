@@ -1818,6 +1818,31 @@ async function getHeaderAnnouncement(pool) {
   }
 }
 
+/** 管理画面: モニター募集設定（未マイグレーション時は既定値） */
+async function getMonitorRecruitmentSettings(pool) {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT monitor_recruitment_enabled, monitor_recruitment_text
+       FROM site_settings WHERE id = 1 LIMIT 1`,
+    );
+    if (!row) {
+      return { enabled: false, text: "" };
+    }
+    return {
+      enabled:
+        row.monitor_recruitment_enabled === true ||
+        Number(row.monitor_recruitment_enabled) === 1,
+      text: String(row.monitor_recruitment_text ?? "").trim(),
+    };
+  } catch (e) {
+    const code = e && typeof e === "object" ? e.code : "";
+    if (code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_FIELD_ERROR") {
+      return { enabled: false, text: "", migrationMissing: true };
+    }
+    throw e;
+  }
+}
+
 function generateAdminTempPassword() {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let out = "";
@@ -1873,6 +1898,7 @@ export async function handleApiRequest(req, options = {}) {
             billingCancelSubscription: "/billing/cancel-subscription",
             announcement: "/announcement",
             adminAnnouncement: "/admin/announcement",
+            adminMonitorRecruitmentSettings: "/admin/monitor-recruitment-settings",
             supportChatMessages: "/support/chat/messages",
             supportChatRead: "/support/chat/read",
             familyChatMessages: "/family/chat/messages",
@@ -2686,6 +2712,63 @@ export async function handleApiRequest(req, options = {}) {
         throw e;
       }
       return json(200, { ok: true, text: normalized }, hdrs, skipCors);
+    }
+
+    if (routeKey(method, path) === "GET /admin/monitor-recruitment-settings") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const settings = await getMonitorRecruitmentSettings(pool);
+      return json(
+        200,
+        {
+          enabled: settings.enabled === true,
+          text: String(settings.text ?? ""),
+          migrationMissing: settings.migrationMissing === true,
+        },
+        hdrs,
+        skipCors,
+      );
+    }
+
+    if (routeKey(method, path) === "PUT /admin/monitor-recruitment-settings") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      const enabled = b.enabled === true;
+      const rawText = b.text != null ? String(b.text) : "";
+      const normalizedText = rawText.replace(/\s+/g, " ").trim().slice(0, 512);
+      try {
+        await pool.query(
+          `INSERT INTO site_settings
+             (id, header_announcement, monitor_recruitment_enabled, monitor_recruitment_text)
+           VALUES (1, '', ?, ?)
+           ON DUPLICATE KEY UPDATE
+             monitor_recruitment_enabled = VALUES(monitor_recruitment_enabled),
+             monitor_recruitment_text = VALUES(monitor_recruitment_text)`,
+          [enabled ? 1 : 0, normalizedText],
+        );
+      } catch (e) {
+        const code = e && typeof e === "object" ? e.code : "";
+        if (code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_FIELD_ERROR") {
+          return json(
+            503,
+            {
+              error: "モニター募集設定の DB 未適用",
+              detail:
+                "db/migration_v25_monitor_recruitment_settings.sql を RDS に適用してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        throw e;
+      }
+      return json(200, { ok: true, enabled, text: normalizedText }, hdrs, skipCors);
     }
 
     if (routeKey(method, path) === "GET /support/chat/messages") {

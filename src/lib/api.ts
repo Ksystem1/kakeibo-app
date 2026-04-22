@@ -1175,6 +1175,26 @@ export async function putAdminAnnouncement(body: { text: string }) {
   return parse<{ ok: boolean; text: string }>(res);
 }
 
+export async function getAdminMonitorRecruitmentSettings() {
+  const res = await apiFetch(`${BASE}/admin/monitor-recruitment-settings`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ enabled: boolean; text: string; migrationMissing?: boolean }>(res);
+}
+
+export async function putAdminMonitorRecruitmentSettings(body: {
+  enabled: boolean;
+  text: string;
+}) {
+  const res = await apiFetch(`${BASE}/admin/monitor-recruitment-settings`, {
+    method: "PUT",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean; enabled: boolean; text: string }>(res);
+}
+
 export async function getAdminUsers() {
   const res = await apiFetch(`${BASE}/admin/users`, {
     headers: buildHeaders(),

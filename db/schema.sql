@@ -217,6 +217,8 @@ CREATE TABLE IF NOT EXISTS family_fixed_cost_items (
 CREATE TABLE IF NOT EXISTS site_settings (
   id                   TINYINT UNSIGNED NOT NULL PRIMARY KEY,
   header_announcement  VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'ヘッダー1行お知らせ（プレーンテキスト）',
+  monitor_recruitment_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'モニター募集表示フラグ（1=表示）',
+  monitor_recruitment_text VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'モニター募集案内文（管理者設定）',
   updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

@@ -4,9 +4,11 @@ import {
   createAdminUser,
   deleteAdminUser,
   getAdminAnnouncement,
+  getAdminMonitorRecruitmentSettings,
   getAdminPayPayImportSummary,
   getAdminUsers,
   putAdminAnnouncement,
+  putAdminMonitorRecruitmentSettings,
   resetAdminUserPassword,
   updateAdminUser,
 } from "../lib/api";
@@ -199,6 +201,10 @@ export function AdminPage() {
   const [announcementDraft, setAnnouncementDraft] = useState("");
   const [announcementBusy, setAnnouncementBusy] = useState(false);
   const [announcementMessage, setAnnouncementMessage] = useState<string | null>(null);
+  const [monitorRecruitmentEnabled, setMonitorRecruitmentEnabled] = useState(false);
+  const [monitorRecruitmentText, setMonitorRecruitmentText] = useState("");
+  const [monitorRecruitmentBusy, setMonitorRecruitmentBusy] = useState(false);
+  const [monitorRecruitmentMessage, setMonitorRecruitmentMessage] = useState<string | null>(null);
   const [familyLabelDrafts, setFamilyLabelDrafts] = useState<Record<string, string>>(() =>
     readFamilyLabelsFromStorage(),
   );
@@ -230,9 +236,10 @@ export function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [res, ann] = await Promise.all([
+      const [res, ann, monitorRecruitment] = await Promise.all([
         getAdminUsers(),
         getAdminAnnouncement().catch(() => ({ text: "" })),
+        getAdminMonitorRecruitmentSettings().catch(() => ({ enabled: false, text: "" })),
       ]);
       const monitor = await getAdminPayPayImportSummary().catch((e) => {
         const msg = e instanceof Error ? e.message : String(e);
@@ -279,6 +286,8 @@ export function AdminPage() {
         ),
       );
       setAnnouncementDraft(typeof ann.text === "string" ? ann.text : "");
+      setMonitorRecruitmentEnabled(monitorRecruitment.enabled === true);
+      setMonitorRecruitmentText(typeof monitorRecruitment.text === "string" ? monitorRecruitment.text : "");
     } catch (e) {
       setSubscriptionStatusWritable(true);
       setError(formatAdminApiError(e));
@@ -608,6 +617,79 @@ export function AdminPage() {
           </button>
           {announcementMessage ? (
             <span style={{ fontSize: "0.88rem", color: "var(--text-muted)" }}>{announcementMessage}</span>
+          ) : null}
+        </div>
+      </div>
+      <div
+        style={{
+          margin: "0.8rem 0 1rem",
+          padding: "0.9rem 1rem",
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+        }}
+      >
+        <h2 style={{ margin: "0 0 0.5rem", fontSize: "1.02rem" }}>モニター募集設定</h2>
+        <p style={{ margin: "0 0 0.65rem", fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+          管理者向けのモニター募集案内をON/OFFできます。募集文は最大512文字です。
+        </p>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.6rem" }}>
+          <input
+            type="checkbox"
+            checked={monitorRecruitmentEnabled}
+            disabled={monitorRecruitmentBusy || loading}
+            onChange={(e) => setMonitorRecruitmentEnabled(e.target.checked)}
+          />
+          モニター募集を表示する
+        </label>
+        <textarea
+          value={monitorRecruitmentText}
+          onChange={(e) => setMonitorRecruitmentText(e.target.value)}
+          maxLength={512}
+          rows={2}
+          disabled={monitorRecruitmentBusy || loading}
+          placeholder="例: 新機能の先行モニターを募集しています。ご協力いただける方は管理者までご連絡ください。"
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            font: "inherit",
+            fontSize: "0.92rem",
+            padding: "0.5rem 0.6rem",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "var(--input-bg)",
+            color: "var(--text)",
+            resize: "vertical",
+            minHeight: "3.2rem",
+          }}
+        />
+        <div style={{ marginTop: "0.55rem", display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+          <button
+            type="button"
+            disabled={monitorRecruitmentBusy || loading}
+            onClick={async () => {
+              setMonitorRecruitmentBusy(true);
+              setMonitorRecruitmentMessage(null);
+              setError(null);
+              try {
+                const normalized = monitorRecruitmentText.replace(/\s+/g, " ").trim().slice(0, 512);
+                await putAdminMonitorRecruitmentSettings({
+                  enabled: monitorRecruitmentEnabled,
+                  text: normalized,
+                });
+                setMonitorRecruitmentText(normalized);
+                setMonitorRecruitmentMessage("保存しました。");
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "モニター募集設定の保存に失敗しました");
+              } finally {
+                setMonitorRecruitmentBusy(false);
+              }
+            }}
+          >
+            {monitorRecruitmentBusy ? "保存中…" : "モニター募集設定を保存"}
+          </button>
+          {monitorRecruitmentMessage ? (
+            <span style={{ fontSize: "0.88rem", color: "var(--text-muted)" }}>{monitorRecruitmentMessage}</span>
           ) : null}
         </div>
       </div>
