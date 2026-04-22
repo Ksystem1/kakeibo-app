@@ -836,13 +836,7 @@ export function SettingsPage() {
         style={{ marginTop: "1.5rem", maxWidth: 720 }}
       >
         <h2 className={styles.sectionTitle}>固定費設定（全月共通）</h2>
-        <p className={styles.reclassifyHint}>
-          家賃・保険・サブスクなど、毎月ほぼ同じ金額の支出をここに登録します。
-          <br />
-          ここで登録した固定費は、毎月の集計に自動で反映されます。
-          <br />
-          そのため、固定費を取引一覧に毎月くり返し入力する必要はありません（変動する支出だけを記録すると管理しやすくなります）。
-        </p>
+        <p className={styles.reclassifyHint}>固定費を登録。毎月の集計に自動反映。</p>
         {!getApiBaseUrl() || !canSendAuthenticatedRequest(token) ? (
           <p className={styles.reclassifyHint}>
             API に接続できない、またはログイン・開発用ユーザー設定がない場合は、この端末の画面にのみ反映されます。
