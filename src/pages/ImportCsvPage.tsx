@@ -1,7 +1,14 @@
 import { FormEvent, useState } from "react";
-import { importCsvText } from "../lib/api";
+import {
+  commitPayPayCsvImport,
+  importCsvText,
+  previewPayPayCsvImport,
+  type PayPayImportResult,
+} from "../lib/api";
 import { useIsMobile } from "../hooks/useIsMobile";
 import styles from "../components/KakeiboDashboard.module.css";
+
+const COMBINE_SAME_TIME_PAYMENTS_KEY = "combine_same_time_payments";
 
 export function ImportCsvPage() {
   const mobile = useIsMobile();
@@ -9,6 +16,27 @@ export function ImportCsvPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [paypayText, setPaypayText] = useState("");
+  const [paypayErr, setPaypayErr] = useState<string | null>(null);
+  const [paypayMsg, setPaypayMsg] = useState<string | null>(null);
+  const [paypayLoading, setPaypayLoading] = useState(false);
+  const [paypayPreview, setPaypayPreview] = useState<PayPayImportResult | null>(null);
+  const [combineSameTimePayments, setCombineSameTimePayments] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(COMBINE_SAME_TIME_PAYMENTS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  function onChangeCombineFlag(v: boolean) {
+    setCombineSameTimePayments(v);
+    try {
+      localStorage.setItem(COMBINE_SAME_TIME_PAYMENTS_KEY, v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -37,6 +65,52 @@ export function ImportCsvPage() {
     }
   }
 
+  async function onSelectPayPayFile(file: File) {
+    const textContent = await file.text();
+    setPaypayText(textContent);
+    setPaypayErr(null);
+    setPaypayMsg(null);
+    setPaypayPreview(null);
+  }
+
+  async function onPreviewPayPay() {
+    setPaypayErr(null);
+    setPaypayMsg(null);
+    setPaypayLoading(true);
+    try {
+      const r = await previewPayPayCsvImport(paypayText, {
+        combineSameTimePayments,
+      });
+      setPaypayPreview(r);
+      setPaypayMsg(
+        `プレビュー完了: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
+      );
+    } catch (ex) {
+      setPaypayErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setPaypayLoading(false);
+    }
+  }
+
+  async function onCommitPayPay() {
+    setPaypayErr(null);
+    setPaypayMsg(null);
+    setPaypayLoading(true);
+    try {
+      const r = await commitPayPayCsvImport(paypayText, {
+        combineSameTimePayments,
+      });
+      setPaypayPreview(r);
+      setPaypayMsg(
+        `取込完了: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
+      );
+    } catch (ex) {
+      setPaypayErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setPaypayLoading(false);
+    }
+  }
+
   if (mobile) {
     return (
       <div className={styles.wrap}>
@@ -50,6 +124,88 @@ export function ImportCsvPage() {
   return (
     <div className={styles.wrap}>
       <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
+      <div className={styles.settingsPanel} style={{ marginTop: "0.9rem", marginBottom: "1rem" }}>
+        <h2 className={styles.sectionTitle}>PayPay CSV 取込（プレビュー対応）</h2>
+        <p className={styles.sub}>
+          「取引内容=支払い」のみを取り込みます。取引番号で更新挿入し、同一ファイル再取込時は二重登録を避けます。
+        </p>
+        <div style={{ margin: "0.4rem 0 0.55rem" }}>
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              void onSelectPayPayFile(file);
+            }}
+          />
+        </div>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: "0.55rem" }}>
+          <input
+            type="checkbox"
+            checked={combineSameTimePayments}
+            onChange={(e) => onChangeCombineFlag(e.target.checked)}
+          />
+          combine_same_time_payments（同秒・同取引先の支払いを合算）
+        </label>
+        <textarea
+          value={paypayText}
+          onChange={(e) => {
+            setPaypayText(e.target.value);
+            setPaypayPreview(null);
+          }}
+          rows={12}
+          placeholder="PayPay CSV を貼り付けるか、上のファイル選択を使ってください。"
+          style={{
+            width: "100%",
+            fontFamily: "monospace",
+            fontSize: "0.82rem",
+            padding: "0.65rem",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "rgba(0,0,0,0.25)",
+            color: "var(--text)",
+            marginBottom: "0.6rem",
+          }}
+        />
+        {paypayErr ? (
+          <p className={styles.err} role="alert">
+            {paypayErr}
+          </p>
+        ) : null}
+        {paypayMsg ? (
+          <p style={{ color: "var(--accent)", marginBottom: "0.55rem" }}>{paypayMsg}</p>
+        ) : null}
+        {paypayPreview ? (
+          <p className={styles.reclassifyHint} style={{ marginTop: "0.4rem" }}>
+            対象行: {paypayPreview.totalRows} / 新規: {paypayPreview.newCount} / 更新:{" "}
+            {paypayPreview.updatedCount} / 合算: {paypayPreview.aggregatedCount} / 除外:{" "}
+            {paypayPreview.excludedCount} / エラー: {paypayPreview.errorCount}
+          </p>
+        ) : null}
+        <div className={styles.modeRow} style={{ marginTop: "0.35rem", gap: "0.45rem" }}>
+          <button
+            type="button"
+            className={styles.btn}
+            disabled={paypayLoading || !paypayText.trim()}
+            onClick={() => {
+              void onPreviewPayPay();
+            }}
+          >
+            {paypayLoading ? "確認中…" : "プレビュー"}
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            disabled={paypayLoading || !paypayText.trim()}
+            onClick={() => {
+              void onCommitPayPay();
+            }}
+          >
+            {paypayLoading ? "取込中…" : "確定して取り込む"}
+          </button>
+        </div>
+      </div>
       <p className={styles.sub}>
         カテゴリ,日付,金額,メモの順（カンマ区切り）。取込むと、CSVに現れる年月（YYYY-MM）ごとに、その月の既存の支出をいったん削除してから、行を追加します（収入は残ります）。
       </p>

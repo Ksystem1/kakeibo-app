@@ -99,10 +99,12 @@ CREATE TABLE IF NOT EXISTS transactions (
   transaction_date DATE NOT NULL,
   memo             VARCHAR(500) NULL,
   external_id      VARCHAR(64) NULL COMMENT '連携元IDなど（冪等用）',
+  external_transaction_id VARCHAR(255) NULL COMMENT '外部取引ID（PayPay等の取引番号。文字列で保持）',
   created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_transactions_user_external (user_id, external_id),
+  UNIQUE KEY uq_transactions_user_external_txid (user_id, external_transaction_id),
   KEY idx_tx_user_date (user_id, transaction_date, id),
   KEY idx_tx_user_category (user_id, category_id),
   KEY idx_tx_user_account (user_id, account_id),
@@ -216,6 +218,31 @@ CREATE TABLE IF NOT EXISTS site_settings (
   id                   TINYINT UNSIGNED NOT NULL PRIMARY KEY,
   header_announcement  VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'ヘッダー1行お知らせ（プレーンテキスト）',
   updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- モニターログ（管理者向け分析: CSV取込サマリ）
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS monitor_logs (
+  id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  log_type         VARCHAR(64) NOT NULL COMMENT 'paypay_import など',
+  user_id          BIGINT UNSIGNED NULL,
+  import_target    VARCHAR(64) NULL COMMENT 'paypay_csv など',
+  action_type      VARCHAR(32) NULL COMMENT 'preview / commit',
+  total_rows       INT UNSIGNED NOT NULL DEFAULT 0,
+  new_count        INT UNSIGNED NOT NULL DEFAULT 0,
+  updated_count    INT UNSIGNED NOT NULL DEFAULT 0,
+  aggregated_count INT UNSIGNED NOT NULL DEFAULT 0,
+  excluded_count   INT UNSIGNED NOT NULL DEFAULT 0,
+  error_count      INT UNSIGNED NOT NULL DEFAULT 0,
+  detail_json      LONGTEXT NULL,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_monitor_logs_type_created (log_type, created_at),
+  KEY idx_monitor_logs_user_created (user_id, created_at),
+  CONSTRAINT fk_monitor_logs_user
+    FOREIGN KEY (user_id) REFERENCES users (id)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

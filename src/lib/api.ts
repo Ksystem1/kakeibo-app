@@ -799,6 +799,72 @@ export async function importCsvText(csvText: string) {
   }>(res);
 }
 
+export type PayPayImportResult = {
+  ok: boolean;
+  dryRun: boolean;
+  combineSameTimePayments: boolean;
+  totalRows: number;
+  newCount: number;
+  updatedCount: number;
+  aggregatedCount: number;
+  excludedCount: number;
+  errorCount: number;
+  parseErrors?: string[];
+};
+
+export async function previewPayPayCsvImport(
+  csvText: string,
+  options?: { combineSameTimePayments?: boolean },
+) {
+  const res = await apiFetch(`${BASE}/import/paypay-csv/preview`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({
+      csvText,
+      combineSameTimePayments: options?.combineSameTimePayments === true,
+    }),
+  });
+  return parse<PayPayImportResult>(res);
+}
+
+export async function commitPayPayCsvImport(
+  csvText: string,
+  options?: { combineSameTimePayments?: boolean },
+) {
+  const res = await apiFetch(`${BASE}/import/paypay-csv/commit`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({
+      csvText,
+      combineSameTimePayments: options?.combineSameTimePayments === true,
+    }),
+  });
+  return parse<PayPayImportResult>(res);
+}
+
+export type AdminPayPayMonitorSummaryRow = {
+  user_id: number;
+  user_email: string | null;
+  last_import_at: string | null;
+  run_count: number;
+  total_rows: number;
+  new_count: number;
+  updated_count: number;
+  aggregated_count: number;
+  excluded_count: number;
+  error_count: number;
+  last_commit_at: string | null;
+  last_preview_at: string | null;
+};
+
+export async function getAdminPayPayImportSummary() {
+  const res = await apiFetch(`${BASE}/admin/monitor-logs/paypay-summary`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ items: AdminPayPayMonitorSummaryRow[] }>(res);
+}
+
 export type ParseReceiptDebugTier = "server" | "free" | "subscribed";
 
 export async function parseReceiptImage(

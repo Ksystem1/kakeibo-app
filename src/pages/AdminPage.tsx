@@ -4,6 +4,7 @@ import {
   createAdminUser,
   deleteAdminUser,
   getAdminAnnouncement,
+  getAdminPayPayImportSummary,
   getAdminUsers,
   putAdminAnnouncement,
   resetAdminUserPassword,
@@ -201,6 +202,20 @@ export function AdminPage() {
   const [familyLabelDrafts, setFamilyLabelDrafts] = useState<Record<string, string>>(() =>
     readFamilyLabelsFromStorage(),
   );
+  const [paypayImportSummary, setPaypayImportSummary] = useState<
+    Array<{
+      user_id: number;
+      user_email: string | null;
+      last_import_at: string | null;
+      run_count: number;
+      total_rows: number;
+      new_count: number;
+      updated_count: number;
+      aggregated_count: number;
+      excluded_count: number;
+      error_count: number;
+    }>
+  >([]);
 
   useEffect(() => {
     try {
@@ -218,8 +233,10 @@ export function AdminPage() {
         getAdminUsers(),
         getAdminAnnouncement().catch(() => ({ text: "" })),
       ]);
+      const monitor = await getAdminPayPayImportSummary().catch(() => ({ items: [] }));
       const list = Array.isArray(res.items) ? res.items : [];
       setItems(list);
+      setPaypayImportSummary(Array.isArray(monitor.items) ? monitor.items : []);
       setSubscriptionStatusWritable(res.meta?.subscriptionStatusWritable !== false);
       setDisplayNameDrafts(
         Object.fromEntries(
@@ -676,6 +693,59 @@ export function AdminPage() {
                 </li>
               ))}
           </ul>
+        )}
+      </div>
+      <div
+        style={{
+          margin: "0.8rem 0 1rem",
+          padding: "0.75rem 0.9rem",
+          borderRadius: 10,
+          border: "1px solid var(--border)",
+          background: "var(--panel-bg)",
+        }}
+      >
+        <h2 style={{ margin: "0 0 0.5rem", fontSize: "0.98rem" }}>
+          PayPay取込モニター（monitor_logs 集計）
+        </h2>
+        {paypayImportSummary.length === 0 ? (
+          <p style={{ margin: 0, color: "var(--text-muted)" }}>
+            まだPayPay取込ログがありません（または migration v24 未適用）。
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 940 }}>
+              <thead>
+                <tr style={{ background: "var(--bg-card)" }}>
+                  <th style={adminTableTh}>ユーザー</th>
+                  <th style={adminTableTh}>実行回数</th>
+                  <th style={adminTableTh}>総行数</th>
+                  <th style={adminTableTh}>新規</th>
+                  <th style={adminTableTh}>更新</th>
+                  <th style={adminTableTh}>合算</th>
+                  <th style={adminTableTh}>除外</th>
+                  <th style={adminTableTh}>エラー</th>
+                  <th style={adminTableTh}>最終取込</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paypayImportSummary.map((r) => (
+                  <tr key={`pp-${r.user_id}`} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={adminTableTd}>
+                      {r.user_email ?? "—"}（ID: {r.user_id}）
+                    </td>
+                    <td style={adminTableTd}>{Number(r.run_count ?? 0)}</td>
+                    <td style={adminTableTd}>{Number(r.total_rows ?? 0).toLocaleString("ja-JP")}</td>
+                    <td style={adminTableTd}>{Number(r.new_count ?? 0).toLocaleString("ja-JP")}</td>
+                    <td style={adminTableTd}>{Number(r.updated_count ?? 0).toLocaleString("ja-JP")}</td>
+                    <td style={adminTableTd}>{Number(r.aggregated_count ?? 0).toLocaleString("ja-JP")}</td>
+                    <td style={adminTableTd}>{Number(r.excluded_count ?? 0).toLocaleString("ja-JP")}</td>
+                    <td style={adminTableTd}>{Number(r.error_count ?? 0).toLocaleString("ja-JP")}</td>
+                    <td style={adminTableTd}>{formatDateTime(r.last_import_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       {error ? <p style={{ color: "#b42318", fontWeight: 600 }}>{error}</p> : null}

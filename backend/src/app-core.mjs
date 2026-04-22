@@ -54,6 +54,10 @@ import {
   getStripeCheckoutPublicConfig,
 } from "./stripe-checkout.mjs";
 import { processStripeWebhook } from "./stripe-webhook.mjs";
+import {
+  executePayPayCsvImport,
+  writePayPayMonitorLog,
+} from "./paypay-import.mjs";
 
 const logger = createLogger("api");
 
@@ -1878,6 +1882,8 @@ export async function handleApiRequest(req, options = {}) {
             familyChatMessageById: "/family/chat/messages/{id}",
             adminSupportChatFamilies: "/admin/support/chat/families",
             adminSupportChatMessages: "/admin/support/chat/messages",
+            paypayImportPreview: "/import/paypay-csv/preview",
+            paypayImportCommit: "/import/paypay-csv/commit",
           },
         },
         hdrs,
@@ -4657,6 +4663,137 @@ export async function handleApiRequest(req, options = {}) {
           hdrs,
           skipCors,
         );
+      }
+
+      case "POST /import/paypay-csv/preview":
+      case "POST /import/paypay-csv/commit": {
+        let b;
+        try {
+          b = JSON.parse(req.body || "{}");
+        } catch {
+          return json(
+            400,
+            {
+              error: "InvalidRequest",
+              detail: "JSON の形式が不正です。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        const text = String(b.csvText ?? "");
+        const combineSameTimePayments = b.combineSameTimePayments === true;
+        const dryRun = routeKey(method, path) === "POST /import/paypay-csv/preview";
+        const importResult = await executePayPayCsvImport(pool, {
+          userId,
+          familyId,
+          csvText: text,
+          combineSameTimePayments,
+          dryRun,
+        });
+        if (!importResult.ok) {
+          try {
+            await writePayPayMonitorLog(pool, {
+              userId,
+              actionType: dryRun ? "preview" : "commit",
+              totalRows: importResult.counts?.totalRows ?? 0,
+              newCount: 0,
+              updatedCount: 0,
+              aggregatedCount: importResult.counts?.aggregatedCount ?? 0,
+              excludedCount: importResult.counts?.excludedCount ?? 0,
+              errorCount: importResult.counts?.errorCount ?? 1,
+              detail: {
+                combineSameTimePayments,
+                error: importResult.detail || importResult.error || "PayPayCsvParseError",
+                parseErrors: importResult.parseErrors || [],
+              },
+            });
+          } catch (e) {
+            logError("import.paypay.monitor_log.error", e, { userId, dryRun });
+          }
+          return json(
+            importResult.statusCode || 400,
+            {
+              error: importResult.error || "PayPayImportError",
+              detail: importResult.detail || "PayPay CSV の解析に失敗しました。",
+              ...importResult.counts,
+              parseErrors: importResult.parseErrors || [],
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        const monitorRow = {
+          userId,
+          actionType: dryRun ? "preview" : "commit",
+          totalRows: importResult.counts.totalRows,
+          newCount: importResult.counts.newCount,
+          updatedCount: importResult.counts.updatedCount,
+          aggregatedCount: importResult.counts.aggregatedCount,
+          excludedCount: importResult.counts.excludedCount,
+          errorCount: importResult.counts.errorCount,
+          detail: {
+            combineSameTimePayments,
+            parseErrors: importResult.parseErrors || [],
+          },
+        };
+        try {
+          await writePayPayMonitorLog(pool, monitorRow);
+        } catch (e) {
+          logError("import.paypay.monitor_log", e, { userId, dryRun });
+        }
+        return json(
+          200,
+          {
+            ok: true,
+            dryRun,
+            combineSameTimePayments,
+            ...importResult.counts,
+            parseErrors: importResult.parseErrors || [],
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+
+      case "GET /admin/monitor-logs/paypay-summary": {
+        const admin = await ensureAdmin(pool, userId);
+        if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+        try {
+          const [rows] = await pool.query(
+            `SELECT
+               ml.user_id,
+               MAX(ml.created_at) AS last_import_at,
+               COUNT(*) AS run_count,
+               COALESCE(SUM(ml.total_rows), 0) AS total_rows,
+               COALESCE(SUM(ml.new_count), 0) AS new_count,
+               COALESCE(SUM(ml.updated_count), 0) AS updated_count,
+               COALESCE(SUM(ml.aggregated_count), 0) AS aggregated_count,
+               COALESCE(SUM(ml.excluded_count), 0) AS excluded_count,
+               COALESCE(SUM(ml.error_count), 0) AS error_count,
+               MAX(CASE WHEN ml.action_type = 'commit' THEN ml.created_at ELSE NULL END) AS last_commit_at,
+               MAX(CASE WHEN ml.action_type = 'preview' THEN ml.created_at ELSE NULL END) AS last_preview_at,
+               MAX(u.email) AS user_email
+             FROM monitor_logs ml
+             LEFT JOIN users u ON u.id = ml.user_id
+             WHERE ml.log_type = 'paypay_import'
+             GROUP BY ml.user_id
+             ORDER BY last_import_at DESC`,
+          );
+          return json(200, { items: rows }, hdrs, skipCors);
+        } catch (e) {
+          logError("admin.monitor_logs.paypay_summary", e, { userId });
+          return json(
+            500,
+            {
+              error: "MonitorLogsReadError",
+              detail:
+                "monitor_logs の取得に失敗しました。db/migration_v24_paypay_import.sql の適用を確認してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
       }
 
       case "POST /receipts/learn": {
