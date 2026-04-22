@@ -11,6 +11,7 @@ import { isReservedLedgerFixedCostCategoryName } from "../lib/transactionCategor
 import { normalizeReceiptDateToYmd } from "../lib/receiptDate";
 import { prepareReceiptImageForApi } from "../lib/receiptImage";
 import { getReceiptDebugTier } from "../lib/receiptDebugTier";
+import { looksLikePayPayCsv } from "../lib/paypayCsv";
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
 
@@ -200,6 +201,8 @@ function normalizeReceiptCategoryId(id: unknown): number | null {
 /** モバイル「レシート取込」: フォトライブラリ/ファイル優先（image/* は付けずにライブラリ寄りに絞る） */
 const MOBILE_GALLERY_ACCEPT =
   "image/jpeg,image/jpg,image/png,image/heic,image/heif,image/webp,.heic,.heif";
+/** 画像に加え PayPay 明細 CSV を選べるよう拡張（.csv は CSV 取込画面へ遷移） */
+const RECEIPT_PICKER_ACCEPT = `${MOBILE_GALLERY_ACCEPT},.csv, text/csv, text/plain, .txt, application/vnd.ms-excel`;
 
 export function ReceiptPage() {
   const touchUi = useReceiptTouchUi();
@@ -387,6 +390,30 @@ export function ReceiptPage() {
 
   async function onFile(f: File | null) {
     if (!f) return;
+    const nameLower = (f.name || "").trim().toLowerCase();
+    if (nameLower.endsWith(".csv")) {
+      setLoading(true);
+      setNotice(null);
+      try {
+        const csvText = await f.text();
+        if (!looksLikePayPayCsv(csvText)) {
+          setNotice(
+            "この .csv は PayPay 取引明細の形式ではありません。「銀行・カード明細 CSV 取込」で .csv を選ぶか、レシート用の画像（JPEG/PNG 等）を選び直してください。",
+          );
+          return;
+        }
+        if (import.meta.env.DEV) {
+          // eslint-disable-next-line no-console
+          console.log("[Receipt] PayPay CSV → import page", { fileName: f.name, charLength: csvText.length });
+        }
+        navigate("/import", { state: { paypayPrefillText: csvText } });
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     setLoading(true);
     setNotice(null);
     setOcrVendor("");
@@ -578,7 +605,7 @@ export function ReceiptPage() {
           ref={galleryInputRef}
           id={galleryInputId}
           type="file"
-          accept={MOBILE_GALLERY_ACCEPT}
+          accept={RECEIPT_PICKER_ACCEPT}
           multiple={false}
           className="visually-hidden"
           disabled={loading}
@@ -592,7 +619,7 @@ export function ReceiptPage() {
           ref={galleryInputRef}
           id={galleryInputId}
           type="file"
-          accept="image/*"
+          accept={RECEIPT_PICKER_ACCEPT}
           className="visually-hidden"
           disabled={loading}
           onChange={handleFileChange}

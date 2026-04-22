@@ -1,22 +1,22 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   commitPayPayCsvImport,
   importCsvText,
   previewPayPayCsvImport,
   type PayPayImportResult,
 } from "../lib/api";
+import { looksLikePayPayCsv } from "../lib/paypayCsv";
 import styles from "../components/KakeiboDashboard.module.css";
 
 const COMBINE_SAME_TIME_PAYMENTS_KEY = "combine_same_time_payments";
-const PAYPAY_REQUIRED_HEADERS = ["取引日", "取引内容", "取引先", "取引番号"];
 
-function looksLikePayPayCsv(text: string): boolean {
-  const firstLine = String(text ?? "").split(/\r?\n/, 1)[0] ?? "";
-  if (!firstLine.trim()) return false;
-  return PAYPAY_REQUIRED_HEADERS.every((h) => firstLine.includes(h));
-}
+/** iOS のファイルピッカー向け（MIME は参考。取り込みは拡張子 .csv + 内容で判定） */
+const PAYPAY_FILE_ACCEPT = ".csv, text/csv, text/plain, .txt, application/vnd.ms-excel";
 
 export function ImportCsvPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [text, setText] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -33,6 +33,22 @@ export function ImportCsvPage() {
       return false;
     }
   });
+
+  useEffect(() => {
+    const s = location.state;
+    if (!s || typeof s !== "object") return;
+    const raw = (s as { paypayPrefillText?: string }).paypayPrefillText;
+    if (typeof raw !== "string" || !raw.trim()) return;
+    setPaypayText(raw);
+    setPaypayErr(null);
+    setPaypayMsg("レシート取込画面から遷移しました。プレビューで内容を確認できます。");
+    setPaypayPreview(null);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.log("[ImportCsv] prefill from receipt", { charLength: raw.length });
+    }
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate]);
 
   function onChangeCombineFlag(v: boolean) {
     setCombineSameTimePayments(v);
@@ -73,8 +89,8 @@ export function ImportCsvPage() {
   async function onSelectPayPayFile(file: File) {
     const fileName = String(file?.name ?? "").trim();
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console -- デバッグ
-      console.log("[ImportCsv] PayPay file", { name: fileName, size: file.size });
+      // eslint-disable-next-line no-console
+      console.log("[ImportCsv] PayPay file selected", { name: fileName, size: file.size });
     }
     if (!fileName.toLowerCase().endsWith(".csv")) {
       setPaypayText("");
@@ -97,6 +113,13 @@ export function ImportCsvPage() {
     setPaypayErr(null);
     setPaypayMsg(null);
     setPaypayPreview(null);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.log("[ImportCsv] PayPay CSV read OK (first line check passed)", {
+        name: fileName,
+        charLength: textContent.length,
+      });
+    }
   }
 
   async function onPreviewPayPay() {
@@ -117,6 +140,15 @@ export function ImportCsvPage() {
       setPaypayMsg(
         `プレビュー完了: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
       );
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.log("[ImportCsv] PayPay preview OK", {
+          newCount: r.newCount,
+          updatedCount: r.updatedCount,
+          totalRows: r.totalRows,
+          errorCount: r.errorCount,
+        });
+      }
     } catch (ex) {
       const m = ex instanceof Error ? ex.message : String(ex);
       setPaypayErr(
@@ -170,7 +202,7 @@ export function ImportCsvPage() {
         <div style={{ margin: "0.4rem 0 0.55rem" }}>
           <input
             type="file"
-            accept=".csv, text/csv, text/plain, .txt"
+            accept={PAYPAY_FILE_ACCEPT}
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) return;

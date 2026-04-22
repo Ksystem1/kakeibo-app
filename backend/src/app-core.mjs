@@ -1844,36 +1844,23 @@ async function getMonitorRecruitmentSettings(pool) {
 }
 
 /**
- * モニター募集設定の保存。既存行があれば UPDATE を優先し、ヘッダーお知らせを上書きしない。
+ * モニター募集設定の保存（INSERT … ON DUPLICATE KEY UPDATE）。主キー id=1、header は触らない。
  * @param {import("mysql2/promise").Pool} pool
  * @param {{ enabled: boolean, normalizedText: string }} param1
- * @returns {Promise<{ mode: "update" | "insert" }>}
+ * @returns {Promise<{ mode: "upsert" }>}
  */
 async function saveMonitorRecruitmentSettings(pool, { enabled, normalizedText }) {
-  const [upd] = await pool.query(
-    `UPDATE site_settings
-     SET monitor_recruitment_enabled = ?, monitor_recruitment_text = ?, updated_at = NOW()
-     WHERE id = 1`,
-    [enabled ? 1 : 0, normalizedText],
-  );
-  const affected = upd && typeof upd.affectedRows === "number" ? upd.affectedRows : 0;
-  if (affected > 0) {
-    return { mode: "update" };
-  }
-  // MySQL は行はマッチしても値が変わらないと affectedRows=0 になる。既に id=1 があるのに INSERT すると重複で 500 になる。
-  const [[existsRow]] = await pool.query(
-    `SELECT 1 AS ok FROM site_settings WHERE id = 1 LIMIT 1`,
-  );
-  if (existsRow) {
-    return { mode: "update" };
-  }
   await pool.query(
     `INSERT INTO site_settings
        (id, header_announcement, monitor_recruitment_enabled, monitor_recruitment_text)
-     VALUES (1, '', ?, ?)`,
+     VALUES (1, '', ?, ?)
+     ON DUPLICATE KEY UPDATE
+       monitor_recruitment_enabled = VALUES(monitor_recruitment_enabled),
+       monitor_recruitment_text = VALUES(monitor_recruitment_text),
+       updated_at = NOW()`,
     [enabled ? 1 : 0, normalizedText],
   );
-  return { mode: "insert" };
+  return { mode: "upsert" };
 }
 
 /**
