@@ -158,6 +158,7 @@ export function ImportCsvPage() {
         <div style={{ margin: "0.4rem 0 0.55rem" }}>
           <input
             type="file"
+            accept=".csv,text/csv,text/plain,application/octet-stream"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) return;
@@ -166,7 +167,7 @@ export function ImportCsvPage() {
           />
         </div>
         <p className={styles.reclassifyHint} style={{ margin: "0 0 0.45rem" }}>
-          iPhone の「ファイル」では拡張子なしデータも選べるよう、形式フィルタを外しています。PayPay形式でないファイルは自動で取込不可になります。
+          iPhone の「ファイル」向けに CSV/プレーンテキスト/汎用バイナリを選択可能にしています。PayPay形式でないファイルは自動で取込不可になります。
         </p>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: "0.55rem" }}>
           <input

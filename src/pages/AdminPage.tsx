@@ -216,6 +216,7 @@ export function AdminPage() {
       error_count: number;
     }>
   >([]);
+  const [paypayMonitorError, setPaypayMonitorError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -233,9 +234,20 @@ export function AdminPage() {
         getAdminUsers(),
         getAdminAnnouncement().catch(() => ({ text: "" })),
       ]);
-      const monitor = await getAdminPayPayImportSummary().catch(() => ({ items: [] }));
+      const monitor = await getAdminPayPayImportSummary().catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        setPaypayMonitorError(
+          msg && msg.trim()
+            ? msg
+            : "PayPay取込モニターを取得できません。APIデプロイまたは migration v24 の適用状態を確認してください。",
+        );
+        return { items: [] };
+      });
       const list = Array.isArray(res.items) ? res.items : [];
       setItems(list);
+      if (Array.isArray(monitor.items)) {
+        setPaypayMonitorError(null);
+      }
       setPaypayImportSummary(Array.isArray(monitor.items) ? monitor.items : []);
       setSubscriptionStatusWritable(res.meta?.subscriptionStatusWritable !== false);
       setDisplayNameDrafts(
@@ -708,9 +720,16 @@ export function AdminPage() {
           PayPay取込モニター（monitor_logs 集計）
         </h2>
         {paypayImportSummary.length === 0 ? (
-          <p style={{ margin: 0, color: "var(--text-muted)" }}>
-            まだPayPay取込ログがありません（または migration v24 未適用）。
-          </p>
+          <>
+            <p style={{ margin: 0, color: "var(--text-muted)" }}>
+              まだPayPay取込ログがありません（または migration v24 未適用）。
+            </p>
+            {paypayMonitorError ? (
+              <p style={{ margin: "0.45rem 0 0", color: "#b42318", fontWeight: 600 }}>
+                {paypayMonitorError}
+              </p>
+            ) : null}
+          </>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 940 }}>
