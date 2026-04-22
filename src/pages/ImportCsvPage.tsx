@@ -73,14 +73,16 @@ export function ImportCsvPage() {
   async function onSelectPayPayFile(file: File) {
     const fileName = String(file?.name ?? "").trim();
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console -- デバッグ（iOS MIME が空・変わる件の切り分け用）
-      console.log("[ImportCsv] PayPay file", {
-        name: fileName,
-        type: file.type,
-        size: file.size,
-      });
+      // eslint-disable-next-line no-console -- デバッグ
+      console.log("[ImportCsv] PayPay file", { name: fileName, size: file.size });
     }
-    // MIME（file.type）には依存しない。iOS では拡張子 .csv でも空になることがある。
+    if (!fileName.toLowerCase().endsWith(".csv")) {
+      setPaypayText("");
+      setPaypayPreview(null);
+      setPaypayMsg(null);
+      setPaypayErr("PayPay取引CSVは拡張子 .csv のファイルを選んでください。");
+      return;
+    }
     const textContent = await file.text();
     if (!looksLikePayPayCsv(textContent)) {
       setPaypayText("");
@@ -168,7 +170,7 @@ export function ImportCsvPage() {
         <div style={{ margin: "0.4rem 0 0.55rem" }}>
           <input
             type="file"
-            accept=".csv, text/csv, text/comma-separated-values, text/plain, application/vnd.ms-excel"
+            accept=".csv, text/csv, text/plain, .txt"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) return;
@@ -177,8 +179,8 @@ export function ImportCsvPage() {
           />
         </div>
         <p className={styles.reclassifyHint} style={{ margin: "0 0 0.45rem" }}>
-          iOS では <code>accept</code> に拡張子と代表的な MIME の両方を指定しています。それでも灰色の場合は下の欄に CSV 本文を貼り付けて取り込めます（中身の形式は PayPay 取引 CSV である必要があります）。ファイルの
-          MIME 種別（file.type）は使わず、中身の1行目で形式を判定します。
+          <code>accept</code> は iOS のファイルピッカー向けに広めに指定しています。取り込みは拡張子が .csv のファイルのみ（<code>file.type</code> は使いません）。形式は1行目で
+          PayPay 取引 CSV か判定します。貼り付けは従来どおり利用できます。
         </p>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: "0.55rem" }}>
           <input
