@@ -33,6 +33,7 @@ export function RegisterPage() {
   const [displayName, setDisplayName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [monitorRecruitmentMessage, setMonitorRecruitmentMessage] = useState<string | null>(null);
   const inviteToken = searchParams.get("invite")?.trim() || "";
@@ -60,6 +61,7 @@ export function RegisterPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuccessMessage(null);
     const em = email.trim().toLowerCase();
     if (!em || !em.includes("@")) {
       setError("有効なメールアドレスを入力してください。");
@@ -109,6 +111,11 @@ export function RegisterPage() {
         throw new Error("登録に失敗しました");
       }
       setSession(r.token, normalizeAuthContextUser(r.user));
+      const monitorGranted = r.monitorGranted === true || r.user?.monitorGranted === true;
+      if (monitorGranted) {
+        setSuccessMessage("モニターとして登録されました。ご協力ありがとうございます！");
+        await sleep(1400);
+      }
       navigate("/", { replace: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "登録に失敗しました";
@@ -207,6 +214,11 @@ export function RegisterPage() {
             {error ? (
               <p className={styles.error} role="alert">
                 {error}
+              </p>
+            ) : null}
+            {successMessage ? (
+              <p className={styles.success} role="status" aria-live="polite">
+                {successMessage}
               </p>
             ) : null}
             <button

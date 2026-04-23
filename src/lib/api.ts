@@ -202,6 +202,7 @@ export async function registerRequest(body: {
   });
   return parse<{
     token: string;
+    monitorGranted?: boolean;
     user: {
       id: number;
       email: string;
@@ -209,6 +210,7 @@ export async function registerRequest(body: {
       isAdmin?: boolean;
       subscriptionStatus?: string;
       isPremium?: boolean;
+      monitorGranted?: boolean;
     };
   }>(res);
 }

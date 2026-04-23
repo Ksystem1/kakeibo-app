@@ -123,6 +123,32 @@ function isErBadFieldError(e) {
   return code === "ER_BAD_FIELD_ERROR" || errno === 1054;
 }
 
+/**
+ * 新規登録時のモニター募集判定（表示条件と同一: enabled + text 非空）
+ * @param {import("mysql2/promise").PoolConnection} conn
+ */
+async function shouldGrantMonitorOnRegister(conn) {
+  try {
+    const [[row]] = await conn.query(
+      `SELECT monitor_recruitment_enabled, monitor_recruitment_text
+       FROM site_settings
+       WHERE id = 1
+       LIMIT 1`,
+    );
+    const enabled =
+      row?.monitor_recruitment_enabled === true ||
+      Number(row?.monitor_recruitment_enabled) === 1;
+    const text = String(row?.monitor_recruitment_text ?? "").trim();
+    return enabled && text !== "";
+  } catch (e) {
+    const code = String(e?.code ?? "");
+    if (code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_FIELD_ERROR") {
+      return false;
+    }
+    throw e;
+  }
+}
+
 function normalizeGradeGroup(raw) {
   if (raw == null) return null;
   const s0 =
@@ -563,15 +589,36 @@ export async function tryAuthRoutes(req, ctx) {
           }
         }
 
+        const monitorGranted = await shouldGrantMonitorOnRegister(conn);
+        const grantedSubscriptionStatus = monitorGranted ? "admin_free" : "inactive";
+
         let ur;
         try {
           [ur] = await conn.query(
-            `INSERT INTO users (email, login_name, password_hash, display_name)
-             VALUES (?, ?, ?, ?)`,
-            [email, loginName, ph, displayName],
+            `INSERT INTO users (email, login_name, password_hash, display_name, subscription_status)
+             VALUES (?, ?, ?, ?, ?)`,
+            [email, loginName, ph, displayName, grantedSubscriptionStatus],
           );
         } catch (insErr) {
-          if (isDuplicateKeyError(insErr)) {
+          if (isErBadFieldError(insErr)) {
+            [ur] = await conn.query(
+              `INSERT INTO users (email, login_name, password_hash, display_name)
+               VALUES (?, ?, ?, ?)`,
+              [email, loginName, ph, displayName],
+            );
+            if (monitorGranted) {
+              try {
+                await conn.query(
+                  `UPDATE users
+                   SET subscription_status = 'admin_free', updated_at = NOW()
+                   WHERE id = ?`,
+                  [ur.insertId],
+                );
+              } catch (e) {
+                if (!isErBadFieldError(e)) throw e;
+              }
+            }
+          } else if (isDuplicateKeyError(insErr)) {
             await conn.rollback();
             return json(
               409,
@@ -582,8 +629,9 @@ export async function tryAuthRoutes(req, ctx) {
               hdrs,
               skipCors,
             );
+          } else {
+            throw insErr;
           }
-          throw insErr;
         }
         const userId = ur.insertId;
         let familyId = null;
@@ -663,7 +711,9 @@ export async function tryAuthRoutes(req, ctx) {
               email,
               familyId,
               isAdmin: false,
-              subscriptionStatus: "inactive",
+              subscriptionStatus: grantedSubscriptionStatus,
+              monitorGranted,
+              isPremium: monitorGranted,
             },
           },
           hdrs,

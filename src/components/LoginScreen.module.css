@@ -298,6 +298,12 @@
   color: var(--danger);
 }
 
+.success {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #166534;
+}
+
 /* 新規登録: モニター募集（管理者設定・公開 API） */
 .monitorRecruitmentCallout {
   margin: 0 0 1.1rem;
