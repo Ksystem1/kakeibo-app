@@ -298,6 +298,21 @@
   color: var(--danger);
 }
 
+/* 新規登録: モニター募集（管理者設定・公開 API） */
+.monitorRecruitmentCallout {
+  margin: 0 0 1.1rem;
+  padding: 0.85rem 1rem;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text);
+  background: color-mix(in oklab, #3b82f6 12%, var(--bg-elevated) 88%);
+  border: 1px solid color-mix(in oklab, #2563eb 35%, var(--border) 65%);
+  border-radius: 10px;
+  box-shadow: 0 1px 0 rgba(37, 99, 235, 0.06);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .hint {
   margin: 1.35rem 0 0;
   padding-top: 1.25rem;

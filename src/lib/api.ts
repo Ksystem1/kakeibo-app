@@ -1158,6 +1158,18 @@ export async function getHeaderAnnouncement() {
   return parse<{ text: string }>(res);
 }
 
+/** 未ログイン可: 新規登録等に表示するモニター募集（サイト設定の公開フィールドのみ） */
+export async function getPublicSettings() {
+  const res = await apiFetch(`${BASE}/public/settings`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    is_monitor_mode: boolean;
+    monitor_recruitment_text: string;
+  }>(res);
+}
+
 export async function getAdminAnnouncement() {
   const res = await apiFetch(`${BASE}/admin/announcement`, {
     headers: buildHeaders(),

@@ -1,7 +1,7 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { normalizeAuthContextUser, registerRequest } from "../lib/api";
+import { getPublicSettings, normalizeAuthContextUser, registerRequest } from "../lib/api";
 import { AuthHeroAside } from "../components/AuthHeroAside";
 import styles from "../components/LoginScreen.module.css";
 import {
@@ -34,7 +34,28 @@ export function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [monitorRecruitmentMessage, setMonitorRecruitmentMessage] = useState<string | null>(null);
   const inviteToken = searchParams.get("invite")?.trim() || "";
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await getPublicSettings();
+        if (cancelled) return;
+        if (s.is_monitor_mode && s.monitor_recruitment_text.trim() !== "") {
+          setMonitorRecruitmentMessage(s.monitor_recruitment_text.trim());
+        } else {
+          setMonitorRecruitmentMessage(null);
+        }
+      } catch {
+        if (!cancelled) setMonitorRecruitmentMessage(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -114,6 +135,15 @@ export function RegisterPage() {
             <h2 className={styles.cardTitle}>新規登録</h2>
             <p className={styles.cardSub}>メールとパスワードでアカウントを作成</p>
           </header>
+          {monitorRecruitmentMessage ? (
+            <div
+              className={styles.monitorRecruitmentCallout}
+              role="status"
+              aria-live="polite"
+            >
+              {monitorRecruitmentMessage}
+            </div>
+          ) : null}
           <form className={styles.form} onSubmit={handleSubmit}>
             <div className={styles.field}>
               <label className={styles.label} htmlFor="reg-email">

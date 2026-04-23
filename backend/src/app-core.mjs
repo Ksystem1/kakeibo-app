@@ -1927,6 +1927,7 @@ export async function handleApiRequest(req, options = {}) {
             billingSubscriptionStatus: "/billing/subscription-status",
             billingStripeStatus: "/billing/stripe-status",
             publicConfig: "/config",
+            publicSettings: "/public/settings",
             billingPortalSession: "/billing/portal-session",
             billingCancelSubscription: "/billing/cancel-subscription",
             announcement: "/announcement",
@@ -2063,6 +2064,29 @@ export async function handleApiRequest(req, options = {}) {
         } catch (e) {
           logError("announcement.read", e, { method, path });
           return json(200, { text: "" }, hdrs, skipCors);
+        }
+      }
+      /** 未認証可: モニター募集の表示用のみ（他の site 設定は含めない） */
+      if (rk === "GET /public/settings") {
+        try {
+          const settings = await getMonitorRecruitmentSettings(pool);
+          return json(
+            200,
+            {
+              is_monitor_mode: settings.enabled === true,
+              monitor_recruitment_text: String(settings.text ?? "").trim(),
+            },
+            hdrs,
+            skipCors,
+          );
+        } catch (e) {
+          logError("public.settings.read", e, { method, path });
+          return json(
+            200,
+            { is_monitor_mode: false, monitor_recruitment_text: "" },
+            hdrs,
+            skipCors,
+          );
         }
       }
     }
