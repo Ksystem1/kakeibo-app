@@ -197,7 +197,7 @@ async function shouldGrantMonitorOnRegister(conn) {
 
 function buildInviteUrl(inviteRawToken) {
   const appOrigin = (process.env.APP_ORIGIN || "https://ksystemapp.com").replace(/\/$/, "");
-  return `${appOrigin}/kakeibo/register/passkey?invite=${encodeURIComponent(inviteRawToken)}`;
+  return `${appOrigin}/kakeibo/join?token=${encodeURIComponent(inviteRawToken)}`;
 }
 
 async function countPasskeyAuthenticators(poolOrConn, userId) {

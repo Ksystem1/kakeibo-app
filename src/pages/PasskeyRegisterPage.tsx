@@ -19,7 +19,7 @@ export function PasskeyRegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
-  const inviteToken = searchParams.get("invite")?.trim() || "";
+  const inviteToken = searchParams.get("token")?.trim() || searchParams.get("invite")?.trim() || "";
   const inviteMode = inviteToken !== "";
 
   async function onStartPasskey() {
