@@ -1,17 +1,21 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
+  commitPayPayCsvImport,
   createTransaction,
   getCategories,
   parseReceiptImage,
+  previewPayPayCsvImport,
   saveReceiptOcrCorrection,
+  type PayPayImportResult,
 } from "../lib/api";
 import { isReservedLedgerFixedCostCategoryName } from "../lib/transactionCategories";
 import { normalizeReceiptDateToYmd } from "../lib/receiptDate";
 import { prepareReceiptImageForApi } from "../lib/receiptImage";
 import { getReceiptDebugTier } from "../lib/receiptDebugTier";
 import { looksLikePayPayCsv } from "../lib/paypayCsv";
+import { UNIFIED_IMPORT_ACCEPT, isCsvFileName, isReceiptImageFile, isTxtFileName } from "../lib/importFileKind";
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
 
@@ -198,11 +202,9 @@ function normalizeReceiptCategoryId(id: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
-/** モバイル「レシート取込」: フォトライブラリ/ファイル優先（image/* は付けずにライブラリ寄りに絞る） */
-const MOBILE_GALLERY_ACCEPT =
-  "image/jpeg,image/jpg,image/png,image/heic,image/heif,image/webp,.heic,.heif";
-/** 画像に加え PayPay 明細 CSV を選べるよう拡張（.csv は CSV 取込画面へ遷移） */
-const RECEIPT_PICKER_ACCEPT = `${MOBILE_GALLERY_ACCEPT},.csv, text/csv, text/plain, .txt, application/vnd.ms-excel`;
+const COMBINE_SAME_TIME_PAYMENTS_KEY = "combine_same_time_payments";
+
+type UnifiedMode = "idle" | "receipt" | "paypay";
 
 export function ReceiptPage() {
   const touchUi = useReceiptTouchUi();
@@ -217,7 +219,28 @@ export function ReceiptPage() {
   const memoFieldId = useId();
   const categoryFieldId = useId();
 
+  const location = useLocation();
   const navigate = useNavigate();
+
+  const [unifiedMode, setUnifiedMode] = useState<UnifiedMode>("idle");
+  const [receiptImageObjectUrl, setReceiptImageObjectUrl] = useState<string | null>(null);
+  const [paypayText, setPaypayText] = useState("");
+  const [paypayErr, setPaypayErr] = useState<string | null>(null);
+  const [paypayMsg, setPaypayMsg] = useState<string | null>(null);
+  const [paypayLoading, setPaypayLoading] = useState(false);
+  const [paypayPreview, setPaypayPreview] = useState<PayPayImportResult | null>(null);
+  const [paypayCommitSuccess, setPaypayCommitSuccess] = useState<{
+    newCount: number;
+    updatedCount: number;
+  } | null>(null);
+  const paypayCommitRedirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [combineSameTimePayments, setCombineSameTimePayments] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(COMBINE_SAME_TIME_PAYMENTS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const [notice, setNotice] = useState<string | null>(null);
   /** OCR の店舗名（カテゴリ推定用・画面上は非表示） */
@@ -276,6 +299,7 @@ export function ReceiptPage() {
   const categoryTouchedByUserRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const isBusy = loading || paypayLoading;
   const displayMainCategory = useMemo(() => {
     const score = new Map<ReceiptItemCategory, number>();
     for (const it of items) {
@@ -358,13 +382,13 @@ export function ReceiptPage() {
   }, [draftCategoryId]);
 
   useEffect(() => {
-    if (!touchUi || !loading) return;
+    if (!touchUi || !isBusy) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [touchUi, loading]);
+  }, [touchUi, isBusy]);
 
   useEffect(() => {
     if (typeof navigator === "undefined") return;
@@ -383,39 +407,228 @@ export function ReceiptPage() {
     if (!isIOS) return;
     if (isStandalone) {
       setNotice(
-        "ホーム画面に追加したアプリでは、OS の制限でアルバムの挙動が Safari と異なることがあります。問題があれば Safari で開くか、「レシート取込」から既存の写真を選んでください。",
+        "ホーム画面に追加したアプリでは、OS の制限でアルバムの挙動が Safari と異なることがあります。問題があれば Safari で開くか、下の取込から既存の写真を選んでください。",
       );
     }
   }, [isIOS, isStandalone]);
 
+  useEffect(() => {
+    return () => {
+      if (receiptImageObjectUrl) {
+        URL.revokeObjectURL(receiptImageObjectUrl);
+      }
+    };
+  }, [receiptImageObjectUrl]);
+
+  useEffect(
+    () => () => {
+      if (paypayCommitRedirectTimer.current) {
+        clearTimeout(paypayCommitRedirectTimer.current);
+        paypayCommitRedirectTimer.current = null;
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const s = location.state;
+    if (!s || typeof s !== "object") return;
+    const raw = (s as { paypayPrefillText?: string }).paypayPrefillText;
+    if (typeof raw !== "string" || !raw.trim()) return;
+    setPaypayText(raw);
+    setUnifiedMode("paypay");
+    setPaypayErr(null);
+    setPaypayMsg(null);
+    setPaypayCommitSuccess(null);
+    setPaypayPreview(null);
+    setReceiptImageObjectUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.log("[Receipt] prefill PayPay from navigation", { charLength: raw.length });
+    }
+    void (async () => {
+      setPaypayLoading(true);
+      try {
+        if (!looksLikePayPayCsv(raw)) {
+          setPaypayErr("内容が PayPay 取引明細の形式ではありません。");
+          return;
+        }
+        const r = await previewPayPayCsvImport(raw, { combineSameTimePayments });
+        setPaypayPreview(r);
+        setPaypayMsg(
+          `プレビュー: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
+        );
+      } catch (e) {
+        setPaypayErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        setPaypayLoading(false);
+        navigate(location.pathname, { replace: true, state: null });
+      }
+    })();
+  }, [location.state, location.pathname, navigate]);
+
+  function clearPayPayImport() {
+    setPaypayText("");
+    setPaypayErr(null);
+    setPaypayMsg(null);
+    setPaypayPreview(null);
+    setPaypayCommitSuccess(null);
+  }
+
+  async function runPayPayPreviewForCurrentText() {
+    setPaypayErr(null);
+    setPaypayMsg(null);
+    if (!looksLikePayPayCsv(paypayText)) {
+      setPaypayErr("PayPay 取引明細の形式を確認できません。");
+      return;
+    }
+    setPaypayLoading(true);
+    try {
+      const r = await previewPayPayCsvImport(paypayText, { combineSameTimePayments });
+      setPaypayPreview(r);
+      setPaypayMsg(
+        `プレビュー: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
+      );
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.log("[Receipt] PayPay preview OK", { newCount: r.newCount, updatedCount: r.updatedCount });
+      }
+    } catch (e) {
+      setPaypayErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPaypayLoading(false);
+    }
+  }
+
+  function onChangeCombineFlag(v: boolean) {
+    setCombineSameTimePayments(v);
+    try {
+      localStorage.setItem(COMBINE_SAME_TIME_PAYMENTS_KEY, v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function onPayPayRegisterClick() {
+    setPaypayErr(null);
+    setPaypayMsg(null);
+    if (!looksLikePayPayCsv(paypayText)) {
+      setPaypayErr("PayPay 取引明細の形式を確認できません。");
+      return;
+    }
+    setPaypayLoading(true);
+    try {
+      const r = await commitPayPayCsvImport(paypayText, { combineSameTimePayments });
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.log("[Receipt] PayPay commit OK", { newCount: r.newCount, updatedCount: r.updatedCount });
+      }
+      setPaypayPreview(null);
+      setPaypayText("");
+      setPaypayMsg(null);
+      setPaypayCommitSuccess({ newCount: r.newCount, updatedCount: r.updatedCount });
+      if (paypayCommitRedirectTimer.current) {
+        clearTimeout(paypayCommitRedirectTimer.current);
+      }
+      paypayCommitRedirectTimer.current = setTimeout(() => {
+        paypayCommitRedirectTimer.current = null;
+        setPaypayCommitSuccess(null);
+        setUnifiedMode("idle");
+        navigate("/");
+      }, 2600);
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      const isLikelyClientParse = /PayPay|必須列|列が不足|CSV|形式/.test(m);
+      setPaypayErr(
+        isLikelyClientParse ? `${m} 内容を確認してください。` : "保存に失敗しました。通信環境を確認してください。",
+      );
+    } finally {
+      setPaypayLoading(false);
+    }
+  }
+
   async function onFile(f: File | null) {
-    if (!f) return;
-    const nameLower = (f.name || "").trim().toLowerCase();
-    if (nameLower.endsWith(".csv")) {
-      setLoading(true);
+    if (!f || isBusy) return;
+
+    async function loadPayPayFromText(csvText: string, label: string) {
+      if (!looksLikePayPayCsv(csvText)) {
+        setNotice(
+          "この内容は PayPay 取引明細の形式ではありません。拡張子 .csv の明細か、レシート用の画像（JPEG/PNG 等）を選び直してください。",
+        );
+        return;
+      }
+      setNotice(null);
+      setUnifiedMode("paypay");
+      setReceiptImageObjectUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      clearPayPayImport();
+      setPaypayText(csvText);
+      setPaypayLoading(true);
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.log("[Receipt] PayPay from file", { label, charLength: csvText.length });
+      }
+      try {
+        const r = await previewPayPayCsvImport(csvText, { combineSameTimePayments });
+        setPaypayPreview(r);
+        setPaypayMsg(
+          `プレビュー: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
+        );
+      } catch (e) {
+        setPaypayErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        setPaypayLoading(false);
+      }
+    }
+
+    if (isCsvFileName(f.name)) {
       setNotice(null);
       try {
         const csvText = await f.text();
-        if (!looksLikePayPayCsv(csvText)) {
-          setNotice(
-            "この .csv は PayPay 取引明細の形式ではありません。「銀行・カード明細 CSV 取込」で .csv を選ぶか、レシート用の画像（JPEG/PNG 等）を選び直してください。",
-          );
-          return;
-        }
-        if (import.meta.env.DEV) {
-          // eslint-disable-next-line no-console
-          console.log("[Receipt] PayPay CSV → import page", { fileName: f.name, charLength: csvText.length });
-        }
-        navigate("/import", { state: { paypayPrefillText: csvText } });
+        await loadPayPayFromText(csvText, f.name);
       } catch (e) {
         setNotice(e instanceof Error ? e.message : String(e));
-      } finally {
-        setLoading(false);
       }
+      return;
+    }
+    if (isTxtFileName(f.name)) {
+      setNotice(null);
+      try {
+        const t = await f.text();
+        await loadPayPayFromText(t, f.name);
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
+    if (!isReceiptImageFile(f)) {
+      setNotice(null);
+      try {
+        const t = await f.text();
+        if (looksLikePayPayCsv(t)) {
+          await loadPayPayFromText(t, f.name || "明細.txt");
+          return;
+        }
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : String(e));
+        return;
+      }
+      setNotice("画像（JPEG/PNG 等）か、PayPay 取引明細の .csv / .txt を選び直してください。");
       return;
     }
     setLoading(true);
     setNotice(null);
+    clearPayPayImport();
+    setUnifiedMode("receipt");
+    setReceiptImageObjectUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(f);
+    });
     setOcrVendor("");
     setDraftMemo("");
     setDraftTotal("");
@@ -550,10 +763,11 @@ export function ReceiptPage() {
     e.target.value = "";
   }
 
-  const pickDisabled = loading ? styles.receiptPickBtnDisabled : "";
+  const pickDisabled = isBusy ? styles.receiptPickBtnDisabled : "";
 
   const dateField = useMemo(() => dateFieldMode(draftDate), [draftDate]);
 
+  const busyLabel = loading ? "解析中…" : "明細を処理中…";
   const loadingUi = (
     <>
       {touchUi ? (
@@ -565,7 +779,7 @@ export function ReceiptPage() {
         >
           <div className={styles.receiptLoadingOverlayInner}>
             <span className={styles.receiptSpinner} aria-hidden />
-            <p className={styles.receiptLoadingOverlayText}>解析中...</p>
+            <p className={styles.receiptLoadingOverlayText}>{busyLabel}</p>
           </div>
         </div>
       ) : (
@@ -576,7 +790,7 @@ export function ReceiptPage() {
           aria-busy="true"
         >
           <span className={styles.receiptSpinner} aria-hidden />
-          <span>解析中...</span>
+          <span>{busyLabel}</span>
         </div>
       )}
     </>
@@ -584,8 +798,8 @@ export function ReceiptPage() {
 
   return (
     <div className={styles.wrap}>
-      {loading ? loadingUi : null}
-      <h1 className={styles.title}>レシート読取</h1>
+      {isBusy ? loadingUi : null}
+      <h1 className={styles.title}>レシート・明細取込</h1>
       {receiptDebugTier !== "server" ? (
         <p
           className={styles.infoText}
@@ -605,10 +819,10 @@ export function ReceiptPage() {
           ref={galleryInputRef}
           id={galleryInputId}
           type="file"
-          accept={RECEIPT_PICKER_ACCEPT}
+          accept={UNIFIED_IMPORT_ACCEPT}
           multiple={false}
           className="visually-hidden"
-          disabled={loading}
+          disabled={isBusy}
           onChange={handleFileChange}
           tabIndex={-1}
           aria-hidden
@@ -619,9 +833,9 @@ export function ReceiptPage() {
           ref={galleryInputRef}
           id={galleryInputId}
           type="file"
-          accept={RECEIPT_PICKER_ACCEPT}
+          accept={UNIFIED_IMPORT_ACCEPT}
           className="visually-hidden"
-          disabled={loading}
+          disabled={isBusy}
           onChange={handleFileChange}
           tabIndex={-1}
           aria-hidden
@@ -635,13 +849,136 @@ export function ReceiptPage() {
             setNotice(null);
             galleryInputRef.current?.click();
           }}
-          disabled={loading}
+          disabled={isBusy}
         >
-          レシート取込
+          ファイルを取り込む
         </button>
       </div>
 
-      <form
+      {receiptImageObjectUrl && unifiedMode === "receipt" ? (
+        <div
+          className={styles.settingsPanel}
+          style={{ marginBottom: "0.75rem", padding: "0.65rem", textAlign: "center" as const }}
+        >
+          <img
+            src={receiptImageObjectUrl}
+            alt="選択したレシート画像"
+            style={{ maxWidth: "100%", maxHeight: 240, borderRadius: 8, objectFit: "contain" as const }}
+          />
+        </div>
+      ) : null}
+
+      {unifiedMode === "paypay" && paypayCommitSuccess ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className={styles.settingsPanel}
+          style={{
+            marginBottom: "0.75rem",
+            padding: "0.75rem 0.9rem",
+            border: "1px solid var(--accent, #2d9f6c)",
+            background: "color-mix(in srgb, var(--accent, #2d9f6c) 14%, transparent)",
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 600 }}>
+            取り込みが完了しました（新規 {paypayCommitSuccess.newCount} 件 / 更新 {paypayCommitSuccess.updatedCount}{" "}
+            件）
+          </p>
+          <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+            まもなく家計簿の画面へ移動します…
+          </p>
+        </div>
+      ) : null}
+
+      {unifiedMode === "paypay" && !paypayCommitSuccess ? (
+        <div
+          className={styles.settingsPanel}
+          style={{ marginBottom: "0.75rem", padding: "0.75rem 0.85rem" }}
+        >
+          <p className={styles.sub} style={{ margin: "0 0 0.5rem" }}>
+            PayPay 明細: 拡張子 <code>.csv</code> を優先、内容の1行目で判別（<code>file.type</code> には依存しません）。
+          </p>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: "0.5rem" }}>
+            <input
+              type="checkbox"
+              checked={combineSameTimePayments}
+              onChange={(e) => onChangeCombineFlag(e.target.checked)}
+              disabled={paypayLoading}
+            />
+            同秒・同取引先の支払いを合算
+          </label>
+          {paypayPreview ? (
+            <p className={styles.reclassifyHint} style={{ margin: "0 0 0.45rem" }}>
+              対象行: {paypayPreview.totalRows} / 新規: {paypayPreview.newCount} / 更新: {paypayPreview.updatedCount} / 合算:{" "}
+              {paypayPreview.aggregatedCount} / 除外: {paypayPreview.excludedCount} / エラー: {paypayPreview.errorCount}
+            </p>
+          ) : null}
+          <textarea
+            value={paypayText}
+            onChange={(e) => {
+              setPaypayText(e.target.value);
+              setPaypayPreview(null);
+            }}
+            rows={8}
+            placeholder="PayPay 取引CSV（必要なら編集可）"
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              fontFamily: "monospace",
+              fontSize: "0.82rem",
+              padding: "0.6rem",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "rgba(0,0,0,0.25)",
+              color: "var(--text)",
+              marginBottom: "0.5rem",
+            }}
+          />
+          {paypayErr ? (
+            <p className={styles.err} role="alert" style={{ marginBottom: "0.4rem" }}>
+              {paypayErr}
+            </p>
+          ) : null}
+          {paypayMsg && !paypayErr ? (
+            <p style={{ color: "var(--accent)", margin: "0 0 0.4rem" }}>{paypayMsg}</p>
+          ) : null}
+          <div className={styles.modeRow} style={{ flexWrap: "wrap", gap: "0.45rem" }}>
+            <button
+              type="button"
+              className={styles.btn}
+              disabled={paypayLoading || !paypayText.trim()}
+              onClick={() => {
+                void runPayPayPreviewForCurrentText();
+              }}
+            >
+              プレビュー更新
+            </button>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              disabled={paypayLoading || !paypayText.trim() || !looksLikePayPayCsv(paypayText)}
+              onClick={() => {
+                void onPayPayRegisterClick();
+              }}
+            >
+              登録
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {unifiedMode === "idle" && !receiptImageObjectUrl ? (
+        <p className={styles.sub} style={{ margin: "0.2rem 0 0.85rem" }}>
+          画像（レシート）を選べば AI 解析、<code>.csv</code> の明細を選べば取込件数のプレビューが始まります。銀行口座向けの別形式CSVは{" "}
+          <Link to="/import" style={{ color: "var(--accent)" }}>
+            銀行・カード明細取込
+          </Link>
+          へ。
+        </p>
+      ) : null}
+
+      {unifiedMode === "receipt" ? (
+        <form
         className={styles.form}
         data-receipt-form
         onSubmit={(e) => e.preventDefault()}
@@ -899,6 +1236,7 @@ export function ReceiptPage() {
           {registering ? "登録中…" : "登録"}
         </button>
       </form>
+      ) : null}
 
       {notice ? (
         <p className={styles.infoText} style={{ marginBottom: "1rem" }}>
@@ -906,7 +1244,7 @@ export function ReceiptPage() {
         </p>
       ) : null}
 
-      {!touchUi && items.length === 0 ? (
+      {!touchUi && unifiedMode === "receipt" && items.length === 0 ? (
         <p className={styles.sub}>画像を選択すると、合計金額を自動で反映します。</p>
       ) : null}
     </div>
