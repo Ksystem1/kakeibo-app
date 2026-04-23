@@ -125,6 +125,23 @@ function logPasskeyDetail(event, e, extra = {}) {
   console.error(JSON.stringify(payload));
 }
 
+function decodeClientDataOriginFromCredential(credential) {
+  const clientDataJSON = credential?.response?.clientDataJSON;
+  if (!clientDataJSON) return null;
+  try {
+    const json = Buffer.from(String(clientDataJSON), "base64url").toString("utf8");
+    const parsed = JSON.parse(json);
+    return String(parsed?.origin || "").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function isWebauthnVerificationError(e) {
+  const msg = String(e?.message || "");
+  return /origin|rp id|rpid|challenge|registration|webauthn|credential/i.test(msg);
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -626,12 +643,25 @@ export async function tryAuthRoutes(req, ctx) {
           });
         } catch (verifyErr) {
           const cfg = resolvePasskeyConfig();
+          const receivedOrigin = decodeClientDataOriginFromCredential(credential);
           logPasskeyDetail("auth.passkey.register.verify.webauthn", verifyErr, {
             expectedRPID: cfg.rpID,
             expectedOrigins: cfg.expectedOrigins,
             expectedChallengePrefix: String(flow.c).slice(0, 12),
             failureReason: verifyErr?.message,
+            receivedOrigin,
           });
+          if (isWebauthnVerificationError(verifyErr)) {
+            return json(
+              400,
+              {
+                error: "PasskeyRegistrationVerificationFailed",
+                detail: String(verifyErr?.message || "Registration verification failed"),
+              },
+              hdrs,
+              skipCors,
+            );
+          }
           throw verifyErr;
         }
         if (!verification?.verified || !verification.registrationInfo) {

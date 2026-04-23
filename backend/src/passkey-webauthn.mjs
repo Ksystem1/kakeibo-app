@@ -136,8 +136,10 @@ export async function buildPasskeyAuthenticationOptions() {
 export async function verifyPasskeyRegistration({ credential, expectedChallenge }) {
   const isProd = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
   const { rpID, expectedOrigins } = resolvePasskeyConfig();
-  const expectedRPID = isProd ? "ksystemapp.com" : rpID;
-  const expectedOrigin = isProd ? "https://ksystemapp.com" : expectedOrigins;
+  const expectedRPID = isProd ? ["ksystemapp.com", "www.ksystemapp.com"] : rpID;
+  const expectedOrigin = isProd
+    ? ["https://ksystemapp.com", "https://www.ksystemapp.com"]
+    : expectedOrigins;
   return verifyRegistrationResponse({
     response: credential,
     expectedChallenge: String(expectedChallenge || ""),
@@ -154,8 +156,10 @@ export async function verifyPasskeyAuthentication({
 }) {
   const isProd = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
   const { rpID, expectedOrigins } = resolvePasskeyConfig();
-  const expectedRPID = isProd ? "ksystemapp.com" : rpID;
-  const expectedOrigin = isProd ? "https://ksystemapp.com" : expectedOrigins;
+  const expectedRPID = isProd ? ["ksystemapp.com", "www.ksystemapp.com"] : rpID;
+  const expectedOrigin = isProd
+    ? ["https://ksystemapp.com", "https://www.ksystemapp.com"]
+    : expectedOrigins;
   return verifyAuthenticationResponse({
     response: credential,
     expectedChallenge: String(expectedChallenge || ""),
