@@ -15,6 +15,12 @@ function gradeTitle(grade: GradeGroup | null | undefined) {
   return "3-4年生ゲーム";
 }
 
+const QUIZ_ITEM_ILLUSTRATIONS: Record<string, string> = {
+  りんご: "🍎",
+  えんぴつ: "✏️",
+  ノート: "📓",
+};
+
 export function ChildGame({ gradeGroup, ledgerHint }: Props) {
   const [walletPos, setWalletPos] = useState<"left" | "center" | "right">("center");
   const [coinIndex, setCoinIndex] = useState(0);
@@ -83,10 +89,14 @@ export function ChildGame({ gradeGroup, ledgerHint }: Props) {
   }
 
   if (gradeGroup === "3-4") {
+    const itemIllustration = QUIZ_ITEM_ILLUSTRATIONS[currentQuiz.item] || "🛍️";
     return (
       <div className={styles.wrap}>
         <h3 className={styles.title}>{gradeTitle(gradeGroup)}</h3>
         <p className={styles.hint}>イラストの値段をあてよう</p>
+        <div className={styles.quizIllustrationBox} aria-hidden="true">
+          <span className={styles.quizIllustration}>{itemIllustration}</span>
+        </div>
         <p className={styles.question}>この「{currentQuiz.item}」はいくら？</p>
         <div className={styles.choiceRow}>
           {currentQuiz.choices.map((c) => (
@@ -109,10 +119,14 @@ export function ChildGame({ gradeGroup, ledgerHint }: Props) {
   }
 
   if (gradeGroup !== "5-6") {
+    const itemIllustration = QUIZ_ITEM_ILLUSTRATIONS[currentQuiz.item] || "🛍️";
     return (
       <div className={styles.wrap}>
         <h3 className={styles.title}>{gradeTitle(gradeGroup)}</h3>
         <p className={styles.hint}>イラストの値段をあてよう</p>
+        <div className={styles.quizIllustrationBox} aria-hidden="true">
+          <span className={styles.quizIllustration}>{itemIllustration}</span>
+        </div>
         <p className={styles.question}>この「{currentQuiz.item}」はいくら？</p>
         <div className={styles.choiceRow}>
           {currentQuiz.choices.map((c) => (

@@ -51,6 +51,24 @@
   margin: 0.45rem 0;
 }
 
+.quizIllustrationBox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.2rem;
+  min-height: 4.2rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.quizIllustration {
+  font-size: 2.3rem;
+  line-height: 1;
+}
+
 .choiceRow {
   display: flex;
   flex-wrap: wrap;
