@@ -254,6 +254,52 @@ export async function verifyPasskeyRegistration(body: {
   }>(res);
 }
 
+export async function getPasskeyUpgradeOptions() {
+  const res = await apiFetch(`${BASE}/auth/passkey/add/options`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({}),
+  });
+  return parse<{
+    options: unknown;
+    flowToken: string;
+  }>(res);
+}
+
+export async function verifyPasskeyUpgrade(body: {
+  flow_token: string;
+  credential: unknown;
+}) {
+  const res = await apiFetch(`${BASE}/auth/passkey/add/verify`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean; authMethod: "email" | "passkey" | "both" }>(res);
+}
+
+export async function getPasskeyStatus() {
+  const res = await apiFetch(`${BASE}/auth/passkey/status`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    authMethod: "email" | "passkey" | "both" | string;
+    passkeyCount: number;
+    hasPasskey: boolean;
+    canAnonymize: boolean;
+  }>(res);
+}
+
+export async function anonymizeEmailCredential() {
+  const res = await apiFetch(`${BASE}/auth/me/anonymize-email`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({}),
+  });
+  return parse<{ ok: boolean; authMethod: "passkey" | string }>(res);
+}
+
 export async function getAuthMe() {
   const res = await apiFetch(`${BASE}/auth/me`, {
     headers: buildHeaders(),

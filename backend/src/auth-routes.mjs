@@ -13,6 +13,7 @@ import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { canAccessFamilyChat, SINGLE_FAMILY_CHAT_ID } from "./family-chat-access.mjs";
 import {
   buildPasskeyRegistrationOptions,
+  issuePasskeyRegistrationFlowToken,
   registrationInfoToDbValues,
   verifyPasskeyRegistration,
   verifyPasskeyRegistrationFlowToken,
@@ -36,8 +37,12 @@ const AUTH_ROUTE_KEYS = new Set([
   "POST /auth/reset-password",
   "GET /auth/me",
   "PATCH /auth/me/kid-theme",
+  "GET /auth/passkey/status",
   "POST /auth/passkey/register/options",
   "POST /auth/passkey/register/verify",
+  "POST /auth/passkey/add/options",
+  "POST /auth/passkey/add/verify",
+  "POST /auth/me/anonymize-email",
   "GET /families/members",
   "POST /families/invite",
   "POST /families/invite-link",
@@ -161,6 +166,20 @@ async function shouldGrantMonitorOnRegister(conn) {
 function buildInviteUrl(inviteRawToken) {
   const appOrigin = (process.env.APP_ORIGIN || "https://ksystemapp.com").replace(/\/$/, "");
   return `${appOrigin}/kakeibo/register/passkey?invite=${encodeURIComponent(inviteRawToken)}`;
+}
+
+async function countPasskeyAuthenticators(poolOrConn, userId) {
+  const [[row]] = await poolOrConn.query(
+    `SELECT COUNT(*) AS c FROM authenticators WHERE user_id = ?`,
+    [userId],
+  );
+  return Number(row?.c || 0);
+}
+
+function nextAuthMethodAfterPasskey(prevAuthMethod, hasEmailCredential) {
+  const prev = String(prevAuthMethod ?? "").trim().toLowerCase();
+  if (prev === "passkey" || prev === "both") return prev;
+  return hasEmailCredential ? "both" : "passkey";
 }
 
 function normalizeGradeGroup(raw) {
@@ -629,6 +648,139 @@ export async function tryAuthRoutes(req, ctx) {
       } finally {
         conn.release();
       }
+    }
+
+    if (key === "GET /auth/passkey/status") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const [[u]] = await pool.query(
+        `SELECT auth_method, email, password_hash FROM users WHERE id = ? LIMIT 1`,
+        [uid],
+      );
+      if (!u) {
+        return json(404, { error: "ユーザーが見つかりません" }, hdrs, skipCors);
+      }
+      const passkeyCount = await countPasskeyAuthenticators(pool, uid);
+      const hasPasskey = passkeyCount > 0;
+      const hasEmailCredential =
+        String(u.email ?? "").trim() !== "" && String(u.password_hash ?? "").trim() !== "";
+      const authMethod = String(u.auth_method ?? (hasPasskey ? "passkey" : "email"));
+      return json(
+        200,
+        {
+          authMethod,
+          passkeyCount,
+          hasPasskey,
+          canAnonymize: hasPasskey && hasEmailCredential,
+        },
+        hdrs,
+        skipCors,
+      );
+    }
+
+    if (key === "POST /auth/passkey/add/options") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const [[u]] = await pool.query(
+        `SELECT display_name, email FROM users WHERE id = ? LIMIT 1`,
+        [uid],
+      );
+      if (!u) {
+        return json(404, { error: "ユーザーが見つかりません" }, hdrs, skipCors);
+      }
+      const displayName =
+        String(u.display_name ?? "").trim() ||
+        String(u.email ?? "").trim() ||
+        `user-${uid}`;
+      const out = await buildPasskeyRegistrationOptions({ displayName });
+      const flow = verifyPasskeyRegistrationFlowToken(out.flowToken);
+      if (!flow?.c) {
+        return json(500, { error: "パスキー登録セッションの生成に失敗しました" }, hdrs, skipCors);
+      }
+      const flowToken = issuePasskeyRegistrationFlowToken(
+        { ...flow, m: "add", uid },
+        600,
+      );
+      return json(200, { options: out.options, flowToken }, hdrs, skipCors);
+    }
+
+    if (key === "POST /auth/passkey/add/verify") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const b = JSON.parse(req.body || "{}");
+      const flowToken = String(b.flow_token ?? b.flowToken ?? "").trim();
+      const credential = b.credential ?? b.response ?? null;
+      if (!flowToken || !credential) {
+        return json(400, { error: "flow_token と credential が必要です" }, hdrs, skipCors);
+      }
+      const flow = verifyPasskeyRegistrationFlowToken(flowToken);
+      if (!flow?.c || flow?.m !== "add" || Number(flow?.uid) !== Number(uid)) {
+        return json(400, { error: "登録セッションが無効または期限切れです" }, hdrs, skipCors);
+      }
+      const verification = await verifyPasskeyRegistration({
+        credential,
+        expectedChallenge: flow.c,
+      });
+      if (!verification?.verified || !verification.registrationInfo) {
+        return json(400, { error: "パスキー登録の検証に失敗しました" }, hdrs, skipCors);
+      }
+      const transports = credential?.response?.transports ?? credential?.transports ?? [];
+      const regDb = registrationInfoToDbValues(verification, transports);
+      const conn = await withDbRetry(
+        "auth.passkey.add.getConnection",
+        () => pool.getConnection(),
+        Number(process.env.DB_RETRY_ATTEMPTS || "10"),
+      );
+      try {
+        await conn.beginTransaction();
+        await conn.query(
+          `INSERT INTO authenticators (user_id, credential_id, public_key, counter, transports)
+           VALUES (?, ?, ?, ?, ?)`,
+          [uid, regDb.credentialIdBuf, regDb.publicKeyBuf, regDb.counter, regDb.transportsCsv],
+        );
+        const [[u]] = await conn.query(
+          `SELECT auth_method, email, password_hash FROM users WHERE id = ? LIMIT 1`,
+          [uid],
+        );
+        const hasEmailCredential =
+          String(u?.email ?? "").trim() !== "" && String(u?.password_hash ?? "").trim() !== "";
+        const nextAuthMethod = nextAuthMethodAfterPasskey(u?.auth_method, hasEmailCredential);
+        await conn.query(`UPDATE users SET auth_method = ? WHERE id = ?`, [nextAuthMethod, uid]);
+        await conn.commit();
+        return json(200, { ok: true, authMethod: nextAuthMethod }, hdrs, skipCors);
+      } catch (e) {
+        await conn.rollback();
+        if (isDuplicateKeyError(e)) {
+          return json(409, { error: "このパスキーは既に登録済みです" }, hdrs, skipCors);
+        }
+        throw e;
+      } finally {
+        conn.release();
+      }
+    }
+
+    if (key === "POST /auth/me/anonymize-email") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const passkeyCount = await countPasskeyAuthenticators(pool, uid);
+      if (passkeyCount <= 0) {
+        return json(400, { error: "先にパスキーを登録してください" }, hdrs, skipCors);
+      }
+      await pool.query(
+        `UPDATE users
+         SET email = NULL, login_name = NULL, password_hash = NULL, auth_method = 'passkey', updated_at = NOW()
+         WHERE id = ?`,
+        [uid],
+      );
+      return json(200, { ok: true, authMethod: "passkey" }, hdrs, skipCors);
     }
 
     if (key === "POST /auth/register") {
