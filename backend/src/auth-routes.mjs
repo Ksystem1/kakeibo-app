@@ -79,6 +79,17 @@ function isRetryableDbError(e) {
   return RETRYABLE_DB_CODES.has(code) || syscall.includes("getaddrinfo");
 }
 
+function isDbCredentialError(e) {
+  if (!e || typeof e !== "object") return false;
+  const code = String(e.code || "");
+  const msg = String(e.message || "");
+  return (
+    code === "DATABASE_CREDENTIALS_INVALID" ||
+    code === "DATABASE_SECRET_JSON_INVALID" ||
+    /Credentials couldn't be retrieved|incorrect secret format|empty username/i.test(msg)
+  );
+}
+
 function isDuplicateKeyError(e) {
   if (!e || typeof e !== "object") return false;
   const code = e.code ? String(e.code) : "";
@@ -573,6 +584,18 @@ export async function tryAuthRoutes(req, ctx) {
         return json(200, out, hdrs, skipCors);
       } catch (e) {
         logPasskeyDetail("auth.passkey.register.options", e);
+        if (isDbCredentialError(e) || isRetryableDbError(e)) {
+          return json(
+            503,
+            {
+              error: "DatabaseUnavailable",
+              detail:
+                "DB 認証情報の取得に失敗しました。Secrets Manager の username/password 形式を確認してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
         return json(
           500,
           { error: "PasskeyRegistrationOptionsError", detail: "パスキー登録オプション生成に失敗しました" },
@@ -721,6 +744,18 @@ export async function tryAuthRoutes(req, ctx) {
         }
       } catch (e) {
         logPasskeyDetail("auth.passkey.register.verify", e);
+        if (isDbCredentialError(e) || isRetryableDbError(e)) {
+          return json(
+            503,
+            {
+              error: "DatabaseUnavailable",
+              detail:
+                "DB 接続に失敗しました。Secrets Manager の username/password を確認してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
         return json(
           500,
           { error: "PasskeyRegistrationVerifyError", detail: "パスキー登録の検証処理で失敗しました" },
@@ -2050,6 +2085,19 @@ export async function tryAuthRoutes(req, ctx) {
     return null;
   } catch (e) {
     logError("auth.route", e, { method, path });
+    if (isDbCredentialError(e)) {
+      return ctx.json(
+        503,
+        {
+          error: "DatabaseCredentialsInvalid",
+          detail:
+            "DB 認証情報が不正です。Secrets Manager のシークレットに username / password を設定してください。",
+          code: e?.code,
+        },
+        hdrs,
+        skipCors,
+      );
+    }
     if (isRetryableDbError(e)) {
       return ctx.json(
         503,

@@ -2,6 +2,53 @@ import mysql from "mysql2/promise";
 
 let pool;
 
+function parseSecretJson(raw, sourceName) {
+  const text = String(raw ?? "").trim();
+  if (!text) return null;
+  if (!(text.startsWith("{") && text.endsWith("}"))) return null;
+  try {
+    const v = JSON.parse(text);
+    return v && typeof v === "object" ? v : null;
+  } catch (e) {
+    const err = new Error(`${sourceName} の JSON 解析に失敗しました`);
+    err.code = "DATABASE_SECRET_JSON_INVALID";
+    err.detail = e instanceof Error ? e.message : String(e);
+    throw err;
+  }
+}
+
+function resolveDbCredentials() {
+  const secretFromDedicated = parseSecretJson(process.env.RDS_SECRET_JSON, "RDS_SECRET_JSON");
+  const secretFromUserEnv = parseSecretJson(process.env.RDS_USER, "RDS_USER");
+  const secretFromPasswordEnv = parseSecretJson(process.env.RDS_PASSWORD, "RDS_PASSWORD");
+  const secret = secretFromDedicated || secretFromUserEnv || secretFromPasswordEnv || {};
+
+  const userExplicit = String(process.env.RDS_USER || "").trim();
+  const passExplicit = String(process.env.RDS_PASSWORD || "").trim();
+  const username =
+    userExplicit && !(userExplicit.startsWith("{") && userExplicit.endsWith("}"))
+      ? userExplicit
+      : String(secret.username ?? secret.user ?? "").trim();
+  const password =
+    passExplicit && !(passExplicit.startsWith("{") && passExplicit.endsWith("}"))
+      ? passExplicit
+      : String(secret.password ?? "").trim();
+
+  if (!username || !password) {
+    const err = new Error(
+      "DB認証情報が空です。Secrets Manager の JSON に username/password が必要です。",
+    );
+    err.code = "DATABASE_CREDENTIALS_INVALID";
+    err.detail = {
+      hasSecretJson: Boolean(secretFromDedicated),
+      hasUsername: Boolean(username),
+      hasPassword: Boolean(password),
+    };
+    throw err;
+  }
+  return { username, password };
+}
+
 /**
  * RDS MySQL は TLS 必須のことが多い。RDS_SSL で明示できる。
  * - RDS_SSL=true  → TLS 有効（CA 検証は緩め。本番で厳格化する場合は CA ファイルを渡す）
@@ -25,11 +72,12 @@ function resolveSsl() {
 
 function baseConnectionOptions() {
   const host = String(process.env.RDS_HOST || "").trim();
+  const creds = resolveDbCredentials();
   return {
     host,
     port: Number(process.env.RDS_PORT || "3306"),
-    user: process.env.RDS_USER,
-    password: process.env.RDS_PASSWORD,
+    user: creds.username,
+    password: creds.password,
     database: process.env.RDS_DATABASE,
     ssl: resolveSsl(),
   };
