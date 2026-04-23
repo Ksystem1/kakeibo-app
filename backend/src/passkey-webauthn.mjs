@@ -119,6 +119,8 @@ export async function buildPasskeyRegistrationOptions({ displayName = "ユーザ
     uid: userID.toString("base64url"),
     iv: String(inviteToken || ""),
   });
+  // 返却 challenge と flow token の challenge を必ず一致させる
+  options.challenge = challenge;
   return { options, flowToken };
 }
 
