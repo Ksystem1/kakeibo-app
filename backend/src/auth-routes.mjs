@@ -12,9 +12,13 @@ import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
 import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { canAccessFamilyChat, SINGLE_FAMILY_CHAT_ID } from "./family-chat-access.mjs";
 import {
+  buildPasskeyAuthenticationOptions,
   buildPasskeyRegistrationOptions,
+  generateRecoveryCode,
+  hashRecoveryCode,
   issuePasskeyRegistrationFlowToken,
   registrationInfoToDbValues,
+  verifyPasskeyAuthentication,
   verifyPasskeyRegistration,
   verifyPasskeyRegistrationFlowToken,
 } from "./passkey-webauthn.mjs";
@@ -40,9 +44,13 @@ const AUTH_ROUTE_KEYS = new Set([
   "GET /auth/passkey/status",
   "POST /auth/passkey/register/options",
   "POST /auth/passkey/register/verify",
+  "POST /auth/passkey/login/options",
+  "POST /auth/passkey/login/verify",
   "POST /auth/passkey/add/options",
   "POST /auth/passkey/add/verify",
   "POST /auth/me/anonymize-email",
+  "POST /auth/recovery/login",
+  "POST /auth/recovery/regenerate",
   "GET /families/members",
   "POST /families/invite",
   "POST /families/invite-link",
@@ -180,6 +188,22 @@ function nextAuthMethodAfterPasskey(prevAuthMethod, hasEmailCredential) {
   const prev = String(prevAuthMethod ?? "").trim().toLowerCase();
   if (prev === "passkey" || prev === "both") return prev;
   return hasEmailCredential ? "both" : "passkey";
+}
+
+function credentialIdBufferFromClientCredential(credential) {
+  const rawId = credential?.rawId ?? credential?.id ?? "";
+  return Buffer.from(String(rawId || ""), "base64url");
+}
+
+async function loadAuthenticatorByCredentialId(poolOrConn, credentialIdBuf) {
+  const [[row]] = await poolOrConn.query(
+    `SELECT id, user_id, credential_id, public_key, counter
+     FROM authenticators
+     WHERE credential_id = ?
+     LIMIT 1`,
+    [credentialIdBuf],
+  );
+  return row || null;
 }
 
 function normalizeGradeGroup(raw) {
@@ -605,6 +629,8 @@ export async function tryAuthRoutes(req, ctx) {
         const transports =
           credential?.response?.transports ?? credential?.transports ?? [];
         const regDb = registrationInfoToDbValues(verification, transports);
+        const recoveryCode = generateRecoveryCode();
+        const recoveryCodeHash = hashRecoveryCode(recoveryCode);
         await conn.query(
           `INSERT INTO authenticators (user_id, credential_id, public_key, counter, transports)
            VALUES (?, ?, ?, ?, ?)`,
@@ -615,6 +641,12 @@ export async function tryAuthRoutes(req, ctx) {
             regDb.counter,
             regDb.transportsCsv,
           ],
+        );
+        await conn.query(
+          `UPDATE users
+           SET recovery_code_hash = ?, recovery_code_issued_at = NOW(), recovery_code_used_at = NULL
+           WHERE id = ?`,
+          [recoveryCodeHash, userId],
         );
         await conn.commit();
 
@@ -638,6 +670,7 @@ export async function tryAuthRoutes(req, ctx) {
               isPremium: monitorGranted,
               authMethod: "passkey",
             },
+            recoveryCode,
           },
           hdrs,
           skipCors,
@@ -648,6 +681,92 @@ export async function tryAuthRoutes(req, ctx) {
       } finally {
         conn.release();
       }
+    }
+
+    if (key === "POST /auth/passkey/login/options") {
+      const out = await buildPasskeyAuthenticationOptions();
+      return json(200, out, hdrs, skipCors);
+    }
+
+    if (key === "POST /auth/passkey/login/verify") {
+      const b = JSON.parse(req.body || "{}");
+      const flowToken = String(b.flow_token ?? b.flowToken ?? "").trim();
+      const credential = b.credential ?? b.response ?? null;
+      if (!flowToken || !credential) {
+        return json(400, { error: "flow_token と credential が必要です" }, hdrs, skipCors);
+      }
+      const flow = verifyPasskeyRegistrationFlowToken(flowToken);
+      if (!flow?.c) {
+        return json(400, { error: "ログインセッションが無効または期限切れです" }, hdrs, skipCors);
+      }
+      const credentialIdBuf = credentialIdBufferFromClientCredential(credential);
+      const authenticatorRow = await loadAuthenticatorByCredentialId(pool, credentialIdBuf);
+      if (!authenticatorRow) {
+        return json(404, { error: "登録済みパスキーが見つかりません" }, hdrs, skipCors);
+      }
+      const verification = await verifyPasskeyAuthentication({
+        credential,
+        expectedChallenge: flow.c,
+        authenticator: {
+          credentialID: Buffer.from(authenticatorRow.credential_id),
+          credentialPublicKey: Buffer.from(authenticatorRow.public_key),
+          counter: Number(authenticatorRow.counter || 0),
+          transports: [],
+        },
+      });
+      if (!verification?.verified) {
+        return json(401, { error: "パスキーログインに失敗しました" }, hdrs, skipCors);
+      }
+      await pool.query(
+        `UPDATE authenticators SET counter = ?, updated_at = NOW() WHERE id = ?`,
+        [Number(verification.authenticationInfo.newCounter || 0), authenticatorRow.id],
+      );
+      const userId = Number(authenticatorRow.user_id);
+      const { rows } = await queryMeUserRow(pool, userId);
+      if (!rows || rows.length === 0) {
+        return json(404, { error: "ユーザーが見つかりません" }, hdrs, skipCors);
+      }
+      const row = rows[0] || {};
+      const familyId = await resolveFamilyIdWithChatFallback(pool, userId);
+      const famSub = await getPreferredFamilySubscriptionRow(pool, userId);
+      const merged = mergeAuthMeSubscriptionWithPreferredFamily(row, famSub);
+      const familyRole = await fetchUserFamilyRoleUpperForMe(pool, userId);
+      const kidTheme = await fetchUserKidTheme(pool, userId);
+      await withDbRetry("auth.passkey.login.lastLogin", () =>
+        pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = ?`, [userId]),
+      );
+      const token = signUserToken(
+        userId,
+        String(merged.email ?? "").trim() || `passkey-${userId}@local.invalid`,
+      );
+      return json(
+        200,
+        {
+          token,
+          user: {
+            id: merged.id,
+            email: String(merged.email ?? ""),
+            familyId,
+            familyRole,
+            kidTheme,
+            isChild: Number(merged.is_child) === 1,
+            parentId:
+              merged.parent_id != null && Number.isFinite(Number(merged.parent_id))
+                ? Number(merged.parent_id)
+                : null,
+            gradeGroup: normalizeGradeGroup(merged.grade_group),
+            isAdmin: Number(merged.is_admin) === 1,
+            subscriptionStatus: getEffectiveSubscriptionStatus(
+              deriveSubscriptionStatusFromDbRow(merged),
+              merged.id,
+            ),
+            ...buildUserSubscriptionApiFields(merged),
+            isPremium: userHasPremiumSubscriptionAccess(merged, merged.id),
+          },
+        },
+        hdrs,
+        skipCors,
+      );
     }
 
     if (key === "GET /auth/passkey/status") {
@@ -781,6 +900,92 @@ export async function tryAuthRoutes(req, ctx) {
         [uid],
       );
       return json(200, { ok: true, authMethod: "passkey" }, hdrs, skipCors);
+    }
+
+    if (key === "POST /auth/recovery/login") {
+      const b = JSON.parse(req.body || "{}");
+      const codeRaw = String(b.code ?? "").trim();
+      if (!codeRaw) {
+        return json(400, { error: "リカバリーコードを入力してください" }, hdrs, skipCors);
+      }
+      const codeHash = hashRecoveryCode(codeRaw);
+      const [[u]] = await pool.query(
+        `SELECT id, email
+         FROM users
+         WHERE recovery_code_hash = ? AND recovery_code_used_at IS NULL
+         LIMIT 1`,
+        [codeHash],
+      );
+      if (!u) {
+        return json(401, { error: "リカバリーコードが無効です" }, hdrs, skipCors);
+      }
+      const userId = Number(u.id);
+      await pool.query(
+        `UPDATE users SET recovery_code_used_at = NOW(), recovery_code_hash = NULL WHERE id = ?`,
+        [userId],
+      );
+      const { rows } = await queryMeUserRow(pool, userId);
+      if (!rows || rows.length === 0) {
+        return json(404, { error: "ユーザーが見つかりません" }, hdrs, skipCors);
+      }
+      const row = rows[0] || {};
+      const familyId = await resolveFamilyIdWithChatFallback(pool, userId);
+      const famSub = await getPreferredFamilySubscriptionRow(pool, userId);
+      const merged = mergeAuthMeSubscriptionWithPreferredFamily(row, famSub);
+      const familyRole = await fetchUserFamilyRoleUpperForMe(pool, userId);
+      const kidTheme = await fetchUserKidTheme(pool, userId);
+      const token = signUserToken(
+        userId,
+        String(merged.email ?? "").trim() || `recovery-${userId}@local.invalid`,
+      );
+      return json(
+        200,
+        {
+          token,
+          user: {
+            id: merged.id,
+            email: String(merged.email ?? ""),
+            familyId,
+            familyRole,
+            kidTheme,
+            isChild: Number(merged.is_child) === 1,
+            parentId:
+              merged.parent_id != null && Number.isFinite(Number(merged.parent_id))
+                ? Number(merged.parent_id)
+                : null,
+            gradeGroup: normalizeGradeGroup(merged.grade_group),
+            isAdmin: Number(merged.is_admin) === 1,
+            subscriptionStatus: getEffectiveSubscriptionStatus(
+              deriveSubscriptionStatusFromDbRow(merged),
+              merged.id,
+            ),
+            ...buildUserSubscriptionApiFields(merged),
+            isPremium: userHasPremiumSubscriptionAccess(merged, merged.id),
+          },
+        },
+        hdrs,
+        skipCors,
+      );
+    }
+
+    if (key === "POST /auth/recovery/regenerate") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const passkeyCount = await countPasskeyAuthenticators(pool, uid);
+      if (passkeyCount <= 0) {
+        return json(400, { error: "先にパスキーを登録してください" }, hdrs, skipCors);
+      }
+      const recoveryCode = generateRecoveryCode();
+      const recoveryCodeHash = hashRecoveryCode(recoveryCode);
+      await pool.query(
+        `UPDATE users
+         SET recovery_code_hash = ?, recovery_code_issued_at = NOW(), recovery_code_used_at = NULL
+         WHERE id = ?`,
+        [recoveryCodeHash, uid],
+      );
+      return json(200, { ok: true, recoveryCode }, hdrs, skipCors);
     }
 
     if (key === "POST /auth/register") {

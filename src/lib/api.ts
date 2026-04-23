@@ -188,6 +188,70 @@ export async function loginRequest(login: string, password: string) {
   }>(res);
 }
 
+export async function getPasskeyLoginOptions() {
+  const res = await apiFetch(`${BASE}/auth/passkey/login/options`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({}),
+  });
+  return parse<{ options: unknown; flowToken: string }>(res);
+}
+
+export async function verifyPasskeyLogin(body: {
+  flow_token: string;
+  credential: unknown;
+}) {
+  const res = await apiFetch(`${BASE}/auth/passkey/login/verify`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{
+    token: string;
+    user: {
+      id: number;
+      email: string;
+      familyId?: number | null;
+      familyRole?: string;
+      kidTheme?: string | null;
+      isChild?: boolean;
+      parentId?: number | null;
+      gradeGroup?: string | null;
+      isAdmin?: boolean;
+      subscriptionStatus?: string;
+      subscriptionPeriodEndAt?: string | null;
+      subscriptionCancelAtPeriodEnd?: boolean;
+      isPremium?: boolean;
+    };
+  }>(res);
+}
+
+export async function loginWithRecoveryCode(code: string) {
+  const res = await apiFetch(`${BASE}/auth/recovery/login`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({ code }),
+  });
+  return parse<{
+    token: string;
+    user: {
+      id: number;
+      email: string;
+      familyId?: number | null;
+      familyRole?: string;
+      kidTheme?: string | null;
+      isChild?: boolean;
+      parentId?: number | null;
+      gradeGroup?: string | null;
+      isAdmin?: boolean;
+      subscriptionStatus?: string;
+      subscriptionPeriodEndAt?: string | null;
+      subscriptionCancelAtPeriodEnd?: boolean;
+      isPremium?: boolean;
+    };
+  }>(res);
+}
+
 export async function registerRequest(body: {
   email: string;
   password: string;
@@ -241,6 +305,7 @@ export async function verifyPasskeyRegistration(body: {
   });
   return parse<{
     token: string;
+    recoveryCode?: string;
     user: {
       id: number;
       email: string;
@@ -298,6 +363,15 @@ export async function anonymizeEmailCredential() {
     body: JSON.stringify({}),
   });
   return parse<{ ok: boolean; authMethod: "passkey" | string }>(res);
+}
+
+export async function regenerateRecoveryCode() {
+  const res = await apiFetch(`${BASE}/auth/recovery/regenerate`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({}),
+  });
+  return parse<{ ok: boolean; recoveryCode: string }>(res);
 }
 
 export async function getAuthMe() {

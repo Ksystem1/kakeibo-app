@@ -292,6 +292,16 @@
   cursor: not-allowed;
 }
 
+.btn {
+  padding: 0.55rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
 .error {
   margin: 0;
   font-size: 0.95rem;

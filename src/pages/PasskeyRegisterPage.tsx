@@ -18,6 +18,7 @@ export function PasskeyRegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const inviteToken = searchParams.get("invite")?.trim() || "";
   const inviteMode = inviteToken !== "";
 
@@ -38,8 +39,8 @@ export function PasskeyRegisterPage() {
         credential,
       });
       setSession(r.token, normalizeAuthContextUser(r.user));
-      setMsg("パスキー登録が完了しました。");
-      navigate("/", { replace: true });
+      setRecoveryCode(r.recoveryCode ?? null);
+      setMsg("パスキー登録が完了しました。バックアップコードを保存してください。");
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       setError(m || "パスキー登録に失敗しました");
@@ -93,6 +94,17 @@ export function PasskeyRegisterPage() {
                 {msg}
               </p>
             ) : null}
+            {recoveryCode ? (
+              <div className={styles.monitorRecruitmentCallout}>
+                <strong>バックアップコード（16桁）</strong>
+                <div style={{ marginTop: "0.35rem", fontSize: "1.05rem", letterSpacing: "0.08em" }}>
+                  {recoveryCode}
+                </div>
+                <div style={{ marginTop: "0.35rem", fontSize: "0.86rem" }}>
+                  デバイス紛失時に必要です。安全な場所に保存してください。
+                </div>
+              </div>
+            ) : null}
             <button
               type="button"
               className={styles.submit}
@@ -103,6 +115,17 @@ export function PasskeyRegisterPage() {
             >
               {submitting ? "パスキー登録中…" : inviteMode ? "パスキーを登録して参加" : "パスキーで登録"}
             </button>
+            {recoveryCode ? (
+              <button
+                type="button"
+                className={styles.btn}
+                onClick={() => {
+                  navigate("/", { replace: true });
+                }}
+              >
+                保存したので続行
+              </button>
+            ) : null}
           </div>
           <p className={styles.footer}>
             <Link to="/login" className={styles.link}>

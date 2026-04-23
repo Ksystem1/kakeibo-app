@@ -1,5 +1,10 @@
 import crypto from "node:crypto";
-import { generateRegistrationOptions, verifyRegistrationResponse } from "@simplewebauthn/server";
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from "@simplewebauthn/server";
 
 function b64urlEncode(input) {
   return Buffer.from(input).toString("base64url");
@@ -95,6 +100,20 @@ export async function buildPasskeyRegistrationOptions({ displayName = "ユーザ
   return { options, flowToken };
 }
 
+export async function buildPasskeyAuthenticationOptions() {
+  const { rpID } = resolvePasskeyConfig();
+  const challenge = crypto.randomBytes(32).toString("base64url");
+  const options = await generateAuthenticationOptions({
+    rpID,
+    timeout: 60_000,
+    userVerification: "preferred",
+    allowCredentials: [],
+  });
+  const flowToken = issuePasskeyRegistrationFlowToken({ c: challenge, m: "login" }, 600);
+  options.challenge = challenge;
+  return { options, flowToken };
+}
+
 export async function verifyPasskeyRegistration({ credential, expectedChallenge }) {
   const { rpID, expectedOrigins } = resolvePasskeyConfig();
   return verifyRegistrationResponse({
@@ -102,6 +121,22 @@ export async function verifyPasskeyRegistration({ credential, expectedChallenge 
     expectedChallenge: String(expectedChallenge || ""),
     expectedOrigin: expectedOrigins,
     expectedRPID: rpID,
+    requireUserVerification: false,
+  });
+}
+
+export async function verifyPasskeyAuthentication({
+  credential,
+  expectedChallenge,
+  authenticator,
+}) {
+  const { rpID, expectedOrigins } = resolvePasskeyConfig();
+  return verifyAuthenticationResponse({
+    response: credential,
+    expectedChallenge: String(expectedChallenge || ""),
+    expectedOrigin: expectedOrigins,
+    expectedRPID: rpID,
+    authenticator,
     requireUserVerification: false,
   });
 }
@@ -134,4 +169,14 @@ export function registrationInfoToDbValues(verification, transports) {
     counter,
     transportsCsv: transportList.length > 0 ? transportList.join(",") : null,
   };
+}
+
+export function generateRecoveryCode() {
+  const raw = crypto.randomBytes(8).toString("hex").toUpperCase();
+  return `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}`;
+}
+
+export function hashRecoveryCode(raw) {
+  const normalized = String(raw || "").replace(/-/g, "").trim().toUpperCase();
+  return crypto.createHash("sha256").update(normalized).digest("hex");
 }
