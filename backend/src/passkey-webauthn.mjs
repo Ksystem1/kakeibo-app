@@ -23,17 +23,29 @@ function flowSecret() {
 }
 
 export function resolvePasskeyConfig() {
-  const appOrigin = String(process.env.APP_ORIGIN || "http://localhost:5173").trim();
-  let hostname = "localhost";
+  const isProd = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
+  const defaultOrigin = isProd ? "https://ksystemapp.com" : "http://localhost:3000";
+  const originRaw = String(
+    process.env.WEBAUTHN_ORIGIN ||
+      process.env.ORIGIN ||
+      process.env.APP_ORIGIN ||
+      defaultOrigin,
+  ).trim();
+  const appOrigin = originRaw || defaultOrigin;
+  let hostname = isProd ? "ksystemapp.com" : "localhost";
   try {
-    hostname = new URL(appOrigin).hostname || "localhost";
+    hostname = new URL(appOrigin).hostname || hostname;
   } catch {
-    hostname = "localhost";
+    /* fallback hostname を使用 */
   }
-  const rpID = String(process.env.WEBAUTHN_RP_ID || hostname).trim() || hostname;
+  const rpID = String(
+    process.env.WEBAUTHN_RP_ID || process.env.RP_ID || (isProd ? "ksystemapp.com" : "localhost"),
+  ).trim() || hostname;
   const rpName = String(process.env.WEBAUTHN_RP_NAME || "Kakeibo").trim() || "Kakeibo";
   const expectedOrigins = new Set([appOrigin]);
   if (process.env.NODE_ENV !== "production") {
+    expectedOrigins.add("http://localhost:3000");
+    expectedOrigins.add("http://127.0.0.1:3000");
     expectedOrigins.add("http://localhost:5173");
     expectedOrigins.add("http://127.0.0.1:5173");
   }
