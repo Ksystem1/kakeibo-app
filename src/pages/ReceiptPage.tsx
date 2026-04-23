@@ -851,7 +851,7 @@ export function ReceiptPage() {
           }}
           disabled={isBusy}
         >
-          ファイルを取り込む
+          写真・データ取込
         </button>
       </div>
 

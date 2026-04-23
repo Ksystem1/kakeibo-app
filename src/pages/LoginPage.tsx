@@ -9,6 +9,7 @@ import {
   loginWithRecoveryCode,
   normalizeAuthContextUser,
   normalizeFamilyRole,
+  toFriendlyPasskeyErrorMessage,
   verifyPasskeyLogin,
 } from "../lib/api";
 
@@ -76,7 +77,7 @@ export function LoginPage() {
       });
       await completeLogin(r.token, r.user);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = toFriendlyPasskeyErrorMessage(e);
       if (!auto && msg) setError(msg);
     } finally {
       setPasskeySubmitting(false);

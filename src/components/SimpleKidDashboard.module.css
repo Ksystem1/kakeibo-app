@@ -42,13 +42,17 @@
 }
 
 .themeChoices {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: 0.45rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.2rem;
+  scrollbar-width: thin;
 }
 
 .themeChoice {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.45rem;
   border: 2px solid color-mix(in srgb, var(--kid-accent) 18%, white);
@@ -57,6 +61,9 @@
   background: rgba(255, 255, 255, 0.72);
   cursor: pointer;
   text-align: left;
+  flex: 0 0 auto;
+  min-width: 8.4rem;
+  white-space: nowrap;
 }
 
 .themeChoice:disabled {
@@ -80,8 +87,9 @@
 
 .themeChoiceText {
   display: flex;
-  flex-direction: column;
-  gap: 0.04rem;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.25rem;
 }
 
 .themeChoiceText strong {
@@ -90,7 +98,7 @@
 }
 
 .themeChoiceText small {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: var(--kid-muted);
   line-height: 1.2;
 }

@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import {
   getPasskeyRegistrationOptions,
   normalizeAuthContextUser,
+  toFriendlyPasskeyErrorMessage,
   verifyPasskeyRegistration,
 } from "../lib/api";
 import { AuthHeroAside } from "../components/AuthHeroAside";
@@ -42,7 +43,7 @@ export function PasskeyRegisterPage() {
       setRecoveryCode(r.recoveryCode ?? null);
       setMsg("パスキー登録が完了しました。バックアップコードを保存してください。");
     } catch (e) {
-      const m = e instanceof Error ? e.message : String(e);
+      const m = toFriendlyPasskeyErrorMessage(e);
       setError(m || "パスキー登録に失敗しました");
     } finally {
       setSubmitting(false);

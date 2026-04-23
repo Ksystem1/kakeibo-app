@@ -24,6 +24,7 @@ import {
   getBillingStripeStatus,
   isStripeCheckoutUiReady,
   normalizeAuthContextUser,
+  toFriendlyPasskeyErrorMessage,
   anonymizeEmailCredential,
   regenerateRecoveryCode,
   postBillingCheckoutSession,
@@ -416,7 +417,7 @@ export function SettingsPage() {
                   setRecoveryCodePreview(null);
                   setPasskeyMessage("このデバイスをパスキー登録しました。次回から生体認証でログインできます。");
                 } catch (e) {
-                  setPasskeyMessage(e instanceof Error ? e.message : String(e));
+                  setPasskeyMessage(toFriendlyPasskeyErrorMessage(e));
                 } finally {
                   setPasskeyBusy(false);
                 }

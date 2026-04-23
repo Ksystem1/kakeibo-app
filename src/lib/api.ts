@@ -112,6 +112,26 @@ export function getApiBaseUrl() {
   return BASE;
 }
 
+export function toFriendlyPasskeyErrorMessage(raw: unknown): string {
+  const msg = raw instanceof Error ? raw.message : String(raw ?? "");
+  const normalized = msg.trim();
+  if (!normalized) return "パスキー認証に失敗しました。もう一度お試しください。";
+
+  if (
+    /operation either timed out or was not allowed/i.test(normalized) ||
+    /NotAllowedError/i.test(normalized)
+  ) {
+    return "パスキー認証がキャンセルされたか、時間切れになりました。もう一度お試しください。";
+  }
+  if (/challenge/i.test(normalized)) {
+    return "認証情報の確認に失敗しました。ページを再読み込みして、もう一度お試しください。";
+  }
+  if (/InvalidStateError/i.test(normalized)) {
+    return "この端末では既に登録済みのパスキーです。別のパスキーをお試しください。";
+  }
+  return normalized;
+}
+
 /** Bearer または開発用ユーザーIDヘッダーで API を呼べるか */
 export function canSendAuthenticatedRequest(token: string | null): boolean {
   if (token) return true;
