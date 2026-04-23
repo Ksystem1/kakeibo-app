@@ -266,7 +266,7 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
           className={`${styles.btn} ${styles.btnPrimary}`}
           disabled={loading}
         >
-          招待URLを発行
+          招待リンクを発行
         </button>
       </form>
       {inviteUrl ? (

@@ -216,17 +216,17 @@ function nextAuthMethodAfterPasskey(prevAuthMethod, hasEmailCredential) {
 }
 
 function credentialIdBufferFromClientCredential(credential) {
-  const rawId = credential?.rawId ?? credential?.id ?? "";
-  return Buffer.from(String(rawId || ""), "base64url");
+  const rawId = String(credential?.id ?? credential?.rawId ?? "").trim();
+  return rawId;
 }
 
-async function loadAuthenticatorByCredentialId(poolOrConn, credentialIdBuf) {
+async function loadAuthenticatorByCredentialId(poolOrConn, credentialId) {
   const [[row]] = await poolOrConn.query(
     `SELECT id, user_id, credential_id, public_key, counter
      FROM authenticators
      WHERE credential_id = ?
      LIMIT 1`,
-    [credentialIdBuf],
+    [credentialId],
   );
   return row || null;
 }
@@ -630,6 +630,7 @@ export async function tryAuthRoutes(req, ctx) {
             expectedRPID: cfg.rpID,
             expectedOrigins: cfg.expectedOrigins,
             expectedChallengePrefix: String(flow.c).slice(0, 12),
+            failureReason: verifyErr?.message,
           });
           throw verifyErr;
         }
@@ -704,7 +705,7 @@ export async function tryAuthRoutes(req, ctx) {
              VALUES (?, ?, ?, ?, ?)`,
             [
               userId,
-              regDb.credentialIdBuf,
+              regDb.credentialId,
               regDb.publicKeyBuf,
               regDb.counter,
               regDb.transportsCsv,
@@ -802,8 +803,8 @@ export async function tryAuthRoutes(req, ctx) {
       if (!flow?.c) {
         return json(400, { error: "ログインセッションが無効または期限切れです" }, hdrs, skipCors);
       }
-      const credentialIdBuf = credentialIdBufferFromClientCredential(credential);
-      const authenticatorRow = await loadAuthenticatorByCredentialId(pool, credentialIdBuf);
+      const credentialId = credentialIdBufferFromClientCredential(credential);
+      const authenticatorRow = await loadAuthenticatorByCredentialId(pool, credentialId);
       if (!authenticatorRow) {
         return json(404, { error: "登録済みパスキーが見つかりません" }, hdrs, skipCors);
       }
@@ -811,7 +812,7 @@ export async function tryAuthRoutes(req, ctx) {
         credential,
         expectedChallenge: flow.c,
         authenticator: {
-          credentialID: Buffer.from(authenticatorRow.credential_id),
+          credentialID: Buffer.from(String(authenticatorRow.credential_id || ""), "base64url"),
           credentialPublicKey: Buffer.from(authenticatorRow.public_key),
           counter: Number(authenticatorRow.counter || 0),
           transports: [],

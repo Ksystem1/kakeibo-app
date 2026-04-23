@@ -14,6 +14,13 @@ function b64urlDecodeToBuffer(input) {
   return Buffer.from(String(input || ""), "base64url");
 }
 
+function ensureB64urlId(input) {
+  const s = String(input || "").trim();
+  if (!s) return "";
+  if (/^[A-Za-z0-9_-]+$/.test(s)) return s;
+  return Buffer.from(s).toString("base64url");
+}
+
 function hmacSign(text, secret) {
   return crypto.createHmac("sha256", secret).update(text).digest("base64url");
 }
@@ -127,12 +134,15 @@ export async function buildPasskeyAuthenticationOptions() {
 }
 
 export async function verifyPasskeyRegistration({ credential, expectedChallenge }) {
+  const isProd = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
   const { rpID, expectedOrigins } = resolvePasskeyConfig();
+  const expectedRPID = isProd ? "ksystemapp.com" : rpID;
+  const expectedOrigin = isProd ? "https://ksystemapp.com" : expectedOrigins;
   return verifyRegistrationResponse({
     response: credential,
     expectedChallenge: String(expectedChallenge || ""),
-    expectedOrigin: expectedOrigins,
-    expectedRPID: rpID,
+    expectedOrigin,
+    expectedRPID,
     requireUserVerification: false,
   });
 }
@@ -142,12 +152,15 @@ export async function verifyPasskeyAuthentication({
   expectedChallenge,
   authenticator,
 }) {
+  const isProd = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
   const { rpID, expectedOrigins } = resolvePasskeyConfig();
+  const expectedRPID = isProd ? "ksystemapp.com" : rpID;
+  const expectedOrigin = isProd ? "https://ksystemapp.com" : expectedOrigins;
   return verifyAuthenticationResponse({
     response: credential,
     expectedChallenge: String(expectedChallenge || ""),
-    expectedOrigin: expectedOrigins,
-    expectedRPID: rpID,
+    expectedOrigin,
+    expectedRPID,
     authenticator,
     requireUserVerification: false,
   });
@@ -159,12 +172,12 @@ export function registrationInfoToDbValues(verification, transports) {
   const idCandidate = cred.id ?? info?.credentialID ?? "";
   const pkCandidate = cred.publicKey ?? info?.credentialPublicKey ?? null;
   const counterCandidate = cred.counter ?? info?.counter ?? 0;
-  const credentialIdBuf =
+  const credentialId =
     Buffer.isBuffer(idCandidate)
-      ? idCandidate
+      ? idCandidate.toString("base64url")
       : idCandidate instanceof Uint8Array
-        ? Buffer.from(idCandidate)
-        : b64urlDecodeToBuffer(idCandidate);
+        ? Buffer.from(idCandidate).toString("base64url")
+        : ensureB64urlId(idCandidate);
   const publicKeyBuf =
     Buffer.isBuffer(pkCandidate)
       ? pkCandidate
@@ -176,7 +189,7 @@ export function registrationInfoToDbValues(verification, transports) {
     ? transports.map((x) => String(x).trim()).filter(Boolean)
     : [];
   return {
-    credentialIdBuf,
+    credentialId,
     publicKeyBuf,
     counter,
     transportsCsv: transportList.length > 0 ? transportList.join(",") : null,

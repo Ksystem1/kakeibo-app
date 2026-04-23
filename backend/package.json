@@ -30,6 +30,7 @@
     "db:migrate-v25": "node scripts/run-migration-v25.mjs",
     "db:migrate-v26": "node scripts/run-migration-v26.mjs",
     "db:migrate-v27": "node scripts/run-migration-v27.mjs",
+    "db:migrate-v28": "node scripts/run-migration-v28.mjs",
     "db:dev-user": "node scripts/ensure-dev-user.mjs",
     "test:unit": "node --test test/**/*.test.mjs",
     "test:bedrock": "node scripts/test-bedrock.mjs",

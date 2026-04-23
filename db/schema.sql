@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS authenticators (
   id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id         BIGINT UNSIGNED NOT NULL,
-  credential_id   VARBINARY(1024) NOT NULL COMMENT 'WebAuthn credentialId（生バイト列）',
+  credential_id   VARCHAR(1024) NOT NULL COMMENT 'WebAuthn credentialId（base64url）',
   public_key      BLOB NOT NULL COMMENT 'COSE public key',
   counter         BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '署名カウンタ',
   transports      VARCHAR(255) NULL COMMENT 'usb,nfc,ble,internal など（CSV）',
