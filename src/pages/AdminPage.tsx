@@ -1004,9 +1004,14 @@ export function AdminPage() {
                     {(() => {
                       const currentName = (displayNameDrafts[u.id] ?? u.display_name ?? "").trim();
                       if (!currentName) return "—";
+                      const currentLine = group.memberLabelLines.find((line) => line.includes(currentName));
+                      const lineLower = String(currentLine ?? "").toLowerCase();
+                      const roleLabel = lineLower.includes("owner") ? "オーナー" : "メンバー";
                       return (
                         <div style={{ lineHeight: 1.15 }}>
-                          <div style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{currentName}</div>
+                          <div style={{ whiteSpace: "nowrap", fontWeight: 700 }}>
+                            {currentName} : {roleLabel}
+                          </div>
                         </div>
                       );
                     })()}
