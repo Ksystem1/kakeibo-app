@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   commitPayPayCsvImport,
@@ -26,6 +26,12 @@ export function ImportCsvPage() {
   const [paypayMsg, setPaypayMsg] = useState<string | null>(null);
   const [paypayLoading, setPaypayLoading] = useState(false);
   const [paypayPreview, setPaypayPreview] = useState<PayPayImportResult | null>(null);
+  /** 確定取込成功（表示後、家計簿へ遷移） */
+  const [paypayCommitSuccess, setPaypayCommitSuccess] = useState<{
+    newCount: number;
+    updatedCount: number;
+  } | null>(null);
+  const paypayCommitRedirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [combineSameTimePayments, setCombineSameTimePayments] = useState<boolean>(() => {
     try {
       return localStorage.getItem(COMBINE_SAME_TIME_PAYMENTS_KEY) === "1";
@@ -43,12 +49,23 @@ export function ImportCsvPage() {
     setPaypayErr(null);
     setPaypayMsg("レシート取込画面から遷移しました。プレビューで内容を確認できます。");
     setPaypayPreview(null);
+    setPaypayCommitSuccess(null);
     if (import.meta.env.DEV) {
       // eslint-disable-next-line no-console
       console.log("[ImportCsv] prefill from receipt", { charLength: raw.length });
     }
     navigate(location.pathname, { replace: true, state: null });
   }, [location.state, location.pathname, navigate]);
+
+  useEffect(
+    () => () => {
+      if (paypayCommitRedirectTimer.current) {
+        clearTimeout(paypayCommitRedirectTimer.current);
+        paypayCommitRedirectTimer.current = null;
+      }
+    },
+    [],
+  );
 
   function onChangeCombineFlag(v: boolean) {
     setCombineSameTimePayments(v);
@@ -164,6 +181,7 @@ export function ImportCsvPage() {
   async function onCommitPayPay() {
     setPaypayErr(null);
     setPaypayMsg(null);
+    setPaypayCommitSuccess(null);
     if (!looksLikePayPayCsv(paypayText)) {
       setPaypayErr(
         "PayPay CSVの形式を確認できませんでした。別ファイルを選ぶか、PayPayの取引CSV本文をそのまま貼り付けてください。",
@@ -175,16 +193,33 @@ export function ImportCsvPage() {
       const r = await commitPayPayCsvImport(paypayText, {
         combineSameTimePayments,
       });
-      setPaypayPreview(r);
-      setPaypayMsg(
-        `取込完了: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
-      );
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.log("[ImportCsv] PayPay commit OK", {
+          newCount: r.newCount,
+          updatedCount: r.updatedCount,
+          totalRows: r.totalRows,
+        });
+      }
+      setPaypayPreview(null);
+      setPaypayText("");
+      setPaypayMsg(null);
+      setPaypayCommitSuccess({ newCount: r.newCount, updatedCount: r.updatedCount });
+      if (paypayCommitRedirectTimer.current) {
+        clearTimeout(paypayCommitRedirectTimer.current);
+      }
+      paypayCommitRedirectTimer.current = setTimeout(() => {
+        paypayCommitRedirectTimer.current = null;
+        setPaypayCommitSuccess(null);
+        navigate("/");
+      }, 2600);
     } catch (ex) {
       const m = ex instanceof Error ? ex.message : String(ex);
+      const isLikelyClientParse = /PayPay|必須列|列が不足|CSV|形式/.test(m);
       setPaypayErr(
-        /PayPay|必須列|CSV/.test(m)
-          ? `${m} 別のファイルを選択してください。`
-          : `PayPay CSV の取り込みに失敗しました。ファイル内容を確認し、別のファイルを選択してください。`,
+        isLikelyClientParse
+          ? `${m} 別のファイルを選び直すか、内容を貼り付けを確認してください。`
+          : "保存に失敗しました。通信環境を確認してください。",
       );
     } finally {
       setPaypayLoading(false);
@@ -196,6 +231,31 @@ export function ImportCsvPage() {
       <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
       <div className={styles.settingsPanel} style={{ marginTop: "0.9rem", marginBottom: "1rem" }}>
         <h2 className={styles.sectionTitle}>PayPay CSV 取込（プレビュー対応）</h2>
+        {paypayCommitSuccess ? (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              marginBottom: "0.75rem",
+              padding: "0.75rem 0.9rem",
+              borderRadius: 10,
+              border: "1px solid var(--accent, #2d9f6c)",
+              background: "color-mix(in srgb, var(--accent, #2d9f6c) 14%, transparent)",
+              color: "var(--text)",
+            }}
+          >
+            <p style={{ margin: 0, fontWeight: 600 }}>
+              取り込みが完了しました（新規 {paypayCommitSuccess.newCount} 件 / 更新 {paypayCommitSuccess.updatedCount}{" "}
+              件）
+            </p>
+            <p
+              className={styles.reclassifyHint}
+              style={{ margin: "0.35rem 0 0", color: "var(--text-muted)" }}
+            >
+              まもなく家計簿の画面へ移動します…
+            </p>
+          </div>
+        ) : null}
         <p className={styles.sub}>
           「取引内容=支払い」のみを取り込みます。取引番号で更新挿入し、同一ファイル再取込時は二重登録を避けます。
         </p>
