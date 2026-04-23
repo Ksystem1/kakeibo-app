@@ -100,6 +100,19 @@ function logError(event, e, extra = {}) {
   console.error(JSON.stringify(payload));
 }
 
+function logPasskeyDetail(event, e, extra = {}) {
+  const payload = {
+    level: "error",
+    event,
+    code: e?.code,
+    errno: e?.errno,
+    message: e?.message,
+    stack: e?.stack,
+    ...extra,
+  };
+  console.error(JSON.stringify(payload));
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -542,144 +555,178 @@ export async function tryAuthRoutes(req, ctx) {
   try {
     const pool = getPool();
     if (key === "POST /auth/passkey/register/options") {
-      const b = JSON.parse(req.body || "{}");
-      const displayName = String(b.display_name ?? b.displayName ?? "").trim() || "ユーザー";
-      const inviteToken = String(b.invite_token ?? b.inviteToken ?? "").trim();
-      if (inviteToken) {
-        const inviteHash = crypto.createHash("sha256").update(inviteToken).digest("hex");
-        const [invRows] = await pool.query(
-          `SELECT id FROM family_invites WHERE token_hash = ? AND expires_at > NOW() LIMIT 1`,
-          [inviteHash],
-        );
-        if (!Array.isArray(invRows) || invRows.length === 0) {
-          return json(400, { error: "招待リンクが無効または期限切れです" }, hdrs, skipCors);
-        }
-      }
-      const out = await buildPasskeyRegistrationOptions({ displayName, inviteToken });
-      return json(200, out, hdrs, skipCors);
-    }
-
-    if (key === "POST /auth/passkey/register/verify") {
-      const b = JSON.parse(req.body || "{}");
-      const flowToken = String(b.flow_token ?? b.flowToken ?? "").trim();
-      const credential = b.credential ?? b.response ?? null;
-      if (!flowToken || !credential) {
-        return json(400, { error: "flow_token と credential が必要です" }, hdrs, skipCors);
-      }
-      const flow = verifyPasskeyRegistrationFlowToken(flowToken);
-      if (!flow?.c) {
-        return json(400, { error: "登録セッションが無効または期限切れです" }, hdrs, skipCors);
-      }
-      const verification = await verifyPasskeyRegistration({
-        credential,
-        expectedChallenge: flow.c,
-      });
-      if (!verification?.verified || !verification.registrationInfo) {
-        return json(400, { error: "パスキー登録の検証に失敗しました" }, hdrs, skipCors);
-      }
-
-      const conn = await withDbRetry(
-        "auth.passkey.register.getConnection",
-        () => pool.getConnection(),
-        Number(process.env.DB_RETRY_ATTEMPTS || "10"),
-      );
       try {
-        await conn.beginTransaction();
-        const monitorGranted = await shouldGrantMonitorOnRegister(conn);
-        const grantedSubscriptionStatus = monitorGranted ? "admin_free" : "inactive";
-        const displayName = String(flow.n ?? "").trim() || null;
-
-        const [ur] = await conn.query(
-          `INSERT INTO users (email, login_name, password_hash, display_name, subscription_status, auth_method)
-           VALUES (NULL, NULL, NULL, ?, ?, 'passkey')`,
-          [displayName, grantedSubscriptionStatus],
-        );
-        const userId = Number(ur.insertId);
-        let familyId = null;
-        let role = "owner";
-        const inviteToken = String(flow.iv ?? "").trim();
+        const b = JSON.parse(req.body || "{}");
+        const displayName = String(b.display_name ?? b.displayName ?? "").trim() || "ユーザー";
+        const inviteToken = String(b.invite_token ?? b.inviteToken ?? "").trim();
         if (inviteToken) {
           const inviteHash = crypto.createHash("sha256").update(inviteToken).digest("hex");
-          const [invRows] = await conn.query(
-            `SELECT id, family_id
-             FROM family_invites
-             WHERE token_hash = ? AND expires_at > NOW()
-             LIMIT 1`,
+          const [invRows] = await pool.query(
+            `SELECT id FROM family_invites WHERE token_hash = ? AND expires_at > NOW() LIMIT 1`,
             [inviteHash],
           );
           if (!Array.isArray(invRows) || invRows.length === 0) {
-            await conn.rollback();
             return json(400, { error: "招待リンクが無効または期限切れです" }, hdrs, skipCors);
           }
-          const inv = invRows[0];
-          familyId = Number(inv.family_id);
-          role = "member";
-          await conn.query("DELETE FROM family_invites WHERE id = ?", [inv.id]);
-        } else {
-          const [fr] = await conn.query("INSERT INTO families (name) VALUES (?)", ["夫婦"]);
-          familyId = Number(fr.insertId);
         }
-
-        await conn.query("UPDATE users SET default_family_id = ? WHERE id = ?", [familyId, userId]);
-        await conn.query(
-          `INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, ?)`,
-          [familyId, userId, role],
-        );
-
-        const transports =
-          credential?.response?.transports ?? credential?.transports ?? [];
-        const regDb = registrationInfoToDbValues(verification, transports);
-        const recoveryCode = generateRecoveryCode();
-        const recoveryCodeHash = hashRecoveryCode(recoveryCode);
-        await conn.query(
-          `INSERT INTO authenticators (user_id, credential_id, public_key, counter, transports)
-           VALUES (?, ?, ?, ?, ?)`,
-          [
-            userId,
-            regDb.credentialIdBuf,
-            regDb.publicKeyBuf,
-            regDb.counter,
-            regDb.transportsCsv,
-          ],
-        );
-        await conn.query(
-          `UPDATE users
-           SET recovery_code_hash = ?, recovery_code_issued_at = NOW(), recovery_code_used_at = NULL
-           WHERE id = ?`,
-          [recoveryCodeHash, userId],
-        );
-        await conn.commit();
-
-        await seedDefaultCategoriesIfEmpty(pool, userId, familyId);
-        await withDbRetry("auth.passkey.register.lastLogin", () =>
-          pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = ?`, [userId]),
-        );
-        const pseudoEmail = `passkey-${userId}@local.invalid`;
-        const token = signUserToken(userId, pseudoEmail);
+        const out = await buildPasskeyRegistrationOptions({ displayName, inviteToken });
+        return json(200, out, hdrs, skipCors);
+      } catch (e) {
+        logPasskeyDetail("auth.passkey.register.options", e);
         return json(
-          201,
-          {
-            token,
-            user: {
-              id: userId,
-              email: "",
-              familyId,
-              isAdmin: false,
-              familyRole: role === "owner" ? "ADMIN" : "MEMBER",
-              subscriptionStatus: grantedSubscriptionStatus,
-              isPremium: monitorGranted,
-              authMethod: "passkey",
-            },
-            recoveryCode,
-          },
+          500,
+          { error: "PasskeyRegistrationOptionsError", detail: "パスキー登録オプション生成に失敗しました" },
           hdrs,
           skipCors,
         );
+      }
+    }
+
+    if (key === "POST /auth/passkey/register/verify") {
+      try {
+        const b = JSON.parse(req.body || "{}");
+        const flowToken = String(b.flow_token ?? b.flowToken ?? "").trim();
+        const credential = b.credential ?? b.response ?? null;
+        if (!flowToken || !credential) {
+          return json(400, { error: "flow_token と credential が必要です" }, hdrs, skipCors);
+        }
+        const flow = verifyPasskeyRegistrationFlowToken(flowToken);
+        if (!flow?.c) {
+          return json(400, { error: "登録セッションが無効または期限切れです" }, hdrs, skipCors);
+        }
+        const verification = await verifyPasskeyRegistration({
+          credential,
+          expectedChallenge: flow.c,
+        });
+        if (!verification?.verified || !verification.registrationInfo) {
+          return json(400, { error: "パスキー登録の検証に失敗しました" }, hdrs, skipCors);
+        }
+
+        const conn = await withDbRetry(
+          "auth.passkey.register.getConnection",
+          () => pool.getConnection(),
+          Number(process.env.DB_RETRY_ATTEMPTS || "10"),
+        );
+        try {
+          await conn.beginTransaction();
+          const monitorGranted = await shouldGrantMonitorOnRegister(conn);
+          const grantedSubscriptionStatus = monitorGranted ? "admin_free" : "inactive";
+          const displayName = String(flow.n ?? "").trim() || null;
+
+          const [ur] = await conn.query(
+            `INSERT INTO users (email, login_name, password_hash, display_name, subscription_status, auth_method)
+             VALUES (NULL, NULL, NULL, ?, ?, 'passkey')`,
+            [displayName, grantedSubscriptionStatus],
+          );
+          const userId = Number(ur.insertId);
+          let familyId = null;
+          let role = "owner";
+          const inviteToken = String(flow.iv ?? "").trim();
+          if (inviteToken) {
+            const inviteHash = crypto.createHash("sha256").update(inviteToken).digest("hex");
+            const [invRows] = await conn.query(
+              `SELECT id, family_id
+               FROM family_invites
+               WHERE token_hash = ? AND expires_at > NOW()
+               LIMIT 1`,
+              [inviteHash],
+            );
+            if (!Array.isArray(invRows) || invRows.length === 0) {
+              await conn.rollback();
+              return json(400, { error: "招待リンクが無効または期限切れです" }, hdrs, skipCors);
+            }
+            const inv = invRows[0];
+            familyId = Number(inv.family_id);
+            role = "member";
+            await conn.query("DELETE FROM family_invites WHERE id = ?", [inv.id]);
+          } else {
+            const [fr] = await conn.query("INSERT INTO families (name) VALUES (?)", ["夫婦"]);
+            familyId = Number(fr.insertId);
+          }
+
+          await conn.query("UPDATE users SET default_family_id = ? WHERE id = ?", [familyId, userId]);
+          await conn.query(
+            `INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, ?)`,
+            [familyId, userId, role],
+          );
+
+          const transports =
+            credential?.response?.transports ?? credential?.transports ?? [];
+          const regDb = registrationInfoToDbValues(verification, transports);
+          const recoveryCode = generateRecoveryCode();
+          const recoveryCodeHash = hashRecoveryCode(recoveryCode);
+          await conn.query(
+            `INSERT INTO authenticators (user_id, credential_id, public_key, counter, transports)
+             VALUES (?, ?, ?, ?, ?)`,
+            [
+              userId,
+              regDb.credentialIdBuf,
+              regDb.publicKeyBuf,
+              regDb.counter,
+              regDb.transportsCsv,
+            ],
+          );
+          await conn.query(
+            `UPDATE users
+             SET recovery_code_hash = ?, recovery_code_issued_at = NOW(), recovery_code_used_at = NULL
+             WHERE id = ?`,
+            [recoveryCodeHash, userId],
+          );
+          await conn.commit();
+
+          await seedDefaultCategoriesIfEmpty(pool, userId, familyId);
+          await withDbRetry("auth.passkey.register.lastLogin", () =>
+            pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = ?`, [userId]),
+          );
+          const pseudoEmail = `passkey-${userId}@local.invalid`;
+          const token = signUserToken(userId, pseudoEmail);
+          return json(
+            201,
+            {
+              token,
+              user: {
+                id: userId,
+                email: "",
+                familyId,
+                isAdmin: false,
+                familyRole: role === "owner" ? "ADMIN" : "MEMBER",
+                subscriptionStatus: grantedSubscriptionStatus,
+                isPremium: monitorGranted,
+                authMethod: "passkey",
+              },
+              recoveryCode,
+            },
+            hdrs,
+            skipCors,
+          );
+        } catch (e) {
+          await conn.rollback();
+          const code = String(e?.code || "");
+          if (code === "ER_BAD_NULL_ERROR") {
+            logPasskeyDetail("auth.passkey.register.verify.bad_null", e);
+            return json(
+              503,
+              {
+                error: "PasskeyUserSchemaMismatch",
+                detail:
+                  "users.email または users.password_hash が NULL 許容ではありません。db/migration_v23_child_profiles.sql と db/migration_v26_passkey_foundation.sql を適用してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          throw e;
+        } finally {
+          conn.release();
+        }
       } catch (e) {
-        await conn.rollback();
-        throw e;
-      } finally {
-        conn.release();
+        logPasskeyDetail("auth.passkey.register.verify", e);
+        return json(
+          500,
+          { error: "PasskeyRegistrationVerifyError", detail: "パスキー登録の検証処理で失敗しました" },
+          hdrs,
+          skipCors,
+        );
       }
     }
 

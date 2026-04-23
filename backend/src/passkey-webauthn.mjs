@@ -24,13 +24,11 @@ function flowSecret() {
 
 export function resolvePasskeyConfig() {
   const isProd = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
-  const defaultOrigin = isProd ? "https://ksystemapp.com" : "http://localhost:3000";
-  const originRaw = String(
-    process.env.WEBAUTHN_ORIGIN ||
-      process.env.ORIGIN ||
-      process.env.APP_ORIGIN ||
-      defaultOrigin,
-  ).trim();
+  const defaultOrigin = isProd
+    ? "https://ksystemapp.com"
+    : String(process.env.APP_ORIGIN || "http://localhost:3000");
+  // 本番は WebAuthn 専用環境変数を優先し、APP_ORIGIN の誤設定で壊れないようにする
+  const originRaw = String(process.env.WEBAUTHN_ORIGIN || process.env.ORIGIN || defaultOrigin).trim();
   const appOrigin = originRaw || defaultOrigin;
   let hostname = isProd ? "ksystemapp.com" : "localhost";
   try {
@@ -87,7 +85,8 @@ export async function buildPasskeyRegistrationOptions({ displayName = "ユーザ
   const { rpID, rpName } = resolvePasskeyConfig();
   const challenge = crypto.randomBytes(32).toString("base64url");
   const userName = `passkey-${crypto.randomUUID()}`;
-  const userID = crypto.randomBytes(24).toString("base64url");
+  // user.id はバイナリ（Uint8Array/Buffer）で渡す
+  const userID = crypto.randomBytes(32);
   const options = await generateRegistrationOptions({
     rpID,
     rpName,
