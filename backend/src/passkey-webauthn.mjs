@@ -93,7 +93,6 @@ export function verifyPasskeyRegistrationFlowToken(token) {
 
 export async function buildPasskeyRegistrationOptions({ displayName = "ユーザー", inviteToken = "" }) {
   const { rpID, rpName } = resolvePasskeyConfig();
-  const challenge = crypto.randomBytes(32).toString("base64url");
   const userName = `passkey-${crypto.randomUUID()}`;
   // user.id はバイナリ（Uint8Array/Buffer）で渡す
   const userID = crypto.randomBytes(32);
@@ -104,7 +103,6 @@ export async function buildPasskeyRegistrationOptions({ displayName = "ユーザ
     userDisplayName: String(displayName || "ユーザー").slice(0, 100),
     userID,
     timeout: 60_000,
-    challenge,
     attestationType: "none",
     authenticatorSelection: {
       residentKey: "required",
@@ -112,6 +110,7 @@ export async function buildPasskeyRegistrationOptions({ displayName = "ユーザ
     },
     supportedAlgorithmIDs: [-7, -257],
   });
+  const challenge = String(options.challenge || "").trim() || crypto.randomBytes(32).toString("base64url");
   const flowToken = issuePasskeyRegistrationFlowToken({
     c: challenge,
     n: String(displayName || "ユーザー").slice(0, 100),
@@ -126,13 +125,13 @@ export async function buildPasskeyRegistrationOptions({ displayName = "ユーザ
 
 export async function buildPasskeyAuthenticationOptions() {
   const { rpID } = resolvePasskeyConfig();
-  const challenge = crypto.randomBytes(32).toString("base64url");
   const options = await generateAuthenticationOptions({
     rpID,
     timeout: 60_000,
     userVerification: "preferred",
     allowCredentials: [],
   });
+  const challenge = String(options.challenge || "").trim() || crypto.randomBytes(32).toString("base64url");
   const flowToken = issuePasskeyRegistrationFlowToken({ c: challenge, m: "login" }, 600);
   options.challenge = challenge;
   return { options, flowToken };
