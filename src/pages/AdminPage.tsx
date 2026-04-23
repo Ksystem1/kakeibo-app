@@ -1001,21 +1001,15 @@ export function AdminPage() {
                       verticalAlign: "middle",
                     }}
                   >
-                    {group.memberLabelLines.length === 0 ? (
-                      "—"
-                    ) : (
-                      <div style={{ lineHeight: 1.15 }}>
-                        {group.memberLabelLines.map((line, i) => {
-                          const currentName = (displayNameDrafts[u.id] ?? u.display_name ?? "").trim();
-                          const isCurrent = currentName.length > 0 && line.includes(currentName);
-                          return (
-                            <div key={i} style={{ whiteSpace: "nowrap", fontWeight: isCurrent ? 700 : 400 }}>
-                              {line}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                    {(() => {
+                      const currentName = (displayNameDrafts[u.id] ?? u.display_name ?? "").trim();
+                      if (!currentName) return "—";
+                      return (
+                        <div style={{ lineHeight: 1.15 }}>
+                          <div style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{currentName}</div>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td style={{ ...adminTableTd, paddingLeft: "0.35rem" }}>
                     <div
