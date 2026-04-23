@@ -68,3 +68,36 @@ test("executePayPayCsvImport: 既存IDは更新カウントされる", async () 
   assert.ok(calls.some((c) => String(c.sql).includes("ON DUPLICATE KEY UPDATE")));
 });
 
+test("executePayPayCsvImport: メモは店舗名のみ（時刻・取引番号の文字列は含めない）", async () => {
+  const calls = [];
+  const fakePool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (String(sql).includes("SELECT external_transaction_id")) {
+        return [[]];
+      }
+      return [[{ affectedRows: 1 }]];
+    },
+  };
+  const csv = [
+    SAMPLE_HEADER,
+    "2026/04/22 10:00:00,100,-,-,-,-,-,支払い,七福亭,PayPay残高,-,-,memo-fmt-1",
+  ].join("\n");
+  await executePayPayCsvImport(fakePool, {
+    userId: 1,
+    familyId: 1,
+    csvText: csv,
+    dryRun: false,
+  });
+  const insert = calls.find((c) => String(c.sql).includes("INSERT INTO transactions"));
+  assert.ok(insert);
+  const params = insert.params;
+  const memo = params.find(
+    (x) => typeof x === "string" && x.startsWith("PayPay支払い:") && x.includes("七福亭"),
+  );
+  assert.ok(memo, `memo を params から検出: ${JSON.stringify(params)}`);
+  assert.equal(memo.includes("時刻:"), false);
+  assert.equal(memo.includes("取引番号:"), false);
+  assert.equal(memo.includes("memo-fmt-1"), false);
+});
+

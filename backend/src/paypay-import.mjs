@@ -253,11 +253,14 @@ export function buildPayPayImportPlan(csvText, options = {}) {
   };
 }
 
-function buildMemo(merchantRaw, txSecond, sourceTxIds, combined) {
-  const idsText = sourceTxIds.join(",");
-  const base = combined
-    ? `PayPay支払い(合算): ${merchantRaw} / 時刻:${txSecond} / 取引番号:${idsText}`
-    : `PayPay支払い: ${merchantRaw} / 時刻:${txSecond} / 取引番号:${idsText}`;
+/**
+ * メモは店舗名のみ（短形式）。日時・取引番号は transaction_date / external_transaction_id に保存。
+ * @param {string} merchantRaw
+ * @param {boolean} combined 同秒・同取引先合算行
+ */
+function buildMemo(merchantRaw, combined) {
+  const m = String(merchantRaw ?? "").trim() || "（取引先なし）";
+  const base = combined ? `PayPay支払い(合算): ${m}` : `PayPay支払い: ${m}`;
   return base.slice(0, 500);
 }
 
@@ -369,12 +372,7 @@ export async function executePayPayCsvImport(pool, payload) {
     externalTransactionId: r.externalTransactionId,
     amount: r.amount,
     transactionDate: r.txDate,
-    memo: buildMemo(
-      r.merchantRaw,
-      r.txSecond,
-      r.sourceTxIds,
-      r.sourceTxIds.length > 1,
-    ),
+    memo: buildMemo(r.merchantRaw, r.sourceTxIds.length > 1),
   }));
   const extIds = rows.map((r) => r.externalTransactionId);
   const existingIds = await fetchExistingExternalIds(pool, userId, extIds);
