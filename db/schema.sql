@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   cognito_sub     CHAR(36) NULL COMMENT 'Cognito Username (sub) — UNIQUE 制約は下記',
   email           VARCHAR(255) NULL,
+  auth_method     ENUM('email','passkey','both') NOT NULL DEFAULT 'email' COMMENT '認証方式: email/passkey/both',
   is_admin        TINYINT(1) NOT NULL DEFAULT 0 COMMENT '管理者フラグ（1=true）',
   subscription_status VARCHAR(32) NOT NULL DEFAULT 'inactive' COMMENT 'Stripe/admin: active trialing past_due canceled unpaid paused inactive admin_free',
   stripe_customer_id VARCHAR(255) NULL COMMENT 'Stripe Customer id (cus_...) Webhook 突合',
@@ -35,6 +36,26 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT fk_users_parent
     FOREIGN KEY (parent_id) REFERENCES users (id)
     ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- WebAuthn / Passkey 認証器（1ユーザー複数デバイス）
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS authenticators (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id         BIGINT UNSIGNED NOT NULL,
+  credential_id   VARBINARY(1024) NOT NULL COMMENT 'WebAuthn credentialId（生バイト列）',
+  public_key      BLOB NOT NULL COMMENT 'COSE public key',
+  counter         BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '署名カウンタ',
+  transports      VARCHAR(255) NULL COMMENT 'usb,nfc,ble,internal など（CSV）',
+  created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_authenticators_credential_id (credential_id),
+  KEY idx_authenticators_user (user_id),
+  CONSTRAINT fk_authenticators_user
+    FOREIGN KEY (user_id) REFERENCES users (id)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
