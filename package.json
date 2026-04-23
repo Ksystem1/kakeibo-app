@@ -21,6 +21,7 @@
     "verify:login": "node infra/scripts/verify-login.mjs",
     "verify:connectivity": "node infra/scripts/verify-connectivity.mjs",
     "verify:git-sync": "node infra/scripts/verify-git-sync.mjs",
+    "verify:grade-group": "node scripts/verify-grade-group.mjs",
     "db:migrate-v13": "npm run db:migrate-v13 --prefix backend",
     "db:migrate-v14": "npm run db:migrate-v14 --prefix backend",
     "db:migrate-v15": "npm run db:migrate-v15 --prefix backend",

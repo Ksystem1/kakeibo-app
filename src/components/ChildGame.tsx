@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { GradeGroup } from "../lib/api";
+import { type GradeGroup, normalizeGradeGroup } from "../lib/api";
 import { generateMathPuzzle, type PuzzleHint } from "../lib/generateMathPuzzle";
 import styles from "./ChildGame.module.css";
 
@@ -22,6 +22,8 @@ const QUIZ_ITEM_ILLUSTRATIONS: Record<string, string> = {
 };
 
 export function ChildGame({ gradeGroup, ledgerHint }: Props) {
+  // 未設定・不明は従来どおり 3-4 相当のクイズ（「3-4年生」デフォルト表示に合わせる）
+  const activeGrade: GradeGroup = normalizeGradeGroup(gradeGroup) ?? "3-4";
   const [walletPos, setWalletPos] = useState<"left" | "center" | "right">("center");
   const [coinIndex, setCoinIndex] = useState(0);
   const coinPattern = useMemo(
@@ -34,6 +36,8 @@ export function ChildGame({ gradeGroup, ledgerHint }: Props) {
     [],
   );
   const [coinScore, setCoinScore] = useState(0);
+  const [coinStreak, setCoinStreak] = useState(0);
+  const [coinFeedback, setCoinFeedback] = useState<string>("");
 
   const [quizIndex, setQuizIndex] = useState(0);
   const quizItems = useMemo(
@@ -45,21 +49,23 @@ export function ChildGame({ gradeGroup, ledgerHint }: Props) {
     [],
   );
   const [quizScore, setQuizScore] = useState(0);
+  const [quizFeedback, setQuizFeedback] = useState<string>("");
 
   const [dialHundreds, setDialHundreds] = useState(0);
   const [dialTens, setDialTens] = useState(0);
   const [dialOnes, setDialOnes] = useState(0);
   const [phase, setPhase] = useState<"idle" | "success" | "fail">("idle");
   const [solvedCount, setSolvedCount] = useState(0);
+  const [failCount, setFailCount] = useState(0);
   const [shakeKey, setShakeKey] = useState(0);
   const [puzzle, setPuzzle] = useState(() => generateMathPuzzle(ledgerHint));
 
   const currentCoin = coinPattern[coinIndex % coinPattern.length];
   const currentQuiz = quizItems[quizIndex % quizItems.length];
-  if (gradeGroup === "1-2") {
+  if (activeGrade === "1-2") {
     return (
       <div className={styles.wrap}>
-        <h3 className={styles.title}>{gradeTitle(gradeGroup)}</h3>
+        <h3 className={styles.title}>{gradeTitle(activeGrade)}</h3>
         <p className={styles.hint}>コインが落ちるレーンにおさいふをタップで合わせよう！</p>
         <div className={styles.coinLanes}>
           {["left", "center", "right"].map((lane) => (
@@ -77,22 +83,31 @@ export function ChildGame({ gradeGroup, ledgerHint }: Props) {
           type="button"
           className={styles.playBtn}
           onClick={() => {
-            if (walletPos === currentCoin.lane) setCoinScore((s) => s + currentCoin.value);
+            if (walletPos === currentCoin.lane) {
+              setCoinScore((s) => s + currentCoin.value);
+              setCoinStreak((s) => s + 1);
+              setCoinFeedback(`ナイス！ +${currentCoin.value}点`);
+            } else {
+              setCoinStreak(0);
+              setCoinFeedback("おしい！つぎはコインの位置を見てみよう");
+            }
             setCoinIndex((i) => i + 1);
           }}
         >
           キャッチ！
         </button>
         <p className={styles.score}>スコア: {coinScore} 点</p>
+        <p className={styles.score}>れんぞくせいこう: {coinStreak} 回</p>
+        {coinFeedback ? <p className={styles.feedback}>{coinFeedback}</p> : null}
       </div>
     );
   }
 
-  if (gradeGroup === "3-4") {
+  if (activeGrade === "3-4") {
     const itemIllustration = QUIZ_ITEM_ILLUSTRATIONS[currentQuiz.item] || "🛍️";
     return (
       <div className={styles.wrap}>
-        <h3 className={styles.title}>{gradeTitle(gradeGroup)}</h3>
+        <h3 className={styles.title}>{gradeTitle(activeGrade)}</h3>
         <p className={styles.hint}>イラストの値段をあてよう</p>
         <div className={styles.quizIllustrationBox} aria-hidden="true">
           <span className={styles.quizIllustration}>{itemIllustration}</span>
@@ -105,7 +120,12 @@ export function ChildGame({ gradeGroup, ledgerHint }: Props) {
               type="button"
               className={styles.choiceBtn}
               onClick={() => {
-                if (c === currentQuiz.answer) setQuizScore((s) => s + 1);
+                if (c === currentQuiz.answer) {
+                  setQuizScore((s) => s + 1);
+                  setQuizFeedback(`せいかい！ ${currentQuiz.item} は ${currentQuiz.answer}円`);
+                } else {
+                  setQuizFeedback(`ざんねん！ 正解は ${currentQuiz.answer}円`);
+                }
                 setQuizIndex((i) => i + 1);
               }}
             >
@@ -114,43 +134,14 @@ export function ChildGame({ gradeGroup, ledgerHint }: Props) {
           ))}
         </div>
         <p className={styles.score}>せいかい: {quizScore} 問</p>
-      </div>
-    );
-  }
-
-  if (gradeGroup !== "5-6") {
-    const itemIllustration = QUIZ_ITEM_ILLUSTRATIONS[currentQuiz.item] || "🛍️";
-    return (
-      <div className={styles.wrap}>
-        <h3 className={styles.title}>{gradeTitle(gradeGroup)}</h3>
-        <p className={styles.hint}>イラストの値段をあてよう</p>
-        <div className={styles.quizIllustrationBox} aria-hidden="true">
-          <span className={styles.quizIllustration}>{itemIllustration}</span>
-        </div>
-        <p className={styles.question}>この「{currentQuiz.item}」はいくら？</p>
-        <div className={styles.choiceRow}>
-          {currentQuiz.choices.map((c) => (
-            <button
-              key={c}
-              type="button"
-              className={styles.choiceBtn}
-              onClick={() => {
-                if (c === currentQuiz.answer) setQuizScore((s) => s + 1);
-                setQuizIndex((i) => i + 1);
-              }}
-            >
-              {c}円
-            </button>
-          ))}
-        </div>
-        <p className={styles.score}>せいかい: {quizScore} 問</p>
+        {quizFeedback ? <p className={styles.feedback}>{quizFeedback}</p> : null}
       </div>
     );
   }
 
   return (
     <div className={styles.ruinsWrap}>
-      <h3 className={styles.title}>{gradeTitle(gradeGroup)}: 遺跡脱出</h3>
+      <h3 className={styles.title}>{gradeTitle(activeGrade)}: 遺跡脱出</h3>
       <p className={styles.hint}>おこづかい帳の入力が、暗号を解くヒントになる。</p>
       <div className={styles.ruinsWall}>
         <p className={styles.ruinsStory}>
@@ -216,6 +207,7 @@ export function ChildGame({ gradeGroup, ledgerHint }: Props) {
               setSolvedCount((v) => v + 1);
             } else {
               setPhase("fail");
+              setFailCount((v) => v + 1);
               setShakeKey((k) => k + 1);
             }
           }}
@@ -246,6 +238,7 @@ export function ChildGame({ gradeGroup, ledgerHint }: Props) {
         </button>
       </div>
       <p className={styles.score}>脱出した扉: {solvedCount} 枚</p>
+      <p className={styles.score}>ミス: {failCount} 回</p>
     </div>
   );
 }
