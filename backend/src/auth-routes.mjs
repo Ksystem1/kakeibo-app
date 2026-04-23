@@ -21,6 +21,7 @@ import {
   verifyPasskeyAuthentication,
   verifyPasskeyRegistration,
   verifyPasskeyRegistrationFlowToken,
+  resolvePasskeyConfig,
 } from "./passkey-webauthn.mjs";
 import {
   bodyContainsSubscriptionMutationFields,
@@ -197,7 +198,7 @@ async function shouldGrantMonitorOnRegister(conn) {
 
 function buildInviteUrl(inviteRawToken) {
   const appOrigin = (process.env.APP_ORIGIN || "https://ksystemapp.com").replace(/\/$/, "");
-  return `${appOrigin}/kakeibo/join?token=${encodeURIComponent(inviteRawToken)}`;
+  return `${appOrigin}/kakeibo/register/passkey?token=${encodeURIComponent(inviteRawToken)}`;
 }
 
 async function countPasskeyAuthenticators(poolOrConn, userId) {
@@ -617,11 +618,31 @@ export async function tryAuthRoutes(req, ctx) {
         if (!flow?.c) {
           return json(400, { error: "登録セッションが無効または期限切れです" }, hdrs, skipCors);
         }
-        const verification = await verifyPasskeyRegistration({
-          credential,
-          expectedChallenge: flow.c,
-        });
+        let verification = null;
+        try {
+          verification = await verifyPasskeyRegistration({
+            credential,
+            expectedChallenge: flow.c,
+          });
+        } catch (verifyErr) {
+          const cfg = resolvePasskeyConfig();
+          logPasskeyDetail("auth.passkey.register.verify.webauthn", verifyErr, {
+            expectedRPID: cfg.rpID,
+            expectedOrigins: cfg.expectedOrigins,
+            expectedChallengePrefix: String(flow.c).slice(0, 12),
+          });
+          throw verifyErr;
+        }
         if (!verification?.verified || !verification.registrationInfo) {
+          const cfg = resolvePasskeyConfig();
+          console.error(
+            JSON.stringify({
+              level: "error",
+              event: "auth.passkey.register.verify.not_verified",
+              expectedRPID: cfg.rpID,
+              expectedOrigins: cfg.expectedOrigins,
+            }),
+          );
           return json(400, { error: "パスキー登録の検証に失敗しました" }, hdrs, skipCors);
         }
 

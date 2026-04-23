@@ -29,7 +29,7 @@ export function resolvePasskeyConfig() {
     : String(process.env.APP_ORIGIN || "http://localhost:3000");
   // 本番は WebAuthn 専用環境変数を優先し、APP_ORIGIN の誤設定で壊れないようにする
   const originRaw = String(process.env.WEBAUTHN_ORIGIN || process.env.ORIGIN || defaultOrigin).trim();
-  const appOrigin = originRaw || defaultOrigin;
+  const appOrigin = (originRaw || defaultOrigin).replace(/\/+$/, "");
   let hostname = isProd ? "ksystemapp.com" : "localhost";
   try {
     hostname = new URL(appOrigin).hostname || hostname;
@@ -106,6 +106,7 @@ export async function buildPasskeyRegistrationOptions({ displayName = "ユーザ
     c: challenge,
     n: String(displayName || "ユーザー").slice(0, 100),
     u: userName,
+    uid: userID.toString("base64url"),
     iv: String(inviteToken || ""),
   });
   return { options, flowToken };
