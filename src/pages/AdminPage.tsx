@@ -22,7 +22,6 @@ import {
   NEW_PASSWORD_LABEL,
   NEW_PASSWORD_TOOLTIP,
 } from "../lib/passwordPolicy";
-import type { KidTheme } from "../lib/api";
 
 type AdminUser = {
   id: number;
@@ -37,8 +36,6 @@ type AdminUser = {
   default_family_id: number | null;
   /** users.family_role（未対応 API では undefined） */
   familyRole?: string;
-  /** KID きせかえ（users.kid_theme） */
-  kidTheme?: KidTheme | null;
   family_peers: string | null;
 };
 
@@ -80,39 +77,6 @@ const FAMILY_ROLE_LABELS: Record<string, string> = {
   KID: "子ども（本人のみ）",
 };
 const ADMIN_FAMILY_ROLES = ["ADMIN", "MEMBER", "KID"] as const;
-
-const KID_THEME_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: "未設定（端末はブルー寄り）" },
-  { value: "pink", label: "ピンク（女の子向け）" },
-  { value: "lavender", label: "ラベンダー（女の子向け）" },
-  { value: "pastel_yellow", label: "パステルイエロー（女の子向け）" },
-  { value: "mint_green", label: "ミントグリーン（女の子向け）" },
-  { value: "floral", label: "フローラル（女の子向け）" },
-  { value: "blue", label: "ブルー（男の子向け）" },
-  { value: "navy", label: "ネイビー（男の子向け）" },
-  { value: "dino_green", label: "ダイナソーグリーン（男の子向け）" },
-  { value: "space_black", label: "スペースブラック（男の子向け）" },
-  { value: "sky_red", label: "スカイレッド（男の子向け）" },
-];
-
-function normalizeKidThemeDraft(raw: unknown): KidTheme | null {
-  const s = String(raw ?? "").trim().toLowerCase();
-  if (
-    s === "pink" ||
-    s === "lavender" ||
-    s === "pastel_yellow" ||
-    s === "mint_green" ||
-    s === "floral" ||
-    s === "blue" ||
-    s === "navy" ||
-    s === "dino_green" ||
-    s === "space_black" ||
-    s === "sky_red"
-  ) {
-    return s;
-  }
-  return null;
-}
 
 function formatAdminApiError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e ?? "");
@@ -188,7 +152,6 @@ export function AdminPage() {
   const [displayNameDrafts, setDisplayNameDrafts] = useState<Record<number, string>>({});
   const [familyIdDrafts, setFamilyIdDrafts] = useState<Record<number, string>>({});
   const [familyRoleDrafts, setFamilyRoleDrafts] = useState<Record<number, string>>({});
-  const [kidThemeDrafts, setKidThemeDrafts] = useState<Record<number, string>>({});
   const [tempPasswords, setTempPasswords] = useState<Record<number, string>>({});
   const [creating, setCreating] = useState(false);
   const [newEmail, setNewEmail] = useState("");
@@ -297,14 +260,6 @@ export function AdminPage() {
           ]),
         ),
       );
-      setKidThemeDrafts(
-        Object.fromEntries(
-          list.map((u) => {
-            const kt = normalizeKidThemeDraft(u.kidTheme);
-            return [u.id, kt ?? ""];
-          }),
-        ),
-      );
       setAnnouncementDraft(typeof ann.text === "string" ? ann.text : "");
       setMonitorRecruitmentEnabled(monitorRecruitment.enabled === true);
       setMonitorRecruitmentText(typeof monitorRecruitment.text === "string" ? monitorRecruitment.text : "");
@@ -404,25 +359,15 @@ export function AdminPage() {
           | "MEMBER"
           | "KID";
 
-        const prevKid = normalizeKidThemeDraft(u.kidTheme);
-        const draftKidRaw = (kidThemeDrafts[userId] ?? "").trim().toLowerCase();
-        const nextKid = normalizeKidThemeDraft(draftKidRaw);
-
         const body: {
           defaultFamilyId?: number | null;
           familyRole?: "ADMIN" | "MEMBER" | "KID";
-          kidTheme?: KidTheme | null;
         } = {};
         if (nextFam !== prevFam) {
           body.defaultFamilyId = nextFam;
         }
         if (nextRole !== prevRole) {
           body.familyRole = nextRole;
-        }
-        if (nextRole === "KID") {
-          if (nextKid !== prevKid) body.kidTheme = nextKid;
-        } else if (prevRole === "KID") {
-          body.kidTheme = null;
         }
         if (Object.keys(body).length === 0) {
           setSavingUserId(null);
@@ -436,7 +381,7 @@ export function AdminPage() {
         setSavingUserId(null);
       }
     },
-    [items, familyIdDrafts, familyRoleDrafts, kidThemeDrafts, load],
+    [items, familyIdDrafts, familyRoleDrafts, load],
   );
 
   const onSetSubscriptionStatus = useCallback(
@@ -937,7 +882,7 @@ export function AdminPage() {
           style={{
             width: "100%",
             borderCollapse: "collapse",
-            minWidth: 1960,
+            minWidth: 1740,
             tableLayout: "auto",
           }}
         >
@@ -949,7 +894,6 @@ export function AdminPage() {
               <th style={adminTableTh}>最終ログイン</th>
               <th style={{ ...adminTableTh, minWidth: "5.5rem" }}>家族ID</th>
               <th style={{ ...adminTableTh, minWidth: "7rem" }}>役割</th>
-              <th style={{ ...adminTableTh, minWidth: "11rem" }}>おこづかい画面テーマ</th>
               {/* width:1% + 子の nowrap で列幅を内容に寄せ、表示名列との隙間を詰める */}
               <th style={{ ...adminTableTh, width: "1%", whiteSpace: "nowrap" }}>家族メンバー</th>
               <th style={{ ...adminTableTh, minWidth: 180 }}>表示名</th>
@@ -968,7 +912,7 @@ export function AdminPage() {
               const familyLabel = (familyLabelDrafts[familyLabelKey] ?? "").trim();
               const parentRow = (
                 <tr key={`family-${group.familyKey}`} style={{ borderTop: "2px solid var(--border)", background: "var(--panel-bg)" }}>
-                  <td colSpan={14} style={{ ...adminTableTd, paddingTop: "0.45rem", paddingBottom: "0.45rem" }}>
+                  <td colSpan={13} style={{ ...adminTableTd, paddingTop: "0.45rem", paddingBottom: "0.45rem" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.8rem", flexWrap: "wrap" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", flexWrap: "wrap" }}>
                         <strong>{familyTitle}</strong>
@@ -1048,27 +992,6 @@ export function AdminPage() {
                         反映
                       </button>
                     </div>
-                  </td>
-                  <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
-                    {(familyRoleDrafts[u.id] ?? "MEMBER").trim().toUpperCase() === "KID" ? (
-                      <select
-                        value={kidThemeDrafts[u.id] ?? ""}
-                        disabled={savingUserId === u.id}
-                        onChange={(e) =>
-                          setKidThemeDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
-                        }
-                        style={{ minWidth: 200, maxWidth: 240, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
-                        title="子ども（KID）のおこづかい帳のきせかえ色。反映は左の「反映」で家族・役割とまとめて保存されます。"
-                      >
-                        {KID_THEME_OPTIONS.map((o) => (
-                          <option key={o.value || "unset"} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span style={{ color: "var(--text-muted)" }}>—</span>
-                    )}
                   </td>
                   <td
                     style={{
@@ -1217,7 +1140,7 @@ export function AdminPage() {
             })}
             {!loading && items.length === 0 ? (
               <tr>
-                <td colSpan={14} style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                <td colSpan={13} style={{ padding: "1rem", color: "var(--text-muted)" }}>
                   ユーザーが見つかりません
                 </td>
               </tr>
