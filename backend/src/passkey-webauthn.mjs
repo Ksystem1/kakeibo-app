@@ -21,6 +21,15 @@ function ensureB64urlId(input) {
   return Buffer.from(s).toString("base64url");
 }
 
+function buildExpectedChallengeVerifier(expectedChallengeRaw) {
+  const expected = String(expectedChallengeRaw || "").trim();
+  const expectedDoubleEncoded = Buffer.from(expected, "utf8").toString("base64url");
+  return (receivedChallenge) => {
+    const received = String(receivedChallenge || "").trim();
+    return received === expected || received === expectedDoubleEncoded;
+  };
+}
+
 function hmacSign(text, secret) {
   return crypto.createHmac("sha256", secret).update(text).digest("base64url");
 }
@@ -146,7 +155,7 @@ export async function verifyPasskeyRegistration({ credential, expectedChallenge 
     : expectedOrigins;
   return verifyRegistrationResponse({
     response: credential,
-    expectedChallenge: String(expectedChallenge || ""),
+    expectedChallenge: buildExpectedChallengeVerifier(expectedChallenge),
     expectedOrigin,
     expectedRPID,
     requireUserVerification: false,
@@ -166,7 +175,7 @@ export async function verifyPasskeyAuthentication({
     : expectedOrigins;
   return verifyAuthenticationResponse({
     response: credential,
-    expectedChallenge: String(expectedChallenge || ""),
+    expectedChallenge: buildExpectedChallengeVerifier(expectedChallenge),
     expectedOrigin,
     expectedRPID,
     authenticator,
