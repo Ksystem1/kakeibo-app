@@ -10,6 +10,7 @@ import { ImportCsvPage } from "./pages/ImportCsvPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ReceiptPage } from "./pages/ReceiptPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { PasskeyRegisterPage } from "./pages/PasskeyRegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminSupportChatPage } from "./pages/AdminSupportChatPage";
@@ -26,6 +27,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/register/passkey" element={<PasskeyRegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/demo-dashboard" element={<DemoDashboardPage />} />

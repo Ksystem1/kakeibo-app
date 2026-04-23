@@ -141,6 +141,9 @@ export function RegisterPage() {
           <header className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>新規登録</h2>
             <p className={styles.cardSub}>メールとパスワードでアカウントを作成</p>
+            <p className={styles.cardSub}>
+              パスキーで始める場合は <Link to="/register/passkey" className={styles.link}>こちら</Link>
+            </p>
           </header>
           {monitorRecruitmentMessage ? (
             <div

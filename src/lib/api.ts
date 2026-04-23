@@ -215,6 +215,45 @@ export async function registerRequest(body: {
   }>(res);
 }
 
+export async function getPasskeyRegistrationOptions(body: {
+  display_name?: string;
+  invite_token?: string;
+}) {
+  const res = await apiFetch(`${BASE}/auth/passkey/register/options`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body ?? {}),
+  });
+  return parse<{
+    options: unknown;
+    flowToken: string;
+  }>(res);
+}
+
+export async function verifyPasskeyRegistration(body: {
+  flow_token: string;
+  credential: unknown;
+}) {
+  const res = await apiFetch(`${BASE}/auth/passkey/register/verify`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{
+    token: string;
+    user: {
+      id: number;
+      email: string;
+      familyId?: number | null;
+      familyRole?: string;
+      isAdmin?: boolean;
+      subscriptionStatus?: string;
+      isPremium?: boolean;
+      authMethod?: "passkey" | "email" | "both";
+    };
+  }>(res);
+}
+
 export async function getAuthMe() {
   const res = await apiFetch(`${BASE}/auth/me`, {
     headers: buildHeaders(),
@@ -1148,6 +1187,22 @@ export async function inviteFamilyMember(email: string) {
     invite_url?: string;
     line_share_url?: string;
     line_message_share_url?: string;
+  }>(res);
+}
+
+export async function issueFamilyInviteLink() {
+  const res = await apiFetch(`${BASE}/families/invite-link`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({}),
+  });
+  return parse<{
+    ok: boolean;
+    message?: string;
+    invite_url?: string;
+    line_share_url?: string;
+    line_message_share_url?: string;
+    debug_invite_token?: string;
   }>(res);
 }
 

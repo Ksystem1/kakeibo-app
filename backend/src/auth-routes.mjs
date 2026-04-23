@@ -12,6 +12,12 @@ import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
 import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { canAccessFamilyChat, SINGLE_FAMILY_CHAT_ID } from "./family-chat-access.mjs";
 import {
+  buildPasskeyRegistrationOptions,
+  registrationInfoToDbValues,
+  verifyPasskeyRegistration,
+  verifyPasskeyRegistrationFlowToken,
+} from "./passkey-webauthn.mjs";
+import {
   bodyContainsSubscriptionMutationFields,
   buildUserSubscriptionApiFields,
   deriveSubscriptionStatusFromDbRow,
@@ -30,8 +36,11 @@ const AUTH_ROUTE_KEYS = new Set([
   "POST /auth/reset-password",
   "GET /auth/me",
   "PATCH /auth/me/kid-theme",
+  "POST /auth/passkey/register/options",
+  "POST /auth/passkey/register/verify",
   "GET /families/members",
   "POST /families/invite",
+  "POST /families/invite-link",
   "GET /families/children",
   "POST /families/children",
   "PATCH /families/children/:id",
@@ -147,6 +156,11 @@ async function shouldGrantMonitorOnRegister(conn) {
     }
     throw e;
   }
+}
+
+function buildInviteUrl(inviteRawToken) {
+  const appOrigin = (process.env.APP_ORIGIN || "https://ksystemapp.com").replace(/\/$/, "");
+  return `${appOrigin}/kakeibo/register/passkey?invite=${encodeURIComponent(inviteRawToken)}`;
 }
 
 function normalizeGradeGroup(raw) {
@@ -484,6 +498,139 @@ export async function tryAuthRoutes(req, ctx) {
 
   try {
     const pool = getPool();
+    if (key === "POST /auth/passkey/register/options") {
+      const b = JSON.parse(req.body || "{}");
+      const displayName = String(b.display_name ?? b.displayName ?? "").trim() || "ユーザー";
+      const inviteToken = String(b.invite_token ?? b.inviteToken ?? "").trim();
+      if (inviteToken) {
+        const inviteHash = crypto.createHash("sha256").update(inviteToken).digest("hex");
+        const [invRows] = await pool.query(
+          `SELECT id FROM family_invites WHERE token_hash = ? AND expires_at > NOW() LIMIT 1`,
+          [inviteHash],
+        );
+        if (!Array.isArray(invRows) || invRows.length === 0) {
+          return json(400, { error: "招待リンクが無効または期限切れです" }, hdrs, skipCors);
+        }
+      }
+      const out = await buildPasskeyRegistrationOptions({ displayName, inviteToken });
+      return json(200, out, hdrs, skipCors);
+    }
+
+    if (key === "POST /auth/passkey/register/verify") {
+      const b = JSON.parse(req.body || "{}");
+      const flowToken = String(b.flow_token ?? b.flowToken ?? "").trim();
+      const credential = b.credential ?? b.response ?? null;
+      if (!flowToken || !credential) {
+        return json(400, { error: "flow_token と credential が必要です" }, hdrs, skipCors);
+      }
+      const flow = verifyPasskeyRegistrationFlowToken(flowToken);
+      if (!flow?.c) {
+        return json(400, { error: "登録セッションが無効または期限切れです" }, hdrs, skipCors);
+      }
+      const verification = await verifyPasskeyRegistration({
+        credential,
+        expectedChallenge: flow.c,
+      });
+      if (!verification?.verified || !verification.registrationInfo) {
+        return json(400, { error: "パスキー登録の検証に失敗しました" }, hdrs, skipCors);
+      }
+
+      const conn = await withDbRetry(
+        "auth.passkey.register.getConnection",
+        () => pool.getConnection(),
+        Number(process.env.DB_RETRY_ATTEMPTS || "10"),
+      );
+      try {
+        await conn.beginTransaction();
+        const monitorGranted = await shouldGrantMonitorOnRegister(conn);
+        const grantedSubscriptionStatus = monitorGranted ? "admin_free" : "inactive";
+        const displayName = String(flow.n ?? "").trim() || null;
+
+        const [ur] = await conn.query(
+          `INSERT INTO users (email, login_name, password_hash, display_name, subscription_status, auth_method)
+           VALUES (NULL, NULL, NULL, ?, ?, 'passkey')`,
+          [displayName, grantedSubscriptionStatus],
+        );
+        const userId = Number(ur.insertId);
+        let familyId = null;
+        let role = "owner";
+        const inviteToken = String(flow.iv ?? "").trim();
+        if (inviteToken) {
+          const inviteHash = crypto.createHash("sha256").update(inviteToken).digest("hex");
+          const [invRows] = await conn.query(
+            `SELECT id, family_id
+             FROM family_invites
+             WHERE token_hash = ? AND expires_at > NOW()
+             LIMIT 1`,
+            [inviteHash],
+          );
+          if (!Array.isArray(invRows) || invRows.length === 0) {
+            await conn.rollback();
+            return json(400, { error: "招待リンクが無効または期限切れです" }, hdrs, skipCors);
+          }
+          const inv = invRows[0];
+          familyId = Number(inv.family_id);
+          role = "member";
+          await conn.query("DELETE FROM family_invites WHERE id = ?", [inv.id]);
+        } else {
+          const [fr] = await conn.query("INSERT INTO families (name) VALUES (?)", ["夫婦"]);
+          familyId = Number(fr.insertId);
+        }
+
+        await conn.query("UPDATE users SET default_family_id = ? WHERE id = ?", [familyId, userId]);
+        await conn.query(
+          `INSERT INTO family_members (family_id, user_id, role) VALUES (?, ?, ?)`,
+          [familyId, userId, role],
+        );
+
+        const transports =
+          credential?.response?.transports ?? credential?.transports ?? [];
+        const regDb = registrationInfoToDbValues(verification, transports);
+        await conn.query(
+          `INSERT INTO authenticators (user_id, credential_id, public_key, counter, transports)
+           VALUES (?, ?, ?, ?, ?)`,
+          [
+            userId,
+            regDb.credentialIdBuf,
+            regDb.publicKeyBuf,
+            regDb.counter,
+            regDb.transportsCsv,
+          ],
+        );
+        await conn.commit();
+
+        await seedDefaultCategoriesIfEmpty(pool, userId, familyId);
+        await withDbRetry("auth.passkey.register.lastLogin", () =>
+          pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = ?`, [userId]),
+        );
+        const pseudoEmail = `passkey-${userId}@local.invalid`;
+        const token = signUserToken(userId, pseudoEmail);
+        return json(
+          201,
+          {
+            token,
+            user: {
+              id: userId,
+              email: "",
+              familyId,
+              isAdmin: false,
+              familyRole: role === "owner" ? "ADMIN" : "MEMBER",
+              subscriptionStatus: grantedSubscriptionStatus,
+              isPremium: monitorGranted,
+              authMethod: "passkey",
+            },
+          },
+          hdrs,
+          skipCors,
+        );
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      } finally {
+        conn.release();
+      }
+    }
+
     if (key === "POST /auth/register") {
       const b = JSON.parse(req.body || "{}");
       if (bodyContainsSubscriptionMutationFields(b)) {
@@ -1445,12 +1592,10 @@ export async function tryAuthRoutes(req, ctx) {
         ),
       );
 
-      const appOrigin = (process.env.APP_ORIGIN || "https://ksystemapp.com").replace(/\/$/, "");
-      const inviteUrl = `${appOrigin}/kakeibo/register?invite=${encodeURIComponent(raw)}`;
+      const inviteUrl = buildInviteUrl(raw);
       const lineLinkShare = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(inviteUrl)}`;
       const lineMessage = [
         "【家計簿 Kakeibo】家族への招待です。",
-        `登録時はこのメールアドレスを使ってください: ${inviteEmail}`,
         inviteUrl,
       ].join("\n");
       const lineMessageShare = `https://line.me/R/msg/text/?${encodeURIComponent(lineMessage)}`;
@@ -1463,6 +1608,39 @@ export async function tryAuthRoutes(req, ctx) {
       };
       if (process.env.AUTH_DEBUG_TOKEN === "true") res.debug_invite_token = raw;
       return json(201, res, hdrs, skipCors);
+    }
+
+    if (key === "POST /families/invite-link") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const fid = await getDefaultFamilyId(pool, uid);
+      if (!fid) {
+        return json(400, { error: "家族が未設定です" }, hdrs, skipCors);
+      }
+      const raw = crypto.randomBytes(24).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
+      const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      await withDbRetry("auth.inviteLink.insert", () =>
+        pool.query(
+          `INSERT INTO family_invites (family_id, email, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
+          [fid, "", tokenHash, expires],
+        ),
+      );
+      const inviteUrl = buildInviteUrl(raw);
+      const lineLinkShare = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(inviteUrl)}`;
+      const lineMessage = ["【家計簿 Kakeibo】家族への招待です。", inviteUrl].join("\n");
+      const lineMessageShare = `https://line.me/R/msg/text/?${encodeURIComponent(lineMessage)}`;
+      const out = {
+        ok: true,
+        message: "招待URLを発行しました。URLを共有してください。",
+        invite_url: inviteUrl,
+        line_share_url: lineLinkShare,
+        line_message_share_url: lineMessageShare,
+      };
+      if (process.env.AUTH_DEBUG_TOKEN === "true") out.debug_invite_token = raw;
+      return json(201, out, hdrs, skipCors);
     }
 
     return null;

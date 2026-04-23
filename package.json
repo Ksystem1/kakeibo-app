@@ -36,6 +36,7 @@
     "backup:release": "node scripts/backup-release.mjs"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^13.3.0",
     "canvas-confetti": "^1.9.4",
     "lucide-react": "^1.7.0",
     "react": "^18.3.1",

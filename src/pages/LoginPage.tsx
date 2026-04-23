@@ -147,6 +147,10 @@ export function LoginPage() {
             <Link to="/register" className={styles.link}>
               新規登録
             </Link>
+            {" / "}
+            <Link to="/register/passkey" className={styles.link}>
+              パスキーで登録
+            </Link>
           </p>
           <aside className={styles.qrUnderFooter} aria-label="スマートフォンアクセス">
             <MobileAccessQr fixedPath={`${import.meta.env.BASE_URL}login`} />

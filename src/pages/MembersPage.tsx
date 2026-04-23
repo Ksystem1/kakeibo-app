@@ -5,7 +5,7 @@ import {
   deleteChildProfile,
   getChildProfiles,
   getFamilyMembers,
-  inviteFamilyMember,
+  issueFamilyInviteLink,
   updateChildProfile,
   type GradeGroup,
 } from "../lib/api";
@@ -35,9 +35,7 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
   const [editingChildId, setEditingChildId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editGradeGroup, setEditGradeGroup] = useState<GradeGroup>("1-2");
-  const [inviteEmail, setInviteEmail] = useState("");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const [inviteTargetEmail, setInviteTargetEmail] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -75,22 +73,16 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
-  async function onInviteAdultByEmail(e: FormEvent) {
+  async function onIssueInviteLink(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
     setErr(null);
     setLoading(true);
     try {
-      const targetEmail = inviteEmail.trim().toLowerCase();
-      if (!targetEmail || !targetEmail.includes("@")) {
-        throw new Error("招待するメールアドレスを正しく入力してください。");
-      }
-      const r = await inviteFamilyMember(targetEmail);
+      const r = await issueFamilyInviteLink();
       const url = r.invite_url ?? null;
       setInviteUrl(url);
-      setInviteTargetEmail(targetEmail);
-      setInviteEmail("");
-      setMsg(r.message ?? "招待URLを発行しました。メールまたはQRで共有できます。");
+      setMsg(r.message ?? "招待URLを発行しました。URLまたはQRで共有できます。");
       await load();
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : String(ex));
@@ -267,15 +259,8 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
         </table>
       </div>
 
-      <h2 className={styles.sectionTitle}>夫・妻など大人を招待（メール / QR）</h2>
-      <form onSubmit={onInviteAdultByEmail} style={{ display: "grid", gap: "0.5rem" }}>
-        <input
-          type="email"
-          value={inviteEmail}
-          onChange={(e) => setInviteEmail(e.target.value)}
-          placeholder="partner@example.com"
-          className={styles.monthInput}
-        />
+      <h2 className={styles.sectionTitle}>大人メンバーを招待（URL / QR）</h2>
+      <form onSubmit={onIssueInviteLink} style={{ display: "grid", gap: "0.5rem" }}>
         <button
           type="submit"
           className={`${styles.btn} ${styles.btnPrimary}`}
@@ -308,16 +293,6 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
             >
               URLをコピー
             </button>
-            {inviteTargetEmail ? (
-              <a
-                href={`mailto:${inviteTargetEmail}?subject=${encodeURIComponent("家計簿への招待")}&body=${encodeURIComponent(
-                  `以下のリンクから登録してください:\n${inviteUrl}`,
-                )}`}
-                className={`${styles.btn} ${styles.btnPrimary}`}
-              >
-                メール作成
-              </a>
-            ) : null}
             <div style={{ padding: 6, borderRadius: 8, background: "#fff", lineHeight: 0 }}>
               <QRCode value={inviteUrl} size={96} level="M" fgColor="#0f1419" bgColor="#ffffff" />
             </div>
@@ -360,7 +335,7 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
     <div className={styles.wrap}>
       <h1 className={styles.title}>家族・利用ユーザー</h1>
       <p className={styles.sub}>
-        親アカウントに子供プロフィールを追加できます。メール招待は使いません。
+        親アカウントに子供プロフィールを追加できます。家族招待はURL共有で行います。
       </p>
       {content}
     </div>
