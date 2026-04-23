@@ -248,6 +248,28 @@ async function loadAuthenticatorByCredentialId(poolOrConn, credentialId) {
   return row || null;
 }
 
+async function loadUserContextByCredentialId(poolOrConn, credentialId) {
+  const [[row]] = await poolOrConn.query(
+    `SELECT u.id AS user_id,
+            u.email,
+            ${FAM_JOIN_ON_U} AS family_id,
+            fm.role AS family_role,
+            COALESCE(u.subscription_status, 'inactive') AS subscription_status,
+            COALESCE(u.is_premium, 0) AS is_premium,
+            COALESCE(u.is_admin, 0) AS is_admin,
+            COALESCE(u.auth_method, 'passkey') AS auth_method
+     FROM authenticators a
+     INNER JOIN users u ON u.id = a.user_id
+     LEFT JOIN family_members fm
+       ON fm.user_id = u.id
+      AND fm.family_id = ${FAM_JOIN_ON_U}
+     WHERE a.credential_id = ?
+     LIMIT 1`,
+    [credentialId],
+  );
+  return row || null;
+}
+
 function normalizeGradeGroup(raw) {
   if (raw == null) return null;
   const s0 =
@@ -748,11 +770,18 @@ export async function tryAuthRoutes(req, ctx) {
             [recoveryCodeHash, userId],
           );
           await conn.commit();
-
-          await seedDefaultCategoriesIfEmpty(pool, userId, familyId);
-          await withDbRetry("auth.passkey.register.lastLogin", () =>
-            pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = ?`, [userId]),
-          );
+          try {
+            await seedDefaultCategoriesIfEmpty(pool, userId, familyId);
+          } catch (seedErr) {
+            logPasskeyDetail("auth.passkey.register.verify.seed_defaults", seedErr, { userId, familyId });
+          }
+          try {
+            await withDbRetry("auth.passkey.register.lastLogin", () =>
+              pool.query(`UPDATE users SET last_login_at = NOW() WHERE id = ?`, [userId]),
+            );
+          } catch (lastLoginErr) {
+            logPasskeyDetail("auth.passkey.register.verify.last_login", lastLoginErr, { userId });
+          }
           const pseudoEmail = `passkey-${userId}@local.invalid`;
           const token = signUserToken(userId, pseudoEmail);
           return json(
@@ -775,8 +804,43 @@ export async function tryAuthRoutes(req, ctx) {
             skipCors,
           );
         } catch (e) {
-          await conn.rollback();
+          try {
+            await conn.rollback();
+          } catch {
+            /* rollback 済み/不可でも本来エラーを優先 */
+          }
           const code = String(e?.code || "");
+          if (isDuplicateKeyError(e)) {
+            const transports =
+              credential?.response?.transports ?? credential?.transports ?? [];
+            const regDb = registrationInfoToDbValues(verification, transports);
+            const existing = await loadUserContextByCredentialId(pool, regDb.credentialId);
+            if (existing?.user_id) {
+              const existingUserId = Number(existing.user_id);
+              const pseudoEmail = `passkey-${existingUserId}@local.invalid`;
+              const token = signUserToken(existingUserId, pseudoEmail);
+              return json(
+                200,
+                {
+                  token,
+                  user: {
+                    id: existingUserId,
+                    email: "",
+                    familyId: existing.family_id == null ? null : Number(existing.family_id),
+                    isAdmin: Number(existing.is_admin || 0) === 1,
+                    familyRole:
+                      String(existing.family_role || "").toLowerCase() === "owner" ? "ADMIN" : "MEMBER",
+                    subscriptionStatus: String(existing.subscription_status || "inactive"),
+                    isPremium: Number(existing.is_premium || 0) === 1,
+                    authMethod: String(existing.auth_method || "passkey"),
+                  },
+                },
+                hdrs,
+                skipCors,
+              );
+            }
+            return json(409, { error: "このパスキーは既に登録済みです" }, hdrs, skipCors);
+          }
           if (code === "ER_BAD_NULL_ERROR") {
             logPasskeyDetail("auth.passkey.register.verify.bad_null", e);
             return json(
@@ -995,7 +1059,7 @@ export async function tryAuthRoutes(req, ctx) {
         await conn.query(
           `INSERT INTO authenticators (user_id, credential_id, public_key, counter, transports)
            VALUES (?, ?, ?, ?, ?)`,
-          [uid, regDb.credentialIdBuf, regDb.publicKeyBuf, regDb.counter, regDb.transportsCsv],
+          [uid, regDb.credentialId, regDb.publicKeyBuf, regDb.counter, regDb.transportsCsv],
         );
         const [[u]] = await conn.query(
           `SELECT auth_method, email, password_hash FROM users WHERE id = ? LIMIT 1`,

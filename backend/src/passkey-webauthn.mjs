@@ -43,12 +43,15 @@ export function resolvePasskeyConfig() {
   } catch {
     /* fallback hostname を使用 */
   }
-  const rpID = String(
+  const envRpID = String(
     process.env.WEBAUTHN_RP_ID || process.env.RP_ID || (isProd ? "ksystemapp.com" : "localhost"),
-  ).trim() || hostname;
+  ).trim();
+  const rpID = isProd ? "ksystemapp.com" : envRpID || hostname;
   const rpName = String(process.env.WEBAUTHN_RP_NAME || "Kakeibo").trim() || "Kakeibo";
-  const expectedOrigins = new Set([appOrigin]);
-  if (process.env.NODE_ENV !== "production") {
+  const expectedOrigins = isProd
+    ? new Set(["https://ksystemapp.com", "https://www.ksystemapp.com"])
+    : new Set([appOrigin]);
+  if (!isProd) {
     expectedOrigins.add("http://localhost:3000");
     expectedOrigins.add("http://127.0.0.1:3000");
     expectedOrigins.add("http://localhost:5173");
