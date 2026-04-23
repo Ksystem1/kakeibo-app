@@ -1,4 +1,11 @@
 import crypto from "node:crypto";
+import { normalizeCategoryNameKey } from "./category-utils.mjs";
+import {
+  fetchUserExpenseCategoryRows,
+  guessCategoryIdByMerchantKeywords,
+  fetchCategoryIdFromUserMemoHistory,
+  fetchExistingCategoryIdByExternalIds,
+} from "./paypay-category-guess.mjs";
 
 function parseCsvLine(line) {
   const cols = [];
@@ -298,7 +305,7 @@ async function bulkUpsertTransactions(pool, rows) {
         r.amount,
         r.transactionDate,
         r.memo,
-        null,
+        r.categoryId != null && r.categoryId !== undefined ? r.categoryId : null,
         r.externalTransactionId,
       );
     }
@@ -313,10 +320,53 @@ async function bulkUpsertTransactions(pool, rows) {
          amount = VALUES(amount),
          transaction_date = VALUES(transaction_date),
          memo = VALUES(memo),
-         category_id = VALUES(category_id),
+         category_id = COALESCE(category_id, VALUES(category_id)),
          updated_at = NOW()`,
       params,
     );
+  }
+}
+
+/**
+ * 既存で category 済みは維持。未設定のみ履歴 → キーワード推測。
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {number} userId
+ * @param {Array<Record<string, unknown>>} planRecords
+ * @param {Array<{ userId: number, familyId: number | null, externalTransactionId: string, amount: number, transactionDate: string, memo: string, categoryId?: number | null }>} builtRows
+ * @param {boolean} dryRun
+ */
+async function applyPayPayCategoryResolution(pool, userId, planRecords, builtRows, dryRun) {
+  if (dryRun) {
+    for (const r of builtRows) {
+      r.categoryId = null;
+    }
+    return;
+  }
+  const catRows = await fetchUserExpenseCategoryRows(pool, userId);
+  const nameToId = new Map();
+  for (const c of catRows) {
+    nameToId.set(normalizeCategoryNameKey(c.name), Number(c.id));
+  }
+  const extIds = builtRows.map((r) => r.externalTransactionId);
+  const existingMap = await fetchExistingCategoryIdByExternalIds(pool, userId, extIds);
+  /** @type {Map<string, number | null>} */
+  const memoHistCache = new Map();
+  for (let i = 0; i < builtRows.length; i += 1) {
+    const r = builtRows[i];
+    const pr = planRecords[i];
+    const ext = r.externalTransactionId;
+    const existing = existingMap.get(ext);
+    if (existing != null && existing !== undefined && Number.isFinite(Number(existing)) && Number(existing) > 0) {
+      r.categoryId = Number(existing);
+      continue;
+    }
+    const fromHist = await fetchCategoryIdFromUserMemoHistory(pool, userId, r.memo, memoHistCache);
+    if (fromHist != null) {
+      r.categoryId = fromHist;
+      continue;
+    }
+    const merchant = pr && typeof pr.merchantRaw === "string" ? pr.merchantRaw : "";
+    r.categoryId = guessCategoryIdByMerchantKeywords(merchant, nameToId);
   }
 }
 
@@ -373,7 +423,9 @@ export async function executePayPayCsvImport(pool, payload) {
     amount: r.amount,
     transactionDate: r.txDate,
     memo: buildMemo(r.merchantRaw, r.sourceTxIds.length > 1),
+    categoryId: /** @type {number | null} */ (null),
   }));
+  await applyPayPayCategoryResolution(pool, userId, plan.records, rows, dryRun);
   const extIds = rows.map((r) => r.externalTransactionId);
   const existingIds = await fetchExistingExternalIds(pool, userId, extIds);
   const updatedCount = rows.filter((r) => existingIds.has(r.externalTransactionId)).length;

@@ -4,6 +4,8 @@ import {
   buildPayPayImportPlan,
   executePayPayCsvImport,
 } from "../src/paypay-import.mjs";
+import { guessCategoryIdByMerchantKeywords } from "../src/paypay-category-guess.mjs";
+import { normalizeCategoryNameKey } from "../src/category-utils.mjs";
 
 const SAMPLE_HEADER =
   "取引日,出金金額（円）,入金金額（円）,海外出金金額,通貨,変換レート（円）,利用国,取引内容,取引先,取引方法,支払い区分,利用者,取引番号";
@@ -43,7 +45,22 @@ test("executePayPayCsvImport: 既存IDは更新カウントされる", async () 
   const fakePool = {
     async query(sql, params) {
       calls.push({ sql, params });
-      if (String(sql).includes("SELECT external_transaction_id FROM transactions")) {
+      const s = String(sql);
+      if (s.includes("FROM categories") && s.includes("c.id")) {
+        return [[]];
+      }
+      if (s.includes("external_transaction_id") && s.includes("category_id") && s.includes("FROM transactions")) {
+        return [
+          [
+            { external_transaction_id: "existing-1", category_id: null },
+            { external_transaction_id: "new-1", category_id: null },
+          ],
+        ];
+      }
+      if (s.includes("INNER JOIN categories c ON c.id = t.category_id") && s.includes("t.user_id = ?")) {
+        return [[]];
+      }
+      if (s.includes("SELECT external_transaction_id FROM transactions") && s.includes("WHERE user_id = ?")) {
         return [[{ external_transaction_id: "existing-1" }]];
       }
       return [[{ affectedRows: 1 }]];
@@ -73,7 +90,17 @@ test("executePayPayCsvImport: メモは店舗名のみ（時刻・取引番号�
   const fakePool = {
     async query(sql, params) {
       calls.push({ sql, params });
-      if (String(sql).includes("SELECT external_transaction_id")) {
+      const s = String(sql);
+      if (s.includes("FROM categories") && s.includes("c.id")) {
+        return [[]];
+      }
+      if (s.includes("external_transaction_id") && s.includes("category_id") && s.includes("FROM transactions")) {
+        return [[]];
+      }
+      if (s.includes("INNER JOIN categories c ON c.id = t.category_id") && s.includes("t.user_id = ?")) {
+        return [[]];
+      }
+      if (s.includes("SELECT external_transaction_id FROM transactions") && s.includes("WHERE user_id = ?")) {
         return [[]];
       }
       return [[{ affectedRows: 1 }]];
@@ -99,5 +126,15 @@ test("executePayPayCsvImport: メモは店舗名のみ（時刻・取引番号�
   assert.equal(memo.includes("時刻:"), false);
   assert.equal(memo.includes("取引番号:"), false);
   assert.equal(memo.includes("memo-fmt-1"), false);
+});
+
+test("guessCategoryIdByMerchantKeywords: キーワードで正規化カテゴリ名にマッピング", () => {
+  const nameToId = new Map([
+    [normalizeCategoryNameKey("食費"), 10],
+    [normalizeCategoryNameKey("日用品"), 20],
+  ]);
+  assert.equal(guessCategoryIdByMerchantKeywords("セブン-イレブン○○店", nameToId), 10);
+  assert.equal(guessCategoryIdByMerchantKeywords("ウエルシア", nameToId), 20);
+  assert.equal(guessCategoryIdByMerchantKeywords("不明店舗", nameToId), null);
 });
 
