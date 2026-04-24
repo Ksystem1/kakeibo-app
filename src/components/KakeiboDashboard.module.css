@@ -337,6 +337,17 @@
   width: 100%;
 }
 
+.txAddSubmitBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.txAddSubmitBtnIcon {
+  flex-shrink: 0;
+}
+
 /* PC: 種別・カテゴリ・日付・金額・メモを1行 */
 @media (min-width: 769px) {
   .form[data-kakeibo-tx-add] .txAddLine1 {
@@ -349,7 +360,15 @@
   }
 
   .form[data-kakeibo-tx-add] .txAddLineMedical {
-    grid-template-columns: minmax(10.5rem, 1.1fr) minmax(7.5rem, 1.1fr) minmax(6rem, 1.1fr);
+    grid-template-columns:
+      minmax(10.5rem, 1.1fr) minmax(7.5rem, 1.1fr) minmax(6rem, 1.1fr) auto;
+  }
+
+  .form[data-kakeibo-tx-add] .txAddLineMedicalAction {
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding-top: 1.15rem; /* ラベル行分を足して入力下線と揃える */
   }
 
   .form[data-kakeibo-tx-add] .txAddFieldMedicalCheck {
@@ -431,6 +450,12 @@
 
   .form[data-kakeibo-tx-add] .txAddLineMedical > .field:nth-child(3) {
     grid-column: 2;
+  }
+
+  .form[data-kakeibo-tx-add] .txAddLineMedical > .txAddLineMedicalAction {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
   }
 
   /* レシート: 先頭の説明 → 種別｜カテゴリ → 日付｜金額 → メモ全幅 → 登録（nth-child に依存しない） */

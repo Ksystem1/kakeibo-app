@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Plus } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -1405,7 +1406,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
             <input
               id="kb-memo"
               type="text"
-              placeholder="内容"
+              placeholder="メモ"
               value={formMemo}
               onChange={(ev) => setFormMemo(ev.target.value)}
             />
@@ -1445,21 +1446,34 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                 value={formMedicalPatientName}
                 onChange={(ev) => setFormMedicalPatientName(ev.target.value)}
                 maxLength={120}
-                placeholder="例: 子ども"
+                placeholder="対象者名"
                 disabled={!formIsMedicalExpense}
               />
             </div>
+            <div className={styles.txAddLineMedicalAction}>
+              <button
+                type="submit"
+                className={`${styles.btn} ${styles.btnPrimary} ${styles.txAddSubmitBtn}`}
+                disabled={saving || !base}
+              >
+                {saving ? null : <Plus className={styles.txAddSubmitBtnIcon} size={16} aria-hidden />}
+                {saving ? "保存中…" : "追加"}
+              </button>
+            </div>
           </div>
         ) : null}
-        <div className={styles.txAddSubmitRow}>
-          <button
-            type="submit"
-            className={`${styles.btn} ${styles.btnPrimary}`}
-            disabled={saving || !base}
-          >
-            {saving ? "保存中…" : "追加"}
-          </button>
-        </div>
+        {formKind === "income" ? (
+          <div className={styles.txAddSubmitRow}>
+            <button
+              type="submit"
+              className={`${styles.btn} ${styles.btnPrimary} ${styles.txAddSubmitBtn}`}
+              disabled={saving || !base}
+            >
+              {saving ? null : <Plus className={styles.txAddSubmitBtnIcon} size={16} aria-hidden />}
+              {saving ? "保存中…" : "追加"}
+            </button>
+          </div>
+        ) : null}
       </form>
       ) : null}
 
