@@ -58,6 +58,10 @@ import {
   executePayPayCsvImport,
   writePayPayMonitorLog,
 } from "./paypay-import.mjs";
+import {
+  AccountDeletionDbError,
+  performUserAccountDeletion,
+} from "./account-delete.mjs";
 
 const logger = createLogger("api");
 
@@ -2717,11 +2721,40 @@ export async function handleApiRequest(req, options = {}) {
           return json(400, { error: "最後の管理者は削除できません" }, hdrs, skipCors);
         }
       }
-      const [del] = await pool.query(`DELETE FROM users WHERE id = ?`, [targetUserId]);
-      if (!del?.affectedRows) {
-        return json(404, { error: "対象ユーザーが見つかりません" }, hdrs, skipCors);
+      try {
+        const { stripeResult } = await performUserAccountDeletion(pool, targetUserId);
+        return json(200, { ok: true, stripe: stripeResult }, hdrs, skipCors);
+      } catch (e) {
+        if (e instanceof AccountDeletionDbError) {
+          logError("admin.user.delete.db_failed_after_stripe", e.cause ?? e, {
+            targetUserId,
+            stripeResult: e.stripeResult,
+          });
+          return json(
+            500,
+            {
+              error: "DeleteAccountDbFailed",
+              detail:
+                "データの削除中にエラーが発生しました。サブスクリプションは解約されている可能性があるため、サポートへお問い合わせください。",
+              message: String(e?.message || e),
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        logError("admin.user.delete.stripe_cancel_failed", e, { targetUserId });
+        return json(
+          502,
+          {
+            error: "Stripe解約失敗",
+            detail:
+              "料金の解約処理に失敗したためユーザーを削除できませんでした。時間をおいて再試行するか、サポートにご連絡ください。",
+            stripeMessage: String(e?.message || e),
+          },
+          hdrs,
+          skipCors,
+        );
       }
-      return json(200, { ok: true }, hdrs, skipCors);
     }
 
     if (routeKey(method, path) === "GET /admin/announcement") {
