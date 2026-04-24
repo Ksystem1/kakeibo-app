@@ -490,6 +490,16 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     return rows;
   }, [summary?.expensesByCategory]);
 
+  const hasExpenseApiSection =
+    !isKidAllowance && Boolean(summary) && expenseRowsOrdered.length > 0;
+  const hasFixedCostSection =
+    !isKidAllowance && !kidWatchOn && fixedCostItemsForMonth.length > 0;
+  const hasIncomeApiSection =
+    !isKidAllowance &&
+    Boolean(summary) &&
+    (summary?.incomesByCategory?.length ?? 0) > 0;
+  const hasSummaryApiGrid = hasExpenseApiSection || hasFixedCostSection || hasIncomeApiSection;
+
   const [formAmount, setFormAmount] = useState("");
   const [formKind, setFormKind] = useState<"expense" | "income">("expense");
   const [formDate, setFormDate] = useState(todayDate);
@@ -1196,125 +1206,133 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         </div>
       </div>
 
-      {!isKidAllowance && summary && expenseRowsOrdered.length > 0 ? (
-        <>
-          <h2 className={styles.sectionTitle}>品目別・支出（API集計）</h2>
-          <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>カテゴリ</th>
-                  <th>合計</th>
-                  <th>詳細</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenseRowsOrdered.map((row, i) => (
-                  <tr key={`${row.category_id ?? "x"}-${i}`}>
-                    <td>{row.category_name ?? "（未分類）"}</td>
-                    <td>{yen.format(numAmount(row.total as string | number))}</td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      <button
-                        type="button"
-                        className={`${styles.btn} ${styles.btnSm}`}
-                        disabled={!base}
-                        onClick={() => {
-                          setExpenseCategoryModal({
-                            categoryId: row.category_id,
-                            categoryName: row.category_name ?? "（未分類）",
-                          });
-                          setModalLineEdit(null);
-                        }}
-                      >
-                        詳細
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      ) : null}
-      {!isKidAllowance && !kidWatchOn && fixedCostItemsForMonth.length > 0 ? (
-        <>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "0.5rem",
-              flexWrap: "wrap",
-            }}
-          >
-            <h2 className={styles.sectionTitle} style={{ marginBottom: 0 }}>
-              固定費明細
-            </h2>
-            <Link to="/settings#fixed-cost-settings" className={styles.btn}>
-              固定費設定（全月共通）へ
-            </Link>
-          </div>
-          <p className={styles.sub} style={{ margin: "0 0 0.5rem" }}>
-            毎月同額のものは設定の固定費へ。取引には変動分だけを登録する運用です。
-          </p>
-          <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>項目</th>
-                  <th>金額</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleFixedCostItems.map((item, i) => (
-                  <tr key={`${item.id}-${i}`}>
-                    <td style={{ whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }}>
-                      {item.category || "固定費"}
-                    </td>
-                    <td>{yen.format(numAmount(item.amount))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {txMobileNarrow && fixedCostItemsForMonth.length > mobileFixedCostInitialRows ? (
-              <div style={{ padding: "0.45rem 0.55rem", borderTop: "1px solid var(--border)" }}>
-                <button
-                  type="button"
-                  className={styles.btn}
-                  style={{ width: "100%" }}
-                  onClick={() => setFixedCostExpanded((v) => !v)}
-                >
-                  {fixedCostExpanded
-                    ? "固定費明細を折りたたむ"
-                    : `固定費明細をすべて表示（全${fixedCostItemsForMonth.length}件）`}
-                </button>
+      {hasSummaryApiGrid ? (
+        <div className={styles.summaryApiGrid}>
+          {hasExpenseApiSection ? (
+            <section className={styles.summaryApiCol} aria-label="品目別・支出（API集計）">
+              <h2 className={styles.sectionTitle}>品目別・支出（API集計）</h2>
+              <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>カテゴリ</th>
+                      <th>合計</th>
+                      <th>詳細</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expenseRowsOrdered.map((row, i) => (
+                      <tr key={`${row.category_id ?? "x"}-${i}`}>
+                        <td>{row.category_name ?? "（未分類）"}</td>
+                        <td>{yen.format(numAmount(row.total as string | number))}</td>
+                        <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                          <button
+                            type="button"
+                            className={`${styles.btn} ${styles.btnSm}`}
+                            disabled={!base}
+                            onClick={() => {
+                              setExpenseCategoryModal({
+                                categoryId: row.category_id,
+                                categoryName: row.category_name ?? "（未分類）",
+                              });
+                              setModalLineEdit(null);
+                            }}
+                          >
+                            詳細
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ) : null}
-          </div>
-        </>
-      ) : null}
-      {!isKidAllowance && summary && summary.incomesByCategory.length > 0 ? (
-        <>
-          <h2 className={styles.sectionTitle}>品目別・収入（API集計）</h2>
-          <div className={styles.tableWrap} style={{ marginBottom: "1.25rem" }}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>カテゴリ</th>
-                  <th>合計</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.incomesByCategory.map((row, i) => (
-                  <tr key={`${row.category_id ?? "y"}-${i}`}>
-                    <td>{row.category_name ?? "（未分類）"}</td>
-                    <td>{yen.format(numAmount(row.total as string | number))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+            </section>
+          ) : null}
+          {hasFixedCostSection ? (
+            <section className={styles.summaryApiCol} aria-label="固定費明細">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <h2 className={styles.sectionTitle} style={{ marginBottom: 0 }}>
+                  固定費明細
+                </h2>
+                <Link to="/settings#fixed-cost-settings" className={styles.btn}>
+                  固定費設定（全月共通）へ
+                </Link>
+              </div>
+              <p className={styles.sub} style={{ margin: "0 0 0.5rem" }}>
+                毎月同額のものは設定の固定費へ。取引には変動分だけを登録する運用です。
+              </p>
+              <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>項目</th>
+                      <th>金額</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleFixedCostItems.map((item, i) => (
+                      <tr key={`${item.id}-${i}`}>
+                        <td
+                          style={{ whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }}
+                        >
+                          {item.category || "固定費"}
+                        </td>
+                        <td>{yen.format(numAmount(item.amount))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {txMobileNarrow && fixedCostItemsForMonth.length > mobileFixedCostInitialRows ? (
+                  <div
+                    style={{ padding: "0.45rem 0.55rem", borderTop: "1px solid var(--border)" }}
+                  >
+                    <button
+                      type="button"
+                      className={styles.btn}
+                      style={{ width: "100%" }}
+                      onClick={() => setFixedCostExpanded((v) => !v)}
+                    >
+                      {fixedCostExpanded
+                        ? "固定費明細を折りたたむ"
+                        : `固定費明細をすべて表示（全${fixedCostItemsForMonth.length}件）`}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+          {hasIncomeApiSection && summary ? (
+            <section className={styles.summaryApiCol} aria-label="品目別・収入（API集計）">
+              <h2 className={styles.sectionTitle}>品目別・収入（API集計）</h2>
+              <div className={styles.tableWrap} style={{ marginBottom: "1.25rem" }}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>カテゴリ</th>
+                      <th>合計</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.incomesByCategory.map((row, i) => (
+                      <tr key={`${row.category_id ?? "y"}-${i}`}>
+                        <td>{row.category_name ?? "（未分類）"}</td>
+                        <td>{yen.format(numAmount(row.total as string | number))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+        </div>
       ) : null}
 
       {!kidWatchOn ? <h2 className={styles.sectionTitle}>取引を追加</h2> : null}
@@ -1324,76 +1342,78 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         data-kakeibo-tx-add
         onSubmit={handleAdd}
       >
-        <div className={styles.field}>
-          <label htmlFor="kb-kind">種別</label>
-          <select
-            id="kb-kind"
-            value={formKind}
-            onChange={(ev) => {
-              const nextKind = ev.target.value as "expense" | "income";
-              setFormKind(nextKind);
-              setFormCategoryId("");
-              applyMedicalDefaultsToAddForm("", nextKind);
-            }}
-          >
-            <option value="expense">支出</option>
-            <option value="income">収入</option>
-          </select>
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="kb-cat">カテゴリ</label>
-          <select
-            id="kb-cat"
-            key={`kb-cat-${formKind}`}
-            value={formCategoryId}
-            onChange={(ev) => {
-              const nextId = ev.target.value;
-              setFormCategoryId(nextId);
-              applyMedicalDefaultsToAddForm(nextId, formKind);
-            }}
-          >
-            <option value="">なし</option>
-            {filteredCategories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="kb-date">日付</label>
-          <input
-            id="kb-date"
-            type="date"
-            value={formDate}
-            onChange={(ev) => setFormDate(ev.target.value)}
-          />
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="kb-amt">金額</label>
-          <input
-            id="kb-amt"
-            type="number"
-            min={formKind === "income" ? 0 : 1}
-            step={1}
-            placeholder="1200"
-            value={formAmount}
-            onChange={(ev) => setFormAmount(ev.target.value)}
-          />
-        </div>
-        <div className={styles.field} style={{ gridColumn: "1 / -1" }}>
-          <label htmlFor="kb-memo">メモ</label>
-          <input
-            id="kb-memo"
-            type="text"
-            placeholder="内容"
-            value={formMemo}
-            onChange={(ev) => setFormMemo(ev.target.value)}
-          />
+        <div className={styles.txAddLine1}>
+          <div className={styles.field}>
+            <label htmlFor="kb-kind">種別</label>
+            <select
+              id="kb-kind"
+              value={formKind}
+              onChange={(ev) => {
+                const nextKind = ev.target.value as "expense" | "income";
+                setFormKind(nextKind);
+                setFormCategoryId("");
+                applyMedicalDefaultsToAddForm("", nextKind);
+              }}
+            >
+              <option value="expense">支出</option>
+              <option value="income">収入</option>
+            </select>
+          </div>
+          <div className={styles.field}>
+            <label htmlFor="kb-cat">カテゴリ</label>
+            <select
+              id="kb-cat"
+              key={`kb-cat-${formKind}`}
+              value={formCategoryId}
+              onChange={(ev) => {
+                const nextId = ev.target.value;
+                setFormCategoryId(nextId);
+                applyMedicalDefaultsToAddForm(nextId, formKind);
+              }}
+            >
+              <option value="">なし</option>
+              {filteredCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className={styles.field}>
+            <label htmlFor="kb-date">日付</label>
+            <input
+              id="kb-date"
+              type="date"
+              value={formDate}
+              onChange={(ev) => setFormDate(ev.target.value)}
+            />
+          </div>
+          <div className={styles.field}>
+            <label htmlFor="kb-amt">金額</label>
+            <input
+              id="kb-amt"
+              type="number"
+              min={formKind === "income" ? 0 : 1}
+              step={1}
+              placeholder="1200"
+              value={formAmount}
+              onChange={(ev) => setFormAmount(ev.target.value)}
+            />
+          </div>
+          <div className={styles.field}>
+            <label htmlFor="kb-memo">メモ</label>
+            <input
+              id="kb-memo"
+              type="text"
+              placeholder="内容"
+              value={formMemo}
+              onChange={(ev) => setFormMemo(ev.target.value)}
+            />
+          </div>
         </div>
         {formKind === "expense" ? (
-          <>
-            <div className={styles.field}>
+          <div className={styles.txAddLineMedical}>
+            <div className={`${styles.field} ${styles.txAddFieldMedicalCheck}`}>
               <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <input
                   type="checkbox"
@@ -1417,7 +1437,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                 <option value="other">その他</option>
               </select>
             </div>
-            <div className={styles.field} style={{ gridColumn: "1 / -1" }}>
+            <div className={styles.field}>
               <label htmlFor="kb-medical-patient">対象者名</label>
               <input
                 id="kb-medical-patient"
@@ -1429,15 +1449,17 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                 disabled={!formIsMedicalExpense}
               />
             </div>
-          </>
+          </div>
         ) : null}
-        <button
-          type="submit"
-          className={`${styles.btn} ${styles.btnPrimary}`}
-          disabled={saving || !base}
-        >
-          {saving ? "保存中…" : "追加"}
-        </button>
+        <div className={styles.txAddSubmitRow}>
+          <button
+            type="submit"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            disabled={saving || !base}
+          >
+            {saving ? "保存中…" : "追加"}
+          </button>
+        </div>
       </form>
       ) : null}
 

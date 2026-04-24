@@ -266,6 +266,42 @@
   letter-spacing: 0.02em;
 }
 
+/** 品目別支出・固定費・品目別収入: スマホは従来どおり縦並び。PC（769px以上）は横並び＋余白控えめ */
+.summaryApiGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 0.1rem;
+}
+
+.summaryApiCol {
+  min-width: 0;
+}
+
+@media (min-width: 769px) {
+  .summaryApiGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+    gap: 0.4rem 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .summaryApiCol .sectionTitle {
+    margin: 0 0 0.25rem;
+    font-size: 0.96rem;
+  }
+
+  .summaryApiCol .sub {
+    margin: 0 0 0.28rem;
+    font-size: 0.88rem;
+    line-height: 1.4;
+  }
+
+  .summaryApiCol .tableWrap {
+    margin-bottom: 0 !important;
+  }
+}
+
 .form {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -279,9 +315,50 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 10%, transparent);
 }
 
+/* 取引追加: 行ラッパー（PC は横並び、幅は下記メディアクエリ） */
+.form[data-kakeibo-tx-add] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem 0.55rem;
+  align-items: stretch;
+}
+
+.form[data-kakeibo-tx-add] .txAddLine1,
+.form[data-kakeibo-tx-add] .txAddLineMedical {
+  display: grid;
+  align-items: end;
+  gap: 0.5rem 0.55rem;
+  min-width: 0;
+}
+
+.form[data-kakeibo-tx-add] .txAddSubmitRow {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+/* PC: 種別・カテゴリ・日付・金額・メモを1行 */
+@media (min-width: 769px) {
+  .form[data-kakeibo-tx-add] .txAddLine1 {
+    grid-template-columns:
+      minmax(4.2rem, 1fr)
+      minmax(5.2rem, 1.1fr)
+      minmax(10.5ch, 11.5ch)
+      minmax(3.5rem, 0.6fr)
+      minmax(6rem, 1.2fr);
+  }
+
+  .form[data-kakeibo-tx-add] .txAddLineMedical {
+    grid-template-columns: minmax(10.5rem, 1.1fr) minmax(7.5rem, 1.1fr) minmax(6rem, 1.1fr);
+  }
+
+  .form[data-kakeibo-tx-add] .txAddFieldMedicalCheck {
+    padding-top: 1.15rem; /* 他行とラベル行の高さを揃えて1行内で底揃え */
+  }
+}
+
 /* モバイル〜狭いタブレット: 取引追加・レシートのみレイアウト（ログイン等の .form には影響しない） */
 @media (max-width: 768px) {
-  .form[data-kakeibo-tx-add],
   .form[data-receipt-form] {
     grid-template-columns: 1fr 1fr;
     gap: 0.55rem 0.55rem;
@@ -289,47 +366,71 @@
     overflow-x: clip;
   }
 
-  .form[data-kakeibo-tx-add] .field,
+  .form[data-kakeibo-tx-add] {
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  .form[data-kakeibo-tx-add] .txAddLine1 {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .form[data-receipt-form] .field {
     min-width: 0;
     max-width: 100%;
   }
 
-  /* 取引追加: 1行目 種別｜カテゴリ、2行目 日付｜金額（同一行）、3行目 メモ、4行目 ボタン */
-  .form[data-kakeibo-tx-add] > .field:nth-child(1) {
+  .form[data-kakeibo-tx-add] .field {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* 取引追加: 1行目 種別｜カテゴリ、2行目 日付｜金額、3行目 メモ、4行目 医療行、5行目 追加 */
+  .form[data-kakeibo-tx-add] .txAddLine1 > .field:nth-child(1) {
     grid-column: 1;
     grid-row: 1;
   }
 
-  .form[data-kakeibo-tx-add] > .field:nth-child(2) {
+  .form[data-kakeibo-tx-add] .txAddLine1 > .field:nth-child(2) {
     grid-column: 2;
     grid-row: 1;
   }
 
-  .form[data-kakeibo-tx-add] > .field:nth-child(3) {
+  .form[data-kakeibo-tx-add] .txAddLine1 > .field:nth-child(3) {
     grid-column: 1;
     grid-row: 2;
   }
 
-  .form[data-kakeibo-tx-add] > .field:nth-child(4) {
+  .form[data-kakeibo-tx-add] .txAddLine1 > .field:nth-child(4) {
     grid-column: 2;
     grid-row: 2;
   }
 
-  .form[data-kakeibo-tx-add] > .field:nth-child(5) {
+  .form[data-kakeibo-tx-add] .txAddLine1 > .field:nth-child(5) {
     grid-column: 1 / -1;
     grid-row: 3;
   }
 
-  .form[data-kakeibo-tx-add] > button {
-    grid-column: 1 / -1;
-    grid-row: 4;
-  }
-
-  .form[data-kakeibo-tx-add] > .field:nth-child(3) input[type="date"] {
+  .form[data-kakeibo-tx-add] .txAddLine1 > .field:nth-child(3) input[type="date"] {
     width: 100%;
     max-width: min(11.5ch, 100%);
     box-sizing: border-box;
+  }
+
+  .form[data-kakeibo-tx-add] .txAddLineMedical {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .form[data-kakeibo-tx-add] .txAddLineMedical > .field:nth-child(1) {
+    grid-column: 1 / -1;
+  }
+
+  .form[data-kakeibo-tx-add] .txAddLineMedical > .field:nth-child(2) {
+    grid-column: 1;
+  }
+
+  .form[data-kakeibo-tx-add] .txAddLineMedical > .field:nth-child(3) {
+    grid-column: 2;
   }
 
   /* レシート: 先頭の説明 → 種別｜カテゴリ → 日付｜金額 → メモ全幅 → 登録（nth-child に依存しない） */
