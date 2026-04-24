@@ -214,6 +214,58 @@ function normalizeTxMemo(raw) {
   return s === "" ? null : s;
 }
 
+const MEDICAL_TYPES = new Set(["treatment", "medicine", "other"]);
+
+function normalizeMedicalType(raw) {
+  if (raw == null || raw === "") return null;
+  const v = String(raw).trim().toLowerCase();
+  if (!MEDICAL_TYPES.has(v)) return null;
+  return v;
+}
+
+function normalizeMedicalPatientName(raw) {
+  if (raw == null || raw === "") return null;
+  const v = String(raw).trim().slice(0, 120);
+  return v === "" ? null : v;
+}
+
+function isMedicalFieldSpecified(body) {
+  return (
+    Object.prototype.hasOwnProperty.call(body, "is_medical_expense") ||
+    Object.prototype.hasOwnProperty.call(body, "medical_type") ||
+    Object.prototype.hasOwnProperty.call(body, "medical_patient_name")
+  );
+}
+
+function hasAnyCategoryMedicalDefaultField(body) {
+  return (
+    Object.prototype.hasOwnProperty.call(body, "is_medical_default") ||
+    Object.prototype.hasOwnProperty.call(body, "default_medical_type") ||
+    Object.prototype.hasOwnProperty.call(body, "default_patient_name")
+  );
+}
+
+async function resolveMedicalDefaultsFromCategory(pool, catWhere, userId, categoryId) {
+  if (categoryId == null || !Number.isFinite(Number(categoryId))) {
+    return { isMedicalExpense: false, medicalType: null, medicalPatientName: null };
+  }
+  const [[row]] = await pool.query(
+    `SELECT c.is_medical_default, c.default_medical_type, c.default_patient_name
+     FROM categories c
+     WHERE c.id = ? AND (${catWhere}) AND c.is_archived = 0
+     LIMIT 1`,
+    [Number(categoryId), userId, userId],
+  );
+  if (!row || Number(row.is_medical_default) !== 1) {
+    return { isMedicalExpense: false, medicalType: null, medicalPatientName: null };
+  }
+  return {
+    isMedicalExpense: true,
+    medicalType: normalizeMedicalType(row.default_medical_type),
+    medicalPatientName: normalizeMedicalPatientName(row.default_patient_name),
+  };
+}
+
 async function verifyUserInFamily(pool, userId, familyId) {
   if (familyId == null || !Number.isFinite(Number(familyId))) return false;
   const [rows] = await pool.query(
@@ -1142,6 +1194,25 @@ async function fetchAdminUsersSubscriptionStatusMap(pool) {
   return map;
 }
 
+/** users.last_accessed_at（v33）を id->値 の Map で取得。未適用DBは空Map。 */
+async function fetchAdminUsersLastAccessedAtMap(pool) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, last_accessed_at FROM users ORDER BY id ASC LIMIT 1000`,
+    );
+    const map = new Map();
+    if (Array.isArray(rows)) {
+      for (const r of rows) {
+        map.set(Number(r.id), r.last_accessed_at ?? null);
+      }
+    }
+    return map;
+  } catch (e) {
+    if (isErBadFieldErrorAppCore(e)) return new Map();
+    throw e;
+  }
+}
+
 let warnedAdminUsersListSubscriptionColumnMissing = false;
 
 const FAM_JOIN_ADMIN = sqlUserFamilyIdExpr("u");
@@ -1273,13 +1344,19 @@ async function fetchAdminUsersListRows(pool) {
       );
     }
     const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITHOUT_SUB);
+    const accessMap = await fetchAdminUsersLastAccessedAtMap(pool);
+    const listRaw = Array.isArray(rows) ? rows : [];
     return {
-      rows: Array.isArray(rows) ? rows : [],
+      rows: listRaw.map((r) => ({
+        ...r,
+        last_accessed_at: accessMap.has(Number(r.id)) ? accessMap.get(Number(r.id)) : null,
+      })),
       subscriptionStatusWritable: false,
     };
   }
 
   const [rows] = await pool.query(ADMIN_USERS_LIST_SQL_WITHOUT_SUB);
+  const accessMap = await fetchAdminUsersLastAccessedAtMap(pool);
   const list = Array.isArray(rows) ? rows : [];
   let subMap;
   try {
@@ -1294,18 +1371,26 @@ async function fetchAdminUsersListRows(pool) {
     const [rowsWith] = await pool.query(
       useFamSub ? ADMIN_USERS_LIST_SQL_WITH_SUB : ADMIN_USERS_LIST_SQL_WITH_SUB_LEGACY,
     );
+    const accessMapFallback = await fetchAdminUsersLastAccessedAtMap(pool);
+    const listFallback = Array.isArray(rowsWith) ? rowsWith : [];
     return {
-      rows: Array.isArray(rowsWith) ? rowsWith : [],
+      rows: listFallback.map((r) => ({
+        ...r,
+        last_accessed_at: accessMapFallback.has(Number(r.id))
+          ? accessMapFallback.get(Number(r.id))
+          : null,
+      })),
       subscriptionStatusWritable: true,
     };
   }
 
   const merged = list.map((r) => {
     const sid = Number(r.id);
+    const lastAccessedAt = accessMap.has(sid) ? accessMap.get(sid) : null;
     if (!subMap.has(sid)) {
-      return { ...r, subscription_status: null };
+      return { ...r, subscription_status: null, last_accessed_at: lastAccessedAt };
     }
-    return { ...r, subscription_status: subMap.get(sid) };
+    return { ...r, subscription_status: subMap.get(sid), last_accessed_at: lastAccessedAt };
   });
 
   return {
@@ -1319,6 +1404,38 @@ function isErBadFieldErrorAppCore(e) {
   const code = String(e.code || "");
   const errno = Number(e.errno);
   return code === "ER_BAD_FIELD_ERROR" || errno === 1054;
+}
+
+let warnedLastAccessedAtColumnMissing = false;
+
+/**
+ * 認証済みAPIの利用実績: 15分以上経過したときだけ users.last_accessed_at を更新。
+ * 更新頻度を抑えて DB 負荷を避ける。
+ */
+async function touchUserLastAccessedAt(pool, userId) {
+  const uid = Number(userId);
+  if (!Number.isFinite(uid) || uid <= 0) return;
+  try {
+    await pool.query(
+      `UPDATE users
+       SET last_accessed_at = NOW(), updated_at = NOW()
+       WHERE id = ?
+         AND (last_accessed_at IS NULL OR last_accessed_at < (NOW() - INTERVAL 15 MINUTE))`,
+      [uid],
+    );
+  } catch (e) {
+    if (isErBadFieldErrorAppCore(e)) {
+      if (!warnedLastAccessedAtColumnMissing) {
+        warnedLastAccessedAtColumnMissing = true;
+        logger.warn(
+          "users.last_accessed_at column missing; apply db/migration_v33_users_last_accessed_at.sql",
+          { event: "users.last_accessed_at.missing" },
+        );
+      }
+      return;
+    }
+    throw e;
+  }
 }
 
 /** users.family_role（未移行 DB は MEMBER 扱い） */
@@ -2145,6 +2262,7 @@ export async function handleApiRequest(req, options = {}) {
     }
 
     const q = req.queryStringParameters || {};
+    await touchUserLastAccessedAt(pool, userId);
     const rkFeatEarly = routeKey(method, path);
     if (rkFeatEarly === "GET /check-permission" || rkFeatEarly === "GET /api/check-permission") {
       const feature = normalizeFeatureKey(q.feature ?? q.f);
@@ -2224,7 +2342,8 @@ export async function handleApiRequest(req, options = {}) {
       const txPatchSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
       if (txPatchSubRej) return txPatchSubRej;
       const [[existing]] = await pool.query(
-        `SELECT id, user_id, family_id, kind, amount, transaction_date, memo, category_id
+        `SELECT id, user_id, family_id, kind, amount, transaction_date, memo, category_id,
+                is_medical_expense, medical_type, medical_patient_name
          FROM transactions t WHERE t.id = ? AND (${txWhere})`,
         [txId, ...txP2],
       );
@@ -2259,6 +2378,50 @@ export async function handleApiRequest(req, options = {}) {
           nextCategoryId = cid;
         }
       }
+      const categoryTouched = Object.prototype.hasOwnProperty.call(b, "category_id");
+      const medicalFieldSpecified = isMedicalFieldSpecified(b);
+      let nextIsMedicalExpense = Number(existing.is_medical_expense) === 1;
+      let nextMedicalType = normalizeMedicalType(existing.medical_type);
+      let nextMedicalPatientName = normalizeMedicalPatientName(existing.medical_patient_name);
+      if (categoryTouched && !medicalFieldSpecified) {
+        const autoMedical = await resolveMedicalDefaultsFromCategory(
+          pool,
+          catWhere,
+          userId,
+          nextCategoryId,
+        );
+        nextIsMedicalExpense = autoMedical.isMedicalExpense;
+        nextMedicalType = autoMedical.medicalType;
+        nextMedicalPatientName = autoMedical.medicalPatientName;
+      }
+      if (Object.prototype.hasOwnProperty.call(b, "is_medical_expense")) {
+        if (typeof b.is_medical_expense !== "boolean") {
+          return json(400, { error: "is_medical_expense は boolean で指定してください" }, hdrs, skipCors);
+        }
+        nextIsMedicalExpense = b.is_medical_expense;
+      }
+      if (Object.prototype.hasOwnProperty.call(b, "medical_type")) {
+        const mt = normalizeMedicalType(b.medical_type);
+        if (b.medical_type != null && b.medical_type !== "" && mt == null) {
+          return json(
+            400,
+            { error: "medical_type は treatment / medicine / other のいずれかです" },
+            hdrs,
+            skipCors,
+          );
+        }
+        nextMedicalType = mt;
+      }
+      if (Object.prototype.hasOwnProperty.call(b, "medical_patient_name")) {
+        nextMedicalPatientName = normalizeMedicalPatientName(b.medical_patient_name);
+      }
+      if (nextIsMedicalExpense && nextMedicalType == null) {
+        return json(400, { error: "medical_type を選択してください" }, hdrs, skipCors);
+      }
+      if (!nextIsMedicalExpense) {
+        nextMedicalType = null;
+        nextMedicalPatientName = null;
+      }
       const nextAmountValidation = validateTransactionAmount(nextKind, nextAmount);
       if (!nextAmountValidation.ok) {
         return json(400, { error: nextAmountValidation.error }, hdrs, skipCors);
@@ -2284,6 +2447,14 @@ export async function handleApiRequest(req, options = {}) {
       if (Object.prototype.hasOwnProperty.call(b, "category_id")) {
         fields.push("category_id = ?");
         params.push(nextCategoryId);
+      }
+      if (medicalFieldSpecified || categoryTouched) {
+        fields.push("is_medical_expense = ?");
+        params.push(nextIsMedicalExpense ? 1 : 0);
+        fields.push("medical_type = ?");
+        params.push(nextMedicalType);
+        fields.push("medical_patient_name = ?");
+        params.push(nextMedicalPatientName);
       }
       if (fields.length === 0) {
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
@@ -2313,9 +2484,22 @@ export async function handleApiRequest(req, options = {}) {
            AND t.transaction_date = ?
            AND (t.category_id <=> ?)
            AND (t.memo <=> ?)
+           AND (t.is_medical_expense <=> ?)
+           AND (t.medical_type <=> ?)
+           AND (t.medical_patient_name <=> ?)
          ORDER BY t.id DESC
          LIMIT 1`,
-        [userId, txId, nextKind, nextDate, nextCategoryId, nextMemo],
+        [
+          userId,
+          txId,
+          nextKind,
+          nextDate,
+          nextCategoryId,
+          nextMemo,
+          nextIsMedicalExpense ? 1 : 0,
+          nextMedicalType,
+          nextMedicalPatientName,
+        ],
       );
       const dup = Array.isArray(dupRows) && dupRows.length > 0 ? dupRows[0] : null;
       if (dup) {
@@ -2389,6 +2573,7 @@ export async function handleApiRequest(req, options = {}) {
         created_at: r.created_at ?? null,
         updated_at: r.updated_at ?? null,
         last_login_at: r.last_login_at ?? null,
+        last_accessed_at: r.last_accessed_at ?? null,
         default_family_id: r.default_family_id ?? null,
         familyRole: String(r.family_role ?? "MEMBER")
           .trim()
@@ -4171,7 +4356,7 @@ export async function handleApiRequest(req, options = {}) {
       const catPatchSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
       if (catPatchSubRej) return catPatchSubRej;
       const [[cur]] = await pool.query(
-        `SELECT c.name, c.kind FROM categories c
+        `SELECT c.name, c.kind, c.is_medical_default, c.default_medical_type, c.default_patient_name FROM categories c
          WHERE c.id = ? AND (${catWhere}) AND c.is_archived = 0 LIMIT 1`,
         [categoryId, userId, userId],
       );
@@ -4218,6 +4403,31 @@ export async function handleApiRequest(req, options = {}) {
         fields.push("is_archived = ?");
         params.push(b.is_archived ? 1 : 0);
       }
+      if (Object.prototype.hasOwnProperty.call(b, "is_medical_default")) {
+        if (typeof b.is_medical_default !== "boolean") {
+          return json(400, { error: "is_medical_default は boolean で指定してください" }, hdrs, skipCors);
+        }
+        fields.push("is_medical_default = ?");
+        params.push(b.is_medical_default ? 1 : 0);
+      }
+      if (Object.prototype.hasOwnProperty.call(b, "default_medical_type")) {
+        const mt = normalizeMedicalType(b.default_medical_type);
+        if (b.default_medical_type != null && b.default_medical_type !== "" && mt == null) {
+          return json(
+            400,
+            { error: "default_medical_type は treatment / medicine / other のいずれかです" },
+            hdrs,
+            skipCors,
+          );
+        }
+        fields.push("default_medical_type = ?");
+        params.push(mt);
+      }
+      if (Object.prototype.hasOwnProperty.call(b, "default_patient_name")) {
+        const patient = normalizeMedicalPatientName(b.default_patient_name);
+        fields.push("default_patient_name = ?");
+        params.push(patient);
+      }
       if (fields.length === 0) {
         return json(400, { error: "更新項目がありません" }, hdrs, skipCors);
       }
@@ -4229,6 +4439,20 @@ export async function handleApiRequest(req, options = {}) {
         (b.kind === "expense" || b.kind === "income")
           ? b.kind
           : String(cur.kind ?? "expense");
+      const nextMedicalDefault = Object.prototype.hasOwnProperty.call(b, "is_medical_default")
+        ? Boolean(b.is_medical_default)
+        : Number(cur.is_medical_default) === 1;
+      const nextDefaultMedicalType = Object.prototype.hasOwnProperty.call(b, "default_medical_type")
+        ? normalizeMedicalType(b.default_medical_type)
+        : normalizeMedicalType(cur.default_medical_type);
+      if (nextMedicalDefault && nextDefaultMedicalType == null) {
+        return json(
+          400,
+          { error: "医療費対象カテゴリにする場合は default_medical_type を指定してください" },
+          hdrs,
+          skipCors,
+        );
+      }
       if (
         Object.prototype.hasOwnProperty.call(b, "name") ||
         Object.prototype.hasOwnProperty.call(b, "kind")
@@ -4289,7 +4513,9 @@ export async function handleApiRequest(req, options = {}) {
           logError("categories.merge_duplicates", e);
         }
         const [rows] = await pool.query(
-          `SELECT c.id, c.parent_id, c.name, c.kind, c.color_hex, c.sort_order, c.is_archived, c.created_at, c.updated_at
+          `SELECT c.id, c.parent_id, c.name, c.kind, c.color_hex, c.sort_order, c.is_archived,
+                  c.is_medical_default, c.default_medical_type, c.default_patient_name,
+                  c.created_at, c.updated_at
            FROM categories c
            WHERE ${catWhere} AND c.is_archived = 0
            ORDER BY c.kind, c.sort_order, c.id`,
@@ -4515,6 +4741,29 @@ export async function handleApiRequest(req, options = {}) {
         if (!Number.isFinite(so)) {
           return json(400, { error: "sort_order が不正です" }, hdrs, skipCors);
         }
+        const isMedicalDefault = b.is_medical_default === true;
+        const defaultMedicalType = normalizeMedicalType(b.default_medical_type);
+        if (isMedicalDefault && defaultMedicalType == null) {
+          return json(
+            400,
+            { error: "医療費対象カテゴリにする場合は default_medical_type を指定してください" },
+            hdrs,
+            skipCors,
+          );
+        }
+        if (
+          b.default_medical_type != null &&
+          b.default_medical_type !== "" &&
+          defaultMedicalType == null
+        ) {
+          return json(
+            400,
+            { error: "default_medical_type は treatment / medicine / other のいずれかです" },
+            hdrs,
+            skipCors,
+          );
+        }
+        const defaultPatientName = normalizeMedicalPatientName(b.default_patient_name);
         const dupId = await findDuplicateCategoryId(
           pool,
           userId,
@@ -4535,8 +4784,11 @@ export async function handleApiRequest(req, options = {}) {
           );
         }
         const [r] = await pool.query(
-          `INSERT INTO categories (user_id, family_id, parent_id, name, kind, color_hex, sort_order)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO categories (
+             user_id, family_id, parent_id, name, kind, color_hex, sort_order,
+             is_medical_default, default_medical_type, default_patient_name
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             userId,
             familyId,
@@ -4545,6 +4797,9 @@ export async function handleApiRequest(req, options = {}) {
             kind,
             ch,
             so,
+            isMedicalDefault ? 1 : 0,
+            isMedicalDefault ? defaultMedicalType : null,
+            isMedicalDefault ? defaultPatientName : null,
           ],
         );
         return json(201, { id: r.insertId }, hdrs, skipCors);
@@ -4560,7 +4815,9 @@ export async function handleApiRequest(req, options = {}) {
             ? txWhereFamilyKidWatch
             : txWhereFamily
           : txWhere;
-        let sql = `SELECT t.id, t.account_id, t.category_id, t.kind, t.amount, t.transaction_date, t.memo, t.created_at, t.updated_at, t.user_id
+        let sql = `SELECT t.id, t.account_id, t.category_id, t.kind, t.amount, t.transaction_date, t.memo,
+                          t.is_medical_expense, t.medical_type, t.medical_patient_name,
+                          t.created_at, t.updated_at, t.user_id
                    FROM transactions t
                    WHERE ${txWhereForScope}`;
         const params = [
@@ -4618,6 +4875,46 @@ export async function handleApiRequest(req, options = {}) {
           return json(400, { error: catFixedPost }, hdrs, skipCors);
         }
         const memo = normalizeTxMemo(b.memo);
+        const medicalFieldSpecified = isMedicalFieldSpecified(b);
+        let isMedicalExpense = false;
+        let medicalType = null;
+        let medicalPatientName = null;
+        if (medicalFieldSpecified) {
+          if (
+            Object.prototype.hasOwnProperty.call(b, "is_medical_expense") &&
+            typeof b.is_medical_expense !== "boolean"
+          ) {
+            return json(400, { error: "is_medical_expense は boolean で指定してください" }, hdrs, skipCors);
+          }
+          isMedicalExpense = b.is_medical_expense === true;
+          medicalType = normalizeMedicalType(b.medical_type);
+          if (b.medical_type != null && b.medical_type !== "" && medicalType == null) {
+            return json(
+              400,
+              { error: "medical_type は treatment / medicine / other のいずれかです" },
+              hdrs,
+              skipCors,
+            );
+          }
+          medicalPatientName = normalizeMedicalPatientName(b.medical_patient_name);
+        } else if (kind === "expense" && categoryId != null) {
+          const autoMedical = await resolveMedicalDefaultsFromCategory(
+            pool,
+            catWhere,
+            userId,
+            categoryId,
+          );
+          isMedicalExpense = autoMedical.isMedicalExpense;
+          medicalType = autoMedical.medicalType;
+          medicalPatientName = autoMedical.medicalPatientName;
+        }
+        if (isMedicalExpense && medicalType == null) {
+          return json(400, { error: "medical_type を選択してください" }, hdrs, skipCors);
+        }
+        if (!isMedicalExpense) {
+          medicalType = null;
+          medicalPatientName = null;
+        }
         const fromReceipt = b.from_receipt === true || b.from_receipt === "true";
         if (fromReceipt) {
           const [exactRows] = await pool.query(
@@ -4650,9 +4947,21 @@ export async function handleApiRequest(req, options = {}) {
              AND t.transaction_date = ?
              AND (t.category_id <=> ?)
              AND (t.memo <=> ?)
+             AND (t.is_medical_expense <=> ?)
+             AND (t.medical_type <=> ?)
+             AND (t.medical_patient_name <=> ?)
            ORDER BY t.id DESC
            LIMIT 1`,
-          [userId, kind, txDate, categoryId, memo],
+          [
+            userId,
+            kind,
+            txDate,
+            categoryId,
+            memo,
+            isMedicalExpense ? 1 : 0,
+            medicalType,
+            medicalPatientName,
+          ],
         );
         const dup = Array.isArray(dupRows) && dupRows.length > 0 ? dupRows[0] : null;
         if (dup) {
@@ -4671,8 +4980,9 @@ export async function handleApiRequest(req, options = {}) {
         }
         const [r] = await pool.query(
           `INSERT INTO transactions
-           (user_id, family_id, account_id, category_id, kind, amount, transaction_date, memo, external_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (user_id, family_id, account_id, category_id, kind, amount, transaction_date, memo,
+            is_medical_expense, medical_type, medical_patient_name, external_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             userId,
             familyId,
@@ -4682,6 +4992,9 @@ export async function handleApiRequest(req, options = {}) {
             amt,
             txDate,
             memo,
+            isMedicalExpense ? 1 : 0,
+            medicalType,
+            medicalPatientName,
             b.external_id ?? null,
           ],
         );

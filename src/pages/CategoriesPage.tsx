@@ -4,6 +4,7 @@ import {
   createCategory,
   deleteCategory,
   getCategories,
+  type MedicalType,
   updateCategory,
   type CategoryItem,
 } from "../lib/api";
@@ -16,6 +17,9 @@ type CategoryDraft = {
   kind: "expense" | "income";
   color_hex: string;
   sort_order: string;
+  is_medical_default: boolean;
+  default_medical_type: MedicalType | "";
+  default_patient_name: string;
 };
 
 function sortCategories(items: CategoryItem[]) {
@@ -34,6 +38,9 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<"expense" | "income">("expense");
   const [newColor, setNewColor] = useState("#94a3b8");
+  const [newMedicalDefault, setNewMedicalDefault] = useState(false);
+  const [newMedicalType, setNewMedicalType] = useState<MedicalType | "">("");
+  const [newMedicalPatientName, setNewMedicalPatientName] = useState("");
   const [savingId, setSavingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -69,6 +76,10 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
       setError("カテゴリ名を入力してください。");
       return;
     }
+    if (newMedicalDefault && !newMedicalType) {
+      setError("医療費控除の対象にする場合は区分を選択してください。");
+      return;
+    }
     setError(null);
     try {
       await createCategory({
@@ -76,8 +87,16 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
         kind: newKind,
         color_hex: newColor || null,
         sort_order: 0,
+        is_medical_default: newKind === "expense" && newMedicalDefault,
+        default_medical_type:
+          newKind === "expense" && newMedicalDefault ? newMedicalType || null : null,
+        default_patient_name:
+          newKind === "expense" && newMedicalDefault ? newMedicalPatientName.trim() || null : null,
       });
       setNewName("");
+      setNewMedicalDefault(false);
+      setNewMedicalType("");
+      setNewMedicalPatientName("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "追加に失敗しました");
@@ -100,6 +119,10 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
       setError("色は #RRGGBB 形式で入力してください。");
       return;
     }
+    if (draft.is_medical_default && !draft.default_medical_type) {
+      setError("医療費控除の対象にする場合は区分を選択してください。");
+      return;
+    }
     setSavingId(c.id);
     setError(null);
     try {
@@ -108,6 +131,15 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
         kind: draft.kind,
         color_hex: ch || null,
         sort_order: so,
+        is_medical_default: draft.kind === "expense" && draft.is_medical_default,
+        default_medical_type:
+          draft.kind === "expense" && draft.is_medical_default
+            ? draft.default_medical_type || null
+            : null,
+        default_patient_name:
+          draft.kind === "expense" && draft.is_medical_default
+            ? draft.default_patient_name.trim() || null
+            : null,
       });
       await load();
     } catch (err) {
@@ -183,6 +215,40 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
             追加
           </button>
         </div>
+        <div style={{ marginTop: "0.6rem", display: "grid", gap: "0.45rem" }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+            <input
+              type="checkbox"
+              checked={newMedicalDefault}
+              onChange={(e) => setNewMedicalDefault(e.target.checked)}
+              disabled={loading || newKind !== "expense"}
+            />
+            このカテゴリを医療費控除の既定にする
+          </label>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <select
+              className={styles.monthInput}
+              value={newMedicalType}
+              onChange={(e) => setNewMedicalType((e.target.value as MedicalType | "") ?? "")}
+              disabled={!newMedicalDefault || newKind !== "expense" || loading}
+            >
+              <option value="">3区分を選択</option>
+              <option value="treatment">診療・治療</option>
+              <option value="medicine">医薬品</option>
+              <option value="other">その他</option>
+            </select>
+            <input
+              type="text"
+              className={styles.monthInput}
+              value={newMedicalPatientName}
+              onChange={(e) => setNewMedicalPatientName(e.target.value)}
+              placeholder="既定の対象者（例: 子ども）"
+              maxLength={120}
+              disabled={!newMedicalDefault || newKind !== "expense" || loading}
+              style={{ minWidth: 190 }}
+            />
+          </div>
+        </div>
       </form>
 
       {loading ? (
@@ -251,7 +317,15 @@ function CategoryTable({
   allowReorder: boolean;
   onSave: (
     c: CategoryItem,
-    draft: { name: string; kind: "expense" | "income"; color_hex: string; sort_order: string },
+    draft: {
+      name: string;
+      kind: "expense" | "income";
+      color_hex: string;
+      sort_order: string;
+      is_medical_default: boolean;
+      default_medical_type: MedicalType | "";
+      default_patient_name: string;
+    },
   ) => void;
   onRemove: (c: CategoryItem) => void;
   onReload: () => Promise<void>;
@@ -374,6 +448,7 @@ function CategoryTable({
                     並び {sortDir === "asc" ? "↑" : "↓"}
                   </button>
                 </th>
+                <th className={catStyles.th}>医療費控除の既定</th>
                 <th className={catStyles.th} />
               </tr>
             </thead>
@@ -433,13 +508,32 @@ function CategoryRow({
   );
   const [colorHex, setColorHex] = useState(c.color_hex || "#94a3b8");
   const [sortOrder, setSortOrder] = useState(String(c.sort_order));
+  const [isMedicalDefault, setIsMedicalDefault] = useState(
+    c.is_medical_default === true || Number(c.is_medical_default) === 1,
+  );
+  const [defaultMedicalType, setDefaultMedicalType] = useState<MedicalType | "">(
+    c.default_medical_type ?? "",
+  );
+  const [defaultPatientName, setDefaultPatientName] = useState(c.default_patient_name ?? "");
 
   useEffect(() => {
     setName(c.name);
     setKind(c.kind === "income" ? "income" : "expense");
     setColorHex(c.color_hex || "#94a3b8");
     setSortOrder(String(c.sort_order));
-  }, [c.id, c.name, c.kind, c.color_hex, c.sort_order]);
+    setIsMedicalDefault(c.is_medical_default === true || Number(c.is_medical_default) === 1);
+    setDefaultMedicalType(c.default_medical_type ?? "");
+    setDefaultPatientName(c.default_patient_name ?? "");
+  }, [
+    c.id,
+    c.name,
+    c.kind,
+    c.color_hex,
+    c.sort_order,
+    c.is_medical_default,
+    c.default_medical_type,
+    c.default_patient_name,
+  ]);
 
   const trClass = dragOver ? catStyles.dragOver : undefined;
 
@@ -506,6 +600,39 @@ function CategoryRow({
           disabled={disabled}
         />
       </td>
+      <td style={{ padding: "0.4rem 0.35rem", verticalAlign: "middle", minWidth: 210 }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <input
+            type="checkbox"
+            checked={isMedicalDefault}
+            onChange={(e) => setIsMedicalDefault(e.target.checked)}
+            disabled={disabled || kind !== "expense"}
+          />
+          対象
+        </label>
+        <select
+          className={styles.monthInput}
+          value={defaultMedicalType}
+          onChange={(e) => setDefaultMedicalType((e.target.value as MedicalType | "") ?? "")}
+          disabled={disabled || !isMedicalDefault || kind !== "expense"}
+          style={{ width: "100%", marginBottom: 4 }}
+        >
+          <option value="">3区分を選択</option>
+          <option value="treatment">診療・治療</option>
+          <option value="medicine">医薬品</option>
+          <option value="other">その他</option>
+        </select>
+        <input
+          type="text"
+          value={defaultPatientName}
+          onChange={(e) => setDefaultPatientName(e.target.value)}
+          maxLength={120}
+          placeholder="対象者名"
+          className={styles.monthInput}
+          disabled={disabled || !isMedicalDefault || kind !== "expense"}
+          style={{ width: "100%" }}
+        />
+      </td>
       <td style={{ padding: "0.4rem 0.35rem", whiteSpace: "nowrap", verticalAlign: "middle" }}>
         <button
           type="button"
@@ -517,6 +644,9 @@ function CategoryRow({
               kind,
               color_hex: colorHex,
               sort_order: sortOrder,
+              is_medical_default: isMedicalDefault,
+              default_medical_type: defaultMedicalType,
+              default_patient_name: defaultPatientName,
             })
           }
         >

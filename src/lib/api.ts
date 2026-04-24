@@ -110,6 +110,16 @@ function isRetryableNetworkMessage(msg: string): boolean {
   );
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
+
+function isLoginNetworkRetryableErrorMessage(msg: string): boolean {
+  return isRetryableNetworkMessage(msg) || msg.includes("fetch") || msg.includes("ECONN");
+}
+
 export function getApiBaseUrl() {
   return BASE;
 }
@@ -130,6 +140,28 @@ export function toFriendlyPasskeyErrorMessage(raw: unknown): string {
   }
   if (/InvalidStateError/i.test(normalized)) {
     return "この端末では既に登録済みのパスキーです。別のパスキーをお試しください。";
+  }
+  return normalized;
+}
+
+export function toFriendlyLoginErrorMessage(raw: unknown): string {
+  const msg = raw instanceof Error ? raw.message : String(raw ?? "");
+  const normalized = msg.trim();
+  if (!normalized) return "ログインに失敗しました。もう一度お試しください。";
+  if (/invalid credentials|invalid password|unauthorized|認証されていません/i.test(normalized)) {
+    return "メールアドレス（またはログインID）かパスワードが違います。";
+  }
+  if (/user not found|not found|存在しません/i.test(normalized)) {
+    return "入力したアカウントが見つかりません。";
+  }
+  if (/too many requests|rate limit|429/i.test(normalized)) {
+    return "試行回数が多いため、一時的にログインできません。少し待ってから再試行してください。";
+  }
+  if (/network|failed to fetch|timed out|タイムアウト|接続できません/i.test(normalized)) {
+    return "通信状態が不安定なためログインできませんでした。電波の良い場所で再試行してください。";
+  }
+  if (/internal|server|500|502|503|504/i.test(normalized)) {
+    return "サーバー側で一時的なエラーが発生しました。時間をおいて再試行してください。";
   }
   return normalized;
 }
@@ -184,31 +216,44 @@ export async function getHealth() {
 }
 
 export async function loginRequest(login: string, password: string) {
-  const res = await apiFetch(`${BASE}/auth/login`, {
-    method: "POST",
-    headers: buildHeaders(),
-    body: JSON.stringify({ login, password }),
-  });
-  return parse<{
-    token: string;
-    user: {
-      id: number;
-      email: string;
-      familyId?: number | null;
-      familyRole?: string;
-      family_role?: string;
-      kidTheme?: string | null;
-      kid_theme?: string | null;
-      isChild?: boolean;
-      is_child?: boolean;
-      parentId?: number | null;
-      parent_id?: number | null;
-      gradeGroup?: string | null;
-      grade_group?: string | null;
-      isAdmin?: boolean;
-      subscriptionStatus?: string;
-    };
-  }>(res);
+  const maxRetries = 2;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      const res = await apiFetch(`${BASE}/auth/login`, {
+        method: "POST",
+        headers: buildHeaders(),
+        body: JSON.stringify({ login, password }),
+      });
+      return await parse<{
+        token: string;
+        user: {
+          id: number;
+          email: string;
+          familyId?: number | null;
+          familyRole?: string;
+          family_role?: string;
+          kidTheme?: string | null;
+          kid_theme?: string | null;
+          isChild?: boolean;
+          is_child?: boolean;
+          parentId?: number | null;
+          parent_id?: number | null;
+          gradeGroup?: string | null;
+          grade_group?: string | null;
+          isAdmin?: boolean;
+          subscriptionStatus?: string;
+        };
+      }>(res);
+    } catch (e) {
+      lastError = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      const shouldRetry = attempt < maxRetries && isLoginNetworkRetryableErrorMessage(msg);
+      if (!shouldRetry) throw e;
+      await sleep(700 * (attempt + 1));
+    }
+  }
+  throw lastError ?? new Error("ログインに失敗しました");
 }
 
 export async function getPasskeyLoginOptions() {
@@ -794,9 +839,14 @@ export type CategoryItem = {
   color_hex: string | null;
   sort_order: number;
   is_archived: number;
+  is_medical_default?: number | boolean;
+  default_medical_type?: "treatment" | "medicine" | "other" | null;
+  default_patient_name?: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
+
+export type MedicalType = "treatment" | "medicine" | "other";
 
 export async function getCategories() {
   const res = await apiFetch(`${BASE}/categories`, { headers: buildHeaders() });
@@ -819,6 +869,9 @@ export async function createCategory(body: {
   color_hex?: string | null;
   sort_order?: number;
   parent_id?: number | null;
+  is_medical_default?: boolean;
+  default_medical_type?: MedicalType | null;
+  default_patient_name?: string | null;
 }) {
   const res = await apiFetch(`${BASE}/categories`, {
     method: "POST",
@@ -836,6 +889,9 @@ export async function updateCategory(
     color_hex?: string | null;
     sort_order?: number;
     is_archived?: boolean;
+    is_medical_default?: boolean;
+    default_medical_type?: MedicalType | null;
+    default_patient_name?: string | null;
   },
 ) {
   const res = await apiFetch(`${BASE}/categories/${id}`, {
@@ -1498,6 +1554,7 @@ export async function getAdminUsers() {
       created_at: string | null;
       updated_at: string | null;
       last_login_at: string | null;
+      last_accessed_at?: string | null;
       default_family_id: number | null;
       familyRole?: string;
       kidTheme?: KidTheme | null;

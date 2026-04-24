@@ -17,6 +17,7 @@ import {
   getMonthSummary,
   getTransactions,
   ledgerKidWatchApiOptionsFromSearch,
+  type MedicalType,
   normalizeFamilyRole,
   updateTransaction,
 } from "../lib/api";
@@ -26,6 +27,9 @@ type Category = {
   id: number;
   name: string;
   kind: string;
+  is_medical_default?: number | boolean;
+  default_medical_type?: MedicalType | null;
+  default_patient_name?: string | null;
 };
 
 type Transaction = {
@@ -35,6 +39,15 @@ type Transaction = {
   amount: string | number;
   transaction_date: string;
   memo: string | null;
+  is_medical_expense?: number | boolean;
+  medical_type?: MedicalType | null;
+  medical_patient_name?: string | null;
+};
+
+const MEDICAL_TYPE_LABELS: Record<MedicalType, string> = {
+  treatment: "診療・治療",
+  medicine: "医薬品",
+  other: "その他",
 };
 
 function ymToRange(ym: string) {
@@ -271,6 +284,24 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     return m;
   }, [categories]);
 
+  const categoryMedicalDefaultsById = useMemo(() => {
+    const m = new Map<
+      number,
+      { isDefault: boolean; medicalType: MedicalType | null; patientName: string | null }
+    >();
+    for (const c of categories) {
+      const id = typeof c.id === "number" ? c.id : Number(c.id);
+      if (!Number.isFinite(id)) continue;
+      const mt = c.default_medical_type;
+      m.set(id, {
+        isDefault: c.is_medical_default === true || Number(c.is_medical_default) === 1,
+        medicalType: mt === "treatment" || mt === "medicine" || mt === "other" ? mt : null,
+        patientName: c.default_patient_name ? String(c.default_patient_name) : null,
+      });
+    }
+    return m;
+  }, [categories]);
+
   /** 一覧のカテゴリ列が最長の表示ラベルに収まるよう 1ch 単位で渡す */
   const txCategoryMinCh = useMemo(() => {
     let m = "カテゴリ".length;
@@ -310,6 +341,16 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           String(c.kind ?? "").toLowerCase() === "income"
             ? "income"
             : "expense",
+        is_medical_default:
+          c.is_medical_default === true || Number(c.is_medical_default ?? 0) === 1,
+        default_medical_type:
+          c.default_medical_type === "treatment" ||
+          c.default_medical_type === "medicine" ||
+          c.default_medical_type === "other"
+            ? (c.default_medical_type as MedicalType)
+            : null,
+        default_patient_name:
+          c.default_patient_name == null ? null : String(c.default_patient_name),
       });
     }
     return out;
@@ -454,6 +495,9 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   const [formDate, setFormDate] = useState(todayDate);
   const [formMemo, setFormMemo] = useState("");
   const [formCategoryId, setFormCategoryId] = useState<string>("");
+  const [formIsMedicalExpense, setFormIsMedicalExpense] = useState(false);
+  const [formMedicalType, setFormMedicalType] = useState<MedicalType | "">("");
+  const [formMedicalPatientName, setFormMedicalPatientName] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [edit, setEdit] = useState<{
@@ -463,6 +507,9 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     transaction_date: string;
     memo: string;
     category_id: string;
+    is_medical_expense: boolean;
+    medical_type: MedicalType | "";
+    medical_patient_name: string;
   } | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   /** モバイル編集時の日付（MM/DD）。ネイティブ date の yyyy/mm/dd 表示を避ける */
@@ -505,6 +552,10 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         return;
       }
     }
+    if (formKind === "expense" && formIsMedicalExpense && !formMedicalType) {
+      setError("医療費控除の区分を選択してください。");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -516,9 +567,18 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         category_id: formCategoryId
           ? Number.parseInt(formCategoryId, 10)
           : null,
+        is_medical_expense: formKind === "expense" ? formIsMedicalExpense : false,
+        medical_type: formKind === "expense" && formIsMedicalExpense ? formMedicalType : null,
+        medical_patient_name:
+          formKind === "expense" && formIsMedicalExpense
+            ? formMedicalPatientName.trim() || null
+            : null,
       });
       setFormAmount("");
       setFormMemo("");
+      setFormIsMedicalExpense(false);
+      setFormMedicalType("");
+      setFormMedicalPatientName("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -545,6 +605,68 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     }
   }, [categories, formKind, formCategoryId]);
 
+  function applyMedicalDefaultsToAddForm(nextCategoryId: string, nextKind: "expense" | "income") {
+    if (nextKind !== "expense") {
+      setFormIsMedicalExpense(false);
+      setFormMedicalType("");
+      setFormMedicalPatientName("");
+      return;
+    }
+    const cid = Number.parseInt(nextCategoryId, 10);
+    if (!Number.isFinite(cid)) {
+      setFormIsMedicalExpense(false);
+      setFormMedicalType("");
+      setFormMedicalPatientName("");
+      return;
+    }
+    const defaults = categoryMedicalDefaultsById.get(cid);
+    if (!defaults?.isDefault || !defaults.medicalType) {
+      setFormIsMedicalExpense(false);
+      setFormMedicalType("");
+      setFormMedicalPatientName("");
+      return;
+    }
+    setFormIsMedicalExpense(true);
+    setFormMedicalType(defaults.medicalType);
+    setFormMedicalPatientName(defaults.patientName ?? "");
+  }
+
+  function applyMedicalDefaultsToEdit(nextCategoryId: string, nextKind: "expense" | "income") {
+    if (!edit) return;
+    if (nextKind !== "expense") {
+      setEdit({
+        ...edit,
+        kind: nextKind,
+        category_id: nextCategoryId,
+        is_medical_expense: false,
+        medical_type: "",
+        medical_patient_name: "",
+      });
+      return;
+    }
+    const cid = Number.parseInt(nextCategoryId, 10);
+    const defaults = Number.isFinite(cid) ? categoryMedicalDefaultsById.get(cid) : null;
+    if (!defaults?.isDefault || !defaults.medicalType) {
+      setEdit({
+        ...edit,
+        kind: nextKind,
+        category_id: nextCategoryId,
+        is_medical_expense: false,
+        medical_type: "",
+        medical_patient_name: "",
+      });
+      return;
+    }
+    setEdit({
+      ...edit,
+      kind: nextKind,
+      category_id: nextCategoryId,
+      is_medical_expense: true,
+      medical_type: defaults.medicalType,
+      medical_patient_name: defaults.patientName ?? "",
+    });
+  }
+
   function beginEdit(t: Transaction) {
     const ymd = formatTxDateYmd(t.transaction_date);
     let categoryIdStr = t.category_id != null ? String(t.category_id) : "";
@@ -561,6 +683,12 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       transaction_date: ymd,
       memo: t.memo ?? "",
       category_id: categoryIdStr,
+      is_medical_expense: t.is_medical_expense === true || Number(t.is_medical_expense) === 1,
+      medical_type:
+        t.medical_type === "treatment" || t.medical_type === "medicine" || t.medical_type === "other"
+          ? t.medical_type
+          : "",
+      medical_patient_name: t.medical_patient_name ? String(t.medical_patient_name) : "",
     });
     setMobileEditDateText(formatTxDateMd(t.transaction_date));
   }
@@ -590,6 +718,10 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         return;
       }
     }
+    if (edit.kind === "expense" && edit.is_medical_expense && !edit.medical_type) {
+      setError("医療費控除の区分を選択してください。");
+      return;
+    }
     setEditSaving(true);
     setError(null);
     try {
@@ -601,6 +733,13 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         category_id: edit.category_id
           ? Number.parseInt(edit.category_id, 10)
           : null,
+        is_medical_expense: edit.kind === "expense" ? edit.is_medical_expense : false,
+        medical_type:
+          edit.kind === "expense" && edit.is_medical_expense ? edit.medical_type : null,
+        medical_patient_name:
+          edit.kind === "expense" && edit.is_medical_expense
+            ? edit.medical_patient_name.trim() || null
+            : null,
       });
       cancelEdit();
       await load();
@@ -976,8 +1115,10 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
             id="kb-kind"
             value={formKind}
             onChange={(ev) => {
-              setFormKind(ev.target.value as "expense" | "income");
+              const nextKind = ev.target.value as "expense" | "income";
+              setFormKind(nextKind);
               setFormCategoryId("");
+              applyMedicalDefaultsToAddForm("", nextKind);
             }}
           >
             <option value="expense">支出</option>
@@ -990,7 +1131,11 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
             id="kb-cat"
             key={`kb-cat-${formKind}`}
             value={formCategoryId}
-            onChange={(ev) => setFormCategoryId(ev.target.value)}
+            onChange={(ev) => {
+              const nextId = ev.target.value;
+              setFormCategoryId(nextId);
+              applyMedicalDefaultsToAddForm(nextId, formKind);
+            }}
           >
             <option value="">なし</option>
             {filteredCategories.map((c) => (
@@ -1031,6 +1176,46 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
             onChange={(ev) => setFormMemo(ev.target.value)}
           />
         </div>
+        {formKind === "expense" ? (
+          <>
+            <div className={styles.field}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={formIsMedicalExpense}
+                  onChange={(ev) => setFormIsMedicalExpense(ev.target.checked)}
+                />
+                医療費控除の対象
+              </label>
+            </div>
+            <div className={styles.field}>
+              <label htmlFor="kb-medical-type">医療費の3区分</label>
+              <select
+                id="kb-medical-type"
+                value={formMedicalType}
+                onChange={(ev) => setFormMedicalType((ev.target.value as MedicalType | "") ?? "")}
+                disabled={!formIsMedicalExpense}
+              >
+                <option value="">選択してください</option>
+                <option value="treatment">診療・治療</option>
+                <option value="medicine">医薬品</option>
+                <option value="other">その他</option>
+              </select>
+            </div>
+            <div className={styles.field} style={{ gridColumn: "1 / -1" }}>
+              <label htmlFor="kb-medical-patient">対象者名</label>
+              <input
+                id="kb-medical-patient"
+                type="text"
+                value={formMedicalPatientName}
+                onChange={(ev) => setFormMedicalPatientName(ev.target.value)}
+                maxLength={120}
+                placeholder="例: 子ども"
+                disabled={!formIsMedicalExpense}
+              />
+            </div>
+          </>
+        ) : null}
         <button
           type="submit"
           className={`${styles.btn} ${styles.btnPrimary}`}
@@ -1106,11 +1291,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                               className={styles.mobileTxEditInput}
                               value={edit.kind}
                               onChange={(ev) =>
-                                setEdit({
-                                  ...edit,
-                                  kind: ev.target.value as "expense" | "income",
-                                  category_id: "",
-                                })
+                                applyMedicalDefaultsToEdit("", ev.target.value as "expense" | "income")
                               }
                               aria-label="種別"
                             >
@@ -1123,9 +1304,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                             <select
                               className={styles.mobileTxEditInput}
                               value={edit.category_id}
-                              onChange={(ev) =>
-                                setEdit({ ...edit, category_id: ev.target.value })
-                              }
+                              onChange={(ev) => applyMedicalDefaultsToEdit(ev.target.value, edit.kind)}
                               aria-label="カテゴリ"
                             >
                               <option value="">なし</option>
@@ -1181,6 +1360,63 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                               aria-label="メモ"
                             />
                           </div>
+                          {edit.kind === "expense" ? (
+                            <>
+                              <div className={styles.mobileTxEditField}>
+                                <span className={styles.mobileTxEditLabel}>医療費控除</span>
+                                <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={edit.is_medical_expense}
+                                    onChange={(ev) =>
+                                      setEdit({
+                                        ...edit,
+                                        is_medical_expense: ev.target.checked,
+                                        medical_type: ev.target.checked ? edit.medical_type : "",
+                                        medical_patient_name: ev.target.checked
+                                          ? edit.medical_patient_name
+                                          : "",
+                                      })
+                                    }
+                                  />
+                                  対象
+                                </label>
+                              </div>
+                              <div className={styles.mobileTxEditField}>
+                                <span className={styles.mobileTxEditLabel}>3区分</span>
+                                <select
+                                  className={styles.mobileTxEditInput}
+                                  value={edit.medical_type}
+                                  onChange={(ev) =>
+                                    setEdit({
+                                      ...edit,
+                                      medical_type: (ev.target.value as MedicalType | "") ?? "",
+                                    })
+                                  }
+                                  disabled={!edit.is_medical_expense}
+                                >
+                                  <option value="">選択してください</option>
+                                  <option value="treatment">診療・治療</option>
+                                  <option value="medicine">医薬品</option>
+                                  <option value="other">その他</option>
+                                </select>
+                              </div>
+                              <div className={styles.mobileTxEditField}>
+                                <span className={styles.mobileTxEditLabel}>対象者</span>
+                                <input
+                                  className={styles.mobileTxEditInput}
+                                  type="text"
+                                  value={edit.medical_patient_name}
+                                  onChange={(ev) =>
+                                    setEdit({ ...edit, medical_patient_name: ev.target.value })
+                                  }
+                                  maxLength={120}
+                                  placeholder="例: 子ども"
+                                  disabled={!edit.is_medical_expense}
+                                />
+                              </div>
+                            </>
+                          ) : null}
                           <div className={styles.mobileTxEditActions}>
                             <button
                               type="button"
@@ -1289,11 +1525,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                           className={styles.cellInput}
                           value={edit.kind}
                           onChange={(ev) =>
-                            setEdit({
-                              ...edit,
-                              kind: ev.target.value as "expense" | "income",
-                              category_id: "",
-                            })
+                            applyMedicalDefaultsToEdit("", ev.target.value as "expense" | "income")
                           }
                           aria-label="種別"
                         >
@@ -1323,9 +1555,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                         <select
                           className={styles.cellInput}
                           value={edit.category_id}
-                          onChange={(ev) =>
-                            setEdit({ ...edit, category_id: ev.target.value })
-                          }
+                          onChange={(ev) => applyMedicalDefaultsToEdit(ev.target.value, edit.kind)}
                           aria-label="カテゴリ"
                         >
                           <option value="">なし</option>
@@ -1389,6 +1619,58 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                             placeholder="メモ"
                             aria-label="メモ"
                           />
+                          {edit.kind === "expense" ? (
+                            <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+                              <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={edit.is_medical_expense}
+                                  onChange={(ev) =>
+                                    setEdit({
+                                      ...edit,
+                                      is_medical_expense: ev.target.checked,
+                                      medical_type: ev.target.checked ? edit.medical_type : "",
+                                      medical_patient_name: ev.target.checked
+                                        ? edit.medical_patient_name
+                                        : "",
+                                    })
+                                  }
+                                />
+                                医療費控除の対象
+                              </label>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                <select
+                                  className={styles.cellInput}
+                                  value={edit.medical_type}
+                                  onChange={(ev) =>
+                                    setEdit({
+                                      ...edit,
+                                      medical_type: (ev.target.value as MedicalType | "") ?? "",
+                                    })
+                                  }
+                                  disabled={!edit.is_medical_expense}
+                                  aria-label="医療費3区分"
+                                >
+                                  <option value="">選択してください</option>
+                                  <option value="treatment">診療・治療</option>
+                                  <option value="medicine">医薬品</option>
+                                  <option value="other">その他</option>
+                                </select>
+                                <input
+                                  className={styles.cellInput}
+                                  type="text"
+                                  value={edit.medical_patient_name}
+                                  onChange={(ev) =>
+                                    setEdit({ ...edit, medical_patient_name: ev.target.value })
+                                  }
+                                  maxLength={120}
+                                  placeholder="対象者名"
+                                  disabled={!edit.is_medical_expense}
+                                  aria-label="医療費対象者"
+                                />
+                              </div>
+                            </div>
+                          ) : null}
                           <div className={styles.rowActions}>
                             <button
                               type="button"
@@ -1412,6 +1694,18 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                         <div className={styles.memoCell}>
                           <span className={styles.memoText}>
                             {t.memo ?? ""}
+                            {t.is_medical_expense === true || Number(t.is_medical_expense) === 1 ? (
+                              <span style={{ marginLeft: 8, fontSize: "0.82em", color: "#0369a1" }}>
+                                {" "}
+                                [医療費:{" "}
+                                {t.medical_type === "treatment" ||
+                                t.medical_type === "medicine" ||
+                                t.medical_type === "other"
+                                  ? MEDICAL_TYPE_LABELS[t.medical_type]
+                                  : "未設定"}
+                                {t.medical_patient_name ? ` / ${t.medical_patient_name}` : ""}]
+                              </span>
+                            ) : null}
                           </span>
                           {!kidWatchOn ? (
                             <div className={styles.rowActions}>
