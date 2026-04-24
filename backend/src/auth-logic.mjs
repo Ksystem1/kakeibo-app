@@ -73,6 +73,12 @@ export function signUserToken(userId, email) {
   );
 }
 
+/**
+ * メール未登録系ユーザーに NOT NULL 用の bcrypt を入れるときの共通平文（ログイン用ではない）
+ * run-migration-v29.mjs およびパスキー新規（レガシー互換）と同じ値を使うこと。
+ */
+export const USERS_NO_PASSWORD_PLACEHOLDER = "KAKEIBO_V29_MIGRATION_PLACEHOLDER_NO_PASSWORD_LOGIN_2026_!#";
+
 export async function hashPassword(plain) {
   return bcrypt.hash(plain, 12);
 }

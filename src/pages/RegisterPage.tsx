@@ -36,7 +36,8 @@ export function RegisterPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [monitorRecruitmentMessage, setMonitorRecruitmentMessage] = useState<string | null>(null);
-  const inviteToken = searchParams.get("invite")?.trim() || "";
+  const inviteToken =
+    searchParams.get("token")?.trim() || searchParams.get("invite")?.trim() || "";
 
   useEffect(() => {
     let cancelled = false;
@@ -140,9 +141,13 @@ export function RegisterPage() {
         <div className={styles.card}>
           <header className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>新規登録</h2>
-            <p className={styles.cardSub}>メールとパスワードでアカウントを作成</p>
             <p className={styles.cardSub}>
-              パスキーで始める場合は <Link to="/register/passkey" className={styles.link}>こちら</Link>
+              {inviteToken
+                ? "招待リンクから登録します。あなたのメールアドレスとパスワードを設定してください。"
+                : "メールとパスワードでアカウントを作成"}
+            </p>
+            <p className={styles.cardSub}>
+              ログイン後の「設定」からパスキー（生体認証）を追加できます。
             </p>
           </header>
           {monitorRecruitmentMessage ? (

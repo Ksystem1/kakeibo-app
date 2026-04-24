@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useAuth } from "../context/AuthContext";
+import { AuthHeroAside } from "../components/AuthHeroAside";
 import {
   getChildProfiles,
   getPasskeyLoginOptions,
@@ -12,6 +13,8 @@ import {
   toFriendlyPasskeyErrorMessage,
   verifyPasskeyLogin,
 } from "../lib/api";
+import styles from "../components/LoginScreen.module.css";
+import { MobileAccessQr } from "../components/MobileAccessQr";
 
 function shouldLogAuthDebug() {
   return (
@@ -19,9 +22,6 @@ function shouldLogAuthDebug() {
     String(import.meta.env?.VITE_DEBUG_AUTH ?? "").trim() === "1"
   );
 }
-import { AuthHeroAside } from "../components/AuthHeroAside";
-import styles from "../components/LoginScreen.module.css";
-import { MobileAccessQr } from "../components/MobileAccessQr";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -61,7 +61,7 @@ export function LoginPage() {
     navigate("/", { replace: true });
   }
 
-  async function startPasskeyLogin(auto = false) {
+  async function startPasskeyLogin() {
     if (passkeySubmitting) return;
     setError(null);
     setPasskeySubmitting(true);
@@ -69,7 +69,7 @@ export function LoginPage() {
       const opt = await getPasskeyLoginOptions();
       const credential = await startAuthentication({
         optionsJSON: opt.options as Parameters<typeof startAuthentication>[0]["optionsJSON"],
-        useBrowserAutofill: auto,
+        useBrowserAutofill: false,
       });
       const r = await verifyPasskeyLogin({
         flow_token: opt.flowToken,
@@ -78,37 +78,15 @@ export function LoginPage() {
       await completeLogin(r.token, r.user);
     } catch (e) {
       const msg = toFriendlyPasskeyErrorMessage(e);
-      if (!auto && msg) setError(msg);
+      setError(
+        msg
+          ? `${msg} お手数ですが、下の「メールまたはログインID」と「パスワード」でログインしてください。`
+          : "パスキーでログインできませんでした。下のメール（またはログインID）とパスワードでお試しください。",
+      );
     } finally {
       setPasskeySubmitting(false);
     }
   }
-
-  useEffect(() => {
-    if (token) return;
-    const hasWebAuthn = typeof window !== "undefined" && "PublicKeyCredential" in window;
-    if (!hasWebAuthn) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const canAutofill =
-          typeof PublicKeyCredential !== "undefined" &&
-          typeof (PublicKeyCredential as unknown as { isConditionalMediationAvailable?: () => Promise<boolean> })
-            .isConditionalMediationAvailable === "function" &&
-          (await (
-            PublicKeyCredential as unknown as { isConditionalMediationAvailable: () => Promise<boolean> }
-          ).isConditionalMediationAvailable());
-        if (!cancelled && canAutofill) {
-          await startPasskeyLogin(true);
-        }
-      } catch {
-        /* no-op */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -135,65 +113,17 @@ export function LoginPage() {
         <span className={styles.badge}>Kakeibo ✨</span>
         <h1 className={styles.heroTitle}>みんなの家計簿</h1>
         <p className={styles.heroDesc}>家計簿を共有できます。</p>
+        <Link to="/demo-dashboard" className={styles.demoCta}>
+          🎬 デモを見る
+        </Link>
       </AuthHeroAside>
       <main className={styles.panel}>
         <div className={styles.card}>
           <header className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>ログイン</h2>
-            <p className={styles.cardSub}>
-              登録済みのメールまたはユーザIDでサインイン
-            </p>
-            <Link to="/demo-dashboard" className={styles.demoCta}>
-              🎬 デモを見る
-            </Link>
+            <p className={styles.cardSub}>登録したメールまたは子ども用のログインIDでサインイン</p>
           </header>
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
-            <button
-              type="button"
-              className={styles.submit}
-              disabled={passkeySubmitting || submitting}
-              onClick={() => {
-                void startPasskeyLogin(false);
-              }}
-            >
-              {passkeySubmitting ? "パスキー認証中…" : "パスキーでログイン"}
-            </button>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="recovery-code">
-                リカバリーコード（デバイス紛失時）
-              </label>
-              <div className={styles.row}>
-                <input
-                  id="recovery-code"
-                  className={styles.input}
-                  type="text"
-                  placeholder="XXXX-XXXX-XXXX-XXXX"
-                  value={recoveryCode}
-                  onChange={(ev) => setRecoveryCode(ev.target.value)}
-                  disabled={submitting || passkeySubmitting}
-                />
-                <button
-                  type="button"
-                  className={styles.btn}
-                  disabled={submitting || passkeySubmitting || recoveryCode.trim() === ""}
-                  onClick={async () => {
-                    setError(null);
-                    setSubmitting(true);
-                    try {
-                      const r = await loginWithRecoveryCode(recoveryCode);
-                      setRecoveryCode("");
-                      await completeLogin(r.token, r.user);
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : String(e));
-                    } finally {
-                      setSubmitting(false);
-                    }
-                  }}
-                >
-                  コードでログイン
-                </button>
-              </div>
-            </div>
             <div className={styles.field}>
               <label className={styles.label} htmlFor="login-id">
                 メールまたはログインID
@@ -242,22 +172,66 @@ export function LoginPage() {
                 {error}
               </p>
             ) : null}
-            <button
-              type="submit"
-              className={styles.submit}
-              disabled={submitting}
-            >
+            <button type="submit" className={styles.submit} disabled={submitting || passkeySubmitting}>
               {submitting ? "サインイン中…" : "🔐 ログイン"}
             </button>
+            <p className={styles.cardSub} style={{ margin: "0.75rem 0 0", fontSize: "0.88rem", opacity: 0.9 }}>
+              次の方法（任意）
+            </p>
+            <button
+              type="button"
+              className={styles.btn}
+              disabled={passkeySubmitting || submitting}
+              onClick={() => {
+                void startPasskeyLogin();
+              }}
+            >
+              {passkeySubmitting ? "パスキー認証中…" : "パスキーでログイン"}
+            </button>
+            <p className={styles.cardSub} style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", opacity: 0.85 }}>
+              先に設定でパスキーを登録した方のみ。うまくいかない場合は上のメール＋パスワードをご利用ください。
+            </p>
+            <div className={styles.field} style={{ marginTop: "0.9rem" }}>
+              <label className={styles.label} htmlFor="recovery-code">
+                リカバリーコード（デバイス紛失時）
+              </label>
+              <div className={styles.row}>
+                <input
+                  id="recovery-code"
+                  className={styles.input}
+                  type="text"
+                  placeholder="XXXX-XXXX-XXXX-XXXX"
+                  value={recoveryCode}
+                  onChange={(ev) => setRecoveryCode(ev.target.value)}
+                  disabled={submitting || passkeySubmitting}
+                />
+                <button
+                  type="button"
+                  className={styles.btn}
+                  disabled={submitting || passkeySubmitting || recoveryCode.trim() === ""}
+                  onClick={async () => {
+                    setError(null);
+                    setSubmitting(true);
+                    try {
+                      const r = await loginWithRecoveryCode(recoveryCode);
+                      setRecoveryCode("");
+                      await completeLogin(r.token, r.user);
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  }}
+                >
+                  コードでログイン
+                </button>
+              </div>
+            </div>
           </form>
           <p className={styles.footer}>
             はじめての方は{" "}
             <Link to="/register" className={styles.link}>
-              新規登録
-            </Link>
-            {" / "}
-            <Link to="/register/passkey" className={styles.link}>
-              パスキーで登録
+              新規登録（メール＋パスワード）
             </Link>
           </p>
           <aside className={styles.qrUnderFooter} aria-label="スマートフォンアクセス">

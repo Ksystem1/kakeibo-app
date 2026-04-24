@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { stripApiPathPrefix } from "./api-path.mjs";
 import {
+  USERS_NO_PASSWORD_PLACEHOLDER,
   hashPassword,
   resolveUserId,
   signUserToken,
@@ -214,8 +215,10 @@ async function shouldGrantMonitorOnRegister(conn) {
 }
 
 function buildInviteUrl(inviteRawToken) {
-  const appOrigin = (process.env.APP_ORIGIN || "https://ksystemapp.com").replace(/\/$/, "");
-  return `${appOrigin}/kakeibo/register/passkey?token=${encodeURIComponent(inviteRawToken)}`;
+  const appOrigin = String(
+    process.env.PUBLIC_APP_ORIGIN || process.env.APP_ORIGIN || "https://ksystemapp.com",
+  ).replace(/\/$/, "");
+  return `${appOrigin}/kakeibo/register?token=${encodeURIComponent(inviteRawToken)}`;
 }
 
 async function countPasskeyAuthenticators(poolOrConn, userId) {
@@ -610,6 +613,20 @@ export async function tryAuthRoutes(req, ctx) {
         const b = JSON.parse(req.body || "{}");
         const displayName = String(b.display_name ?? b.displayName ?? "").trim() || "ユーザー";
         const inviteToken = String(b.invite_token ?? b.inviteToken ?? "").trim();
+        const allowStandalone =
+          String(process.env.ALLOW_PASSKEY_STANDALONE_REGISTER || "").trim() === "1";
+        if (!inviteToken && !allowStandalone) {
+          return json(
+            403,
+            {
+              error: "PasskeyRegisterDisabled",
+              detail:
+                "新規登録はメールアドレスとパスワードをご利用ください。パスキーはログイン後の「設定」から登録し、次回以降のログインに使えます。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
         if (inviteToken) {
           const inviteHash = crypto.createHash("sha256").update(inviteToken).digest("hex");
           const [invRows] = await pool.query(
@@ -656,6 +673,21 @@ export async function tryAuthRoutes(req, ctx) {
         const flow = verifyPasskeyRegistrationFlowToken(flowToken);
         if (!flow?.c) {
           return json(400, { error: "登録セッションが無効または期限切れです" }, hdrs, skipCors);
+        }
+        const inviteForVerify = String(flow.iv ?? "").trim();
+        const allowStandaloneReg =
+          String(process.env.ALLOW_PASSKEY_STANDALONE_REGISTER || "").trim() === "1";
+        if (!inviteForVerify && !allowStandaloneReg) {
+          return json(
+            403,
+            {
+              error: "PasskeyRegisterDisabled",
+              detail:
+                "新規登録はメールアドレスとパスワードをご利用ください。パスキーはログイン後の「設定」から登録できます。",
+            },
+            hdrs,
+            skipCors,
+          );
         }
         let verification = null;
         try {
@@ -709,11 +741,13 @@ export async function tryAuthRoutes(req, ctx) {
           const monitorGranted = await shouldGrantMonitorOnRegister(conn);
           const grantedSubscriptionStatus = monitorGranted ? "admin_free" : "inactive";
           const displayName = String(flow.n ?? "").trim() || null;
+          const regEmail = `passkey-reg-${crypto.randomBytes(10).toString("hex")}@register.kakeibo.internal`;
+          const ph = await hashPassword(USERS_NO_PASSWORD_PLACEHOLDER);
 
           const [ur] = await conn.query(
             `INSERT INTO users (email, login_name, password_hash, display_name, subscription_status, auth_method)
-             VALUES (NULL, NULL, NULL, ?, ?, 'passkey')`,
-            [displayName, grantedSubscriptionStatus],
+             VALUES (?, NULL, ?, ?, ?, 'passkey')`,
+            [regEmail, ph, displayName, grantedSubscriptionStatus],
           );
           const userId = Number(ur.insertId);
           let familyId = null;
@@ -1091,11 +1125,13 @@ export async function tryAuthRoutes(req, ctx) {
       if (passkeyCount <= 0) {
         return json(400, { error: "先にパスキーを登録してください" }, hdrs, skipCors);
       }
+      const ph = await hashPassword(USERS_NO_PASSWORD_PLACEHOLDER);
+      const internalEmail = `anonymized-${uid}@users.kakeibo.internal`;
       await pool.query(
         `UPDATE users
-         SET email = NULL, login_name = NULL, password_hash = NULL, auth_method = 'passkey', updated_at = NOW()
+         SET email = ?, login_name = NULL, password_hash = ?, auth_method = 'passkey', updated_at = NOW()
          WHERE id = ?`,
-        [uid],
+        [internalEmail, ph, uid],
       );
       return json(200, { ok: true, authMethod: "passkey" }, hdrs, skipCors);
     }
@@ -1354,11 +1390,8 @@ export async function tryAuthRoutes(req, ctx) {
           }
           const inv = invRows[0];
           const invEmail = inv.email != null ? String(inv.email).trim().toLowerCase() : "";
-          if (!invEmail || !invEmail.includes("@")) {
-            await conn.rollback();
-            return json(400, { error: "招待情報が不正です" }, hdrs, skipCors);
-          }
-          if (invEmail !== email) {
+          const isTokenOnlyInvite = !invEmail || !invEmail.includes("@");
+          if (!isTokenOnlyInvite && invEmail !== email) {
             await conn.rollback();
             return json(
               400,
@@ -1779,6 +1812,8 @@ export async function tryAuthRoutes(req, ctx) {
       if (!parentFamilyId) {
         return json(400, { error: "親ユーザーの家族設定が見つかりません" }, hdrs, skipCors);
       }
+      const childPh = await hashPassword(USERS_NO_PASSWORD_PLACEHOLDER);
+      const childEmail = `child-${crypto.randomBytes(12).toString("hex")}@child.kakeibo.internal`;
       const conn = await pool.getConnection();
       try {
         await conn.beginTransaction();
@@ -1786,8 +1821,8 @@ export async function tryAuthRoutes(req, ctx) {
         try {
           [ins] = await conn.query(
             `INSERT INTO users (email, login_name, password_hash, display_name, default_family_id, family_role, is_child, parent_id, grade_group, is_admin)
-             VALUES (NULL, NULL, NULL, ?, ?, 'KID', 1, ?, ?, 0)`,
-            [displayNameRaw, parentFamilyId, uid, gradeGroup],
+             VALUES (?, NULL, ?, ?, ?, 'KID', 1, ?, ?, 0)`,
+            [childEmail, childPh, displayNameRaw, parentFamilyId, uid, gradeGroup],
           );
         } catch (e) {
           if (isErBadFieldError(e)) {
@@ -2118,32 +2153,33 @@ export async function tryAuthRoutes(req, ctx) {
       const inviteEmail = String(b.email || "")
         .trim()
         .toLowerCase();
-      if (!inviteEmail?.includes("@")) {
-        return json(400, { error: "メールアドレスが不正です" }, hdrs, skipCors);
-      }
+      const isTokenOnly = !inviteEmail || !inviteEmail.includes("@");
 
       const fid = await getDefaultFamilyId(pool, uid);
       if (!fid) {
         return json(400, { error: "家族が未設定です" }, hdrs, skipCors);
       }
 
-      const [check] = await pool.query(
-        `SELECT fm.user_id FROM family_members fm
+      if (!isTokenOnly) {
+        const [check] = await pool.query(
+          `SELECT fm.user_id FROM family_members fm
          JOIN users u ON u.id = fm.user_id
          WHERE fm.family_id = ? AND u.email = ?`,
-        [fid, inviteEmail],
-      );
-      if (check.length > 0) {
-        return json(409, { error: "既に家族のメンバーです" }, hdrs, skipCors);
+          [fid, inviteEmail],
+        );
+        if (check.length > 0) {
+          return json(409, { error: "既に家族のメンバーです" }, hdrs, skipCors);
+        }
       }
 
       const raw = crypto.randomBytes(24).toString("hex");
       const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
       const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const storeEmail = isTokenOnly ? "" : inviteEmail;
       await withDbRetry("auth.invite.insert", () =>
         pool.query(
           `INSERT INTO family_invites (family_id, email, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
-          [fid, inviteEmail, tokenHash, expires],
+          [fid, storeEmail, tokenHash, expires],
         ),
       );
 

@@ -5,7 +5,9 @@ import { isSubscriptionServiceSubscribedClient } from "./subscriptionAccess";
  * 開発（import.meta.env.DEV）では環境変数を使わず、API を常にこのオリジンに固定する。
  * 本番は VITE_API_URL 等を使用。
  */
-const DEV_FORCED_API_BASE = "http://localhost:3456/api";
+const DEV_FORCED_API_BASE = String(
+  import.meta.env.VITE_DEV_API_BASE || "http://127.0.0.1:3456/api",
+).replace(/\/$/, "");
 
 function resolveApiBase(): string {
   if (import.meta.env.DEV) {

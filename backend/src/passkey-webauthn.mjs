@@ -38,35 +38,63 @@ function flowSecret() {
   return String(process.env.JWT_SECRET || "dev-insecure-kakeibo-change-me");
 }
 
+/**
+ * WebAuthn の RP / Origin は環境変数を源泉とする。コード内に localhost 文字列は置かない。
+ * 開発: WEBAUTHN_ORIGIN または APP_ORIGIN（未設定時は Vite 既定 127.0.0.1:5173）
+ * 本番: WEBAUTHN_ORIGIN 未設定時 https://ksystemapp.com
+ * 付加: WEBAUTHN_ADDITIONAL_ORIGINS（カンマ区切り）で同じマシンからの別表記（例: .env 側で補完）
+ */
 export function resolvePasskeyConfig() {
   const isProd = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
-  const defaultOrigin = isProd
-    ? "https://ksystemapp.com"
-    : String(process.env.APP_ORIGIN || "http://localhost:3000");
-  // 本番は WebAuthn 専用環境変数を優先し、APP_ORIGIN の誤設定で壊れないようにする
-  const originRaw = String(process.env.WEBAUTHN_ORIGIN || process.env.ORIGIN || defaultOrigin).trim();
-  const appOrigin = (originRaw || defaultOrigin).replace(/\/+$/, "");
-  let hostname = isProd ? "ksystemapp.com" : "localhost";
+  const primary = String(
+    process.env.WEBAUTHN_ORIGIN || process.env.APP_ORIGIN || process.env.PUBLIC_APP_ORIGIN || "",
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  const fallbackOrigin = isProd ? "https://ksystemapp.com" : "http://127.0.0.1:5173";
+  const appOrigin = (primary || fallbackOrigin).replace(/\/+$/, "");
+  let hostFromUrl = isProd ? "ksystemapp.com" : "127.0.0.1";
   try {
-    hostname = new URL(appOrigin).hostname || hostname;
+    hostFromUrl = new URL(appOrigin).hostname || hostFromUrl;
   } catch {
-    /* fallback hostname を使用 */
+    /* 既定 hostname */
   }
-  const envRpID = String(
-    process.env.WEBAUTHN_RP_ID || process.env.RP_ID || (isProd ? "ksystemapp.com" : "localhost"),
-  ).trim();
-  const rpID = isProd ? "ksystemapp.com" : envRpID || hostname;
+  const envRp = String(process.env.WEBAUTHN_RP_ID || process.env.RP_ID || "").trim();
+  const defaultRp = isProd ? "ksystemapp.com" : hostFromUrl;
+  const rpID = envRp || defaultRp;
+  const extraRp = String(process.env.WEBAUTHN_ADDITIONAL_RP_IDS || "");
+  const rpIdSet = new Set(
+    [rpID, ...extraRp.split(/[,;]/).map((s) => s.trim()).filter(Boolean)],
+  );
+  if (isProd) {
+    rpIdSet.add("ksystemapp.com");
+    rpIdSet.add("www.ksystemapp.com");
+  }
+  const expectedRPIDs = Array.from(rpIdSet);
   const rpName = String(process.env.WEBAUTHN_RP_NAME || "Kakeibo").trim() || "Kakeibo";
-  const expectedOrigins = isProd
-    ? new Set(["https://ksystemapp.com", "https://www.ksystemapp.com"])
-    : new Set([appOrigin]);
-  if (!isProd) {
-    expectedOrigins.add("http://localhost:3000");
-    expectedOrigins.add("http://127.0.0.1:3000");
-    expectedOrigins.add("http://localhost:5173");
-    expectedOrigins.add("http://127.0.0.1:5173");
+  const expectedOrigins = new Set();
+  const addO = (o) => {
+    const t = String(o).trim().replace(/\/+$/, "");
+    if (t) expectedOrigins.add(t);
+  };
+  addO(appOrigin);
+  for (const part of String(
+    process.env.WEBAUTHN_ADDITIONAL_ORIGINS || process.env.CORS_ALLOW_ORIGIN || "",
+  )
+    .split(/[,;]/)) {
+    addO(part);
   }
-  return { rpID, rpName, expectedOrigins: Array.from(expectedOrigins) };
+  if (isProd) {
+    addO("https://ksystemapp.com");
+    addO("https://www.ksystemapp.com");
+  }
+  return {
+    rpID,
+    rpName,
+    appOrigin,
+    expectedOrigins: Array.from(expectedOrigins),
+    expectedRPIDs: expectedRPIDs.length > 0 ? expectedRPIDs : [rpID],
+  };
 }
 
 export function issuePasskeyRegistrationFlowToken(payload, ttlSec = 600) {
@@ -147,17 +175,12 @@ export async function buildPasskeyAuthenticationOptions() {
 }
 
 export async function verifyPasskeyRegistration({ credential, expectedChallenge }) {
-  const isProd = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
-  const { rpID, expectedOrigins } = resolvePasskeyConfig();
-  const expectedRPID = isProd ? ["ksystemapp.com", "www.ksystemapp.com"] : rpID;
-  const expectedOrigin = isProd
-    ? ["https://ksystemapp.com", "https://www.ksystemapp.com"]
-    : expectedOrigins;
+  const cfg = resolvePasskeyConfig();
   return verifyRegistrationResponse({
     response: credential,
     expectedChallenge: buildExpectedChallengeVerifier(expectedChallenge),
-    expectedOrigin,
-    expectedRPID,
+    expectedOrigin: cfg.expectedOrigins,
+    expectedRPID: cfg.expectedRPIDs,
     requireUserVerification: false,
   });
 }
@@ -167,17 +190,12 @@ export async function verifyPasskeyAuthentication({
   expectedChallenge,
   authenticator,
 }) {
-  const isProd = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
-  const { rpID, expectedOrigins } = resolvePasskeyConfig();
-  const expectedRPID = isProd ? ["ksystemapp.com", "www.ksystemapp.com"] : rpID;
-  const expectedOrigin = isProd
-    ? ["https://ksystemapp.com", "https://www.ksystemapp.com"]
-    : expectedOrigins;
+  const cfg = resolvePasskeyConfig();
   return verifyAuthenticationResponse({
     response: credential,
     expectedChallenge: buildExpectedChallengeVerifier(expectedChallenge),
-    expectedOrigin,
-    expectedRPID,
+    expectedOrigin: cfg.expectedOrigins,
+    expectedRPID: cfg.expectedRPIDs,
     authenticator,
     requireUserVerification: false,
   });

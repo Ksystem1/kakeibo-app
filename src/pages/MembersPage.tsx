@@ -260,13 +260,16 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
       </div>
 
       <h2 className={styles.sectionTitle}>大人メンバーを招待（URL / QR）</h2>
+      <p style={{ margin: "0 0 0.4rem", color: "var(--muted, #5c6670)" }}>
+        相手のメール入力は不要です。発行したURLを送り、相手が自身のメール＋パスワードで登録すると同じ家族に入ります。
+      </p>
       <form onSubmit={onIssueInviteLink} style={{ display: "grid", gap: "0.5rem" }}>
         <button
           type="submit"
           className={`${styles.btn} ${styles.btnPrimary}`}
           disabled={loading}
         >
-          招待リンクを発行
+          招待URLを発行
         </button>
       </form>
       {inviteUrl ? (

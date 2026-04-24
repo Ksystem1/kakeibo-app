@@ -11,8 +11,7 @@ import {
 
 const FAM_JOIN_U = sqlUserFamilyIdExpr("u");
 
-const DEFAULT_ALLOWED_ORIGINS =
-  "http://localhost:5173,http://127.0.0.1:5173,https://ksystemapp.com";
+const DEFAULT_ALLOWED_ORIGINS = "http://127.0.0.1:5173,https://ksystemapp.com";
 
 function isNoSuchCustomerError(e) {
   const code = String(e?.code || "");
