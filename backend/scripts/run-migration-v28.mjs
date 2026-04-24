@@ -1,6 +1,8 @@
 /**
  * RDS に db/migration_v28_authenticator_credential_id_text.sql を適用する。
- * 実行: cd backend && npm run db:migrate-v28
+ * utf8mb4 では credential_id 全長 UNIQUE が「Specified key was too long」になるため、
+ * 先に UNIQUE を外し、列変更後に credential_id(255) の接頭辞 UNIQUE を付け直す。
+ * 実行: npm run db:migrate-v28（リポジトリルート）または cd backend && npm run db:migrate-v28
  */
 import "dotenv/config";
 import fs from "node:fs";
