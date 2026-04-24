@@ -2413,14 +2413,7 @@ export async function handleApiRequest(req, options = {}) {
       const conn = await pool.getConnection();
       try {
         await conn.beginTransaction();
-        const [emailDup] = await conn.query(
-          `SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1`,
-          [email],
-        );
-        if (emailDup.length > 0) {
-          await conn.rollback();
-          return json(409, { error: "このメールアドレスは既に登録されています。別のメールアドレスを入力してください。" }, hdrs, skipCors);
-        }
+        // メール重複: 一般登録（/auth/register）は従来どおり 409。管理者追加のみ同じアドレスで複数ユーザーを作れる（v31 で email の UNIQUE 解除要）。
         if (loginName) {
           const loginLc = loginName.toLowerCase();
           const [loginDup] = await conn.query(
@@ -2462,6 +2455,23 @@ export async function handleApiRequest(req, options = {}) {
         return json(201, { ok: true, id: newUserId }, hdrs, skipCors);
       } catch (e) {
         await conn.rollback();
+        const errno = Number(e?.errno);
+        const isDup = e && typeof e === "object" && (e.code === "ER_DUP_ENTRY" || errno === 1062);
+        if (isDup) {
+          const m = String(e?.sqlMessage || e?.message || "");
+          if (/uq_users_email|for key.*email|Duplicate.*email/i.test(m) || m.includes("users.")) {
+            return json(
+              409,
+              {
+                error:
+                  "DB に users.email の一意制約が残っているため、同じメールでは追加できません。RDS に db/migration_v31_drop_users_email_unique.sql を適用するか、npm run db:migrate-v31 を実行してください。",
+                code: "EmailUniqueConstraint",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+        }
         throw e;
       } finally {
         conn.release();

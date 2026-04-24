@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS users (
   last_login_at   DATETIME NULL COMMENT '最終ログイン（認証成功時）',
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_cognito_sub (cognito_sub),
-  UNIQUE KEY uq_users_email (email),
+  KEY idx_users_email (email),
   KEY idx_users_parent_id (parent_id),
   KEY idx_users_stripe_customer_id (stripe_customer_id),
   KEY idx_users_created_at (created_at),
