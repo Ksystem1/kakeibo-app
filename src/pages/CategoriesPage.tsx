@@ -257,6 +257,7 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
         <>
           <CategoryTable
             title="支出"
+            showMedicalColumn
             rows={expenseRows}
             savingId={savingId}
             allowReorder={!mobile}
@@ -267,6 +268,7 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
           />
           <CategoryTable
             title="収入"
+            showMedicalColumn={false}
             rows={incomeRows}
             savingId={savingId}
             allowReorder={!mobile}
@@ -303,6 +305,7 @@ const DND_TYPE = "application/x-kakeibo-category-id";
 
 function CategoryTable({
   title,
+  showMedicalColumn = true,
   rows,
   savingId,
   allowReorder,
@@ -312,6 +315,8 @@ function CategoryTable({
   onReorderError,
 }: {
   title: string;
+  /** 収入カテゴリでは医療費控除の既定列は出さない */
+  showMedicalColumn?: boolean;
   rows: CategoryItem[];
   savingId: number | null;
   allowReorder: boolean;
@@ -448,9 +453,11 @@ function CategoryTable({
                     並び {sortDir === "asc" ? "↑" : "↓"}
                   </button>
                 </th>
-                <th className={catStyles.th} title="医療費控除の既定（取引追加時の初期値）">
-                  医療・既定
-                </th>
+                {showMedicalColumn ? (
+                  <th className={catStyles.th} title="医療費控除の既定（取引追加時の初期値）">
+                    医療・既定
+                  </th>
+                ) : null}
                 <th className={catStyles.th} />
               </tr>
             </thead>
@@ -459,6 +466,7 @@ function CategoryTable({
                 <CategoryRow
                   key={c.id}
                   c={c}
+                  showMedicalColumn={showMedicalColumn}
                   disabled={reordering || savingId === c.id}
                   allowReorder={allowReorder}
                   dragOver={dropTargetId === c.id && draggingId != null && draggingId !== c.id}
@@ -481,6 +489,7 @@ function CategoryTable({
 
 function CategoryRow({
   c,
+  showMedicalColumn = true,
   disabled,
   allowReorder,
   dragOver,
@@ -493,6 +502,7 @@ function CategoryRow({
   onRemove,
 }: {
   c: CategoryItem;
+  showMedicalColumn?: boolean;
   disabled: boolean;
   allowReorder: boolean;
   dragOver: boolean;
@@ -602,41 +612,43 @@ function CategoryRow({
           disabled={disabled}
         />
       </td>
-      <td className={catStyles.categoryMedicalCell}>
-        <div className={catStyles.categoryMedicalRow}>
-          <label className={catStyles.categoryMedicalLabel}>
+      {showMedicalColumn ? (
+        <td className={catStyles.categoryMedicalCell}>
+          <div className={catStyles.categoryMedicalRow}>
+            <label className={catStyles.categoryMedicalLabel}>
+              <input
+                type="checkbox"
+                checked={isMedicalDefault}
+                onChange={(e) => setIsMedicalDefault(e.target.checked)}
+                disabled={disabled || kind !== "expense"}
+              />
+              対象
+            </label>
+            <select
+              className={`${styles.monthInput} ${catStyles.categoryMedicalType}`}
+              value={defaultMedicalType}
+              onChange={(e) => setDefaultMedicalType((e.target.value as MedicalType | "") ?? "")}
+              disabled={disabled || !isMedicalDefault || kind !== "expense"}
+              aria-label="医療費3区分"
+            >
+              <option value="">3区分</option>
+              <option value="treatment">診療・治療</option>
+              <option value="medicine">医薬品</option>
+              <option value="other">その他</option>
+            </select>
             <input
-              type="checkbox"
-              checked={isMedicalDefault}
-              onChange={(e) => setIsMedicalDefault(e.target.checked)}
-              disabled={disabled || kind !== "expense"}
+              type="text"
+              value={defaultPatientName}
+              onChange={(e) => setDefaultPatientName(e.target.value)}
+              maxLength={120}
+              placeholder="対象者名"
+              className={`${styles.monthInput} ${catStyles.categoryMedicalPatient}`}
+              disabled={disabled || !isMedicalDefault || kind !== "expense"}
+              aria-label="医療費の対象者名"
             />
-            対象
-          </label>
-          <select
-            className={`${styles.monthInput} ${catStyles.categoryMedicalType}`}
-            value={defaultMedicalType}
-            onChange={(e) => setDefaultMedicalType((e.target.value as MedicalType | "") ?? "")}
-            disabled={disabled || !isMedicalDefault || kind !== "expense"}
-            aria-label="医療費3区分"
-          >
-            <option value="">3区分</option>
-            <option value="treatment">診療・治療</option>
-            <option value="medicine">医薬品</option>
-            <option value="other">その他</option>
-          </select>
-          <input
-            type="text"
-            value={defaultPatientName}
-            onChange={(e) => setDefaultPatientName(e.target.value)}
-            maxLength={120}
-            placeholder="対象者名"
-            className={`${styles.monthInput} ${catStyles.categoryMedicalPatient}`}
-            disabled={disabled || !isMedicalDefault || kind !== "expense"}
-            aria-label="医療費の対象者名"
-          />
-        </div>
-      </td>
+          </div>
+        </td>
+      ) : null}
       <td style={{ padding: "0.4rem 0.35rem", whiteSpace: "nowrap", verticalAlign: "middle" }}>
         <button
           type="button"
