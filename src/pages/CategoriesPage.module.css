@@ -54,6 +54,52 @@
   padding: 0.45rem 0.35rem;
 }
 
+/** カテゴリ表: 種別・並びを内容幅に近づけて圧縮 */
+.thKind,
+.thOrder {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.thOrder {
+  min-width: 0;
+}
+
+.categoryColKind,
+.categoryColOrder {
+  width: 1%;
+  max-width: 5.5rem;
+  box-sizing: border-box;
+  vertical-align: middle;
+  padding: 0.35rem 0.28rem !important;
+}
+
+.categoryColOrder {
+  max-width: 4.6rem;
+}
+
+.categoryInputKind {
+  width: 100%;
+  max-width: 5.25rem;
+  min-width: 4.25rem;
+  box-sizing: border-box;
+  font-size: 0.9rem;
+  padding: 0.32rem 0.4rem 0.32rem 0.4rem;
+  line-height: 1.2;
+}
+
+.categoryInputOrder {
+  width: 3.75rem;
+  min-width: 2.9rem;
+  max-width: 4.5rem;
+  box-sizing: border-box;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+  padding: 0.32rem 0.35rem;
+  line-height: 1.2;
+}
+
 .hint {
   font-size: 0.85rem;
   color: var(--text-muted, #94a3b8);

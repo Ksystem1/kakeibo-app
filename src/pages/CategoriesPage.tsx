@@ -441,9 +441,9 @@ function CategoryTable({
                   <th className={catStyles.th} style={{ width: "2.5rem" }} aria-label="並べ替え" />
                 ) : null}
                 <th className={catStyles.th}>名前</th>
-                <th className={catStyles.th}>種別</th>
+                <th className={`${catStyles.th} ${catStyles.thKind}`}>種別</th>
                 <th className={catStyles.th}>色</th>
-                <th className={catStyles.th}>
+                <th className={`${catStyles.th} ${catStyles.thOrder}`}>
                   <button
                     type="button"
                     className={catStyles.sortHeader}
@@ -580,13 +580,13 @@ function CategoryRow({
           disabled={disabled}
         />
       </td>
-      <td style={{ padding: "0.4rem 0.35rem", verticalAlign: "middle" }}>
+      <td className={catStyles.categoryColKind}>
         <select
           value={kind}
           onChange={(e) =>
             setKind(e.target.value === "income" ? "income" : "expense")
           }
-          className={styles.monthInput}
+          className={`${styles.monthInput} ${catStyles.categoryInputKind}`}
           disabled={disabled}
         >
           <option value="expense">支出</option>
@@ -602,13 +602,12 @@ function CategoryRow({
           style={{ width: 40, height: 32, padding: 0, border: "none" }}
         />
       </td>
-      <td style={{ padding: "0.4rem 0.35rem", verticalAlign: "middle" }}>
+      <td className={catStyles.categoryColOrder}>
         <input
           type="number"
           value={sortOrder}
           onChange={(e) => setSortOrder(e.target.value)}
-          className={styles.monthInput}
-          style={{ width: 72 }}
+          className={`${styles.monthInput} ${catStyles.categoryInputOrder}`}
           disabled={disabled}
         />
       </td>
