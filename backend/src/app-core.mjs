@@ -64,7 +64,11 @@ import {
 } from "./account-delete.mjs";
 import Stripe from "stripe";
 import { requireStripeSecretKey } from "./stripe-config.mjs";
-import { compareStripeSubscriptionsWithDb } from "./stripe-subscription-reconcile-core.mjs";
+import {
+  applyOneFamilyMismatch,
+  applyOneUserMismatch,
+  compareStripeSubscriptionsWithDb,
+} from "./stripe-subscription-reconcile-core.mjs";
 
 const logger = createLogger("api");
 
@@ -1230,6 +1234,20 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
          LIMIT 1000`;
 
 /**
+ * 管理画面ユーザー一覧の「家族ID」列: 少なくとも1人の users.default_family_id がその families.id と一致する。
+ * サポートチャット管理の家族一覧はこの条件で絞る（families だけ残っている孤立行を除外）
+ */
+async function familyIsInAdminUserDirectory(pool, familyId) {
+  const fid = Number(familyId);
+  if (!Number.isFinite(fid) || fid <= 0) return false;
+  const [[row]] = await pool.query(
+    `SELECT 1 AS ok FROM users WHERE default_family_id = ? LIMIT 1`,
+    [fid],
+  );
+  return Boolean(row);
+}
+
+/**
  * 管理者一覧: subscription_status 列の有無はプローブで決め、列があるときは常に 2 クエリで取得する。
  * （1 本の複合 SELECT だけが環境依存で失敗し meta が誤って false になるのを防ぐ）
  * @returns {Promise<{ rows: unknown[]; subscriptionStatusWritable: boolean }>}
@@ -1950,6 +1968,7 @@ export async function handleApiRequest(req, options = {}) {
             adminSupportChatFamilies: "/admin/support/chat/families",
             adminSupportChatMessages: "/admin/support/chat/messages",
             adminSubscriptionReconcile: "/admin/subscription-reconcile",
+            adminSubscriptionReconcileApply: "/admin/subscription-reconcile/apply",
             paypayImportPreview: "/import/paypay-csv/preview",
             paypayImportCommit: "/import/paypay-csv/commit",
           },
@@ -2364,11 +2383,102 @@ export async function handleApiRequest(req, options = {}) {
         return json(200, result, hdrs, skipCors);
       } catch (e) {
         logError("admin.subscription_reconcile", e, { method, path });
+        const raw = String(e?.message || e);
+        const isPremiumCol =
+          /Unknown column ['`]?u\.?is_premium|is_premium['`]?\s+in\s+['`]?field list/i.test(raw) ||
+          raw.includes("ER_BAD_FIELD_ERROR");
+        const messageJa = isPremiumCol
+          ? "users テーブルに is_premium 列がありません。本番の RDS へ db/migration_v9_users_is_premium.sql（v9）を適用してください。適用後、照合は再実行で正常になります。"
+          : `Stripe 照合に失敗しました: ${raw.length > 300 ? `${raw.slice(0, 300)}…` : raw}`;
         return json(
           500,
           {
             error: "SubscriptionReconcileFailed",
-            detail: String(e?.message || e),
+            detail: raw,
+            messageJa,
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+    }
+
+    if (routeKey(method, path) === "POST /admin/subscription-reconcile/apply") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const b = JSON.parse(req.body || "{}");
+      const kind = String(b.kind ?? "")
+        .trim()
+        .toLowerCase();
+      try {
+        const stripe = new Stripe(requireStripeSecretKey());
+        if (kind === "family") {
+          const familyId = Number(b.familyId);
+          if (!Number.isFinite(familyId) || familyId <= 0) {
+            return json(
+              400,
+              {
+                error: "InvalidRequest",
+                messageJa: "正しい familyId（数値）を指定してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          const r = await applyOneFamilyMismatch(stripe, pool, familyId);
+          if (!r.ok) {
+            return json(
+              400,
+              { error: r.error, messageJa: r.messageJa },
+              hdrs,
+              skipCors,
+            );
+          }
+          return json(200, { ok: true }, hdrs, skipCors);
+        }
+        if (kind === "user") {
+          const uId = Number(b.userId);
+          const fId = Number(b.familyId);
+          if (!Number.isFinite(uId) || uId <= 0 || !Number.isFinite(fId) || fId <= 0) {
+            return json(
+              400,
+              {
+                error: "InvalidRequest",
+                messageJa: "userId と familyId（ともに正の数）を指定してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          const r = await applyOneUserMismatch(stripe, pool, uId, fId);
+          if (!r.ok) {
+            return json(
+              400,
+              { error: r.error, messageJa: r.messageJa },
+              hdrs,
+              skipCors,
+            );
+          }
+          return json(200, { ok: true }, hdrs, skipCors);
+        }
+        return json(
+          400,
+          {
+            error: "InvalidRequest",
+            messageJa: "kind には family（家族1件のDB修正）または user（プレミアム不整合1件の修正）を指定してください。",
+          },
+          hdrs,
+          skipCors,
+        );
+      } catch (e) {
+        logError("admin.subscription_reconcile_apply", e, { method, path, kind });
+        const raw = String(e?.message || e);
+        return json(
+          500,
+          {
+            error: "SubscriptionReconcileApplyFailed",
+            detail: raw,
+            messageJa: `修正の適用に失敗しました: ${raw.length > 200 ? `${raw.slice(0, 200)}…` : raw}`,
           },
           hdrs,
           skipCors,
@@ -3311,6 +3421,18 @@ export async function handleApiRequest(req, options = {}) {
       if (!fam) {
         return json(404, { error: "家族が見つかりません" }, hdrs, skipCors);
       }
+      if (!(await familyIsInAdminUserDirectory(pool, targetFamilyId))) {
+        return json(
+          404,
+          {
+            error: "FamilyNotInAdminList",
+            messageJa:
+              "この家族は管理画面のユーザー一覧にいない（どのユーザーの既定家族IDでもない）ため、サポートチャット管理の対象外です。",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
       try {
         const [[mx]] = await pool.query(
           `SELECT COALESCE(MAX(id), 0) AS mx FROM chat_messages WHERE family_id = ? AND chat_scope = 'support' AND deleted_at IS NULL`,
@@ -3556,6 +3678,11 @@ export async function handleApiRequest(req, options = {}) {
                   lm.is_important AS last_is_important,
                   rs.last_read_message_id AS admin_last_read_message_id
            FROM families f
+           INNER JOIN (
+             SELECT DISTINCT default_family_id AS id
+             FROM users
+             WHERE default_family_id IS NOT NULL
+           ) admin_listed ON admin_listed.id = f.id
            LEFT JOIN (
              SELECT m.*
              FROM chat_messages m
@@ -3651,6 +3778,18 @@ export async function handleApiRequest(req, options = {}) {
       if (!fam) {
         return json(404, { error: "家族が見つかりません" }, hdrs, skipCors);
       }
+      if (!(await familyIsInAdminUserDirectory(pool, targetFamilyId))) {
+        return json(
+          404,
+          {
+            error: "FamilyNotInAdminList",
+            messageJa:
+              "この家族は管理画面のユーザー一覧にいない（どのユーザーの既定家族IDでもない）ため、サポートチャット管理の対象外です。",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
       const limit = clampSupportChatLimit(q.limit, 50);
       const beforeRaw = q.before ?? q.before_id;
       const beforeId =
@@ -3726,6 +3865,18 @@ export async function handleApiRequest(req, options = {}) {
       if (!fam) {
         return json(404, { error: "家族が見つかりません" }, hdrs, skipCors);
       }
+      if (!(await familyIsInAdminUserDirectory(pool, targetFamilyId))) {
+        return json(
+          404,
+          {
+            error: "FamilyNotInAdminList",
+            messageJa:
+              "この家族は管理画面のユーザー一覧にいない（どのユーザーの既定家族IDでもない）ため、サポートチャット管理の対象外です。",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
       const normBody = normalizeSupportChatBody(b.body);
       if (normBody.error) {
         return json(400, { error: normBody.error }, hdrs, skipCors);
@@ -3790,11 +3941,23 @@ export async function handleApiRequest(req, options = {}) {
       }
       try {
         const [[exists]] = await pool.query(
-          `SELECT is_staff FROM chat_messages WHERE id = ? AND chat_scope = 'support' AND deleted_at IS NULL LIMIT 1`,
+          `SELECT is_staff, family_id FROM chat_messages WHERE id = ? AND chat_scope = 'support' AND deleted_at IS NULL LIMIT 1`,
           [msgId],
         );
         if (!exists) {
           return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (!(await familyIsInAdminUserDirectory(pool, exists.family_id))) {
+          return json(
+            404,
+            {
+              error: "FamilyNotInAdminList",
+              messageJa:
+                "このメッセージの家族は管理画面ユーザー一覧の対象外のため、編集できません。",
+            },
+            hdrs,
+            skipCors,
+          );
         }
         if (hasBody && Number(exists.is_staff) !== 1) {
           return json(
@@ -3845,6 +4008,25 @@ export async function handleApiRequest(req, options = {}) {
         return json(400, { error: "メッセージIDが不正です" }, hdrs, skipCors);
       }
       try {
+        const [[row]] = await pool.query(
+          `SELECT family_id FROM chat_messages WHERE id = ? AND chat_scope = 'support' AND deleted_at IS NULL LIMIT 1`,
+          [msgId],
+        );
+        if (!row) {
+          return json(404, { error: "メッセージが見つかりません" }, hdrs, skipCors);
+        }
+        if (!(await familyIsInAdminUserDirectory(pool, row.family_id))) {
+          return json(
+            404,
+            {
+              error: "FamilyNotInAdminList",
+              messageJa:
+                "このメッセージの家族は管理画面ユーザー一覧の対象外のため、削除できません。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
         const [upd] = await pool.query(
           `UPDATE chat_messages SET deleted_at = NOW() WHERE id = ? AND chat_scope = 'support' AND deleted_at IS NULL`,
           [msgId],
