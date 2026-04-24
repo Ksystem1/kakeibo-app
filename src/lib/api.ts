@@ -1265,7 +1265,9 @@ export async function getFamilyMembers() {
     cache: "no-store",
   });
   return parse<{
-    familyId: number;
+    familyId?: number;
+    /** 家族名（`families.name`）。未設定の場合は空文字 */
+    familyName?: string;
     items: Array<{
       id: number;
       email: string;

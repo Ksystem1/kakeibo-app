@@ -4,7 +4,7 @@ import {
 } from "../context/SettingsContext";
 import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { startRegistration } from "@simplewebauthn/browser";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
 import {
@@ -386,6 +386,16 @@ export function SettingsPage() {
   return (
     <div className={styles.wrap}>
       <h1 className={styles.title}>設定</h1>
+
+      <section className={styles.settingsPanel} style={{ marginBottom: "1rem", border: "2px solid #0ea5e9" }}>
+        <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>医療費控除</h2>
+        <p className={styles.sub} style={{ marginTop: 0 }}>
+          年間の医療費控除データを集計し、国税庁フォーム向けCSV（氏名・支払先・区分・金額）で書き出せます。
+        </p>
+        <Link to="/medical-deduction" className={`${styles.btn} ${styles.btnPrimary}`}>
+          医療費集計画面を開く
+        </Link>
+      </section>
       {token && effectiveUser && (!passkeyStatus || passkeyStatus.authMethod !== "passkey") ? (
         <div className={styles.settingsPanel} style={{ maxWidth: 820, borderColor: "var(--accent)" }}>
           <h2 className={styles.sectionTitle}>パスキー移行（おすすめ）</h2>

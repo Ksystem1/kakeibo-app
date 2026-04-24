@@ -1875,14 +1875,19 @@ export async function tryAuthRoutes(req, ctx) {
       const [members] = await pool.query(
         `SELECT u.id, u.email, u.display_name, fm.role,
                 COALESCE(u.family_role, 'MEMBER') AS family_role,
-                u.kid_theme AS kid_theme
+                u.kid_theme AS kid_theme,
+                f.name AS family_name
          FROM family_members fm
          JOIN users u ON u.id = fm.user_id
+         JOIN families f ON f.id = fm.family_id
          WHERE fm.family_id = ?
          ORDER BY fm.id`,
         [fid],
       );
-      return json(200, { familyId: fid, items: members }, hdrs, skipCors);
+      const familyName = Array.isArray(members) && members.length > 0
+        ? String(members[0].family_name ?? "").trim()
+        : "";
+      return json(200, { familyId: fid, familyName, items: members }, hdrs, skipCors);
     }
 
     if (key === "GET /families/children") {

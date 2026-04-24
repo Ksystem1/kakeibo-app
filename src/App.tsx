@@ -19,6 +19,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { DemoDashboardPage } from "./pages/DemoDashboardPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ChildProfileSelectPage } from "./pages/ChildProfileSelectPage";
+import { MedicalDeductionPage } from "./pages/MedicalDeductionPage";
 
 export default function App() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/members" element={<Navigate to="/settings" replace />} />
           <Route path="/categories" element={<Navigate to="/settings" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/medical-deduction" element={<MedicalDeductionPage />} />
           <Route path="/support" element={<SupportChatPage />} />
           <Route path="/child-select" element={<ChildProfileSelectPage />} />
           <Route element={<AdminRoute />}>
