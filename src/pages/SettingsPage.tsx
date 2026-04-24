@@ -5,7 +5,6 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { startRegistration } from "@simplewebauthn/browser";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
 import {
   DEFAULT_NAV_SKIN_ID,
@@ -18,20 +17,15 @@ import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
   getPasskeyStatus,
-  getPasskeyUpgradeOptions,
   getAuthMe,
   getBillingSubscriptionStatus,
   getBillingStripeStatus,
   isStripeCheckoutUiReady,
   normalizeAuthContextUser,
-  toFriendlyPasskeyErrorMessage,
-  anonymizeEmailCredential,
-  regenerateRecoveryCode,
   postBillingCheckoutSession,
   postBillingPortalSession,
   postDeleteAccount,
   reclassifyUncategorizedReceipts,
-  verifyPasskeyUpgrade,
 } from "../lib/api";
 import { isSubscriptionServiceSubscribedClient } from "../lib/subscriptionAccess";
 import {
@@ -142,9 +136,6 @@ export function SettingsPage() {
     hasPasskey: boolean;
     canAnonymize: boolean;
   } | null>(null);
-  const [passkeyBusy, setPasskeyBusy] = useState(false);
-  const [passkeyMessage, setPasskeyMessage] = useState<string | null>(null);
-  const [recoveryCodePreview, setRecoveryCodePreview] = useState<string | null>(null);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteAck, setDeleteAck] = useState("");
@@ -403,105 +394,6 @@ export function SettingsPage() {
           </Link>
         </section>
       </FeatureGate>
-      {token && effectiveUser && (!passkeyStatus || passkeyStatus.authMethod !== "passkey") ? (
-        <div className={styles.settingsPanel} style={{ maxWidth: 820, borderColor: "var(--accent)" }}>
-          <h2 className={styles.sectionTitle}>パスキー移行（おすすめ）</h2>
-          <p className={styles.reclassifyHint}>
-            パスワード不要でログインできるよう、このデバイスを登録できます。
-          </p>
-          <div className={styles.modeRow} style={{ marginTop: "0.45rem", flexWrap: "wrap", gap: "0.45rem" }}>
-            <button
-              type="button"
-              className={`${styles.btn} ${styles.btnPrimary}`}
-              disabled={passkeyBusy}
-              onClick={async () => {
-                setPasskeyMessage(null);
-                setPasskeyBusy(true);
-                try {
-                  const opt = await getPasskeyUpgradeOptions();
-                  const credential = await startRegistration({
-                    optionsJSON: opt.options as Parameters<typeof startRegistration>[0]["optionsJSON"],
-                  });
-                  await verifyPasskeyUpgrade({
-                    flow_token: opt.flowToken,
-                    credential,
-                  });
-                  const me = await getAuthMe();
-                  const normalized = me?.user ? normalizeAuthContextUser(me.user) : null;
-                  if (normalized) setUser(normalized);
-                  const status = await getPasskeyStatus();
-                  setPasskeyStatus(status);
-                  setRecoveryCodePreview(null);
-                  setPasskeyMessage("このデバイスをパスキー登録しました。次回から生体認証でログインできます。");
-                } catch (e) {
-                  setPasskeyMessage(toFriendlyPasskeyErrorMessage(e));
-                } finally {
-                  setPasskeyBusy(false);
-                }
-              }}
-            >
-              {passkeyBusy ? "登録中…" : "このデバイスを登録する"}
-            </button>
-            {passkeyStatus?.canAnonymize ? (
-              <button
-                type="button"
-                className={styles.btn}
-                disabled={passkeyBusy}
-                onClick={async () => {
-                  if (!window.confirm("メール情報を削除して匿名化します。実行しますか？")) return;
-                  setPasskeyMessage(null);
-                  setPasskeyBusy(true);
-                  try {
-                    await anonymizeEmailCredential();
-                    const me = await getAuthMe();
-                    const normalized = me?.user ? normalizeAuthContextUser(me.user) : null;
-                    if (normalized) setUser(normalized);
-                    const status = await getPasskeyStatus();
-                    setPasskeyStatus(status);
-                    setRecoveryCodePreview(null);
-                    setPasskeyMessage("メール情報を削除し、パスキー専用アカウントへ移行しました。");
-                  } catch (e) {
-                    setPasskeyMessage(e instanceof Error ? e.message : String(e));
-                  } finally {
-                    setPasskeyBusy(false);
-                  }
-                }}
-              >
-                メール情報を削除して匿名化（任意）
-              </button>
-            ) : null}
-            {passkeyStatus?.hasPasskey ? (
-              <button
-                type="button"
-                className={styles.btn}
-                disabled={passkeyBusy}
-                onClick={async () => {
-                  setPasskeyMessage(null);
-                  setPasskeyBusy(true);
-                  try {
-                    const out = await regenerateRecoveryCode();
-                    setRecoveryCodePreview(out.recoveryCode);
-                    setPasskeyMessage("バックアップコードを再発行しました。必ず保存してください。");
-                  } catch (e) {
-                    setPasskeyMessage(e instanceof Error ? e.message : String(e));
-                  } finally {
-                    setPasskeyBusy(false);
-                  }
-                }}
-              >
-                バックアップコードを再発行
-              </button>
-            ) : null}
-          </div>
-          {passkeyStatus ? (
-            <p className={styles.infoText}>登録済みパスキー: {passkeyStatus.passkeyCount} 件</p>
-          ) : null}
-          {recoveryCodePreview ? (
-            <p className={styles.infoText}>バックアップコード: {recoveryCodePreview}</p>
-          ) : null}
-          {passkeyMessage ? <p className={styles.infoText}>{passkeyMessage}</p> : null}
-        </div>
-      ) : null}
       <div className={styles.settingsPanel} style={{ marginTop: "0.75rem", maxWidth: 980 }}>
         <h2 className={styles.sectionTitle}>家族・利用ユーザー</h2>
         <p className={styles.reclassifyHint}>
