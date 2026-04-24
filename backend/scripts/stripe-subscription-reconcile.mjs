@@ -5,12 +5,14 @@
  *
  * 週1回等の想定例（cron / GitHub Actions）:
  *   cd backend && node scripts/stripe-subscription-reconcile.mjs
- *   # アラートのみ: 上記、exit 1 なら Slack/メールへ
+ * 不整合時: 管理者（users.is_admin=1 の実メール、+ ADMIN_NOTIFY_EXTRA_EMAILS）へ SES で通知（SES_SOURCE_EMAIL 要）
+ *   STRIPE_RECONCILE_EMAIL=0 でメール抑止
  *
- * 環境: STRIPE_SECRET_KEY, RDS_*
+ * 環境: STRIPE_SECRET_KEY, RDS_*, SES_SOURCE_EMAIL, AWS 認証
  */
 import "dotenv/config";
 import Stripe from "stripe";
+import { sendStripeReconcileAlertEmailIfNeeded } from "../src/admin-email-notify.mjs";
 import { getPool } from "../src/db.mjs";
 import { requireStripeSecretKey } from "../src/stripe-config.mjs";
 import {
@@ -247,6 +249,25 @@ async function run(stripe, pool) {
       );
     }
     console.log(JSON.stringify({ event: "stripe.reconcile.fix_done", at: new Date().toISOString() }, null, 2));
+  }
+
+  if (hasMismatches) {
+    const reportForEmail = {
+      ...out,
+      fixAttempted: Boolean(fix),
+    };
+    const emailResult = await sendStripeReconcileAlertEmailIfNeeded(pool, {
+      hasMismatches: true,
+      reportJson: reportForEmail,
+      fix,
+    });
+    console.log(
+      JSON.stringify(
+        { event: "stripe.reconcile.admin_email", at: new Date().toISOString(), emailResult },
+        null,
+        2,
+      ),
+    );
   }
 
   return { hasMismatches };
