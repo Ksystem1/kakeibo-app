@@ -1339,6 +1339,10 @@ export async function createChildSession(childId: number) {
   }>(res);
 }
 
+/**
+ * レガシー: 相手のメールを紐づけた招待。UI は `issueFamilyInviteLink`（トークンのみ）を推奨。
+ * トークンなし `POST /families/invite`（email 空）と同様の URL-only 行にも使える（バックエンド任せ）。
+ */
 export async function inviteFamilyMember(email: string) {
   const res = await apiFetch(`${BASE}/families/invite`, {
     method: "POST",
@@ -1355,6 +1359,10 @@ export async function inviteFamilyMember(email: string) {
   }>(res);
 }
 
+/**
+ * 相手のメール不要。発行URL → 新規登録者が自己メール+パスワードで `POST /auth/register` し
+ * `family_invites.email` が空の行は登録メール照合をスキップ（v29 NOT NULL 後も整合）。
+ */
 export async function issueFamilyInviteLink() {
   const res = await apiFetch(`${BASE}/families/invite-link`, {
     method: "POST",

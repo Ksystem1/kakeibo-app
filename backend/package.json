@@ -40,6 +40,7 @@
     "start": "node src/index.js",
     "verify:admin-meta": "node scripts/verify-admin-subscription-meta.mjs",
     "print-rds-target": "node scripts/print-rds-target.mjs",
+    "verify:auth-login": "node scripts/verify-auth-login-simulation.mjs",
     "stripe:listen": "stripe listen --forward-to http://127.0.0.1:3456/api/webhooks/stripe"
   },
   "dependencies": {

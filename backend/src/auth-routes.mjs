@@ -214,6 +214,10 @@ async function shouldGrantMonitorOnRegister(conn) {
   }
 }
 
+/**
+ * トークンのみ招待。受信者は /register?token= で自己 email+password を送る（POST /auth/register）。
+ * family_invites.email 空は登録メール照合スキップ。v29 以降 users.email/password_hash は NOT NULL。
+ */
 function buildInviteUrl(inviteRawToken) {
   const appOrigin = String(
     process.env.PUBLIC_APP_ORIGIN || process.env.APP_ORIGIN || "https://ksystemapp.com",

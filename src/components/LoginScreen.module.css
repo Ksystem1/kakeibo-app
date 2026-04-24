@@ -338,6 +338,72 @@
   line-height: 1.55;
 }
 
+/* 通常ログインを強調（パスキー等は loginOptional へ） */
+.loginPrimary {
+  padding: 1.1rem 1.05rem 1.2rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in oklab, var(--accent) 32%, var(--border) 68%);
+  background: color-mix(in oklab, var(--bg-elevated) 88%, var(--accent) 12%);
+  box-shadow: 0 2px 18px rgba(8, 32, 26, 0.08);
+}
+
+.loginPrimaryKicker {
+  margin: 0 0 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.loginOptional {
+  margin-top: 1.1rem;
+  padding: 0.85rem 0.8rem 1rem;
+  border-radius: 12px;
+  border: 1px dashed color-mix(in oklab, var(--border) 80%, var(--text-muted) 20%);
+  background: color-mix(in oklab, var(--bg-card) 97%, var(--text-muted) 3%);
+}
+
+.loginOptionalTitle {
+  margin: 0 0 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.loginOptionalDesc {
+  margin: 0 0 0.7rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  opacity: 0.95;
+}
+
+.passkeyBtn {
+  width: 100%;
+  margin-top: 0.2rem;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.passkeyBtn:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border) 60%);
+  color: var(--text);
+}
+
+.passkeyBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .footer {
   margin-top: 1.25rem;
   text-align: center;

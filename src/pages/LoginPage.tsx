@@ -80,8 +80,8 @@ export function LoginPage() {
       const msg = toFriendlyPasskeyErrorMessage(e);
       setError(
         msg
-          ? `${msg} お手数ですが、下の「メールまたはログインID」と「パスワード」でログインしてください。`
-          : "パスキーでログインできませんでした。下のメール（またはログインID）とパスワードでお試しください。",
+          ? `${msg} 上の「メール／ログインID」＋「パスワード」でログインしてください。`
+          : "パスキーでログインできませんでした。上のメール（またはログインID）とパスワードでお試しください。",
       );
     } finally {
       setPasskeySubmitting(false);
@@ -121,86 +121,108 @@ export function LoginPage() {
         <div className={styles.card}>
           <header className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>ログイン</h2>
-            <p className={styles.cardSub}>登録したメールまたは子ども用のログインIDでサインイン</p>
+            <p className={styles.cardSub}>普段はこの入力だけでサインインできます</p>
           </header>
-          <form className={styles.form} onSubmit={handleSubmit} noValidate>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="login-id">
-                メールまたはログインID
-              </label>
-              <input
-                id="login-id"
-                className={styles.input}
-                type="text"
-                autoComplete="username"
-                placeholder="you@example.com"
-                value={login}
-                onChange={(ev) => setLogin(ev.target.value)}
-                disabled={submitting}
-              />
-            </div>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="login-password">
-                パスワード
-              </label>
-              <input
-                id="login-password"
-                className={styles.input}
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(ev) => setPassword(ev.target.value)}
-                disabled={submitting}
-              />
-            </div>
-            <div className={styles.row}>
-              <label className={styles.checkbox}>
+          {error ? (
+            <p className={styles.error} role="alert" style={{ margin: "0 0 0.9rem" }}>
+              {error}
+            </p>
+          ) : null}
+          <div className={styles.loginPrimary}>
+            <p className={styles.loginPrimaryKicker}>メールアドレスとパスワード</p>
+            <form className={styles.form} onSubmit={handleSubmit} noValidate>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="login-id">
+                  メールアドレスまたはログインID
+                </label>
                 <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(ev) => setRemember(ev.target.checked)}
+                  id="login-id"
+                  className={styles.input}
+                  type="text"
+                  autoComplete="username"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  placeholder="例: あなた@example.com"
+                  value={login}
+                  onChange={(ev) => {
+                    setLogin(ev.target.value);
+                    if (error) setError(null);
+                  }}
                   disabled={submitting}
                 />
-                ログイン状態を保持する
-              </label>
-              <Link to="/forgot-password" className={styles.link}>
-                パスワードをお忘れですか？
-              </Link>
-            </div>
-            {error ? (
-              <p className={styles.error} role="alert">
-                {error}
-              </p>
-            ) : null}
-            <button type="submit" className={styles.submit} disabled={submitting || passkeySubmitting}>
-              {submitting ? "サインイン中…" : "🔐 ログイン"}
-            </button>
-            <p className={styles.cardSub} style={{ margin: "0.75rem 0 0", fontSize: "0.88rem", opacity: 0.9 }}>
-              次の方法（任意）
+              </div>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor="login-password">
+                  パスワード
+                </label>
+                <input
+                  id="login-password"
+                  className={styles.input}
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(ev) => {
+                    setPassword(ev.target.value);
+                    if (error) setError(null);
+                  }}
+                  disabled={submitting}
+                />
+              </div>
+              <div className={styles.row}>
+                <label className={styles.checkbox}>
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(ev) => setRemember(ev.target.checked)}
+                    disabled={submitting}
+                  />
+                  ログイン状態を保持する
+                </label>
+                <Link to="/forgot-password" className={styles.link}>
+                  パスワードをお忘れですか？
+                </Link>
+              </div>
+              <button
+                type="submit"
+                className={styles.submit}
+                disabled={submitting || passkeySubmitting}
+                style={{ marginTop: "0.15rem" }}
+              >
+                {submitting ? "サインイン中…" : "🔐 ログイン"}
+              </button>
+            </form>
+          </div>
+
+          <div className={styles.loginOptional} aria-label="任意のサインイン補助">
+            <p className={styles.loginOptionalTitle}>おまけ（必須ではありません）</p>
+            <p className={styles.loginOptionalDesc}>
+              普段のログインは上の枠だけで十分です。お子さまが共有の端末で触る場合も、まず上をご利用ください。
             </p>
             <button
               type="button"
-              className={styles.btn}
+              className={styles.passkeyBtn}
               disabled={passkeySubmitting || submitting}
               onClick={() => {
                 void startPasskeyLogin();
               }}
             >
-              {passkeySubmitting ? "パスキー認証中…" : "パスキーでログイン"}
+              {passkeySubmitting ? "パスキー認証中…" : "パスキーでログイン（オプション）"}
             </button>
-            <p className={styles.cardSub} style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", opacity: 0.85 }}>
-              先に設定でパスキーを登録した方のみ。うまくいかない場合は上のメール＋パスワードをご利用ください。
+            <p className={styles.loginOptionalDesc} style={{ marginTop: "0.5rem", marginBottom: 0, fontSize: "0.76rem" }}>
+              あらかじめ「設定」でパスキーを登録した方だけが使えます。うまくいかない場合は上の欄に戻ります。
             </p>
-            <div className={styles.field} style={{ marginTop: "0.9rem" }}>
+            <div className={styles.field} style={{ marginTop: "0.85rem" }}>
               <label className={styles.label} htmlFor="recovery-code">
-                リカバリーコード（デバイス紛失時）
+                リカバリーコード
               </label>
               <div className={styles.row}>
                 <input
                   id="recovery-code"
                   className={styles.input}
                   type="text"
-                  placeholder="XXXX-XXXX-XXXX-XXXX"
+                  autoComplete="off"
+                  placeholder="端末紛失時"
                   value={recoveryCode}
                   onChange={(ev) => setRecoveryCode(ev.target.value)}
                   disabled={submitting || passkeySubmitting}
@@ -223,15 +245,15 @@ export function LoginPage() {
                     }
                   }}
                 >
-                  コードでログイン
+                  コードで入る
                 </button>
               </div>
             </div>
-          </form>
+          </div>
           <p className={styles.footer}>
             はじめての方は{" "}
             <Link to="/register" className={styles.link}>
-              新規登録（メール＋パスワード）
+              新規登録
             </Link>
           </p>
           <aside className={styles.qrUnderFooter} aria-label="スマートフォンアクセス">

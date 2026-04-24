@@ -58,6 +58,11 @@ app_env_vars = {
   TEXTRACT_SEND_RETRIES       = "2"
   TEXTRACT_CONNECT_TIMEOUT_MS = "5000"
   TEXTRACT_SOCKET_TIMEOUT_MS  = "22000"
+  # WebAuthn / 招待URL（本番）— 未設定でもコード既定で ksystemapp だが、ECS 上で明示
+  WEBAUTHN_ORIGIN           = "https://ksystemapp.com"
+  WEBAUTHN_RP_ID            = "ksystemapp.com"
+  WEBAUTHN_ADDITIONAL_ORIGINS = "https://www.ksystemapp.com"
+  PUBLIC_APP_ORIGIN         = "https://ksystemapp.com"
 }
 
 # Stripe（本番）:
