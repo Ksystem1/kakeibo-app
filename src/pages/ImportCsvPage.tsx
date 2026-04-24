@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { importCsvText } from "../lib/api";
 import styles from "../components/KakeiboDashboard.module.css";
+import importStyles from "./ImportCsvPage.module.css";
 
 /**
  * 銀行・カード向けのレガシー形式 CSV（手書き行）取込。
@@ -67,21 +68,11 @@ export function ImportCsvPage() {
       </p>
       <form onSubmit={onSubmit}>
         <textarea
+          className={importStyles.textarea}
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={14}
           placeholder="食費,2026-03-01,1200,イオン"
-          style={{
-            width: "100%",
-            fontFamily: "monospace",
-            fontSize: "0.85rem",
-            padding: "0.75rem",
-            borderRadius: 10,
-            border: "1px solid var(--border)",
-            background: "rgba(0,0,0,0.25)",
-            color: "var(--text)",
-            marginBottom: "0.75rem",
-          }}
         />
         {err ? (
           <p className={styles.err} role="alert">
