@@ -82,12 +82,24 @@ export function SettingsPage() {
     const h = location.hash.startsWith("#") ? location.hash.slice(1) : location.hash;
     if (location.pathname !== "/settings") return;
     if (h !== "pwa-install-help" && h !== "fixed-cost-settings") return;
-    requestAnimationFrame(() => {
-      document.getElementById(h)?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
+
+    const tryScroll = () => {
+      const el = document.getElementById(h);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        return true;
+      }
+      return false;
+    };
+
+    const raf = requestAnimationFrame(tryScroll);
+    const t0 = window.setTimeout(tryScroll, 0);
+    const t1 = window.setTimeout(tryScroll, 100);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(t0);
+      window.clearTimeout(t1);
+    };
   }, [location.hash, location.pathname]);
 
   const { token, user: authUser, setUser, logout } = useAuth();
@@ -832,63 +844,6 @@ export function SettingsPage() {
       </div>
 
       <div
-        id="pwa-install-help"
-        className={styles.settingsPanel}
-        style={{ marginTop: "1.5rem", maxWidth: 720 }}
-      >
-        <h2 className={styles.sectionTitle}>ホーム画面に追加（アプリのように使う）</h2>
-        {!pwaGuideImageError ? (
-          <img
-            src={`${import.meta.env.BASE_URL}pwa-install-guide.png`}
-            alt="ホーム画面への追加手順"
-            loading="lazy"
-            onError={() => setPwaGuideImageError(true)}
-            style={{
-              width: "100%",
-              maxWidth: 620,
-              borderRadius: 14,
-              border: "1px solid var(--border)",
-              background: "#fff",
-              display: "block",
-              margin: "0.25rem auto 0.35rem",
-            }}
-          />
-        ) : (
-          <p className={styles.reclassifyHint} style={{ marginTop: "0.3rem" }}>
-            ガイド画像を読み込めませんでした。再読み込みしても表示されない場合は、管理者にお問い合わせください。
-          </p>
-        )}
-        {!pwaTarget ? (
-          <p className={styles.reclassifyHint} style={{ marginTop: "0.4rem" }}>
-            この端末ではインストール案内バーの対象外ですが、手順ガイドは参照できます。
-          </p>
-        ) : null}
-          <div className={styles.modeRow} style={{ marginTop: "0.65rem", flexWrap: "wrap" }}>
-            {pwaBannerHidden ? (
-              <button
-                type="button"
-                className={styles.btn}
-                onClick={() => {
-                  clearPwaInstallBannerHidden();
-                }}
-              >
-                下の案内バーを再表示する
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={`${styles.btn} ${styles.btnPrimary}`}
-                onClick={() => {
-                  setPwaInstallBannerHidden();
-                }}
-              >
-                追加済み・ショートカット利用中（案内を出さない）
-              </button>
-            )}
-          </div>
-      </div>
-
-      <div
         id="fixed-cost-settings"
         className={styles.settingsPanel}
         style={{ marginTop: "1.5rem", maxWidth: 720 }}
@@ -984,6 +939,63 @@ export function SettingsPage() {
           <p className={styles.infoText}>{fixedSaveMessage}</p>
         ) : null}
         <p className={styles.infoText}>固定費合計: ¥{fixedCostTotal.toLocaleString("ja-JP")}</p>
+      </div>
+
+      <div
+        id="pwa-install-help"
+        className={styles.settingsPanel}
+        style={{ marginTop: "1.5rem", maxWidth: 720 }}
+      >
+        <h2 className={styles.sectionTitle}>ホーム画面に追加（アプリのように使う）</h2>
+        {!pwaGuideImageError ? (
+          <img
+            src={`${import.meta.env.BASE_URL}pwa-install-guide.png`}
+            alt="ホーム画面への追加手順"
+            loading="lazy"
+            onError={() => setPwaGuideImageError(true)}
+            style={{
+              width: "100%",
+              maxWidth: 620,
+              borderRadius: 14,
+              border: "1px solid var(--border)",
+              background: "#fff",
+              display: "block",
+              margin: "0.25rem auto 0.35rem",
+            }}
+          />
+        ) : (
+          <p className={styles.reclassifyHint} style={{ marginTop: "0.3rem" }}>
+            ガイド画像を読み込めませんでした。再読み込みしても表示されない場合は、管理者にお問い合わせください。
+          </p>
+        )}
+        {!pwaTarget ? (
+          <p className={styles.reclassifyHint} style={{ marginTop: "0.4rem" }}>
+            この端末ではインストール案内バーの対象外ですが、手順ガイドは参照できます。
+          </p>
+        ) : null}
+        <div className={styles.modeRow} style={{ marginTop: "0.65rem", flexWrap: "wrap" }}>
+          {pwaBannerHidden ? (
+            <button
+              type="button"
+              className={styles.btn}
+              onClick={() => {
+                clearPwaInstallBannerHidden();
+              }}
+            >
+              下の案内バーを再表示する
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              onClick={() => {
+                setPwaInstallBannerHidden();
+              }}
+            >
+              追加済み・ショートカット利用中（案内を出さない）
+            </button>
+          )}
+        </div>
       </div>
 
       <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 980 }}>

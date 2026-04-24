@@ -1266,7 +1266,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
               <div className={styles.summaryApiTitleRow}>
                 <h2 className={styles.sectionTitle}>固定費明細</h2>
                 <Link
-                  to="/settings#fixed-cost-settings"
+                  to={{ pathname: "/settings", hash: "fixed-cost-settings" }}
                   className={`${styles.btn} ${styles.btnSm}`}
                 >
                   固定費設定（全月共通）へ
