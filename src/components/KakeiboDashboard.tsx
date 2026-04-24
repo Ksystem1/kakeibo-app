@@ -514,6 +514,22 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   const [editSaving, setEditSaving] = useState(false);
   /** モバイル編集時の日付（MM/DD）。ネイティブ date の yyyy/mm/dd 表示を避ける */
   const [mobileEditDateText, setMobileEditDateText] = useState("");
+  const [expenseCategoryModal, setExpenseCategoryModal] = useState<{
+    categoryId: number | null;
+    categoryName: string;
+  } | null>(null);
+  const [modalLineEdit, setModalLineEdit] = useState<{
+    id: number;
+    kind: "expense" | "income";
+    amount: string;
+    transaction_date: string;
+    memo: string;
+    category_id: string;
+    is_medical_expense: boolean;
+    medical_type: MedicalType | "";
+    medical_patient_name: string;
+  } | null>(null);
+  const [modalEditSaving, setModalEditSaving] = useState(false);
   const [fixedCostExpanded, setFixedCostExpanded] = useState(false);
   const [transactionsExpanded, setTransactionsExpanded] = useState(false);
   const mobileFixedCostInitialRows = 6;
@@ -528,9 +544,49 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     return transactions.slice(0, txInitialRows);
   }, [transactionsExpanded, transactions]);
 
+  const expenseCategoryModalTx = useMemo(() => {
+    if (!expenseCategoryModal) return [];
+    const target = expenseCategoryModal.categoryId;
+    return transactions
+      .filter((t) => {
+        if (String(t.kind).toLowerCase() !== "expense") return false;
+        if (target == null) {
+          if (t.category_id == null) return true;
+          const n = typeof t.category_id === "number" ? t.category_id : Number(t.category_id);
+          return !Number.isFinite(n);
+        }
+        const n = typeof t.category_id === "number" ? t.category_id : Number(t.category_id);
+        return Number.isFinite(n) && n === target;
+      })
+      .sort((a, b) => {
+        const da = String(a.transaction_date);
+        const db = String(b.transaction_date);
+        if (db !== da) return db.localeCompare(da);
+        return b.id - a.id;
+      });
+  }, [expenseCategoryModal, transactions]);
+
+  const showMedicalCsvNotice = useMemo(() => {
+    if (!expenseCategoryModal) return false;
+    const name = expenseCategoryModal.categoryName;
+    if (name.includes("医療")) return true;
+    const fid = expenseCategoryModal.categoryId;
+    if (fid != null) {
+      const d = categoryMedicalDefaultsById.get(fid);
+      if (d?.isDefault) return true;
+    }
+    return expenseCategoryModalTx.some(
+      (t) => t.is_medical_expense === true || Number(t.is_medical_expense) === 1,
+    );
+  }, [expenseCategoryModal, expenseCategoryModalTx, categoryMedicalDefaultsById]);
+
   useEffect(() => {
     setTransactionsExpanded(false);
   }, [ym]);
+
+  useEffect(() => {
+    if (kidWatchOn) setModalLineEdit(null);
+  }, [kidWatchOn]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -592,6 +648,9 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   );
   const editCategories = filterCategoriesForTransactionSelect(
     categories.filter((c) => c.kind === (edit?.kind ?? "expense")),
+  );
+  const modalEditCategories = filterCategoriesForTransactionSelect(
+    categories.filter((c) => c.kind === (modalLineEdit?.kind ?? "expense")),
   );
 
   /** 一覧に出ない／固定費の ID が value に残るとブラウザが誤表示することがあるためクリア */
@@ -667,6 +726,45 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     });
   }
 
+  function applyMedicalDefaultsToModalLineEdit(
+    nextCategoryId: string,
+    nextKind: "expense" | "income",
+  ) {
+    if (!modalLineEdit) return;
+    if (nextKind !== "expense") {
+      setModalLineEdit({
+        ...modalLineEdit,
+        kind: nextKind,
+        category_id: nextCategoryId,
+        is_medical_expense: false,
+        medical_type: "",
+        medical_patient_name: "",
+      });
+      return;
+    }
+    const cid = Number.parseInt(nextCategoryId, 10);
+    const defaults = Number.isFinite(cid) ? categoryMedicalDefaultsById.get(cid) : null;
+    if (!defaults?.isDefault || !defaults.medicalType) {
+      setModalLineEdit({
+        ...modalLineEdit,
+        kind: nextKind,
+        category_id: nextCategoryId,
+        is_medical_expense: false,
+        medical_type: "",
+        medical_patient_name: "",
+      });
+      return;
+    }
+    setModalLineEdit({
+      ...modalLineEdit,
+      kind: nextKind,
+      category_id: nextCategoryId,
+      is_medical_expense: true,
+      medical_type: defaults.medicalType,
+      medical_patient_name: defaults.patientName ?? "",
+    });
+  }
+
   function beginEdit(t: Transaction) {
     const ymd = formatTxDateYmd(t.transaction_date);
     let categoryIdStr = t.category_id != null ? String(t.category_id) : "";
@@ -696,6 +794,91 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   function cancelEdit() {
     setEdit(null);
     setMobileEditDateText("");
+  }
+
+  function beginModalLineEdit(t: Transaction) {
+    if (kidWatchOn) return;
+    const ymd = formatTxDateYmd(t.transaction_date);
+    let categoryIdStr = t.category_id != null ? String(t.category_id) : "";
+    if (t.kind === "expense" && t.category_id != null) {
+      const cid =
+        typeof t.category_id === "number" ? t.category_id : Number(t.category_id);
+      const nm = Number.isFinite(cid) ? categoryById.get(cid) : undefined;
+      if (isReservedLedgerFixedCostCategoryName(nm)) categoryIdStr = "";
+    }
+    setModalLineEdit({
+      id: t.id,
+      kind: t.kind === "income" ? "income" : "expense",
+      amount: String(numAmount(t.amount)),
+      transaction_date: ymd,
+      memo: t.memo ?? "",
+      category_id: categoryIdStr,
+      is_medical_expense: t.is_medical_expense === true || Number(t.is_medical_expense) === 1,
+      medical_type:
+        t.medical_type === "treatment" || t.medical_type === "medicine" || t.medical_type === "other"
+          ? t.medical_type
+          : "",
+      medical_patient_name: t.medical_patient_name ? String(t.medical_patient_name) : "",
+    });
+  }
+
+  function cancelModalLineEdit() {
+    setModalLineEdit(null);
+  }
+
+  async function saveModalLineEdit() {
+    if (!modalLineEdit) return;
+    if (kidWatchOn) return;
+    const amount = Number.parseFloat(modalLineEdit.amount);
+    const minAmount = modalLineEdit.kind === "income" ? 0 : 1;
+    if (!Number.isFinite(amount) || amount < minAmount) {
+      setError(
+        modalLineEdit.kind === "income"
+          ? "収入は 0 以上で入力してください。"
+          : "支出は 1 以上で入力してください。",
+      );
+      return;
+    }
+    if (modalLineEdit.kind === "expense" && modalLineEdit.category_id) {
+      const cid = Number.parseInt(modalLineEdit.category_id, 10);
+      const cat = categories.find((c) => c.id === cid);
+      if (cat && isReservedLedgerFixedCostCategoryName(cat.name)) {
+        setError("「固定費」は取引では選べません。設定画面の固定費を利用してください。");
+        return;
+      }
+    }
+    if (modalLineEdit.kind === "expense" && modalLineEdit.is_medical_expense && !modalLineEdit.medical_type) {
+      setError("医療費控除の区分を選択してください。");
+      return;
+    }
+    setModalEditSaving(true);
+    setError(null);
+    try {
+      await updateTransaction(modalLineEdit.id, {
+        kind: modalLineEdit.kind,
+        amount,
+        transaction_date: modalLineEdit.transaction_date,
+        memo: modalLineEdit.memo.trim() || null,
+        category_id: modalLineEdit.category_id
+          ? Number.parseInt(modalLineEdit.category_id, 10)
+          : null,
+        is_medical_expense: modalLineEdit.kind === "expense" ? modalLineEdit.is_medical_expense : false,
+        medical_type:
+          modalLineEdit.kind === "expense" && modalLineEdit.is_medical_expense
+            ? modalLineEdit.medical_type
+            : null,
+        medical_patient_name:
+          modalLineEdit.kind === "expense" && modalLineEdit.is_medical_expense
+            ? modalLineEdit.medical_patient_name.trim() || null
+            : null,
+      });
+      cancelModalLineEdit();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModalEditSaving(false);
+    }
   }
 
   async function saveEdit() {
@@ -756,11 +939,26 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     try {
       await deleteTransaction(id);
       if (edit?.id === id) cancelEdit();
+      if (modalLineEdit?.id === id) setModalLineEdit(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
+
+  const closeExpenseCategoryModal = useCallback(() => {
+    setExpenseCategoryModal(null);
+    setModalLineEdit(null);
+  }, []);
+
+  useEffect(() => {
+    if (!expenseCategoryModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeExpenseCategoryModal();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expenseCategoryModal, closeExpenseCategoryModal]);
 
   return (
     <>
@@ -1007,6 +1205,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                 <tr>
                   <th>カテゴリ</th>
                   <th>合計</th>
+                  <th>詳細</th>
                 </tr>
               </thead>
               <tbody>
@@ -1014,6 +1213,22 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                   <tr key={`${row.category_id ?? "x"}-${i}`}>
                     <td>{row.category_name ?? "（未分類）"}</td>
                     <td>{yen.format(numAmount(row.total as string | number))}</td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnSm}`}
+                        disabled={!base}
+                        onClick={() => {
+                          setExpenseCategoryModal({
+                            categoryId: row.category_id,
+                            categoryName: row.category_name ?? "（未分類）",
+                          });
+                          setModalLineEdit(null);
+                        }}
+                      >
+                        詳細
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1752,6 +1967,280 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         ) : null}
       </div>
     </div>
+    {expenseCategoryModal ? (
+      <div
+        className={styles.categoryDetailBackdrop}
+        role="presentation"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) closeExpenseCategoryModal();
+        }}
+      >
+        <div
+          className={styles.categoryDetailDialog}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="kakeibo-category-modal-title"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 className={styles.categoryDetailHeader} id="kakeibo-category-modal-title">
+            <span>
+              カテゴリ明細: {expenseCategoryModal.categoryName}
+              {kidWatchOn ? (
+                <span
+                  className={styles.categoryDetailSub}
+                  style={{ display: "block" }}
+                >
+                  お小遣い帳（見守り）のため表示のみです。
+                </span>
+              ) : null}
+            </span>
+            <button
+              type="button"
+              className={styles.btn}
+              onClick={closeExpenseCategoryModal}
+            >
+              閉じる
+            </button>
+          </h2>
+          <p className={styles.categoryDetailSub} style={{ margin: "0.25rem 0 0" }}>
+            {(() => {
+              const [yy, mo] = ym.split("-");
+              const mNum = Number(mo);
+              return `${yy}年${Number.isFinite(mNum) ? mNum : mo}月分`;
+            })()}{" "}
+            ・ {from} 〜 {to} の該当支出のみ（{expenseCategoryModalTx.length}件）
+          </p>
+          {showMedicalCsvNotice && !kidWatchOn ? (
+            <p className={styles.categoryDetailMedicalNote}>
+              <strong>医療費控除用CSV（エクスポート）について</strong>
+              <br />
+              ここでの修正は、<strong>すでに出力済み</strong>の医療費控除用CSVの内容には反映されません。修正後にCSVを合わせる場合は、<strong>再度CSVをエクスポート</strong>してください。
+            </p>
+          ) : null}
+          <div className={styles.categoryDetailDialogBody}>
+            <table className={styles.categoryDetailTable}>
+              <thead>
+                <tr>
+                  <th>日付</th>
+                  <th>内容</th>
+                  <th>金額</th>
+                  <th className={styles.categoryDetailOpCell}> </th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenseCategoryModalTx.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ padding: "0.9rem" }}>
+                      <div className={styles.empty}>
+                        該当する支出明細はありません（他画面で分類を変更した場合、一覧に合わないことがあります）。
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  expenseCategoryModalTx.map((t) => {
+                    const isEd = !kidWatchOn && modalLineEdit?.id === t.id;
+                    const m = modalLineEdit;
+                    if (isEd && m) {
+                      return (
+                        <tr key={t.id} className={styles.rowEditing}>
+                          <td>
+                            <input
+                              className={styles.cellInput}
+                              type="date"
+                              value={m.transaction_date}
+                              onChange={(ev) =>
+                                setModalLineEdit({ ...m, transaction_date: ev.target.value })
+                              }
+                              aria-label="日付"
+                            />
+                          </td>
+                          <td>
+                            <div className={styles.memoCell} style={{ minWidth: "10rem" }}>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                                <select
+                                  className={styles.cellInput}
+                                  value={m.kind}
+                                  onChange={(ev) =>
+                                    applyMedicalDefaultsToModalLineEdit(
+                                      m.category_id,
+                                      ev.target.value as "expense" | "income",
+                                    )
+                                  }
+                                  aria-label="種別"
+                                >
+                                  <option value="expense">支出</option>
+                                  <option value="income">収入</option>
+                                </select>
+                                <select
+                                  className={styles.cellInput}
+                                  value={m.category_id}
+                                  onChange={(ev) =>
+                                    applyMedicalDefaultsToModalLineEdit(ev.target.value, m.kind)
+                                  }
+                                  aria-label="カテゴリ"
+                                >
+                                  <option value="">なし</option>
+                                  {modalEditCategories.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <input
+                                className={styles.cellInput}
+                                type="text"
+                                value={m.memo}
+                                onChange={(ev) => setModalLineEdit({ ...m, memo: ev.target.value })}
+                                placeholder="内容・メモ"
+                                aria-label="内容"
+                              />
+                              {m.kind === "expense" ? (
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gap: 6,
+                                    marginTop: 6,
+                                  }}
+                                >
+                                  <label
+                                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={m.is_medical_expense}
+                                      onChange={(ev) =>
+                                        setModalLineEdit({
+                                          ...m,
+                                          is_medical_expense: ev.target.checked,
+                                          medical_type: ev.target.checked ? m.medical_type : "",
+                                          medical_patient_name: ev.target.checked
+                                            ? m.medical_patient_name
+                                            : "",
+                                        })
+                                      }
+                                    />
+                                    医療費控除の対象
+                                  </label>
+                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                    <select
+                                      className={styles.cellInput}
+                                      value={m.medical_type}
+                                      onChange={(ev) =>
+                                        setModalLineEdit({
+                                          ...m,
+                                          medical_type: (ev.target.value as MedicalType | "") ?? "",
+                                        })
+                                      }
+                                      disabled={!m.is_medical_expense}
+                                      aria-label="医療費3区分"
+                                    >
+                                      <option value="">選択してください</option>
+                                      <option value="treatment">診療・治療</option>
+                                      <option value="medicine">医薬品</option>
+                                      <option value="other">その他</option>
+                                    </select>
+                                    <input
+                                      className={styles.cellInput}
+                                      type="text"
+                                      value={m.medical_patient_name}
+                                      onChange={(ev) =>
+                                        setModalLineEdit({ ...m, medical_patient_name: ev.target.value })
+                                      }
+                                      maxLength={120}
+                                      placeholder="対象者名"
+                                      disabled={!m.is_medical_expense}
+                                      aria-label="医療費対象者"
+                                    />
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td>
+                            <input
+                              className={styles.cellInput}
+                              type="number"
+                              min={m.kind === "income" ? 0 : 1}
+                              step={1}
+                              value={m.amount}
+                              onChange={(ev) => setModalLineEdit({ ...m, amount: ev.target.value })}
+                              aria-label="金額"
+                            />
+                          </td>
+                          <td className={styles.categoryDetailOpCell}>
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnSm} ${styles.btnPrimary}`}
+                              disabled={modalEditSaving || !base}
+                              onClick={() => void saveModalLineEdit()}
+                            >
+                              {modalEditSaving ? "保存中…" : "保存"}
+                            </button>{" "}
+                            <button
+                              type="button"
+                              className={`${styles.btn} ${styles.btnSm}`}
+                              disabled={modalEditSaving}
+                              onClick={cancelModalLineEdit}
+                            >
+                              キャンセル
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return (
+                      <tr key={t.id}>
+                        <td title={formatTxDateYmd(t.transaction_date)}>{formatTxDateMd(t.transaction_date)}</td>
+                        <td>
+                          <span className={styles.memoText} style={{ whiteSpace: "normal" }}>
+                            {t.memo ?? ""}
+                            {t.is_medical_expense === true || Number(t.is_medical_expense) === 1 ? (
+                              <span style={{ marginLeft: 6, fontSize: "0.86em", color: "#0369a1" }}>
+                                [医療費:{" "}
+                                {t.medical_type === "treatment" ||
+                                t.medical_type === "medicine" ||
+                                t.medical_type === "other"
+                                  ? MEDICAL_TYPE_LABELS[t.medical_type]
+                                  : "未設定"}
+                                {t.medical_patient_name ? ` / ${t.medical_patient_name}` : ""}]
+                              </span>
+                            ) : null}
+                          </span>
+                        </td>
+                        <td style={{ whiteSpace: "nowrap" }}>{yen.format(numAmount(t.amount))}</td>
+                        <td className={styles.categoryDetailOpCell}>
+                          {!kidWatchOn ? (
+                            <>
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnSm}`}
+                                disabled={!base}
+                                onClick={() => beginModalLineEdit(t)}
+                              >
+                                編集
+                              </button>{" "}
+                              <button
+                                type="button"
+                                className={`${styles.btn} ${styles.btnSm} ${styles.btnDanger}`}
+                                disabled={!base}
+                                onClick={() => void removeTransaction(t.id)}
+                              >
+                                削除
+                              </button>
+                            </>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    ) : null}
     </>
   );
 }

@@ -1608,3 +1608,88 @@
   color: #b91c1c;
   line-height: 1.45;
 }
+
+.categoryDetailBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10500;
+  background: rgba(15, 20, 25, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem;
+}
+
+.categoryDetailDialog {
+  max-width: min(100%, 640px);
+  width: 100%;
+  max-height: min(90vh, 720px);
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.05rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+.categoryDetailDialogBody {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  margin-top: 0.5rem;
+}
+
+.categoryDetailHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.categoryDetailSub {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.categoryDetailMedicalNote {
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: #0c4a6e;
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.categoryDetailTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.categoryDetailTable th,
+.categoryDetailTable td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.45rem 0.35rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.categoryDetailTable th {
+  font-weight: 700;
+  background: color-mix(in srgb, var(--bg-card) 88%, #5eb6ff 12%);
+  white-space: nowrap;
+}
+
+.categoryDetailTable .categoryDetailOpCell {
+  white-space: nowrap;
+  text-align: right;
+}
