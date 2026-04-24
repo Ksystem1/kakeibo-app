@@ -1497,6 +1497,59 @@
   font-size: 1.02rem;
 }
 
+/** レシート自動再分類: 余白控えめ・説明とボタンを横並び（ボタン右寄せ） */
+.reclassifySettingsPanel {
+  padding: 0.7rem 0.8rem;
+}
+
+.reclassifySettingsLayout {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem 0.75rem;
+}
+
+.reclassifySettingsLayout .reclassifyHint {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.98rem;
+  line-height: 1.5;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.reclassifySettingsButtonWrap {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+/** 設定: 医療費控除カード（説明＋右寄せボタン） */
+.medicalDeductionRow {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+
+.medicalDeductionRow .sub {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0 !important;
+}
+
+.medicalDeductionButtonWrap {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
 .navSkinPreviewWrap {
   margin-top: 0.55rem;
   display: flex;

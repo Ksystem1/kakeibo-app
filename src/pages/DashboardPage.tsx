@@ -173,7 +173,7 @@ export function DashboardPage() {
 
   return (
     <>
-    <main className="mx-auto min-h-screen w-full max-w-6xl bg-gradient-to-b from-white to-slate-50 px-4 pb-20 pt-6 text-slate-900 md:px-6">
+    <main className="mx-auto min-h-screen w-full max-w-6xl bg-gradient-to-b from-slate-200/90 to-slate-100 px-4 pb-20 pt-6 text-slate-900 md:px-6">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-semibold tracking-wide text-mint-600">Family Dashboard</p>
@@ -187,7 +187,7 @@ export function DashboardPage() {
           <input
             id="dashboard-month"
             type="month"
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm"
+            className="rounded-lg border border-slate-300/90 bg-white px-2.5 py-1.5 text-sm shadow-sm"
             value={ym}
             onChange={(ev) => setYm(ev.target.value)}
           />

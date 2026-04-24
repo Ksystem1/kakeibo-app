@@ -88,6 +88,13 @@
   line-height: 1.2;
 }
 
+/** 追加フォーム: フレックス行内で一覧の種別列と同じ固定幅 */
+.categoryInputKind.categoryAddKind {
+  width: 5.25rem;
+  max-width: 5.25rem;
+  flex: 0 0 auto;
+}
+
 .categoryInputOrder {
   width: 3.75rem;
   min-width: 2.9rem;

@@ -20,7 +20,7 @@ function iconForCategory(category: string) {
 
 export function RecentTransactions({ items }: RecentTransactionsProps) {
   return (
-    <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-soft">
+    <section className="rounded-2xl border border-slate-200/95 bg-white p-4 shadow-md ring-1 ring-slate-900/[0.04]">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900">最新の支出</h2>
         <button className="text-xs font-semibold text-mint-600">すべて見る</button>
@@ -29,7 +29,7 @@ export function RecentTransactions({ items }: RecentTransactionsProps) {
         {items.map((item) => (
           <li
             key={item.id}
-            className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5"
+            className="flex items-center justify-between rounded-xl border border-slate-100/80 bg-slate-100/60 px-3 py-2.5"
           >
             <div className="flex items-center gap-2.5">
               <span className="rounded-full bg-white p-2 text-slate-600 shadow-sm">

@@ -389,21 +389,25 @@ export function SettingsPage() {
             maxWidth: "min(100%, 52rem)",
           }}
         >
-          <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>医療費控除</h2>
-          <p
-            className={styles.sub}
-            style={{
-              marginTop: 0,
-              marginBottom: "0.4rem",
-              whiteSpace: "nowrap",
-              overflowX: "auto",
-            }}
-          >
-            年間分を集計し、申告用CSV（国税庁フォーム互換）を出力します。
-          </p>
-          <Link to="/medical-deduction" className={`${styles.btn} ${styles.btnPrimary}`}>
-            医療費集計へ
-          </Link>
+          <h2 className={styles.sectionTitle} style={{ marginTop: 0, marginBottom: "0.45rem" }}>
+            医療費控除
+          </h2>
+          <div className={styles.medicalDeductionRow}>
+            <p
+              className={styles.sub}
+              style={{
+                whiteSpace: "nowrap",
+                overflowX: "auto",
+              }}
+            >
+              年間分を集計し、申告用CSV（国税庁フォーム互換）を出力します。
+            </p>
+            <div className={styles.medicalDeductionButtonWrap}>
+              <Link to="/medical-deduction" className={`${styles.btn} ${styles.btnPrimary}`}>
+                医療費集計へ
+              </Link>
+            </div>
+          </div>
         </section>
       </FeatureGate>
       <div className={styles.settingsPanel} style={{ marginTop: "0.75rem", maxWidth: 980 }}>
@@ -990,39 +994,48 @@ export function SettingsPage() {
         <CategoriesPage embedded />
       </div>
 
-      <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 720 }}>
-        <h2 className={styles.sectionTitle}>レシート自動再分類</h2>
-        <p className={styles.reclassifyHint}>
-          全期間の未分類を、履歴・キーワードより再推定します
-          <br />
-          （件数が多いと時間がかかります）。
-        </p>
-        <button
-          type="button"
-          className={`${styles.btn} ${styles.btnPrimary}`}
-          disabled={reclassifying}
-          onClick={async () => {
-            if (reclassifying) return;
-            setReclassifyResult(null);
-            setReclassifying(true);
-            try {
-              const r = await reclassifyUncategorizedReceipts();
-              setReclassifyResult(
-                `再分類完了: 走査 ${r.scanned} 件 / 更新 ${r.updated} 件`,
-              );
-            } catch (e) {
-              setReclassifyResult(
-                e instanceof Error ? e.message : String(e),
-              );
-            } finally {
-              setReclassifying(false);
-            }
-          }}
-        >
-          {reclassifying ? "再分類中…" : "未分類を再分類する"}
-        </button>
+      <div
+        className={`${styles.settingsPanel} ${styles.reclassifySettingsPanel}`}
+        style={{ marginTop: "1.5rem", maxWidth: 720 }}
+      >
+        <h2 className={styles.sectionTitle} style={{ marginBottom: "0.45rem" }}>
+          レシート自動再分類
+        </h2>
+        <div className={styles.reclassifySettingsLayout}>
+          <p className={styles.reclassifyHint}>
+            全期間の未分類を、履歴・キーワードより再推定します
+            <br />
+            （件数が多いと時間がかかります）。
+          </p>
+          <div className={styles.reclassifySettingsButtonWrap}>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              disabled={reclassifying}
+              onClick={async () => {
+                if (reclassifying) return;
+                setReclassifyResult(null);
+                setReclassifying(true);
+                try {
+                  const r = await reclassifyUncategorizedReceipts();
+                  setReclassifyResult(
+                    `再分類完了: 走査 ${r.scanned} 件 / 更新 ${r.updated} 件`,
+                  );
+                } catch (e) {
+                  setReclassifyResult(
+                    e instanceof Error ? e.message : String(e),
+                  );
+                } finally {
+                  setReclassifying(false);
+                }
+              }}
+            >
+              {reclassifying ? "再分類中…" : "未分類を再分類する"}
+            </button>
+          </div>
+        </div>
         {reclassifyResult ? (
-          <p className={styles.infoText}>
+          <p className={styles.infoText} style={{ marginTop: "0.5rem", marginBottom: 0 }}>
             {reclassifyResult}
           </p>
         ) : null}

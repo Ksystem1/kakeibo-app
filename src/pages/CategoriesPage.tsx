@@ -193,8 +193,9 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
             onChange={(e) =>
               setNewKind(e.target.value === "income" ? "income" : "expense")
             }
-            className={styles.monthInput}
+            className={`${styles.monthInput} ${catStyles.categoryInputKind} ${catStyles.categoryAddKind}`}
             disabled={loading}
+            aria-label="種別"
           >
             <option value="expense">支出</option>
             <option value="income">収入</option>

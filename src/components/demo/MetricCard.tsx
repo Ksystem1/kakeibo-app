@@ -26,7 +26,7 @@ export function MetricCard({
         : "text-slate-500";
 
   return (
-    <article className="rounded-2xl border border-slate-100 bg-white p-4 shadow-soft">
+    <article className="rounded-2xl border border-slate-200/95 bg-white p-4 shadow-md ring-1 ring-slate-900/[0.04]">
       <div className="mb-3 flex items-center justify-between">
         <p className="text-xs font-medium tracking-wide text-slate-500">{label}</p>
         <span className="rounded-full bg-slate-50 p-2 text-slate-500">{icon}</span>
