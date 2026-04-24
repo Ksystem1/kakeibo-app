@@ -199,6 +199,7 @@ export function AdminPage() {
   const [savingUserId, setSavingUserId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [displayNameDrafts, setDisplayNameDrafts] = useState<Record<number, string>>({});
+  const [emailDrafts, setEmailDrafts] = useState<Record<number, string>>({});
   const [familyIdDrafts, setFamilyIdDrafts] = useState<Record<number, string>>({});
   const [familyRoleDrafts, setFamilyRoleDrafts] = useState<Record<number, string>>({});
   const [tempPasswords, setTempPasswords] = useState<Record<number, string>>({});
@@ -321,6 +322,11 @@ export function AdminPage() {
       setDisplayNameDrafts(
         Object.fromEntries(
           list.map((u) => [u.id, u.display_name ?? ""]),
+        ),
+      );
+      setEmailDrafts(
+        Object.fromEntries(
+          list.map((u) => [u.id, u.email ?? ""]),
         ),
       );
       setFamilyIdDrafts(
@@ -514,6 +520,29 @@ export function AdminPage() {
       }
     },
     [displayNameDrafts],
+  );
+
+  const onSaveEmail = useCallback(
+    async (userId: number) => {
+      setSavingUserId(userId);
+      setError(null);
+      try {
+        const next = (emailDrafts[userId] ?? "").trim().toLowerCase();
+        if (!next || !next.includes("@") || /\s/.test(next)) {
+          setError("有効なメールアドレスを入力してください。");
+          return;
+        }
+        await updateAdminUser(userId, { email: next });
+        setItems((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, email: next } : u)),
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "メールアドレス更新に失敗しました");
+      } finally {
+        setSavingUserId(null);
+      }
+    },
+    [emailDrafts],
   );
 
   const onResetPassword = useCallback(async (userId: number, email: string) => {
@@ -1496,7 +1525,37 @@ export function AdminPage() {
               const memberRows = group.members.map((u) => (
                 <tr key={u.id} style={{ borderTop: "1px solid var(--border)" }}>
                   <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>{u.id}</td>
-                  <td style={{ ...adminTableTd, minWidth: 260, wordBreak: "break-all" }}>{u.email}</td>
+                  <td style={{ ...adminTableTd, minWidth: 260 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "nowrap",
+                        gap: "0.35rem",
+                        alignItems: "center",
+                        justifyContent: "flex-start",
+                      }}
+                    >
+                      <input
+                        type="email"
+                        value={emailDrafts[u.id] ?? ""}
+                        disabled={savingUserId === u.id}
+                        onChange={(e) =>
+                          setEmailDrafts((prev) => ({ ...prev, [u.id]: e.target.value }))
+                        }
+                        style={{ minWidth: 200, maxWidth: 280, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+                      />
+                      <button
+                        type="button"
+                        disabled={savingUserId === u.id}
+                        onClick={() => {
+                          void onSaveEmail(u.id);
+                        }}
+                        style={adminTableBtn}
+                      >
+                        保存
+                      </button>
+                    </div>
+                  </td>
                   <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
                     {formatDateOnly(u.created_at)}
                   </td>

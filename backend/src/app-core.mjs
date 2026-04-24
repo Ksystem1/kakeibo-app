@@ -2712,6 +2712,20 @@ export async function handleApiRequest(req, options = {}) {
       let appliedFamilySub = false;
       let appliedFamilyRelink = false;
 
+      if (Object.prototype.hasOwnProperty.call(b, "email")) {
+        const nextEmail = String(b.email ?? "")
+          .trim()
+          .toLowerCase();
+        if (!nextEmail || !nextEmail.includes("@") || /\s/.test(nextEmail)) {
+          return json(400, { error: "メールアドレスが不正です" }, hdrs, skipCors);
+        }
+        if (nextEmail.length > 255) {
+          return json(400, { error: "メールアドレスは255文字以内で入力してください" }, hdrs, skipCors);
+        }
+        updates.push("email = ?");
+        params.push(nextEmail);
+      }
+
       if (Object.prototype.hasOwnProperty.call(b, "isAdmin")) {
         if (typeof b.isAdmin !== "boolean") {
           return json(400, { error: "isAdmin は boolean で指定してください" }, hdrs, skipCors);

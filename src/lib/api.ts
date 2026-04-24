@@ -1525,6 +1525,7 @@ export async function createAdminUser(body: {
 export async function updateAdminUser(
   userId: number,
   body: {
+    email?: string;
     isAdmin?: boolean;
     displayName?: string | null;
     subscriptionStatus?: string;
