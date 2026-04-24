@@ -2068,6 +2068,7 @@
 
 .categoryDetailTable {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.92rem;
 }
@@ -2078,6 +2079,35 @@
   padding: 0.45rem 0.35rem;
   text-align: left;
   vertical-align: top;
+}
+
+.categoryDetailTable th:nth-child(1),
+.categoryDetailTable td:nth-child(1) {
+  width: 7.5rem;
+}
+
+.categoryDetailTable th:nth-child(2),
+.categoryDetailTable td:nth-child(2) {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.categoryDetailTable th:nth-child(3),
+.categoryDetailTable td:nth-child(3) {
+  width: 11rem;
+  min-width: 10rem;
+}
+
+.categoryDetailTable td:nth-child(3) .cellInput {
+  max-width: none;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.categoryDetailTable th:nth-child(4),
+.categoryDetailTable td:nth-child(4) {
+  width: 9rem;
 }
 
 .categoryDetailTable th {

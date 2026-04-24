@@ -2056,9 +2056,9 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           </p>
           {showMedicalCsvNotice && !kidWatchOn ? (
             <p className={styles.categoryDetailMedicalNote}>
-              <strong>医療費控除用CSV（エクスポート）について</strong>
-              <br />
-              ここでの修正は、<strong>すでに出力済み</strong>の医療費控除用CSVの内容には反映されません。修正後にCSVを合わせる場合は、<strong>再度CSVをエクスポート</strong>してください。
+              <strong>医療費控除用CSV</strong>
+              ：すでにダウンロードしたファイルには、ここでの修正は<strong>反映されません</strong>。最新に揃える場合は
+              <strong>再エクスポート</strong>してください。
             </p>
           ) : null}
           <div className={styles.categoryDetailDialogBody}>
