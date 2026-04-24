@@ -767,11 +767,12 @@
   padding: 0.3rem 0.35rem;
 }
 
+/* 1ch は「0」幅基準のため、日本語カテゴリ名より狭くなり日付列と重なる。係数で補正 */
 .table.txTable th.txColCategory,
 .table.txTable td.txColCategory {
   padding-left: 0.35rem;
   vertical-align: middle;
-  min-width: calc(var(--tx-cat-ch, 6) * 1ch + 1.25rem);
+  min-width: calc(var(--tx-cat-ch, 6) * var(--tx-cat-ch-unit, 1.65) * 1ch + 1.3rem);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -780,8 +781,8 @@
 @media (min-width: 769px) {
   .table.txTable th.txColCategory,
   .table.txTable td.txColCategory {
-    width: calc(var(--tx-cat-ch, 6) * 1ch + 1.35rem);
-    max-width: calc(var(--tx-cat-ch, 6) * 1ch + 1.35rem);
+    width: calc(var(--tx-cat-ch, 6) * var(--tx-cat-ch-unit, 1.65) * 1ch + 1.45rem);
+    max-width: calc(var(--tx-cat-ch, 6) * var(--tx-cat-ch-unit, 1.65) * 1ch + 1.45rem);
     font-size: 0.98rem;
     font-weight: 600;
     letter-spacing: 0.02em;
@@ -791,7 +792,7 @@
   .table.txTable tr.rowEditing td.txColCategory {
     width: auto;
     max-width: min(22rem, 100%);
-    min-width: min(22rem, calc(var(--tx-cat-ch, 6) * 1ch + 1.35rem));
+    min-width: min(22rem, calc(var(--tx-cat-ch, 6) * var(--tx-cat-ch-unit, 1.65) * 1ch + 1.45rem));
   }
 
   .table.txTable tr.rowEditing td.txColCategory .cellInput {
