@@ -35,6 +35,40 @@ function userMismatchKey(r: { userId: number; familyId: number }): string {
   return `u:${r.userId}:${r.familyId}`;
 }
 
+/** API が返す英語の SQL エラーを、管理者向けに要約（is_premium / v9 は別番号であることを明記） */
+function explainStripeReconcileLoadError(raw: string): {
+  headline: string;
+  bullets: string[];
+  showRaw: boolean;
+} {
+  const t = String(raw ?? "").trim();
+  if (
+    /is_premium/i.test(t) ||
+    /Unknown column/i.test(t) ||
+    /field list/i.test(t) ||
+    /ER_BAD_FIELD/i.test(t)
+  ) {
+    return {
+      headline: "データベースに「プレミアム用の列（is_premium）」がまだありません。",
+      bullets: [
+        "表示の英語は MySQL のエラーで、「users テーブルに is_premium 列がない」という意味です。",
+        "対応: マイグレーション v9（db/migration_v9_users_is_premium.sql）を本番の RDS に適用してください。v29 まで当てたこととは別の番号です。",
+        "例: リポジトリの backend で `npm run db:migrate-v9`（RDS 接続の .env 設定が必要）。適用後、管理画面を再読み込みして照合を取り直してください。",
+      ],
+      showRaw: true,
+    };
+  }
+  return {
+    headline: "Stripe 照合のデータを取得できませんでした。",
+    bullets: [
+      t && t.length > 0
+        ? t
+        : "理由が取得できませんでした。本番 API の更新・STRIPE_SECRET_KEY・管理者権限を確認してください。",
+    ],
+    showRaw: t.length > 0,
+  };
+}
+
 type AdminUser = {
   id: number;
   email: string;
@@ -568,23 +602,54 @@ export function AdminPage() {
           サポートチャット（家族一覧・返信）→
         </Link>
       </p>
-      {reconcileError != null && reconcileError !== "" && (
-        <div
-          role="alert"
-          style={{
-            margin: "0.75rem 0",
-            padding: "0.75rem 0.9rem",
-            borderRadius: 10,
-            border: "1px solid var(--border)",
-            background: "color-mix(in srgb, var(--warning) 12%, var(--bg-card))",
-            fontSize: "0.88rem",
-            lineHeight: 1.55,
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: "0.35rem" }}>Stripe 照合：エラー</div>
-          <div style={{ color: "var(--text)" }}>{reconcileError}</div>
-        </div>
-      )}
+      {reconcileError != null && reconcileError !== "" && (() => {
+        const help = explainStripeReconcileLoadError(reconcileError);
+        return (
+          <div
+            role="alert"
+            style={{
+              margin: "0.75rem 0",
+              padding: "0.75rem 0.9rem",
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "color-mix(in srgb, var(--warning) 12%, var(--bg-card))",
+              fontSize: "0.88rem",
+              lineHeight: 1.55,
+            }}
+          >
+            <div style={{ fontWeight: 700, marginBottom: "0.45rem" }}>Stripe 照合が使えません</div>
+            <p style={{ margin: "0 0 0.5rem", fontWeight: 600, color: "var(--text)" }}>{help.headline}</p>
+            <ol
+              style={{
+                margin: 0,
+                paddingLeft: "1.25rem",
+                color: "var(--text)",
+              }}
+            >
+              {help.bullets.map((line, i) => (
+                <li key={i} style={{ marginTop: i > 0 ? "0.35rem" : 0 }}>
+                  {line}
+                </li>
+              ))}
+            </ol>
+            {help.showRaw ? (
+              <details style={{ marginTop: "0.65rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                <summary style={{ cursor: "pointer" }}>元の技術メッセージ（英語）を表示</summary>
+                <pre
+                  style={{
+                    margin: "0.4rem 0 0",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    fontFamily: "ui-monospace, monospace",
+                  }}
+                >
+                  {reconcileError}
+                </pre>
+              </details>
+            ) : null}
+          </div>
+        );
+      })()}
       {reconcileData && (
         <div
           style={{

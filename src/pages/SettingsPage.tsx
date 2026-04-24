@@ -39,6 +39,11 @@ import {
   formatSettingsSubscriptionSummary,
 } from "../lib/subscriptionStatusUi";
 import {
+  formatSubscriptionPeriodEndJaLong,
+  formatSubscriptionPeriodEndSlashJst,
+  SUBSCRIPTION_PERIOD_END_PENDING_JA,
+} from "../lib/subscriptionPeriodEndFormat";
+import {
   clearPwaInstallBannerHidden,
   isPwaInstallBannerHidden,
   setPwaInstallBannerHidden,
@@ -68,23 +73,6 @@ function itemsForFixedCostEditor(
     }));
   }
   return [{ id: `fixed-${Date.now()}`, amount: 0, category: "固定費" }];
-}
-
-function formatJaDate(isoLike: string | null | undefined): string | null {
-  if (!isoLike) return null;
-  const d = new Date(isoLike);
-  if (!Number.isFinite(d.getTime())) return null;
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
-}
-
-function formatSlashDate(isoLike: string | null | undefined): string | null {
-  if (!isoLike) return null;
-  const d = new Date(isoLike);
-  if (!Number.isFinite(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}/${m}/${day}`;
 }
 
 export function SettingsPage() {
@@ -314,33 +302,39 @@ export function SettingsPage() {
   );
   const cancelAtPeriodEndNote = useMemo(() => {
     if (!effectiveUser?.subscriptionCancelAtPeriodEnd) return null;
-    const endLabel = formatJaDate(effectiveUser.subscriptionPeriodEndAt ?? null);
-    if (!endLabel) return null;
-    return `当月末解約済です。但し、プレミアムプランは ${endLabel} まで利用可能です`;
+    const endLabel = formatSubscriptionPeriodEndJaLong(effectiveUser.subscriptionPeriodEndAt ?? null);
+    if (!endLabel) {
+      return `当月末解約の予定です。終了日は${SUBSCRIPTION_PERIOD_END_PENDING_JA}です。請求期間の終了まではプレミアムをご利用いただけます。`;
+    }
+    return `当月末解約の予定です。プレミアムは ${endLabel} まで（請求期間の終了日基準）ご利用いただけます。`;
   }, [effectiveUser]);
 
   const premiumCancelInfo = useMemo(() => {
     const user = effectiveUser;
     if (!user) return null;
     const status = String(user.subscriptionStatus ?? "").trim().toLowerCase();
-    const periodEnd = formatSlashDate(user.subscriptionPeriodEndAt ?? null);
+    const periodEnd = formatSubscriptionPeriodEndSlashJst(user.subscriptionPeriodEndAt ?? null);
     const cancelReserved = user.subscriptionCancelAtPeriodEnd === true;
     const canceled = status === "canceled" || status === "cancelled";
 
     if (!cancelReserved && !canceled) return null;
 
     if (canceled) {
-      const canceledAtText = periodEnd ?? "不明日";
-      const validUntilText = periodEnd ?? "不明";
-      return `ℹ ${canceledAtText}に解約済み（有効期限：${validUntilText}まで）`;
+      if (!periodEnd) {
+        return `ℹ 解約済み（有効期限：${SUBSCRIPTION_PERIOD_END_PENDING_JA}。Stripe のサブスクリプション画面で日付をご確認ください）`;
+      }
+      return `ℹ 解約済み（有効期限：${periodEnd} まで引き続き利用可能でした）`;
     }
-    return `ℹ 解約手続き済み（有効期限：${periodEnd ?? "不明"}まで）`;
+    if (cancelReserved && !periodEnd) {
+      return `ℹ 解約手続き済み（有効期限：${SUBSCRIPTION_PERIOD_END_PENDING_JA}。反映まで数分かかる場合があります）`;
+    }
+    return `ℹ 解約手続き済み（有効期限：${periodEnd} まで）`;
   }, [effectiveUser]);
 
   const premiumPeriodInfo = useMemo(() => {
-    const end = formatSlashDate(effectiveUser?.subscriptionPeriodEndAt ?? null);
+    const end = formatSubscriptionPeriodEndSlashJst(effectiveUser?.subscriptionPeriodEndAt ?? null);
     if (!end) return null;
-    return `ℹ 有効期限：${end}まで`;
+    return `ℹ 有効期限：${end} まで`;
   }, [effectiveUser?.subscriptionPeriodEndAt]);
 
   const navPreviewOrder: Array<keyof NavIconPaths> = [

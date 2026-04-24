@@ -1,15 +1,13 @@
 import { subscriptionStatusLabelJa } from "./subscriptionStatusLabels";
 import { isSubscriptionServiceSubscribedClient, subscriptionPeriodEndMsFromUser } from "./subscriptionAccess";
+import {
+  formatSubscriptionPeriodEndSlashJst,
+  SUBSCRIPTION_PERIOD_END_PENDING_JA,
+} from "./subscriptionPeriodEndFormat";
 
 function formatPeriodEndNumericJa(isoOrDate: string | Date): string | null {
-  const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
-  if (!Number.isFinite(d.getTime())) return null;
-  return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
+  const s = typeof isoOrDate === "string" ? isoOrDate : isoOrDate.toISOString();
+  return formatSubscriptionPeriodEndSlashJst(s);
 }
 
 /**
@@ -35,6 +33,7 @@ export function formatPremiumSubscriptionPrimaryStatus(user: {
       const num = formatPeriodEndNumericJa(String(endRaw));
       if (num) return `${num}に終了予定`;
     }
+    return `終了予定（${SUBSCRIPTION_PERIOD_END_PENDING_JA}）`;
   }
 
   if (status === "trialing") return subscriptionStatusLabelJa("trialing");
@@ -43,7 +42,9 @@ export function formatPremiumSubscriptionPrimaryStatus(user: {
     const num = user.subscriptionPeriodEndAt
       ? formatPeriodEndNumericJa(String(user.subscriptionPeriodEndAt))
       : null;
-    return num ? `${num}まで利用可能` : subscriptionStatusLabelJa("canceled");
+    return num
+      ? `${num}まで利用可能`
+      : `解約処理中（終了日: ${SUBSCRIPTION_PERIOD_END_PENDING_JA}）`;
   }
   /* active 等: 見出しで十分のため「契約中」は表示しない */
   return "";
@@ -78,8 +79,11 @@ export function formatSettingsSubscriptionSummary(user: {
   if (status === "admin_free" || status === "admin_granted") {
     return "管理者による無料開放枠です。プレミアム機能をご利用いただけます。";
   }
-  if ((status === "active" || status === "trialing" || status === "past_due") && user.subscriptionCancelAtPeriodEnd && endStr && endNum) {
-    return `解約が予約されています。${endNum}まではプレミアムをご利用いただけます（請求期間の終了日: ${endStr}）。`;
+  if ((status === "active" || status === "trialing" || status === "past_due") && user.subscriptionCancelAtPeriodEnd) {
+    if (endStr && endNum) {
+      return `解約が予約されています。${endNum}まではプレミアムをご利用いただけます（請求期間の終了日: ${endStr}）。`;
+    }
+    return `解約が予約されています。有効期限の日付は${SUBSCRIPTION_PERIOD_END_PENDING_JA}です。表示が追いつかない場合は Stripe のお客様ポータルで終了日をご確認ください。`;
   }
   if ((status === "active" || status === "trialing" || status === "past_due") && !user.subscriptionCancelAtPeriodEnd) {
     if (status === "active") {

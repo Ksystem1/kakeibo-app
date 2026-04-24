@@ -48,6 +48,7 @@ import {
   userHasPremiumSubscriptionAccess,
 } from "./subscription-logic.mjs";
 import { cancelUserSubscriptionAtPeriodEnd } from "./stripe-billing-cancel.mjs";
+import { fetchSubscriptionPeriodEndIsoFromStripeLive } from "./stripe-billing-subscription-period.mjs";
 import { createBillingPortalSession } from "./stripe-billing-portal.mjs";
 import {
   createBillingCheckoutSession,
@@ -4204,11 +4205,31 @@ export async function handleApiRequest(req, options = {}) {
               deriveSubscriptionStatusFromDbRow(subRow),
               userId,
             );
-        const periodEndAt =
+        let periodEndAt =
           subRow?.subscription_period_end_at != null &&
           String(subRow.subscription_period_end_at).trim() !== ""
             ? String(subRow.subscription_period_end_at)
             : null;
+        if (!periodEndAt) {
+          try {
+            const st = String(subscriptionStatus ?? "").trim().toLowerCase();
+            const atEnd = Number(subRow?.subscription_cancel_at_period_end) === 1;
+            if (
+              atEnd ||
+              st === "active" ||
+              st === "trialing" ||
+              st === "past_due" ||
+              st === "canceled"
+            ) {
+              const fromStripe = await fetchSubscriptionPeriodEndIsoFromStripeLive(pool, userId);
+              if (fromStripe) {
+                periodEndAt = fromStripe;
+              }
+            }
+          } catch (e) {
+            logError("billing.subscription_status.stripe_period_enrich", e, { userId });
+          }
+        }
         return json(
           200,
           {

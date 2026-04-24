@@ -6,7 +6,14 @@ export function subscriptionPeriodEndMsFromUser(user: {
   if (!user) return null;
   const raw = user.subscriptionPeriodEndAt;
   if (raw == null || String(raw).trim() === "") return null;
-  const end = new Date(String(raw));
+  const s = String(raw).trim();
+  if (/^\d{10}$/.test(s)) {
+    return Number(s) * 1000;
+  }
+  if (/^\d{13}$/.test(s)) {
+    return Number(s);
+  }
+  const end = new Date(s);
   if (!Number.isFinite(end.getTime())) return null;
   return end.getTime();
 }
