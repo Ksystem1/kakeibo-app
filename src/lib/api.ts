@@ -396,6 +396,20 @@ export async function regenerateRecoveryCode() {
   return parse<{ ok: boolean; recoveryCode: string }>(res);
 }
 
+/** 退会（物理削除・Stripe 即時解約はサーバで判定） */
+export async function postDeleteAccount(body: { password?: string; acknowledge?: string }) {
+  const res = await apiFetch(`${BASE}/auth/delete-account`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{
+    ok: boolean;
+    deleted?: boolean;
+    stripe?: { cancelled: boolean; subscriptionId: string | null; reason: string };
+  }>(res);
+}
+
 export async function getAuthMe() {
   const res = await apiFetch(`${BASE}/auth/me`, {
     headers: buildHeaders(),

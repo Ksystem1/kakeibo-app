@@ -25,6 +25,12 @@ import {
   resolvePasskeyConfig,
 } from "./passkey-webauthn.mjs";
 import {
+  assertUserMayDeleteAccount,
+  cancelStripeForSoleMemberFamilyIfNeeded,
+  deleteUserAccountCompletely,
+} from "./account-delete.mjs";
+import { createLogger } from "./logger.mjs";
+import {
   bodyContainsSubscriptionMutationFields,
   buildUserSubscriptionApiFields,
   deriveSubscriptionStatusFromDbRow,
@@ -33,6 +39,7 @@ import {
   userHasPremiumSubscriptionAccess,
 } from "./subscription-logic.mjs";
 
+const accountDeleteLogger = createLogger("auth.delete-account");
 const FAM_JOIN_ON_U = sqlUserFamilyIdExpr("u");
 
 /** このモジュールが処理するパス（ここに無いリクエストは getPool せず null を返す） */
@@ -53,6 +60,7 @@ const AUTH_ROUTE_KEYS = new Set([
   "POST /auth/me/anonymize-email",
   "POST /auth/recovery/login",
   "POST /auth/recovery/regenerate",
+  "POST /auth/delete-account",
   "GET /families/members",
   "POST /families/invite",
   "POST /families/invite-link",
@@ -1138,6 +1146,115 @@ export async function tryAuthRoutes(req, ctx) {
         [internalEmail, ph, uid],
       );
       return json(200, { ok: true, authMethod: "passkey" }, hdrs, skipCors);
+    }
+
+    if (key === "POST /auth/delete-account") {
+      const uid = resolveUserId(req.headers);
+      if (!uid) {
+        return json(401, { error: "認証が必要です" }, hdrs, skipCors);
+      }
+      const b = JSON.parse(req.body || "{}");
+      if (bodyContainsSubscriptionMutationFields(b)) {
+        return json(
+          400,
+          {
+            error: "InvalidRequest",
+            detail: "サブスクリプション状態は管理者のみが変更できます",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+      const [[urow]] = await pool.query(
+        `SELECT id, password_hash, LOWER(TRIM(COALESCE(auth_method, 'email'))) AS am
+         FROM users WHERE id = ? LIMIT 1`,
+        [uid],
+      );
+      if (!urow) {
+        return json(404, { error: "ユーザーが見つかりません" }, hdrs, skipCors);
+      }
+      const passkeyOnly = String(urow.am ?? "email") === "passkey";
+      const passwordRaw = String(b.password ?? "");
+      const acknowledge = String(b.acknowledge ?? "").trim();
+      let credOk = false;
+      if (passkeyOnly) {
+        if (acknowledge === "KAKEIBO_PERMANENT_DELETE") {
+          credOk = true;
+        }
+      } else {
+        if (passwordRaw && (await verifyPassword(passwordRaw, urow.password_hash))) {
+          credOk = true;
+        }
+      }
+      if (!credOk) {
+        return json(
+          400,
+          {
+            error: "DeleteAccountAuthFailed",
+            detail: passkeyOnly
+              ? "パスキーのみ登録の場合は、確認欄に KAKEIBO_PERMANENT_DELETE と正確に入力してください。"
+              : "パスワードが正しくありません。",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+      try {
+        await assertUserMayDeleteAccount(pool, uid);
+      } catch (e) {
+        const code = String(e?.code ?? "");
+        if (code === "ChildAccountCannotSelfDelete" || code === "OwnerMustTransferOrDisband") {
+          return json(403, { error: e.message, code }, hdrs, skipCors);
+        }
+        throw e;
+      }
+      let stripeResult;
+      try {
+        stripeResult = await cancelStripeForSoleMemberFamilyIfNeeded(pool, uid);
+      } catch (se) {
+        accountDeleteLogger.error("account.delete.stripe_cancel_failed", se, { userId: uid });
+        return json(
+          502,
+          {
+            error: "Stripe解約失敗",
+            detail:
+              "料金の解約処理に失敗したため退会を完了できませんでした。時間をおいて再試行するか、サポートにご連絡ください。",
+            stripeMessage: String(se?.message || se),
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        await deleteUserAccountCompletely(conn, uid);
+        await conn.commit();
+      } catch (de) {
+        try {
+          await conn.rollback();
+        } catch {
+          /* */
+        }
+        accountDeleteLogger.error("account.delete.db_failed_after_stripe", de, {
+          userId: uid,
+          stripeResult,
+        });
+        return json(
+          500,
+          {
+            error: "DeleteAccountDbFailed",
+            detail:
+              "データの削除中にエラーが発生しました。サブスクリプションは解約されている可能性があるため、サポートへお問い合わせください。",
+            message: String(de?.message || de),
+          },
+          hdrs,
+          skipCors,
+        );
+      } finally {
+        conn.release();
+      }
+      return json(200, { ok: true, deleted: true, stripe: stripeResult }, hdrs, skipCors);
     }
 
     if (key === "POST /auth/recovery/login") {

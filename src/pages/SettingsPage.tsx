@@ -29,6 +29,7 @@ import {
   regenerateRecoveryCode,
   postBillingCheckoutSession,
   postBillingPortalSession,
+  postDeleteAccount,
   reclassifyUncategorizedReceipts,
   verifyPasskeyUpgrade,
 } from "../lib/api";
@@ -105,7 +106,7 @@ export function SettingsPage() {
     });
   }, [location.hash, location.pathname]);
 
-  const { token, user: authUser, setUser } = useAuth();
+  const { token, user: authUser, setUser, logout } = useAuth();
   const {
     fontScale,
     setFontScale,
@@ -154,6 +155,11 @@ export function SettingsPage() {
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyMessage, setPasskeyMessage] = useState<string | null>(null);
   const [recoveryCodePreview, setRecoveryCodePreview] = useState<string | null>(null);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteAck, setDeleteAck] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
     itemsForFixedCostEditor(fixedCostsByMonth),
@@ -1106,6 +1112,148 @@ export function SettingsPage() {
           </p>
         ) : null}
       </div>
+
+      {token && authUser && !authUser.isChild ? (
+        <div
+          className={styles.settingsPanel}
+          style={{
+            marginTop: "1.75rem",
+            maxWidth: 720,
+            borderColor: "color-mix(in oklab, #dc2626 35%, var(--border) 65%)",
+          }}
+        >
+          <h2 className={styles.sectionTitle} style={{ color: "#b91c1c" }}>
+            退会（アカウント削除）
+          </h2>
+          <p className={styles.reclassifyHint}>
+            アカウントと家計簿データをサーバーから完全に削除します。取り消しはできません。
+          </p>
+          <button
+            type="button"
+            className={styles.btn}
+            style={{
+              borderColor: "color-mix(in oklab, #dc2626 45%, var(--border) 55%)",
+              color: "#b91c1c",
+              fontWeight: 700,
+            }}
+            onClick={() => {
+              setDeleteError(null);
+              setDeletePassword("");
+              setDeleteAck("");
+              setDeleteAccountOpen(true);
+            }}
+          >
+            退会する
+          </button>
+        </div>
+      ) : null}
+
+      {deleteAccountOpen ? (
+        <div
+          className={styles.deleteAccountBackdrop}
+          role="presentation"
+          onClick={() => {
+            if (!deleteBusy) setDeleteAccountOpen(false);
+          }}
+        >
+          <div
+            className={styles.deleteAccountDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-account-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="delete-account-title" className={styles.sectionTitle} style={{ color: "#b91c1c" }}>
+              最終確認
+            </h2>
+            <p className={styles.reclassifyHint} style={{ marginTop: 0 }}>
+              退会すると家計簿データはすべて消去され、プレミアムプランに加入している場合は
+              <strong> Stripe の定期課金は即時解約</strong>されます（残り日数の返金は各規約に従います）。この操作は
+              <strong>取り消せません</strong>。
+            </p>
+            {String(passkeyStatus?.authMethod ?? "")
+              .toLowerCase()
+              .trim() === "passkey" ? (
+              <label className={styles.settingsLabel} style={{ display: "block", marginTop: "0.75rem" }}>
+                パスキー登録のみの方: 下記を{" "}
+                <strong>一字違いなく</strong> 入力してください
+                <input
+                  type="text"
+                  className={styles.monthInput}
+                  style={{ width: "100%", marginTop: "0.35rem", maxWidth: "100%" }}
+                  value={deleteAck}
+                  onChange={(e) => setDeleteAck(e.target.value)}
+                  autoComplete="off"
+                  disabled={deleteBusy}
+                  placeholder="KAKEIBO_PERMANENT_DELETE"
+                />
+              </label>
+            ) : (
+              <label className={styles.settingsLabel} style={{ display: "block", marginTop: "0.75rem" }}>
+                現在のパスワード
+                <input
+                  type="password"
+                  className={styles.monthInput}
+                  style={{ width: "100%", marginTop: "0.35rem", maxWidth: "100%" }}
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  autoComplete="current-password"
+                  disabled={deleteBusy}
+                />
+              </label>
+            )}
+            {deleteError ? (
+              <p className={styles.errorText} style={{ marginTop: "0.6rem" }}>
+                {deleteError}
+              </p>
+            ) : null}
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className={styles.btn}
+                disabled={deleteBusy}
+                onClick={() => setDeleteAccountOpen(false)}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                className={styles.btn}
+                style={{ borderColor: "#b91c1c", color: "#fff", background: "#b91c1c", fontWeight: 800 }}
+                disabled={deleteBusy}
+                onClick={async () => {
+                  setDeleteError(null);
+                  setDeleteBusy(true);
+                  try {
+                    const passkeyOnly =
+                      String(passkeyStatus?.authMethod ?? "")
+                        .toLowerCase()
+                        .trim() === "passkey";
+                    await postDeleteAccount(
+                      passkeyOnly
+                        ? { acknowledge: deleteAck.trim() }
+                        : { password: deletePassword },
+                    );
+                    setDeleteAccountOpen(false);
+                    logout();
+                    const path = import.meta.env.BASE_URL || "/";
+                    window.location.href = new URL(
+                      path,
+                      window.location.origin,
+                    ).href;
+                  } catch (e) {
+                    setDeleteError(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setDeleteBusy(false);
+                  }
+                }}
+              >
+                {deleteBusy ? "処理中…" : "退会を実行する"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
