@@ -541,64 +541,58 @@
     grid-row: 3;
   }
 
+  /* 日付と金額を同一行に載せるため、日付欄をセル幅いっぱい（11.5ch 制限は外す） */
   .form[data-kakeibo-tx-add] .txAddLine1 > .field:nth-child(3) input[type="date"] {
     width: 100%;
-    max-width: min(11.5ch, 100%);
+    max-width: 100%;
+    min-width: 0;
     box-sizing: border-box;
   }
 
-  /* 取引追加では日付欄を縮めすぎない（小画面で YYYY/MM/DD が欠けるのを防ぐ） */
-  .form[data-kakeibo-tx-add] .field input[type="date"] {
-    width: 100%;
-    max-width: 100%;
-  }
-
   .form[data-kakeibo-tx-add] .txAddLineMedical {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    align-items: center;
   }
 
+  /* 1 行目: 医療費控除の対象 | 医療費の3区分、2 行目: 対象者名（全幅） */
   .form[data-kakeibo-tx-add] .txAddLineMedical > .field:nth-child(1) {
-    grid-column: 1 / -1;
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .form[data-kakeibo-tx-add] .txAddLineMedical > .field:nth-child(1).txAddFieldMedicalCheck {
+    padding-top: 0;
+    min-width: 0;
+  }
+
+  .form[data-kakeibo-tx-add] .txAddLineMedical > .field:nth-child(1) label {
+    align-items: flex-start;
+    line-height: 1.3;
+    white-space: normal;
   }
 
   .form[data-kakeibo-tx-add] .txAddLineMedical > .field:nth-child(2) {
-    grid-column: 1;
+    grid-column: 2;
+    grid-row: 1;
   }
 
   .form[data-kakeibo-tx-add] .txAddLineMedical > .field:nth-child(3) {
-    grid-column: 2;
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .form[data-kakeibo-tx-add] .txAddLineMedical > .txAddLineMedicalAction {
     grid-column: 1 / -1;
+    grid-row: 3;
     display: flex;
     justify-content: flex-end;
+    margin-top: 0.1rem;
   }
 
-  /*
-   * さらに狭い端末では2カラムをやめて縦積みにし、項目の重なり/欠けを回避する
-   */
   @media (max-width: 480px) {
     .form[data-kakeibo-tx-add] {
       padding: 0.5rem 0.55rem;
       gap: 0.4rem;
-    }
-
-    .form[data-kakeibo-tx-add] .txAddLine1,
-    .form[data-kakeibo-tx-add] .txAddLineMedical {
-      grid-template-columns: 1fr;
-      gap: 0.34rem;
-    }
-
-    .form[data-kakeibo-tx-add] .txAddLine1 > .field,
-    .form[data-kakeibo-tx-add] .txAddLineMedical > .field {
-      grid-column: 1 !important;
-      grid-row: auto !important;
-    }
-
-    .form[data-kakeibo-tx-add] .txAddLineMedical > .txAddLineMedicalAction {
-      grid-column: 1;
-      margin-top: 0.12rem;
     }
 
     .form[data-kakeibo-tx-add] .txAddLineMedical > .txAddLineMedicalAction .txAddSubmitBtn {
