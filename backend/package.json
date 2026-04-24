@@ -37,6 +37,7 @@
     "db:migrate-v32": "node scripts/run-migration-v32.mjs",
     "db:migrate-v33": "node scripts/run-migration-v33.mjs",
     "db:migrate-v34": "node scripts/run-migration-v34.mjs",
+    "db:migrate-v35": "node scripts/run-migration-v35.mjs",
     "stripe:cleanup-ghost-customers": "node scripts/stripe-cleanup-ghost-customers.mjs",
     "stripe:reconcile": "node scripts/stripe-subscription-reconcile.mjs",
     "db:dev-user": "node scripts/ensure-dev-user.mjs",

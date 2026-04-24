@@ -50,6 +50,8 @@ import {
   subscribePwaInstallPrefs,
 } from "../lib/pwaInstallPrefs";
 import styles from "../components/KakeiboDashboard.module.css";
+import { FeatureGate } from "../components/FeatureGate";
+import { FEATURE_MEDICAL_DEDUCTION_CSV } from "../lib/api";
 import { CategoriesPage } from "./CategoriesPage";
 import { MembersPage } from "./MembersPage";
 
@@ -387,15 +389,20 @@ export function SettingsPage() {
     <div className={styles.wrap}>
       <h1 className={styles.title}>設定</h1>
 
-      <section className={styles.settingsPanel} style={{ marginBottom: "1rem", border: "2px solid #0ea5e9" }}>
-        <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>医療費控除</h2>
-        <p className={styles.sub} style={{ marginTop: 0 }}>
-          年間の医療費控除データを集計し、国税庁フォーム向けCSV（氏名・支払先・区分・金額）で書き出せます。
-        </p>
-        <Link to="/medical-deduction" className={`${styles.btn} ${styles.btnPrimary}`}>
-          医療費集計画面を開く
-        </Link>
-      </section>
+      <FeatureGate feature={FEATURE_MEDICAL_DEDUCTION_CSV} mode="hide">
+        <section
+          className={styles.settingsPanel}
+          style={{ marginBottom: "1rem", border: "2px solid #0ea5e9" }}
+        >
+          <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>医療費控除</h2>
+          <p className={styles.sub} style={{ marginTop: 0 }}>
+            年間の医療費控除データを集計し、国税庁フォーム向けCSV（氏名・支払先・区分・金額）で書き出せます。
+          </p>
+          <Link to="/medical-deduction" className={`${styles.btn} ${styles.btnPrimary}`}>
+            医療費集計画面を開く
+          </Link>
+        </section>
+      </FeatureGate>
       {token && effectiveUser && (!passkeyStatus || passkeyStatus.authMethod !== "passkey") ? (
         <div className={styles.settingsPanel} style={{ maxWidth: 820, borderColor: "var(--accent)" }}>
           <h2 className={styles.sectionTitle}>パスキー移行（おすすめ）</h2>

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { getFamilyMembers, getTransactions, type MedicalType } from "../lib/api";
+import {
+  FEATURE_MEDICAL_DEDUCTION_CSV,
+  getFamilyMembers,
+  getTransactions,
+  type MedicalType,
+} from "../lib/api";
+import { FeatureGate } from "../components/FeatureGate";
 import styles from "../components/KakeiboDashboard.module.css";
 
 type TxMedical = {
@@ -80,7 +86,7 @@ function sanitizeFileNameSegment(s: string): string {
   return t || "家族";
 }
 
-export function MedicalDeductionPage() {
+function MedicalDeductionPageInner() {
   const now = new Date();
   const [year, setYear] = useState<number>(now.getFullYear());
   const [rows, setRows] = useState<MedicalSummaryRow[]>([]);
@@ -234,5 +240,29 @@ export function MedicalDeductionPage() {
         </table>
       </div>
     </div>
+  );
+}
+
+export function MedicalDeductionPage() {
+  return (
+    <FeatureGate
+      feature={FEATURE_MEDICAL_DEDUCTION_CSV}
+      mode="lock"
+      lockedFallback={
+        <div className={styles.wrap}>
+          <div style={{ marginBottom: "0.65rem" }}>
+            <Link to="/settings" style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
+              ← 設定へ戻る
+            </Link>
+          </div>
+          <h1 className={styles.title}>医療費集計</h1>
+          <p className={styles.sub}>
+            この機能はお使いのプランでは利用できません。プレミアムが必要な場合は、設定のサブスクリプションからご確認ください。
+          </p>
+        </div>
+      }
+    >
+      <MedicalDeductionPageInner />
+    </FeatureGate>
   );
 }
