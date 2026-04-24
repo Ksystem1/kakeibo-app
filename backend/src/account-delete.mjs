@@ -80,8 +80,21 @@ export async function cancelStripeForSoleMemberFamilyIfNeeded(pool, userId) {
     return { cancelled: false, subscriptionId: null, reason: "no_stripe_customer" };
   }
   const stripe = new Stripe(requireStripeSecretKey());
-  const list = await stripe.subscriptions.list({ customer: cus, status: "all", limit: 20 });
-  const toCancel = list.data.filter((s) => ["active", "trialing", "past_due"].includes(s.status));
+  /** @type {import("stripe").Stripe.Subscription[]} */
+  const allSubs = [];
+  let startingAfter;
+  for (;;) {
+    const page = await stripe.subscriptions.list({
+      customer: cus,
+      status: "all",
+      limit: 100,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    allSubs.push(...page.data);
+    if (!page.has_more || page.data.length === 0) break;
+    startingAfter = page.data[page.data.length - 1].id;
+  }
+  const toCancel = allSubs.filter((s) => ["active", "trialing", "past_due"].includes(s.status));
   if (toCancel.length === 0) {
     return { cancelled: false, subscriptionId: null, reason: "no_active_subscription" };
   }
@@ -94,7 +107,55 @@ export async function cancelStripeForSoleMemberFamilyIfNeeded(pool, userId) {
 }
 
 /**
+ * DB 削除は Stripe 解約フェーズが正常完了した（または課金停止の必要がない）後にだけ行う。
+ * このエラー型は解約成功後の DB 失敗に限定し、解約失敗は {@link cancelStripeForSoleMemberFamilyIfNeeded} の throw をそのまま伝播する。
+ */
+export class AccountDeletionDbError extends Error {
+  /**
+   * @param {string} message
+   * @param {{ stripeResult: { cancelled: boolean; subscriptionId: string | null; reason: string }; cause?: unknown }} opts
+   */
+  constructor(message, { stripeResult, cause }) {
+    super(message, cause !== undefined ? { cause } : undefined);
+    this.name = "AccountDeletionDbError";
+    /** @type {{ cancelled: boolean; subscriptionId: string | null; reason: string }} */
+    this.stripeResult = stripeResult;
+  }
+}
+
+/**
+ * 退会の「課金停止 → 成功確認後にのみ DB 物理削除」を1本に束ねる。
+ * - 解約 API が throw した場合、トランザクションに入らず `deleteUserAccountCompletely` は呼ばれない。
+ * - 解約不要（他メンバーあり・顧客IDなし等）のときは解約をスキップし、その直後に DB 削除へ進む。
+ *
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {number} userId
+ * @returns {Promise<{ stripeResult: { cancelled: boolean; subscriptionId: string | null; reason: string } }>}
+ */
+export async function performUserAccountDeletion(pool, userId) {
+  const stripeResult = await cancelStripeForSoleMemberFamilyIfNeeded(pool, userId);
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await deleteUserAccountCompletely(conn, userId);
+    await conn.commit();
+    return { stripeResult };
+  } catch (de) {
+    try {
+      await conn.rollback();
+    } catch {
+      /* */
+    }
+    throw new AccountDeletionDbError(String(de?.message || de), { stripeResult, cause: de });
+  } finally {
+    conn.release();
+  }
+}
+
+/**
  * 子ユーザ → 本人の順に物理 DELETE（FK CASCADE 前提。親より先に子を消す）
+ *
+ * 通常は {@link performUserAccountDeletion} 経由で呼び、Stripe 解約完了後のトランザクション内でのみ実行する。
  */
 export async function deleteUserAccountCompletely(conn, userId) {
   const uid = Number(userId);

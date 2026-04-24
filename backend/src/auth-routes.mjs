@@ -25,9 +25,9 @@ import {
   resolvePasskeyConfig,
 } from "./passkey-webauthn.mjs";
 import {
+  AccountDeletionDbError,
   assertUserMayDeleteAccount,
-  cancelStripeForSoleMemberFamilyIfNeeded,
-  deleteUserAccountCompletely,
+  performUserAccountDeletion,
 } from "./account-delete.mjs";
 import { createLogger } from "./logger.mjs";
 import {
@@ -1208,53 +1208,40 @@ export async function tryAuthRoutes(req, ctx) {
         }
         throw e;
       }
-      let stripeResult;
       try {
-        stripeResult = await cancelStripeForSoleMemberFamilyIfNeeded(pool, uid);
-      } catch (se) {
-        accountDeleteLogger.error("account.delete.stripe_cancel_failed", se, { userId: uid });
+        const { stripeResult } = await performUserAccountDeletion(pool, uid);
+        return json(200, { ok: true, deleted: true, stripe: stripeResult }, hdrs, skipCors);
+      } catch (e) {
+        if (e instanceof AccountDeletionDbError) {
+          accountDeleteLogger.error("account.delete.db_failed_after_stripe", e.cause ?? e, {
+            userId: uid,
+            stripeResult: e.stripeResult,
+          });
+          return json(
+            500,
+            {
+              error: "DeleteAccountDbFailed",
+              detail:
+                "データの削除中にエラーが発生しました。サブスクリプションは解約されている可能性があるため、サポートへお問い合わせください。",
+              message: String(e?.message || e),
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        accountDeleteLogger.error("account.delete.stripe_cancel_failed", e, { userId: uid });
         return json(
           502,
           {
             error: "Stripe解約失敗",
             detail:
               "料金の解約処理に失敗したため退会を完了できませんでした。時間をおいて再試行するか、サポートにご連絡ください。",
-            stripeMessage: String(se?.message || se),
+            stripeMessage: String(e?.message || e),
           },
           hdrs,
           skipCors,
         );
       }
-      const conn = await pool.getConnection();
-      try {
-        await conn.beginTransaction();
-        await deleteUserAccountCompletely(conn, uid);
-        await conn.commit();
-      } catch (de) {
-        try {
-          await conn.rollback();
-        } catch {
-          /* */
-        }
-        accountDeleteLogger.error("account.delete.db_failed_after_stripe", de, {
-          userId: uid,
-          stripeResult,
-        });
-        return json(
-          500,
-          {
-            error: "DeleteAccountDbFailed",
-            detail:
-              "データの削除中にエラーが発生しました。サブスクリプションは解約されている可能性があるため、サポートへお問い合わせください。",
-            message: String(de?.message || de),
-          },
-          hdrs,
-          skipCors,
-        );
-      } finally {
-        conn.release();
-      }
-      return json(200, { ok: true, deleted: true, stripe: stripeResult }, hdrs, skipCors);
     }
 
     if (key === "POST /auth/recovery/login") {
