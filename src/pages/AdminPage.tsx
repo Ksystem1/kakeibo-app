@@ -6,6 +6,7 @@ import {
   getAdminAnnouncement,
   getAdminMonitorRecruitmentSettings,
   getAdminPayPayImportSummary,
+  getAdminSubscriptionReconcile,
   getAdminUsers,
   putAdminAnnouncement,
   putAdminMonitorRecruitmentSettings,
@@ -187,6 +188,10 @@ export function AdminPage() {
     }>
   >([]);
   const [paypayMonitorError, setPaypayMonitorError] = useState<string | null>(null);
+  const [reconcileData, setReconcileData] = useState<Awaited<
+    ReturnType<typeof getAdminSubscriptionReconcile>
+  > | null>(null);
+  const [reconcileError, setReconcileError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -199,11 +204,23 @@ export function AdminPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setReconcileError(null);
     try {
       const [res, ann] = await Promise.all([
         getAdminUsers(),
         getAdminAnnouncement().catch(() => ({ text: "" })),
       ]);
+      try {
+        const rec = await getAdminSubscriptionReconcile();
+        setReconcileData(rec);
+      } catch (e) {
+        setReconcileData(null);
+        setReconcileError(
+          e instanceof Error
+            ? e.message
+            : "Stripe 照合の取得に失敗しました（STRIPE_SECRET_KEY 未設定、または API 未デプロイの可能性）",
+        );
+      }
       setMonitorRecruitmentLoadError(null);
       let monitorRecruitment: { enabled: boolean; text: string; migrationMissing?: boolean } = {
         enabled: false,
@@ -265,6 +282,7 @@ export function AdminPage() {
       setMonitorRecruitmentText(typeof monitorRecruitment.text === "string" ? monitorRecruitment.text : "");
     } catch (e) {
       setSubscriptionStatusWritable(true);
+      setReconcileData(null);
       setError(formatAdminApiError(e));
     } finally {
       setLoading(false);
@@ -523,6 +541,123 @@ export function AdminPage() {
           サポートチャット（家族一覧・返信）→
         </Link>
       </p>
+      {reconcileError != null && reconcileError !== "" && (
+        <div
+          style={{
+            margin: "0.75rem 0",
+            padding: "0.75rem 0.9rem",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "color-mix(in srgb, var(--warning) 12%, var(--bg-card))",
+            fontSize: "0.88rem",
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>Stripe 照合</strong>：{reconcileError}
+        </div>
+      )}
+      {reconcileData && (
+        <div
+          style={{
+            margin: "0.75rem 0 1rem",
+            padding: "0.9rem 1rem",
+            borderRadius: 12,
+            border: `1px solid ${
+              reconcileData.hasMismatches ? "color-mix(in srgb, #c00 35%, var(--border))" : "var(--border)"
+            }`,
+            background: reconcileData.hasMismatches
+              ? "color-mix(in srgb, #c00 6%, var(--bg-card))"
+              : "var(--bg-card)",
+          }}
+        >
+          <h2 style={{ margin: "0 0 0.4rem", fontSize: "1.02rem" }}>Stripe と DB のサブスク照合</h2>
+          <p style={{ margin: "0 0 0.5rem", fontSize: "0.82rem", color: "var(--text-muted)" }}>
+            表示はページ読み込み時点のライブ照合です。サブスクリプション数: {reconcileData.stripeSubscriptionCount} / 課金
+            cus_ 付き家族: {reconcileData.familyRowCount} / 取得時刻: {reconcileData.at}
+          </p>
+          {reconcileData.hasMismatches ? (
+            <>
+              <p style={{ margin: "0 0 0.65rem", fontWeight: 600, color: "var(--text)" }}>
+                不整合が検出されました。バッチ（npm run stripe:reconcile / --fix）やメール通知の内容を確認してください。
+              </p>
+              {reconcileData.familyMismatches.length > 0 && (
+                <div style={{ marginBottom: "0.75rem" }}>
+                  <h3 style={{ fontSize: "0.9rem", margin: "0 0 0.35rem" }}>家族（families）の subscription_status</h3>
+                  <div style={{ overflowX: "auto" }}>
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        fontSize: "0.78rem",
+                      }}
+                    >
+                      <thead>
+                        <tr>
+                          <th style={adminTableTh}>家族ID</th>
+                          <th style={adminTableTh}>Stripe cus</th>
+                          <th style={adminTableTh}>DB</th>
+                          <th style={adminTableTh}>Stripe 期待値</th>
+                          <th style={adminTableTh}>代表 sub</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reconcileData.familyMismatches.map((row) => (
+                          <tr key={`f-${row.familyId}-${row.stripeCustomerId}`}>
+                            <td style={adminTableTd}>{row.familyId}</td>
+                            <td style={{ ...adminTableTd, wordBreak: "break-all" }}>{row.stripeCustomerId}</td>
+                            <td style={adminTableTd}>{row.db}</td>
+                            <td style={adminTableTd}>{row.stripeExpected}</td>
+                            <td style={{ ...adminTableTd, wordBreak: "break-all" }}>
+                              {row.stripeBestSubscriptionId ?? "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {reconcileData.userMismatches.length > 0 && (
+                <div>
+                  <h3 style={{ fontSize: "0.9rem", margin: "0 0 0.35rem" }}>ユーザー is_premium</h3>
+                  <div style={{ overflowX: "auto" }}>
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        fontSize: "0.78rem",
+                      }}
+                    >
+                      <thead>
+                        <tr>
+                          <th style={adminTableTh}>ユーザーID</th>
+                          <th style={adminTableTh}>家族ID</th>
+                          <th style={adminTableTh}>cus</th>
+                          <th style={adminTableTh}>メモ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reconcileData.userMismatches.map((row) => (
+                          <tr key={`u-${row.userId}-${row.familyId}`}>
+                            <td style={adminTableTd}>{row.userId}</td>
+                            <td style={adminTableTd}>{row.familyId}</td>
+                            <td style={{ ...adminTableTd, wordBreak: "break-all" }}>{row.stripeCustomerId}</td>
+                            <td style={adminTableTd}>{row.note ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--text-muted)" }}>
+              不整合はありません。
+            </p>
+          )}
+        </div>
+      )}
       <div
         style={{
           margin: "0.8rem 0 1rem",

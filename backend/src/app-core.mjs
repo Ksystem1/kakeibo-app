@@ -62,6 +62,9 @@ import {
   AccountDeletionDbError,
   performUserAccountDeletion,
 } from "./account-delete.mjs";
+import Stripe from "stripe";
+import { requireStripeSecretKey } from "./stripe-config.mjs";
+import { compareStripeSubscriptionsWithDb } from "./stripe-subscription-reconcile-core.mjs";
 
 const logger = createLogger("api");
 
@@ -1946,6 +1949,7 @@ export async function handleApiRequest(req, options = {}) {
             familyChatMessageById: "/family/chat/messages/{id}",
             adminSupportChatFamilies: "/admin/support/chat/families",
             adminSupportChatMessages: "/admin/support/chat/messages",
+            adminSubscriptionReconcile: "/admin/subscription-reconcile",
             paypayImportPreview: "/import/paypay-csv/preview",
             paypayImportCommit: "/import/paypay-csv/commit",
           },
@@ -2349,6 +2353,27 @@ export async function handleApiRequest(req, options = {}) {
         hdrs,
         skipCors,
       );
+    }
+
+    if (routeKey(method, path) === "GET /admin/subscription-reconcile") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      try {
+        const stripe = new Stripe(requireStripeSecretKey());
+        const result = await compareStripeSubscriptionsWithDb(stripe, pool);
+        return json(200, result, hdrs, skipCors);
+      } catch (e) {
+        logError("admin.subscription_reconcile", e, { method, path });
+        return json(
+          500,
+          {
+            error: "SubscriptionReconcileFailed",
+            detail: String(e?.message || e),
+          },
+          hdrs,
+          skipCors,
+        );
+      }
     }
 
     if (routeKey(method, path) === "POST /admin/users") {

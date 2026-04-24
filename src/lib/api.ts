@@ -1555,6 +1555,36 @@ export async function deleteAdminUser(userId: number) {
   return parse<{ ok: boolean }>(res);
 }
 
+/** Stripe サブスクと DB（families / is_premium）のライブ照合（管理者のみ） */
+export async function getAdminSubscriptionReconcile() {
+  const res = await apiFetch(`${BASE}/admin/subscription-reconcile`, {
+    method: "GET",
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    at: string;
+    hasMismatches: boolean;
+    stripeSubscriptionCount: number;
+    familyRowCount: number;
+    familyMismatches: Array<{
+      kind: string;
+      familyId: number;
+      stripeCustomerId: string;
+      db: string;
+      stripeExpected: string;
+      stripeBestSubscriptionId: string | null;
+    }>;
+    userMismatches: Array<{
+      kind: string;
+      userId: number;
+      familyId: number;
+      stripeCustomerId: string;
+      note?: string;
+    }>;
+  }>(res);
+}
+
 export type ChatReadState = {
   user_id: number;
   last_read_message_id: number;
