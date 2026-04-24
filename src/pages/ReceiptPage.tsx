@@ -205,6 +205,7 @@ function normalizeReceiptCategoryId(id: unknown): number | null {
 }
 
 const COMBINE_SAME_TIME_PAYMENTS_KEY = "combine_same_time_payments";
+const COMBINE_SMALL_SAME_DAY_PAYMENTS_KEY = "combine_small_same_day_payments";
 
 type UnifiedMode = "idle" | "receipt" | "paypay";
 
@@ -239,6 +240,13 @@ export function ReceiptPage() {
   const [combineSameTimePayments, setCombineSameTimePayments] = useState<boolean>(() => {
     try {
       return localStorage.getItem(COMBINE_SAME_TIME_PAYMENTS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [combineSmallSameDayPayments, setCombineSmallSameDayPayments] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(COMBINE_SMALL_SAME_DAY_PAYMENTS_KEY) === "1";
     } catch {
       return false;
     }
@@ -458,7 +466,10 @@ export function ReceiptPage() {
           setPaypayErr("内容が PayPay 取引明細の形式ではありません。");
           return;
         }
-        const r = await previewPayPayCsvImport(raw, { combineSameTimePayments });
+        const r = await previewPayPayCsvImport(raw, {
+          combineSameTimePayments,
+          combineSmallSameDayPayments,
+        });
         setPaypayPreview(r);
         setPaypayMsg(
           `プレビュー: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
@@ -470,7 +481,7 @@ export function ReceiptPage() {
         navigate(location.pathname, { replace: true, state: null });
       }
     })();
-  }, [location.state, location.pathname, navigate]);
+  }, [location.state, location.pathname, navigate, combineSameTimePayments, combineSmallSameDayPayments]);
 
   function clearPayPayImport() {
     setPaypayText("");
@@ -489,7 +500,10 @@ export function ReceiptPage() {
     }
     setPaypayLoading(true);
     try {
-      const r = await previewPayPayCsvImport(paypayText, { combineSameTimePayments });
+      const r = await previewPayPayCsvImport(paypayText, {
+        combineSameTimePayments,
+        combineSmallSameDayPayments,
+      });
       setPaypayPreview(r);
       setPaypayMsg(
         `プレビュー: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
@@ -514,6 +528,15 @@ export function ReceiptPage() {
     }
   }
 
+  function onChangeSmallMergeFlag(v: boolean) {
+    setCombineSmallSameDayPayments(v);
+    try {
+      localStorage.setItem(COMBINE_SMALL_SAME_DAY_PAYMENTS_KEY, v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function onPayPayRegisterClick() {
     setPaypayErr(null);
     setPaypayMsg(null);
@@ -523,7 +546,10 @@ export function ReceiptPage() {
     }
     setPaypayLoading(true);
     try {
-      const r = await commitPayPayCsvImport(paypayText, { combineSameTimePayments });
+      const r = await commitPayPayCsvImport(paypayText, {
+        combineSameTimePayments,
+        combineSmallSameDayPayments,
+      });
       if (import.meta.env.DEV) {
         // eslint-disable-next-line no-console
         console.log("[Receipt] PayPay commit OK", { newCount: r.newCount, updatedCount: r.updatedCount });
@@ -576,7 +602,10 @@ export function ReceiptPage() {
         console.log("[Receipt] PayPay from file", { label, charLength: csvText.length });
       }
       try {
-        const r = await previewPayPayCsvImport(csvText, { combineSameTimePayments });
+        const r = await previewPayPayCsvImport(csvText, {
+          combineSameTimePayments,
+          combineSmallSameDayPayments,
+        });
         setPaypayPreview(r);
         setPaypayMsg(
           `プレビュー: 新規 ${r.newCount}件 / 更新 ${r.updatedCount}件 / 合算 ${r.aggregatedCount}件 / 除外 ${r.excludedCount}件`,
@@ -909,7 +938,16 @@ export function ReceiptPage() {
               onChange={(e) => onChangeCombineFlag(e.target.checked)}
               disabled={paypayLoading}
             />
-            同秒・同取引先の支払いを合算
+            同一店舗・10分以内の支払いを合算
+          </label>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: "0.5rem", marginLeft: "0.85rem" }}>
+            <input
+              type="checkbox"
+              checked={combineSmallSameDayPayments}
+              onChange={(e) => onChangeSmallMergeFlag(e.target.checked)}
+              disabled={paypayLoading}
+            />
+            500円未満は同日・同店舗で合算（時間を無視）
           </label>
           {paypayPreview ? (
             <p className={styles.reclassifyHint} style={{ margin: "0 0 0.45rem" }}>

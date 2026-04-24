@@ -133,8 +133,20 @@ function detectHeaderIndexMap(headerCols) {
   };
 }
 
+const PAYPAY_MERGE_TIME_WINDOW_MS = 10 * 60 * 1000;
+const SMALL_PAYMENT_THRESHOLD = 500;
+
+function parsePayPaySecondToEpochMs(txSecond) {
+  const s = String(txSecond ?? "").trim().replace(" ", "T");
+  if (!s) return null;
+  const d = new Date(`${s}+09:00`);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.getTime();
+}
+
 export function buildPayPayImportPlan(csvText, options = {}) {
   const combineSameTimePayments = options.combineSameTimePayments === true;
+  const combineSmallSameDayPayments = options.combineSmallSameDayPayments === true;
   const lines = splitCsvLines(csvText);
   if (lines.length === 0) {
     return {
@@ -210,32 +222,60 @@ export function buildPayPayImportPlan(csvText, options = {}) {
   let records = paymentRows;
   let aggregatedCount = 0;
 
-  if (combineSameTimePayments) {
-    const grouped = new Map();
-    for (const row of paymentRows) {
-      const key = `${row.txSecond}__${row.merchantNormalized}`;
-      const ex = grouped.get(key);
-      if (!ex) {
-        grouped.set(key, { ...row, sourceTxIds: [...row.sourceTxIds] });
+  if (combineSameTimePayments || combineSmallSameDayPayments) {
+    const sortedRows = [...paymentRows].sort((a, b) => a.txSecond.localeCompare(b.txSecond));
+    /** @type {Array<{externalTransactionId: string, txDate: string, txSecond: string, merchantRaw: string, merchantNormalized: string, amount: number, sourceTxIds: string[]}>} */
+    const merged = [];
+
+    for (const row of sortedRows) {
+      let target = null;
+      if (combineSameTimePayments) {
+        const rowMs = parsePayPaySecondToEpochMs(row.txSecond);
+        if (rowMs != null) {
+          for (let i = merged.length - 1; i >= 0; i -= 1) {
+            const candidate = merged[i];
+            if (candidate.merchantNormalized !== row.merchantNormalized) continue;
+            const candMs = parsePayPaySecondToEpochMs(candidate.txSecond);
+            if (candMs == null) continue;
+            if (rowMs - candMs > PAYPAY_MERGE_TIME_WINDOW_MS) break;
+            if (rowMs >= candMs && rowMs - candMs <= PAYPAY_MERGE_TIME_WINDOW_MS) {
+              target = candidate;
+              break;
+            }
+          }
+        }
+      }
+      if (!target && combineSmallSameDayPayments && row.amount < SMALL_PAYMENT_THRESHOLD) {
+        for (let i = merged.length - 1; i >= 0; i -= 1) {
+          const candidate = merged[i];
+          if (candidate.merchantNormalized !== row.merchantNormalized) continue;
+          if (candidate.txDate !== row.txDate) continue;
+          target = candidate;
+          break;
+        }
+      }
+      if (!target) {
+        merged.push({ ...row, sourceTxIds: [...row.sourceTxIds] });
       } else {
-        ex.amount += row.amount;
-        ex.sourceTxIds.push(...row.sourceTxIds);
+        target.amount += row.amount;
+        target.sourceTxIds.push(...row.sourceTxIds);
       }
     }
-    records = Array.from(grouped.values()).map((r) => {
+
+    records = merged.map((r) => {
       const ids = [...new Set(r.sourceTxIds)];
       if (ids.length <= 1) {
         return { ...r, sourceTxIds: ids, externalTransactionId: ids[0] ?? r.externalTransactionId };
       }
       const hash = crypto
         .createHash("sha1")
-        .update(`${r.txSecond}|${r.merchantNormalized}|${ids.join("|")}`)
+        .update(`${r.txDate}|${r.txSecond}|${r.merchantNormalized}|${ids.join("|")}`)
         .digest("hex")
         .slice(0, 12);
       return {
         ...r,
         sourceTxIds: ids,
-        externalTransactionId: `paypay-group:${r.txSecond}:${hash}`,
+        externalTransactionId: `paypay-group:${r.txDate}:${hash}`,
       };
     });
     aggregatedCount = paymentRows.length - records.length;
@@ -263,11 +303,13 @@ export function buildPayPayImportPlan(csvText, options = {}) {
 /**
  * メモは店舗名のみ（短形式）。日時・取引番号は transaction_date / external_transaction_id に保存。
  * @param {string} merchantRaw
- * @param {boolean} combined 同秒・同取引先合算行
+ * @param {boolean} combined 複数決済の合算行
  */
 function buildMemo(merchantRaw, combined) {
   const m = String(merchantRaw ?? "").trim() || "（取引先なし）";
-  const base = combined ? `PayPay支払い(合算): ${m}` : `PayPay支払い: ${m}`;
+  const base = combined
+    ? `PayPay支払い: ${m} (複数決済を合算)`
+    : `PayPay支払い: ${m}`;
   return base.slice(0, 500);
 }
 
@@ -395,9 +437,13 @@ export async function executePayPayCsvImport(pool, payload) {
     familyId,
     csvText,
     combineSameTimePayments = false,
+    combineSmallSameDayPayments = false,
     dryRun = false,
   } = payload;
-  const plan = buildPayPayImportPlan(csvText, { combineSameTimePayments });
+  const plan = buildPayPayImportPlan(csvText, {
+    combineSameTimePayments,
+    combineSmallSameDayPayments,
+  });
   if (!plan.ok) {
     return {
       ok: false,
@@ -448,5 +494,6 @@ export async function executePayPayCsvImport(pool, payload) {
     },
     parseErrors: plan.parseErrors.slice(0, 20),
     combineSameTimePayments,
+    combineSmallSameDayPayments,
   };
 }

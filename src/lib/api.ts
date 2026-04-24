@@ -1024,6 +1024,7 @@ export type PayPayImportResult = {
   ok: boolean;
   dryRun: boolean;
   combineSameTimePayments: boolean;
+  combineSmallSameDayPayments?: boolean;
   totalRows: number;
   newCount: number;
   updatedCount: number;
@@ -1035,7 +1036,7 @@ export type PayPayImportResult = {
 
 export async function previewPayPayCsvImport(
   csvText: string,
-  options?: { combineSameTimePayments?: boolean },
+  options?: { combineSameTimePayments?: boolean; combineSmallSameDayPayments?: boolean },
 ) {
   const res = await apiFetch(`${BASE}/import/paypay-csv/preview`, {
     method: "POST",
@@ -1043,6 +1044,7 @@ export async function previewPayPayCsvImport(
     body: JSON.stringify({
       csvText,
       combineSameTimePayments: options?.combineSameTimePayments === true,
+      combineSmallSameDayPayments: options?.combineSmallSameDayPayments === true,
     }),
   });
   return parse<PayPayImportResult>(res);
@@ -1050,7 +1052,7 @@ export async function previewPayPayCsvImport(
 
 export async function commitPayPayCsvImport(
   csvText: string,
-  options?: { combineSameTimePayments?: boolean },
+  options?: { combineSameTimePayments?: boolean; combineSmallSameDayPayments?: boolean },
 ) {
   const res = await apiFetch(`${BASE}/import/paypay-csv/commit`, {
     method: "POST",
@@ -1058,6 +1060,7 @@ export async function commitPayPayCsvImport(
     body: JSON.stringify({
       csvText,
       combineSameTimePayments: options?.combineSameTimePayments === true,
+      combineSmallSameDayPayments: options?.combineSmallSameDayPayments === true,
     }),
   });
   return parse<PayPayImportResult>(res);

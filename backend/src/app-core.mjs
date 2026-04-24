@@ -5205,12 +5205,14 @@ export async function handleApiRequest(req, options = {}) {
         }
         const text = String(b.csvText ?? "");
         const combineSameTimePayments = b.combineSameTimePayments === true;
+        const combineSmallSameDayPayments = b.combineSmallSameDayPayments === true;
         const dryRun = routeKey(method, path) === "POST /import/paypay-csv/preview";
         const importResult = await executePayPayCsvImport(pool, {
           userId,
           familyId,
           csvText: text,
           combineSameTimePayments,
+          combineSmallSameDayPayments,
           dryRun,
         });
         if (!importResult.ok) {
@@ -5226,6 +5228,7 @@ export async function handleApiRequest(req, options = {}) {
               errorCount: importResult.counts?.errorCount ?? 1,
               detail: {
                 combineSameTimePayments,
+                combineSmallSameDayPayments,
                 error: importResult.detail || importResult.error || "PayPayCsvParseError",
                 parseErrors: importResult.parseErrors || [],
               },
@@ -5256,6 +5259,7 @@ export async function handleApiRequest(req, options = {}) {
           errorCount: importResult.counts.errorCount,
           detail: {
             combineSameTimePayments,
+            combineSmallSameDayPayments,
             parseErrors: importResult.parseErrors || [],
           },
         };
@@ -5270,6 +5274,7 @@ export async function handleApiRequest(req, options = {}) {
             ok: true,
             dryRun,
             combineSameTimePayments,
+            combineSmallSameDayPayments,
             ...importResult.counts,
             parseErrors: importResult.parseErrors || [],
           },
