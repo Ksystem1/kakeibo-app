@@ -1011,7 +1011,7 @@ export function ReceiptPage() {
 
       {unifiedMode === "idle" && !receiptImageObjectUrl ? (
         <p className={styles.sub} style={{ margin: "0.2rem 0 0.85rem" }}>
-          写真はAIで読み取り、CSVは取り込み前に件数を表示します。銀行の明細用CSVは
+          銀行の明細用CSVは
           <Link to="/import" style={{ color: "var(--accent)" }}>
             銀行・カード明細取込
           </Link>
