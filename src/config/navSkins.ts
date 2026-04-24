@@ -49,9 +49,9 @@ export const NAV_SKIN_CATALOG = NAV_SKIN_TIER_CATALOG;
 export function getPremiumVariantLabel(id: string): string {
   switch (id) {
     case "Tmp02":
-      return "ハワイ風";
+      return "飲食店";
     case "Tmp03":
-      return "ロボット風";
+      return "くだもの";
     case "Tmp04":
       return "古代風";
     case "Tmp05":
