@@ -278,6 +278,51 @@
   min-width: 0;
 }
 
+/** 固定費列: 見出しと設定リンクを同じ行でベースライン揃え */
+.summaryApiTitleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.5rem;
+  margin: 0 0 0.2rem;
+  min-width: 0;
+}
+
+.summaryApiTitleRow .sectionTitle {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.summaryApiLeadText {
+  margin: 0 0 0.28rem;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* 3カラム時の 2 行目（説明）用プレースホルダー — 中列の本文高さに Subgrid で合わせる */
+.summaryApiLead:empty {
+  min-height: 0;
+}
+
+@media (max-width: 768px) {
+  .summaryApiGrid3Up {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .summaryApiGrid3Up .summaryApiCol {
+    display: block;
+  }
+
+  .summaryApiGrid3Up .summaryApiLead[aria-hidden="true"] {
+    display: none;
+  }
+}
+
 @media (min-width: 769px) {
   .summaryApiGrid {
     display: grid;
@@ -291,6 +336,10 @@
     font-size: 0.96rem;
   }
 
+  .summaryApiCol .summaryApiTitleRow .sectionTitle {
+    margin: 0;
+  }
+
   .summaryApiCol .sub {
     margin: 0 0 0.28rem;
     font-size: 0.88rem;
@@ -299,6 +348,44 @@
 
   .summaryApiCol .tableWrap {
     margin-bottom: 0 !important;
+  }
+
+  /**
+   * 3カラム同時表示: 行1=見出し、行2=説明、行3=表で高さを同期（Subgrid 対応ブラウザ）
+   */
+  @supports (grid-template-rows: subgrid) {
+    .summaryApiGrid3Up {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-rows: auto auto 1fr;
+      gap: 0.32rem 0.45rem;
+      margin-bottom: 0.2rem;
+      align-items: stretch;
+    }
+
+    .summaryApiGrid3Up .summaryApiCol {
+      display: grid;
+      grid-template-rows: subgrid;
+      grid-row: 1 / 4;
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .summaryApiGrid3Up .summaryApiCol .tableWrap {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .summaryApiGrid3Up .summaryApiCol .tableWrap .table {
+      width: 100%;
+    }
+  }
+
+  /* Subgrid 非対応でも 3 列は同一行に並べる */
+  @supports not (grid-template-rows: subgrid) {
+    .summaryApiGrid3Up {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.32rem 0.45rem;
+    }
   }
 }
 

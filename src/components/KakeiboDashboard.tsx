@@ -500,6 +500,9 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     Boolean(summary) &&
     (summary?.incomesByCategory?.length ?? 0) > 0;
   const hasSummaryApiGrid = hasExpenseApiSection || hasFixedCostSection || hasIncomeApiSection;
+  /** 3カラム同時表示時: Subgridで見出し・説明・表の行を揃える */
+  const summaryApiThreeUp =
+    hasExpenseApiSection && hasFixedCostSection && hasIncomeApiSection;
 
   const [formAmount, setFormAmount] = useState("");
   const [formKind, setFormKind] = useState<"expense" | "income">("expense");
@@ -1208,11 +1211,20 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       </div>
 
       {hasSummaryApiGrid ? (
-        <div className={styles.summaryApiGrid}>
+        <div
+          className={
+            summaryApiThreeUp
+              ? `${styles.summaryApiGrid} ${styles.summaryApiGrid3Up}`
+              : styles.summaryApiGrid
+          }
+        >
           {hasExpenseApiSection ? (
             <section className={styles.summaryApiCol} aria-label="品目別・支出（API集計）">
               <h2 className={styles.sectionTitle}>品目別・支出（API集計）</h2>
-              <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
+              {summaryApiThreeUp ? (
+                <div className={styles.summaryApiLead} aria-hidden="true" />
+              ) : null}
+              <div className={styles.tableWrap}>
                 <table className={styles.table}>
                   <thead>
                     <tr>
@@ -1251,26 +1263,19 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           ) : null}
           {hasFixedCostSection ? (
             <section className={styles.summaryApiCol} aria-label="固定費明細">
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  flexWrap: "wrap",
-                }}
-              >
-                <h2 className={styles.sectionTitle} style={{ marginBottom: 0 }}>
-                  固定費明細
-                </h2>
-                <Link to="/settings#fixed-cost-settings" className={styles.btn}>
+              <div className={styles.summaryApiTitleRow}>
+                <h2 className={styles.sectionTitle}>固定費明細</h2>
+                <Link
+                  to="/settings#fixed-cost-settings"
+                  className={`${styles.btn} ${styles.btnSm}`}
+                >
                   固定費設定（全月共通）へ
                 </Link>
               </div>
-              <p className={styles.sub} style={{ margin: "0 0 0.5rem" }}>
+              <p className={`${styles.sub} ${styles.summaryApiLeadText}`}>
                 毎月同額のものは設定の固定費へ。取引には変動分だけを登録する運用です。
               </p>
-              <div className={styles.tableWrap} style={{ marginBottom: "1rem" }}>
+              <div className={styles.tableWrap}>
                 <table className={styles.table}>
                   <thead>
                     <tr>
@@ -1313,7 +1318,10 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           {hasIncomeApiSection && summary ? (
             <section className={styles.summaryApiCol} aria-label="品目別・収入（API集計）">
               <h2 className={styles.sectionTitle}>品目別・収入（API集計）</h2>
-              <div className={styles.tableWrap} style={{ marginBottom: "1.25rem" }}>
+              {summaryApiThreeUp ? (
+                <div className={styles.summaryApiLead} aria-hidden="true" />
+              ) : null}
+              <div className={styles.tableWrap}>
                 <table className={styles.table}>
                   <thead>
                     <tr>
