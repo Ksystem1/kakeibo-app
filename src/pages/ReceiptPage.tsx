@@ -828,7 +828,7 @@ export function ReceiptPage() {
   );
 
   return (
-    <div className={styles.wrap}>
+    <div className={`${styles.wrap} ${styles.receiptImportWrap}`}>
       {isBusy ? loadingUi : null}
       <h1 className={styles.title}>レシート・明細取込</h1>
       {receiptDebugTier !== "server" ? (

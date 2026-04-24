@@ -48,6 +48,26 @@
   min-width: 820px;
 }
 
+/** カテゴリ名・収入名: セル全幅に伸びすぎないよう上限 */
+.categoryNameCell {
+  max-width: 14rem;
+  width: 1%;
+}
+
+.categoryNameInput {
+  width: 100%;
+  max-width: 12rem;
+  box-sizing: border-box;
+}
+
+/** 新規カテゴリ名（一覧の名前欄と同程度の幅） */
+.categoryAddNameInput {
+  flex: 0 1 12rem;
+  max-width: 12rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .th {
   text-align: left;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
@@ -148,7 +168,8 @@
 .categoryMedicalPatient {
   flex: 1 1 5rem;
   min-width: 4.5rem;
-  max-width: 11rem;
+  max-width: 5.75rem;
+  box-sizing: border-box;
 }
 
 /** 追加フォーム: 医療費行を1行に */
@@ -176,7 +197,20 @@
 }
 
 .addMedicalRow input.addMedicalPatient {
-  flex: 1 1 10rem;
-  min-width: 8rem;
-  max-width: 18rem;
+  flex: 0 1 9rem;
+  min-width: 4.25rem;
+  max-width: 9.5rem;
+  box-sizing: border-box;
+}
+
+.addMedicalSubmit {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@media (max-width: 520px) {
+  .addMedicalSubmit {
+    width: 100%;
+    margin-left: 0;
+  }
 }

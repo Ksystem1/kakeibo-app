@@ -8,6 +8,23 @@
   font-size: 1.02rem;
 }
 
+/* レシート取込: 上記 min-height で余白だけが大きいモバイルを圧縮 */
+.receiptImportWrap {
+  min-height: 0;
+}
+@media (max-width: 768px) {
+  .receiptImportWrap {
+    min-height: auto;
+    padding: clamp(0.45rem, 2.5vw, 1.1rem) clamp(0.5rem, 2.5vw, 1rem) 0.6rem;
+  }
+  .receiptImportWrap .receiptPickRow {
+    margin-bottom: 0.4rem;
+  }
+  .receiptImportWrap .title {
+    margin-bottom: 0.35rem;
+  }
+}
+
 .header {
   display: flex;
   flex-wrap: wrap;
@@ -1564,6 +1581,65 @@
   box-shadow: none;
 }
 
+/* 医療費集計: 氏名・区分の内訳 */
+.medicalSummaryGrids {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 640px) {
+  .medicalSummaryGrids {
+    grid-template-columns: 1fr;
+  }
+}
+
+.medicalSummarySubheading {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.medicalSummaryList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.medicalSummaryListItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.medicalSummaryLabel {
+  min-width: 0;
+  flex: 1 1 8rem;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.medicalSummaryAmount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
 /* 固定費フォーム末尾: グリッドの狭セルで「入力行を追加」が折り返さないよう全幅フレックス */
 .settingsFixedCostFormActions {
   grid-column: 1 / -1;
@@ -1660,31 +1736,24 @@
   }
 }
 
-/* 設定の固定費: 常に1行（狭い画面は行全体を横スクロール） */
+/* 設定の固定費: 1行。モバイルは金額列を圧縮し削除を常に表示 */
 .fixedCostRow {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(3.5rem, 4.6rem) auto;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem 0.5rem;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  overscroll-behavior-x: contain;
 }
 
 .fixedCostRow > input[type="text"] {
-  flex: 1 1 11rem;
-  min-width: 10rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .fixedCostRow > input[type="number"] {
-  flex: 0 0 7.5rem;
-  min-width: 7rem;
-  width: 7.5rem;
-  max-width: min(11rem, 40vw);
+  min-width: 0;
+  width: 100%;
+  max-width: 4.6rem;
   box-sizing: border-box;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -1692,28 +1761,16 @@
 
 .fixedCostRow > .btn,
 .fixedCostRow > button {
-  flex: 0 0 auto;
   white-space: nowrap;
 }
 
-@media (min-width: 521px) {
+@media (min-width: 520px) {
   .fixedCostRow {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(14ch, 11rem) auto;
-    overflow-x: visible;
-  }
-
-  .fixedCostRow > input[type="text"] {
-    min-width: 0;
-    flex: unset;
-    width: auto;
+    grid-template-columns: minmax(0, 1fr) minmax(7ch, 7.5rem) auto;
   }
 
   .fixedCostRow > input[type="number"] {
-    flex: unset;
-    min-width: 0;
-    width: 100%;
-    max-width: 100%;
+    max-width: 7.5rem;
   }
 
   .fixedCostRow > .btn,
@@ -1814,7 +1871,7 @@
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.5rem 0.75rem;
 }
@@ -1823,6 +1880,8 @@
   flex: 1 1 12rem;
   min-width: 0;
   margin: 0 !important;
+  white-space: normal;
+  line-height: 1.45;
 }
 
 .medicalDeductionButtonWrap {
@@ -1830,6 +1889,26 @@
   margin-left: auto;
   display: flex;
   align-items: center;
+  position: relative;
+  z-index: 2;
+}
+
+@media (max-width: 640px) {
+  .medicalDeductionRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .medicalDeductionButtonWrap {
+    margin-left: 0;
+  }
+
+  .medicalDeductionButtonWrap a {
+    display: block;
+    text-align: center;
+    width: 100%;
+    box-sizing: border-box;
+  }
 }
 
 .navSkinPreviewWrap {

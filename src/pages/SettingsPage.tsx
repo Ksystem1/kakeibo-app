@@ -405,13 +405,7 @@ export function SettingsPage() {
             医療費控除
           </h2>
           <div className={styles.medicalDeductionRow}>
-            <p
-              className={styles.sub}
-              style={{
-                whiteSpace: "nowrap",
-                overflowX: "auto",
-              }}
-            >
+            <p className={styles.sub}>
               年間分を集計し、申告用CSV（国税庁フォーム互換）を出力します。
             </p>
             <div className={styles.medicalDeductionButtonWrap}>
@@ -1015,9 +1009,7 @@ export function SettingsPage() {
         </h2>
         <div className={styles.reclassifySettingsLayout}>
           <p className={styles.reclassifyHint}>
-            全期間の未分類を、履歴・キーワードより再推定します
-            <br />
-            （件数が多いと時間がかかります）。
+            全期間の未分類を再分類（件数により時間変動）します
           </p>
           <div className={styles.reclassifySettingsButtonWrap}>
             <button

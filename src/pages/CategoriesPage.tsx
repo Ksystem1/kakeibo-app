@@ -184,8 +184,8 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
             onChange={(e) => setNewName(e.target.value)}
             placeholder="例: 外食"
             maxLength={100}
-            className={styles.monthInput}
-            style={{ flex: "1 1 160px", minWidth: 140 }}
+            className={`${styles.monthInput} ${catStyles.categoryAddNameInput}`}
+            style={{ minWidth: 0 }}
             disabled={loading}
           />
           <select
@@ -208,13 +208,6 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
             disabled={loading}
             style={{ width: 44, height: 36, padding: 2, border: "none", borderRadius: 6 }}
           />
-          <button
-            type="submit"
-            className={`${styles.btn} ${styles.btnPrimary}`}
-            disabled={loading}
-          >
-            追加
-          </button>
         </div>
         <div className={catStyles.addMedicalRow}>
           <label
@@ -249,6 +242,13 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
             maxLength={120}
             disabled={!newMedicalDefault || newKind !== "expense" || loading}
           />
+          <button
+            type="submit"
+            className={`${styles.btn} ${styles.btnPrimary} ${catStyles.addMedicalSubmit}`}
+            disabled={loading}
+          >
+            追加
+          </button>
         </div>
       </form>
 
@@ -570,14 +570,17 @@ function CategoryRow({
           ⠿
         </td>
       ) : null}
-      <td style={{ padding: "0.4rem 0.35rem", verticalAlign: "middle" }}>
+      <td
+        className={catStyles.categoryNameCell}
+        style={{ padding: "0.4rem 0.35rem", verticalAlign: "middle" }}
+      >
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={100}
-          className={styles.monthInput}
-          style={{ width: "100%", minWidth: 120 }}
+          className={`${styles.monthInput} ${catStyles.categoryNameInput}`}
+          style={{ minWidth: 0 }}
           disabled={disabled}
         />
       </td>

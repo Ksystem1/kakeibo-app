@@ -644,11 +644,25 @@ export function AdminPage() {
                 width: "100%",
                 borderCollapse: "collapse",
                 fontSize: "0.82rem",
+                tableLayout: "fixed",
               }}
             >
+              <colgroup>
+                <col style={{ width: "44%" }} />
+                <col style={{ width: "32%" }} />
+                <col style={{ width: "24%" }} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th style={adminTableTh}>機能</th>
+                  <th
+                    style={{
+                      ...adminTableTh,
+                      whiteSpace: "normal",
+                      minWidth: "7.5rem",
+                    }}
+                  >
+                    機能
+                  </th>
                   <th style={adminTableTh}>キー</th>
                   <th style={adminTableTh}>最小プラン</th>
                 </tr>
@@ -660,8 +674,25 @@ export function AdminPage() {
                   const isStd = String(r.min_plan).toLowerCase() === "standard";
                   return (
                     <tr key={fk}>
-                      <td style={adminTableTd}>{r.label_ja ?? fk}</td>
-                      <td style={{ ...adminTableTd, fontFamily: "ui-monospace, monospace" }}>{fk}</td>
+                      <td
+                        style={{
+                          ...adminTableTd,
+                          whiteSpace: "normal",
+                          lineHeight: 1.4,
+                          wordBreak: "keep-all",
+                        }}
+                      >
+                        {r.label_ja ?? fk}
+                      </td>
+                      <td
+                        style={{
+                          ...adminTableTd,
+                          fontFamily: "ui-monospace, monospace",
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {fk}
+                      </td>
                       <td style={adminTableTd}>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", alignItems: "center" }}>
                           <button

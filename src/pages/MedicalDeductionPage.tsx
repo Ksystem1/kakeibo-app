@@ -158,6 +158,27 @@ function MedicalDeductionPageInner() {
     [rows],
   );
 
+  const totalByPatient = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) {
+      const k = r.patientName;
+      m.set(k, (m.get(k) ?? 0) + r.amount);
+    }
+    return [...m.entries()]
+      .filter(([, total]) => total > 0)
+      .sort((a, b) => a[0].localeCompare(b[0], "ja"));
+  }, [rows]);
+
+  const totalByMedicalType = useMemo(() => {
+    const m = new Map<MedicalType, number>();
+    for (const r of rows) {
+      m.set(r.medicalType, (m.get(r.medicalType) ?? 0) + r.amount);
+    }
+    return (["treatment", "medicine", "other"] as const)
+      .map((t) => ({ type: t, total: m.get(t) ?? 0, label: MEDICAL_TYPE_LABELS[t] }))
+      .filter((x) => x.total > 0);
+  }, [rows]);
+
   const exportFilename = `医療費控除明細_${year}年度_${sanitizeFileNameSegment(familyLabel)}.csv`;
 
   return (
@@ -206,6 +227,56 @@ function MedicalDeductionPageInner() {
           </span>
         </div>
       </div>
+
+      {rows.length > 0 && !loading ? (
+        <div
+          className={styles.settingsPanel}
+          style={{ marginBottom: "1rem", maxWidth: 840 }}
+        >
+          <h2 className={styles.sectionTitle} style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>
+            内訳合計
+          </h2>
+          <p className={styles.sub} style={{ margin: "0 0 0.65rem", fontSize: "0.88rem" }}>
+            氏名ごと・医療費3区分ごとの合計です（詳細行の合計と一致します）。
+          </p>
+          <div className={styles.medicalSummaryGrids}>
+            <div>
+              <h3 className={styles.medicalSummarySubheading}>氏名別</h3>
+              {totalByPatient.length === 0 ? (
+                <p className={styles.sub} style={{ margin: 0, fontSize: "0.86rem" }}>—</p>
+              ) : (
+                <ul className={styles.medicalSummaryList}>
+                  {totalByPatient.map(([patient, amount]) => (
+                    <li key={patient} className={styles.medicalSummaryListItem}>
+                      <span className={styles.medicalSummaryLabel}>{patient}</span>
+                      <span className={styles.medicalSummaryAmount}>
+                        {amount.toLocaleString("ja-JP")}円
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <h3 className={styles.medicalSummarySubheading}>区分別</h3>
+              {totalByMedicalType.length === 0 ? (
+                <p className={styles.sub} style={{ margin: 0, fontSize: "0.86rem" }}>—</p>
+              ) : (
+                <ul className={styles.medicalSummaryList}>
+                  {totalByMedicalType.map((x) => (
+                    <li key={x.type} className={styles.medicalSummaryListItem}>
+                      <span className={styles.medicalSummaryLabel}>{x.label}</span>
+                      <span className={styles.medicalSummaryAmount}>
+                        {x.total.toLocaleString("ja-JP")}円
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className={styles.tableWrap}>
         <table className={styles.table}>
