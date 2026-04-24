@@ -171,8 +171,11 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
       </div>
 
       <h2 className={styles.sectionTitle}>子供プロフィール</h2>
-      <div className={styles.tableWrap} style={{ marginBottom: "0.75rem" }}>
-        <table className={styles.table}>
+      <div
+        className={`${styles.tableWrap} ${styles.childProfileTableWrap}`}
+        style={{ marginBottom: "0.75rem" }}
+      >
+        <table className={`${styles.table} ${styles.childProfileTable}`}>
           <thead>
             <tr>
               <th>名前</th>
@@ -218,24 +221,29 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
                   </td>
                   <td>
                     {editingChildId === c.id ? (
-                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                      <div className={styles.childProfileActions}>
                         <button
                           type="button"
-                          className={`${styles.btn} ${styles.btnPrimary}`}
+                          className={`${styles.btn} ${styles.btnSm} ${styles.btnPrimary}`}
                           disabled={loading}
                           onClick={() => void onSaveChildProfile(c.id)}
                         >
                           保存
                         </button>
-                        <button type="button" className={styles.btn} disabled={loading} onClick={cancelEditChild}>
+                        <button
+                          type="button"
+                          className={`${styles.btn} ${styles.btnSm}`}
+                          disabled={loading}
+                          onClick={cancelEditChild}
+                        >
                           キャンセル
                         </button>
                       </div>
                     ) : (
-                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                      <div className={styles.childProfileActions}>
                         <button
                           type="button"
-                          className={styles.btn}
+                          className={`${styles.btn} ${styles.btnSm}`}
                           disabled={loading}
                           onClick={() => beginEditChild(c.id, c.display_name, c.grade_group)}
                         >
@@ -243,7 +251,7 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
                         </button>
                         <button
                           type="button"
-                          className={styles.btn}
+                          className={`${styles.btn} ${styles.btnSm}`}
                           disabled={loading}
                           onClick={() => void onDeleteChildProfile(c.id)}
                         >

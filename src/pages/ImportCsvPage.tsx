@@ -60,7 +60,7 @@ export function ImportCsvPage() {
           <Link to="/receipt" style={{ color: "var(--accent)" }}>
             レシート・明細取込
           </Link>
-          。この画面はカンマ区切り4列（旧形式）専用です。
+          。
         </p>
       </div>
       <p className={styles.sub}>

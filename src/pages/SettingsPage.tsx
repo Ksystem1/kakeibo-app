@@ -383,10 +383,22 @@ export function SettingsPage() {
       <FeatureGate feature={FEATURE_MEDICAL_DEDUCTION_CSV} mode="hide">
         <section
           className={styles.settingsPanel}
-          style={{ marginBottom: "1rem", border: "2px solid #0ea5e9" }}
+          style={{
+            marginBottom: "1rem",
+            border: "2px solid #0ea5e9",
+            maxWidth: "min(100%, 52rem)",
+          }}
         >
           <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>医療費控除</h2>
-          <p className={styles.sub} style={{ marginTop: 0 }}>
+          <p
+            className={styles.sub}
+            style={{
+              marginTop: 0,
+              marginBottom: "0.4rem",
+              whiteSpace: "nowrap",
+              overflowX: "auto",
+            }}
+          >
             年間分を集計し、申告用CSV（国税庁フォーム互換）を出力します。
           </p>
           <Link to="/medical-deduction" className={`${styles.btn} ${styles.btnPrimary}`}>
