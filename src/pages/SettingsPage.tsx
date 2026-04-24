@@ -1113,7 +1113,7 @@ export function SettingsPage() {
         ) : null}
       </div>
 
-      {token && authUser && !authUser.isChild ? (
+      {token && authUser && !authUser.isChild && !authUser.isAdmin ? (
         <div
           className={styles.settingsPanel}
           style={{
@@ -1148,7 +1148,7 @@ export function SettingsPage() {
         </div>
       ) : null}
 
-      {deleteAccountOpen ? (
+      {deleteAccountOpen && authUser && !authUser.isAdmin ? (
         <div
           className={styles.deleteAccountBackdrop}
           role="presentation"
