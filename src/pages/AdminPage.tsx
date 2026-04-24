@@ -8,7 +8,10 @@ import {
   getAdminPayPayImportSummary,
   getAdminSubscriptionReconcile,
   getAdminUsers,
+  getReconcileDismissedKeys,
+  postAdminSubscriptionReconcileApply,
   putAdminAnnouncement,
+  setReconcileDismissedKeys,
   putAdminMonitorRecruitmentSettings,
   resetAdminUserPassword,
   updateAdminUser,
@@ -23,6 +26,14 @@ import {
   NEW_PASSWORD_LABEL,
   NEW_PASSWORD_TOOLTIP,
 } from "../lib/passwordPolicy";
+
+function familyMismatchKey(r: { familyId: number; stripeCustomerId: string }): string {
+  return `f:${r.familyId}:${r.stripeCustomerId}`;
+}
+
+function userMismatchKey(r: { userId: number; familyId: number }): string {
+  return `u:${r.userId}:${r.familyId}`;
+}
 
 type AdminUser = {
   id: number;
@@ -192,6 +203,8 @@ export function AdminPage() {
     ReturnType<typeof getAdminSubscriptionReconcile>
   > | null>(null);
   const [reconcileError, setReconcileError] = useState<string | null>(null);
+  const [reconcileDismissed, setReconcileDismissed] = useState<string[]>(() => getReconcileDismissedKeys());
+  const [reconcileApplyBusy, setReconcileApplyBusy] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -294,6 +307,20 @@ export function AdminPage() {
   }, [load]);
 
   const adminCount = useMemo(() => items.filter((x) => x.isAdmin).length, [items]);
+
+  const visibleFamilyMismatches = useMemo(() => {
+    if (!reconcileData) return [];
+    return reconcileData.familyMismatches.filter(
+      (r) => !reconcileDismissed.includes(familyMismatchKey(r)),
+    );
+  }, [reconcileData, reconcileDismissed]);
+
+  const visibleUserMismatches = useMemo(() => {
+    if (!reconcileData) return [];
+    return reconcileData.userMismatches.filter(
+      (r) => !reconcileDismissed.includes(userMismatchKey(r)),
+    );
+  }, [reconcileData, reconcileDismissed]);
 
   const familyGroups = useMemo<AdminFamilyGroup[]>(() => {
     const m = new Map<string, AdminFamilyGroup>();
@@ -543,6 +570,7 @@ export function AdminPage() {
       </p>
       {reconcileError != null && reconcileError !== "" && (
         <div
+          role="alert"
           style={{
             margin: "0.75rem 0",
             padding: "0.75rem 0.9rem",
@@ -550,10 +578,11 @@ export function AdminPage() {
             border: "1px solid var(--border)",
             background: "color-mix(in srgb, var(--warning) 12%, var(--bg-card))",
             fontSize: "0.88rem",
-            lineHeight: 1.5,
+            lineHeight: 1.55,
           }}
         >
-          <strong>Stripe 照合</strong>：{reconcileError}
+          <div style={{ fontWeight: 700, marginBottom: "0.35rem" }}>Stripe 照合：エラー</div>
+          <div style={{ color: "var(--text)" }}>{reconcileError}</div>
         </div>
       )}
       {reconcileData && (
@@ -563,26 +592,92 @@ export function AdminPage() {
             padding: "0.9rem 1rem",
             borderRadius: 12,
             border: `1px solid ${
-              reconcileData.hasMismatches ? "color-mix(in srgb, #c00 35%, var(--border))" : "var(--border)"
+              reconcileData.hasMismatches || reconcileData.userPremiumCheckSkipped
+                ? "color-mix(in srgb, #c00 35%, var(--border))"
+                : "var(--border)"
             }`,
-            background: reconcileData.hasMismatches
-              ? "color-mix(in srgb, #c00 6%, var(--bg-card))"
-              : "var(--bg-card)",
+            background:
+              reconcileData.hasMismatches || reconcileData.userPremiumCheckSkipped
+                ? "color-mix(in srgb, #c00 6%, var(--bg-card))"
+                : "var(--bg-card)",
           }}
         >
-          <h2 style={{ margin: "0 0 0.4rem", fontSize: "1.02rem" }}>Stripe と DB のサブスク照合</h2>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "0.5rem",
+              marginBottom: "0.4rem",
+            }}
+          >
+            <h2 style={{ margin: 0, fontSize: "1.02rem" }}>Stripe と DB のサブスク照合</h2>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void load()}
+              style={{ font: "inherit", fontSize: "0.86rem", padding: "0.3rem 0.65rem" }}
+            >
+              照合を再取得
+            </button>
+          </div>
           <p style={{ margin: "0 0 0.5rem", fontSize: "0.82rem", color: "var(--text-muted)" }}>
-            表示はページ読み込み時点のライブ照合です。サブスクリプション数: {reconcileData.stripeSubscriptionCount} / 課金
-            cus_ 付き家族: {reconcileData.familyRowCount} / 取得時刻: {reconcileData.at}
+            表示は読み込み時点のライブ照合です。Stripe
+            サブスクリプション件数: {reconcileData.stripeSubscriptionCount} ／ 課金
+            cus_ 付き家族行: {reconcileData.familyRowCount} ／ 取得時刻: {reconcileData.at}
           </p>
+          {reconcileData.userPremiumCheckSkipped && reconcileData.userPremiumSkipReasonJa ? (
+            <p
+              style={{
+                margin: "0 0 0.6rem",
+                fontSize: "0.86rem",
+                lineHeight: 1.5,
+                padding: "0.5rem 0.65rem",
+                borderRadius: 8,
+                background: "color-mix(in srgb, #fa0 10%, var(--bg-card))",
+                border: "1px solid color-mix(in srgb, #fa0 35%, var(--border))",
+              }}
+            >
+              {reconcileData.userPremiumSkipReasonJa}
+            </p>
+          ) : null}
           {reconcileData.hasMismatches ? (
             <>
-              <p style={{ margin: "0 0 0.65rem", fontWeight: 600, color: "var(--text)" }}>
-                不整合が検出されました。バッチ（npm run stripe:reconcile / --fix）やメール通知の内容を確認してください。
+              <p style={{ margin: "0 0 0.55rem", fontWeight: 600, color: "var(--text)" }}>
+                不整合が検出されました。行ごとに、DBをStripeに揃えて更新するか、この画面の一覧からだけ一時的に隠すか、選べます（CLI
+                バッチや通知メールの利用も従来どおり可能です）。
               </p>
-              {reconcileData.familyMismatches.length > 0 && (
+              {reconcileDismissed.length > 0 ? (
+                <p style={{ margin: "0 0 0.55rem", display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+                  <span style={{ fontSize: "0.83rem" }}>
+                    一覧から一時的に隠した行: {reconcileDismissed.length} 件
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReconcileDismissed([]);
+                      setReconcileDismissedKeys([]);
+                    }}
+                    style={{ font: "inherit", fontSize: "0.83rem" }}
+                  >
+                    不整合行を再表示
+                  </button>
+                </p>
+              ) : null}
+              {reconcileData.familyMismatches.length > 0 && visibleFamilyMismatches.length === 0 ? (
+                <p style={{ margin: "0 0 0.6rem", fontSize: "0.86rem", color: "var(--text-muted)" }}>
+                  家族の不整合行は、すべて「表示から外す」で非表示にしています。上の「不整合行を再表示」で戻せます。
+                </p>
+              ) : null}
+              {reconcileData.userMismatches.length > 0 && visibleUserMismatches.length === 0 ? (
+                <p style={{ margin: "0 0 0.6rem", fontSize: "0.86rem", color: "var(--text-muted)" }}>
+                  プレミアム不整合行は、すべて「表示から外す」で非表示にしています。
+                </p>
+              ) : null}
+              {visibleFamilyMismatches.length > 0 && (
                 <div style={{ marginBottom: "0.75rem" }}>
-                  <h3 style={{ fontSize: "0.9rem", margin: "0 0 0.35rem" }}>家族（families）の subscription_status</h3>
+                  <h3 style={{ fontSize: "0.9rem", margin: "0 0 0.35rem" }}>家族（families）の契約状態</h3>
                   <div style={{ overflowX: "auto" }}>
                     <table
                       style={{
@@ -594,32 +689,97 @@ export function AdminPage() {
                       <thead>
                         <tr>
                           <th style={adminTableTh}>家族ID</th>
-                          <th style={adminTableTh}>Stripe cus</th>
-                          <th style={adminTableTh}>DB</th>
-                          <th style={adminTableTh}>Stripe 期待値</th>
-                          <th style={adminTableTh}>代表 sub</th>
+                          <th style={adminTableTh}>Stripe 顧客ID (cus_)</th>
+                          <th style={adminTableTh}>DB 上の状態</th>
+                          <th style={adminTableTh}>Stripe 上の想定</th>
+                          <th style={adminTableTh}>代表サブスク</th>
+                          <th style={adminTableTh}>内容</th>
+                          <th style={adminTableTh}>操作</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {reconcileData.familyMismatches.map((row) => (
-                          <tr key={`f-${row.familyId}-${row.stripeCustomerId}`}>
-                            <td style={adminTableTd}>{row.familyId}</td>
-                            <td style={{ ...adminTableTd, wordBreak: "break-all" }}>{row.stripeCustomerId}</td>
-                            <td style={adminTableTd}>{row.db}</td>
-                            <td style={adminTableTd}>{row.stripeExpected}</td>
-                            <td style={{ ...adminTableTd, wordBreak: "break-all" }}>
-                              {row.stripeBestSubscriptionId ?? "—"}
-                            </td>
-                          </tr>
-                        ))}
+                        {visibleFamilyMismatches.map((row) => {
+                          const fKey = familyMismatchKey(row);
+                          const busy = reconcileApplyBusy === fKey;
+                          return (
+                            <tr key={fKey}>
+                              <td style={adminTableTd}>{row.familyId}</td>
+                              <td style={{ ...adminTableTd, wordBreak: "break-all" }}>{row.stripeCustomerId}</td>
+                              <td style={adminTableTd}>{subscriptionStatusLabelJa(row.db)}</td>
+                              <td style={adminTableTd}>{subscriptionStatusLabelJa(row.stripeExpected)}</td>
+                              <td style={{ ...adminTableTd, wordBreak: "break-all" }}>
+                                {row.stripeBestSubscriptionId ?? "—"}
+                              </td>
+                              <td style={adminTableTd}>
+                                {row.descriptionJa ?? "—"}
+                              </td>
+                              <td style={adminTableTd}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                                  <button
+                                    type="button"
+                                    disabled={loading || busy}
+                                    onClick={async () => {
+                                      if (
+                                        !window.confirm(
+                                          "この家族（families）の契約状態を、現在の Stripe の内容に合わせて更新します。よろしいですか？",
+                                        )
+                                      ) {
+                                        return;
+                                      }
+                                      setReconcileApplyBusy(fKey);
+                                      setError(null);
+                                      try {
+                                        await postAdminSubscriptionReconcileApply({
+                                          kind: "family",
+                                          familyId: row.familyId,
+                                        });
+                                        setReconcileDismissed((d) => {
+                                          const n = d.filter((x) => x !== fKey);
+                                          setReconcileDismissedKeys(n);
+                                          return n;
+                                        });
+                                        await load();
+                                      } catch (e) {
+                                        setError(
+                                          e instanceof Error
+                                            ? e.message
+                                            : "契約状態の更新に失敗しました",
+                                        );
+                                      } finally {
+                                        setReconcileApplyBusy(null);
+                                      }
+                                    }}
+                                    style={{ font: "inherit", fontSize: "0.75rem" }}
+                                  >
+                                    {busy ? "更新中…" : "DBに反映（Stripe基準）"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={loading || busy}
+                                    onClick={() => {
+                                      setReconcileDismissed((prev) => {
+                                        const n = prev.includes(fKey) ? prev : [...prev, fKey];
+                                        setReconcileDismissedKeys(n);
+                                        return n;
+                                      });
+                                    }}
+                                    style={{ font: "inherit", fontSize: "0.75rem" }}
+                                  >
+                                    表示から外す
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 </div>
               )}
-              {reconcileData.userMismatches.length > 0 && (
+              {visibleUserMismatches.length > 0 && (
                 <div>
-                  <h3 style={{ fontSize: "0.9rem", margin: "0 0 0.35rem" }}>ユーザー is_premium</h3>
+                  <h3 style={{ fontSize: "0.9rem", margin: "0 0 0.35rem" }}>ユーザーのプレミアム表示（is_premium）</h3>
                   <div style={{ overflowX: "auto" }}>
                     <table
                       style={{
@@ -632,19 +792,83 @@ export function AdminPage() {
                         <tr>
                           <th style={adminTableTh}>ユーザーID</th>
                           <th style={adminTableTh}>家族ID</th>
-                          <th style={adminTableTh}>cus</th>
-                          <th style={adminTableTh}>メモ</th>
+                          <th style={adminTableTh}>顧客ID (cus_)</th>
+                          <th style={adminTableTh}>説明</th>
+                          <th style={adminTableTh}>操作</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {reconcileData.userMismatches.map((row) => (
-                          <tr key={`u-${row.userId}-${row.familyId}`}>
-                            <td style={adminTableTd}>{row.userId}</td>
-                            <td style={adminTableTd}>{row.familyId}</td>
-                            <td style={{ ...adminTableTd, wordBreak: "break-all" }}>{row.stripeCustomerId}</td>
-                            <td style={adminTableTd}>{row.note ?? "—"}</td>
-                          </tr>
-                        ))}
+                        {visibleUserMismatches.map((row) => {
+                          const uKey = userMismatchKey(row);
+                          const busy = reconcileApplyBusy === uKey;
+                          return (
+                            <tr key={uKey}>
+                              <td style={adminTableTd}>{row.userId}</td>
+                              <td style={adminTableTd}>{row.familyId}</td>
+                              <td style={{ ...adminTableTd, wordBreak: "break-all" }}>{row.stripeCustomerId}</td>
+                              <td style={adminTableTd}>
+                                {row.descriptionJa ?? row.note ?? "—"}
+                              </td>
+                              <td style={adminTableTd}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                                  <button
+                                    type="button"
+                                    disabled={loading || busy}
+                                    onClick={async () => {
+                                      if (
+                                        !window.confirm(
+                                          "該当ユーザーのプレミアム（DB）を契約状況に合わせてオフに揃えます。よろしいですか？",
+                                        )
+                                      ) {
+                                        return;
+                                      }
+                                      setReconcileApplyBusy(uKey);
+                                      setError(null);
+                                      try {
+                                        await postAdminSubscriptionReconcileApply({
+                                          kind: "user",
+                                          familyId: row.familyId,
+                                          userId: row.userId,
+                                        });
+                                        setReconcileDismissed((d) => {
+                                          const n = d.filter((x) => x !== uKey);
+                                          setReconcileDismissedKeys(n);
+                                          return n;
+                                        });
+                                        await load();
+                                      } catch (e) {
+                                        setError(
+                                          e instanceof Error
+                                            ? e.message
+                                            : "更新に失敗しました",
+                                        );
+                                      } finally {
+                                        setReconcileApplyBusy(null);
+                                      }
+                                    }}
+                                    style={{ font: "inherit", fontSize: "0.75rem" }}
+                                  >
+                                    {busy ? "更新中…" : "DBに反映（プレミアム解消）"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={loading || busy}
+                                    onClick={() => {
+                                      setReconcileDismissed((prev) => {
+                                        const n = prev.includes(uKey) ? prev : [...prev, uKey];
+                                        setReconcileDismissedKeys(n);
+                                        return n;
+                                      });
+                                    }}
+                                    style={{ font: "inherit", fontSize: "0.75rem" }}
+                                  >
+                                    表示から外す
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -653,7 +877,7 @@ export function AdminPage() {
             </>
           ) : (
             <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--text-muted)" }}>
-              不整合はありません。
+              不整合はありません（家族・ユーザーの照合範囲内）。
             </p>
           )}
         </div>

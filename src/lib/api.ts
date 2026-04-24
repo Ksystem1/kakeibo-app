@@ -166,10 +166,11 @@ async function parse<T>(res: Response): Promise<T> {
   const text = await res.text();
   const data = text ? (JSON.parse(text) as T) : ({} as T);
   if (!res.ok) {
-    const err = data as { error?: string; detail?: string; message?: string };
+    const err = data as { error?: string; detail?: string; message?: string; messageJa?: string };
+    const messageJa = String(err.messageJa ?? "").trim();
     const detail = String(err.detail ?? err.message ?? "").trim();
     const code = String(err.error ?? "").trim();
-    const msg = detail || code || res.statusText;
+    const msg = messageJa || detail || code || res.statusText;
     throw new Error(msg);
   }
   return data;
@@ -1567,6 +1568,8 @@ export async function getAdminSubscriptionReconcile() {
     hasMismatches: boolean;
     stripeSubscriptionCount: number;
     familyRowCount: number;
+    userPremiumCheckSkipped?: boolean;
+    userPremiumSkipReasonJa?: string | null;
     familyMismatches: Array<{
       kind: string;
       familyId: number;
@@ -1574,6 +1577,7 @@ export async function getAdminSubscriptionReconcile() {
       db: string;
       stripeExpected: string;
       stripeBestSubscriptionId: string | null;
+      descriptionJa?: string;
     }>;
     userMismatches: Array<{
       kind: string;
@@ -1581,9 +1585,47 @@ export async function getAdminSubscriptionReconcile() {
       familyId: number;
       stripeCustomerId: string;
       note?: string;
+      descriptionJa?: string;
     }>;
   }>(res);
 }
+
+const RECONCILE_DISMISS_KEY = "kakeibo:admin:reconcile:dismissed";
+
+/** 不整合1件の DB 修正（管理者・Stripe 代表サブスク / プレミアム不整合） */
+export async function postAdminSubscriptionReconcileApply(body: {
+  kind: "family" | "user";
+  familyId: number;
+  userId?: number;
+}) {
+  const res = await apiFetch(`${BASE}/admin/subscription-reconcile/apply`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  return parse<{ ok: boolean }>(res);
+}
+
+export function getReconcileDismissedKeys(): string[] {
+  try {
+    const raw = localStorage.getItem(RECONCILE_DISMISS_KEY);
+    if (!raw) return [];
+    const a = JSON.parse(raw) as unknown;
+    return Array.isArray(a) ? a.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setReconcileDismissedKeys(keys: string[]) {
+  try {
+    localStorage.setItem(RECONCILE_DISMISS_KEY, JSON.stringify(keys));
+  } catch {
+    /* ignore */
+  }
+}
+
 
 export type ChatReadState = {
   user_id: number;
