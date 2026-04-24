@@ -1,15 +1,19 @@
 /**
  * Stripe Webhook: families（家族単位）の subscription_status / stripe_customer_id を同期
  *
+ * エンドポイント: POST /webhooks/stripe, POST /api/webhooks/stripe
+ *
  * 処理イベント:
- * - customer.subscription.created / updated → Stripe Subscription.status を DB に反映（同じ family の全員が参照）
- * - customer.subscription.deleted → subscription_status = canceled
+ * - customer.subscription.created / updated → Stripe Subscription.status を DB に反映
+ * - customer.subscription.deleted → families を canceled 相当に更新し、該当家族配下 users の is_premium を 0 に戻す
+ *   （users.is_premium=1 だけが derive で active 扱いになる不整合の防止。管理者付与 admin_free は触らない）
  * - checkout.session.completed → metadata / client_reference_id でユーザを特定し、その家族に cus_ を紐付け
  */
 import Stripe from "stripe";
 import { createLogger } from "./logger.mjs";
 import { getStripeWebhookSecret, requireStripeSecretKey } from "./stripe-config.mjs";
 import { mapStripeSubscriptionStatusToDb } from "./subscription-logic.mjs";
+import { clearIsPremiumAfterSubscriptionEndedDb } from "./stripe-user-premium-sync.mjs";
 
 const logger = createLogger("stripe-webhook");
 
@@ -120,45 +124,63 @@ async function syncSubscriptionToFamily(pool, subscription, deleted) {
         ? String(subscription.id)
         : null;
 
+  let familyIdTouched = null;
   const [res] = await pool.query(
     `UPDATE families SET subscription_status = ?, subscription_period_end_at = ?, subscription_cancel_at_period_end = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE stripe_customer_id = ?`,
     [dbStatus, periodEndDate, cancelAtEnd, subId, customerId],
   );
-  if (res.affectedRows) return;
-
-  /** users.stripe_customer_id を削除済みの DB では ER_BAD_FIELD になるためスキップ */
-  let fid = null;
-  try {
-    const [[legacy]] = await pool.query(
-      `SELECT COALESCE(u.default_family_id, (SELECT fm.family_id FROM family_members fm WHERE fm.user_id = u.id ORDER BY fm.id LIMIT 1)) AS fid
-       FROM users u WHERE u.stripe_customer_id = ? LIMIT 1`,
-      [customerId],
-    );
-    fid = legacy?.fid != null ? Number(legacy.fid) : null;
-  } catch (e) {
-    const code = String(e?.code || "");
-    const errno = Number(e?.errno);
-    if (code !== "ER_BAD_FIELD_ERROR" && errno !== 1054) throw e;
-  }
-  if (fid && Number.isFinite(fid) && fid > 0) {
-    await pool.query(
-      `UPDATE families SET
+  if (res.affectedRows) {
+    const [[frow]] = await pool.query(`SELECT id FROM families WHERE TRIM(COALESCE(stripe_customer_id, '')) = ? LIMIT 1`, [
+      String(customerId).trim(),
+    ]);
+    if (frow?.id != null) {
+      familyIdTouched = Number(frow.id);
+    }
+  } else {
+    /** users.stripe_customer_id を削除済みの DB では ER_BAD_FIELD になるためスキップ */
+    let fid = null;
+    try {
+      const [[legacy]] = await pool.query(
+        `SELECT COALESCE(u.default_family_id, (SELECT fm.family_id FROM family_members fm WHERE fm.user_id = u.id ORDER BY fm.id LIMIT 1)) AS fid
+         FROM users u WHERE u.stripe_customer_id = ? LIMIT 1`,
+        [customerId],
+      );
+      fid = legacy?.fid != null ? Number(legacy.fid) : null;
+    } catch (e) {
+      const code = String(e?.code || "");
+      const errno = Number(e?.errno);
+      if (code !== "ER_BAD_FIELD_ERROR" && errno !== 1054) throw e;
+    }
+    if (fid && Number.isFinite(fid) && fid > 0) {
+      await pool.query(
+        `UPDATE families SET
          subscription_status = ?,
          subscription_period_end_at = ?,
          subscription_cancel_at_period_end = ?,
          stripe_subscription_id = COALESCE(?, stripe_subscription_id),
          stripe_customer_id = COALESCE(stripe_customer_id, ?),
          updated_at = NOW()
-       WHERE id = ?`,
-      [dbStatus, periodEndDate, cancelAtEnd, subId, customerId, fid],
-    );
-    return;
+         WHERE id = ?`,
+        [dbStatus, periodEndDate, cancelAtEnd, subId, customerId, fid],
+      );
+      familyIdTouched = fid;
+    }
   }
 
-  logger.warn("stripe.subscription_no_family_for_customer", {
-    customerId,
-    subscriptionId: subscription.id,
-  });
+  if (!familyIdTouched) {
+    logger.warn("stripe.subscription_no_family_for_customer", {
+      customerId,
+      subscriptionId: subscription.id,
+    });
+  }
+
+  if (deleted) {
+    await clearIsPremiumAfterSubscriptionEndedDb(
+      pool,
+      { familyId: familyIdTouched, customerId: String(customerId) },
+      { subscriptionId: subId, event: "customer.subscription.deleted" },
+    );
+  }
 }
 
 /** Checkout 完了時: metadata.kakeibo_user_id または client_reference_id でユーザーを特定し、その家族に cus_ を保存 */
