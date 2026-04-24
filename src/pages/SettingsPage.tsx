@@ -387,10 +387,10 @@ export function SettingsPage() {
         >
           <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>医療費控除</h2>
           <p className={styles.sub} style={{ marginTop: 0 }}>
-            年間の医療費控除データを集計し、国税庁フォーム向けCSV（氏名・支払先・区分・金額）で書き出せます。
+            年間分を集計し、申告用CSV（国税庁フォーム互換）を出力します。
           </p>
           <Link to="/medical-deduction" className={`${styles.btn} ${styles.btnPrimary}`}>
-            医療費集計画面を開く
+            医療費集計へ
           </Link>
         </section>
       </FeatureGate>

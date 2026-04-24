@@ -215,39 +215,39 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
             追加
           </button>
         </div>
-        <div style={{ marginTop: "0.6rem", display: "grid", gap: "0.45rem" }}>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+        <div className={catStyles.addMedicalRow}>
+          <label
+            className={catStyles.addMedicalRowLabel}
+            title="支出の新規取引で、医療費控除のチェックと区分を自動で入れる"
+          >
             <input
               type="checkbox"
               checked={newMedicalDefault}
               onChange={(e) => setNewMedicalDefault(e.target.checked)}
               disabled={loading || newKind !== "expense"}
             />
-            このカテゴリを医療費控除の既定にする
+            医療費控除の既定
           </label>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <select
-              className={styles.monthInput}
-              value={newMedicalType}
-              onChange={(e) => setNewMedicalType((e.target.value as MedicalType | "") ?? "")}
-              disabled={!newMedicalDefault || newKind !== "expense" || loading}
-            >
-              <option value="">3区分を選択</option>
-              <option value="treatment">診療・治療</option>
-              <option value="medicine">医薬品</option>
-              <option value="other">その他</option>
-            </select>
-            <input
-              type="text"
-              className={styles.monthInput}
-              value={newMedicalPatientName}
-              onChange={(e) => setNewMedicalPatientName(e.target.value)}
-              placeholder="既定の対象者（例: 子ども）"
-              maxLength={120}
-              disabled={!newMedicalDefault || newKind !== "expense" || loading}
-              style={{ minWidth: 190 }}
-            />
-          </div>
+          <select
+            className={`${styles.monthInput} ${catStyles.addMedicalType}`}
+            value={newMedicalType}
+            onChange={(e) => setNewMedicalType((e.target.value as MedicalType | "") ?? "")}
+            disabled={!newMedicalDefault || newKind !== "expense" || loading}
+          >
+            <option value="">3区分</option>
+            <option value="treatment">診療・治療</option>
+            <option value="medicine">医薬品</option>
+            <option value="other">その他</option>
+          </select>
+          <input
+            type="text"
+            className={`${styles.monthInput} ${catStyles.addMedicalPatient}`}
+            value={newMedicalPatientName}
+            onChange={(e) => setNewMedicalPatientName(e.target.value)}
+            placeholder="対象者名（例: 子ども）"
+            maxLength={120}
+            disabled={!newMedicalDefault || newKind !== "expense" || loading}
+          />
         </div>
       </form>
 
@@ -429,7 +429,7 @@ function CategoryTable({
         <p className={styles.sub}>カテゴリがありません。</p>
       ) : (
         <div style={{ overflowX: "auto" }}>
-          <table className={catStyles.table}>
+          <table className={`${catStyles.table} ${catStyles.tableWide}`}>
             <thead>
               <tr>
                 {allowReorder ? (
@@ -448,7 +448,9 @@ function CategoryTable({
                     並び {sortDir === "asc" ? "↑" : "↓"}
                   </button>
                 </th>
-                <th className={catStyles.th}>医療費控除の既定</th>
+                <th className={catStyles.th} title="医療費控除の既定（取引追加時の初期値）">
+                  医療・既定
+                </th>
                 <th className={catStyles.th} />
               </tr>
             </thead>
@@ -600,38 +602,40 @@ function CategoryRow({
           disabled={disabled}
         />
       </td>
-      <td style={{ padding: "0.4rem 0.35rem", verticalAlign: "middle", minWidth: 210 }}>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+      <td className={catStyles.categoryMedicalCell}>
+        <div className={catStyles.categoryMedicalRow}>
+          <label className={catStyles.categoryMedicalLabel}>
+            <input
+              type="checkbox"
+              checked={isMedicalDefault}
+              onChange={(e) => setIsMedicalDefault(e.target.checked)}
+              disabled={disabled || kind !== "expense"}
+            />
+            対象
+          </label>
+          <select
+            className={`${styles.monthInput} ${catStyles.categoryMedicalType}`}
+            value={defaultMedicalType}
+            onChange={(e) => setDefaultMedicalType((e.target.value as MedicalType | "") ?? "")}
+            disabled={disabled || !isMedicalDefault || kind !== "expense"}
+            aria-label="医療費3区分"
+          >
+            <option value="">3区分</option>
+            <option value="treatment">診療・治療</option>
+            <option value="medicine">医薬品</option>
+            <option value="other">その他</option>
+          </select>
           <input
-            type="checkbox"
-            checked={isMedicalDefault}
-            onChange={(e) => setIsMedicalDefault(e.target.checked)}
-            disabled={disabled || kind !== "expense"}
+            type="text"
+            value={defaultPatientName}
+            onChange={(e) => setDefaultPatientName(e.target.value)}
+            maxLength={120}
+            placeholder="対象者名"
+            className={`${styles.monthInput} ${catStyles.categoryMedicalPatient}`}
+            disabled={disabled || !isMedicalDefault || kind !== "expense"}
+            aria-label="医療費の対象者名"
           />
-          対象
-        </label>
-        <select
-          className={styles.monthInput}
-          value={defaultMedicalType}
-          onChange={(e) => setDefaultMedicalType((e.target.value as MedicalType | "") ?? "")}
-          disabled={disabled || !isMedicalDefault || kind !== "expense"}
-          style={{ width: "100%", marginBottom: 4 }}
-        >
-          <option value="">3区分を選択</option>
-          <option value="treatment">診療・治療</option>
-          <option value="medicine">医薬品</option>
-          <option value="other">その他</option>
-        </select>
-        <input
-          type="text"
-          value={defaultPatientName}
-          onChange={(e) => setDefaultPatientName(e.target.value)}
-          maxLength={120}
-          placeholder="対象者名"
-          className={styles.monthInput}
-          disabled={disabled || !isMedicalDefault || kind !== "expense"}
-          style={{ width: "100%" }}
-        />
+        </div>
       </td>
       <td style={{ padding: "0.4rem 0.35rem", whiteSpace: "nowrap", verticalAlign: "middle" }}>
         <button

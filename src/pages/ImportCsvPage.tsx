@@ -55,22 +55,22 @@ export function ImportCsvPage() {
       <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
       <div className={styles.settingsPanel} style={{ marginTop: "0.75rem", marginBottom: "0.9rem" }}>
         <p className={styles.sub} style={{ margin: 0, lineHeight: 1.55 }}>
-          PayPay 明細の取り込み（プレビュー・登録）は{" "}
+          PayPay 明細は{" "}
           <Link to="/receipt" style={{ color: "var(--accent)" }}>
             レシート・明細取込
-          </Link>{" "}
-          に集約しています。ここでは、下記のカンマ区切りの旧形式のみ扱います。
+          </Link>
+          。この画面はカンマ区切り4列（旧形式）専用です。
         </p>
       </div>
       <p className={styles.sub}>
-        カテゴリ,日付,金額,メモの順（カンマ区切り）。取込むと、CSVに現れる年月（YYYY-MM）ごとに、その月の既存の支出をいったん削除してから、行を追加します（収入は残ります）。
+        順: カテゴリ,日付,金額,メモ。対象月の支出を置き換え（収入はそのまま）。
       </p>
       <form onSubmit={onSubmit}>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={14}
-          placeholder="食費,2026-03-01,1200,イオン（カテゴリが空の場合、未分類）"
+          placeholder="食費,2026-03-01,1200,イオン"
           style={{
             width: "100%",
             fontFamily: "monospace",
