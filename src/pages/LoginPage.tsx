@@ -10,6 +10,7 @@ import {
   loginWithRecoveryCode,
   normalizeAuthContextUser,
   normalizeFamilyRole,
+  toFriendlyLoginErrorMessage,
   toFriendlyPasskeyErrorMessage,
   verifyPasskeyLogin,
 } from "../lib/api";
@@ -101,7 +102,7 @@ export function LoginPage() {
       const r = await loginRequest(trimmed, password);
       await completeLogin(r.token, r.user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "ログインに失敗しました");
+      setError(toFriendlyLoginErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -239,7 +240,7 @@ export function LoginPage() {
                       setRecoveryCode("");
                       await completeLogin(r.token, r.user);
                     } catch (e) {
-                      setError(e instanceof Error ? e.message : String(e));
+                      setError(toFriendlyLoginErrorMessage(e));
                     } finally {
                       setSubmitting(false);
                     }

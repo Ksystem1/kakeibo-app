@@ -81,7 +81,7 @@ type AdminUser = {
   subscriptionStatus: string;
   created_at: string | null;
   updated_at: string | null;
-  last_login_at: string | null;
+  last_accessed_at?: string | null;
   default_family_id: number | null;
   /** users.family_role（未対応 API では undefined） */
   familyRole?: string;
@@ -175,24 +175,6 @@ function formatDateOnly(value: string | null | undefined): string {
   }).format(d);
 }
 
-const FAMILY_LABELS_STORAGE_KEY = "kakeibo_admin_family_labels";
-
-function readFamilyLabelsFromStorage(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(FAMILY_LABELS_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return {};
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      if (typeof v === "string") out[k] = v;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
 export function AdminPage() {
   const [items, setItems] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -219,9 +201,6 @@ export function AdminPage() {
   const [monitorRecruitmentBusy, setMonitorRecruitmentBusy] = useState(false);
   const [monitorRecruitmentMessage, setMonitorRecruitmentMessage] = useState<string | null>(null);
   const [monitorRecruitmentLoadError, setMonitorRecruitmentLoadError] = useState<string | null>(null);
-  const [familyLabelDrafts, setFamilyLabelDrafts] = useState<Record<string, string>>(() =>
-    readFamilyLabelsFromStorage(),
-  );
   const [paypayImportSummary, setPaypayImportSummary] = useState<
     Array<{
       user_id: number;
@@ -246,14 +225,6 @@ export function AdminPage() {
   const [featurePermRows, setFeaturePermRows] = useState<AdminFeaturePermissionRow[]>([]);
   const [featurePermError, setFeaturePermError] = useState<string | null>(null);
   const [featurePermSaving, setFeaturePermSaving] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(FAMILY_LABELS_STORAGE_KEY, JSON.stringify(familyLabelDrafts));
-    } catch {
-      /* ignore */
-    }
-  }, [familyLabelDrafts]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1367,7 +1338,7 @@ export function AdminPage() {
               .filter((u) => u.isAdmin)
               .map((u) => (
                 <li key={u.id}>
-                  ID {u.id} — {u.email}（最終ログイン: {formatDateTime(u.last_login_at)})
+                  ID {u.id} — {u.email}（最終アクセス: {formatDateTime(u.last_accessed_at)})
                 </li>
               ))}
           </ul>
@@ -1492,8 +1463,6 @@ export function AdminPage() {
             {familyGroups.flatMap((group) => {
               const familyTitle =
                 group.familyId != null ? `家族ID ${group.familyId}` : `未所属（ユーザー ${group.members[0]?.id ?? "—"}）`;
-              const familyLabelKey = group.familyId != null ? String(group.familyId) : group.familyKey;
-              const familyLabel = (familyLabelDrafts[familyLabelKey] ?? "").trim();
               const parentRow = (
                 <tr key={`family-${group.familyKey}`} style={{ borderTop: "2px solid var(--border)", background: "var(--panel-bg)" }}>
                   <td colSpan={13} style={{ ...adminTableTd, paddingTop: "0.45rem", paddingBottom: "0.45rem" }}>
@@ -1503,20 +1472,6 @@ export function AdminPage() {
                         <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
                           メンバー {group.members.length}名
                         </span>
-                        <input
-                          type="text"
-                          placeholder="家族ラベル（表示用）"
-                          value={familyLabelDrafts[familyLabelKey] ?? ""}
-                          onChange={(e) =>
-                            setFamilyLabelDrafts((prev) => ({ ...prev, [familyLabelKey]: e.target.value }))
-                          }
-                          style={{ minWidth: 170, padding: "0.18rem 0.35rem", fontSize: "0.8rem" }}
-                        />
-                        {familyLabel ? (
-                          <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
-                            ラベル: {familyLabel}
-                          </span>
-                        ) : null}
                       </div>
                     </div>
                   </td>
@@ -1560,7 +1515,7 @@ export function AdminPage() {
                     {formatDateOnly(u.created_at)}
                   </td>
                   <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
-                    {formatDateTime(u.last_login_at)}
+                    {formatDateTime(u.last_accessed_at)}
                   </td>
                   <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
                     <input

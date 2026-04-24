@@ -17,6 +17,8 @@ import { supportUserOutgoingReadLabel } from "../lib/chatReadReceipt";
 import styles from "../components/KakeiboDashboard.module.css";
 
 const PAGE_SIZE = 40;
+const CHAT_POLL_MS_ACTIVE = 4000;
+const CHAT_POLL_MS_IDLE = 9000;
 
 export function SupportChatPage() {
   const { user } = useAuth();
@@ -68,6 +70,36 @@ export function SupportChatPage() {
       setLoading(false);
     }
   }, [familyId]);
+
+  const refreshLatest = useCallback(async () => {
+    if (loading || loadingOlder || sending) return;
+    try {
+      const el = scrollRef.current;
+      const nearBottomBefore =
+        el != null ? el.scrollHeight - el.scrollTop - el.clientHeight < 96 : true;
+      const res = await getSupportChatMessages({
+        family_id: familyId,
+        limit: PAGE_SIZE,
+      });
+      const latest = Array.isArray(res.items) ? res.items : [];
+      const prevMax = itemsRef.current.length > 0 ? Math.max(...itemsRef.current.map((m) => m.id)) : 0;
+      const nextMax = latest.length > 0 ? Math.max(...latest.map((m) => m.id)) : 0;
+      if (nextMax <= prevMax) return;
+      setItems(latest);
+      if (res.read_states) setReadStates(res.read_states);
+      setHasMore(res.has_more);
+      setNextBeforeId(res.next_before_id);
+      applySupportChatSeenFromMessages(res.family_id, latest);
+      if (nearBottomBefore) {
+        requestAnimationFrame(() => {
+          const box = scrollRef.current;
+          if (box) box.scrollTop = box.scrollHeight;
+        });
+      }
+    } catch {
+      /* ポーリング失敗は無視（画面操作を妨げない） */
+    }
+  }, [familyId, loading, loadingOlder, sending]);
 
   useEffect(() => {
     void loadInitial();
@@ -153,6 +185,36 @@ export function SupportChatPage() {
     if (loading || items.length === 0) return;
     flushReadReceipt();
   }, [loading, items, flushReadReceipt]);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    const loop = async () => {
+      if (cancelled) return;
+      const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
+      const wait = hidden ? CHAT_POLL_MS_IDLE : CHAT_POLL_MS_ACTIVE;
+      timer = setTimeout(async () => {
+        await refreshLatest();
+        await loop();
+      }, wait);
+    };
+    void loop();
+    const onFocus = () => {
+      void refreshLatest();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", onFocus);
+      window.addEventListener("online", onFocus);
+    }
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", onFocus);
+        window.removeEventListener("online", onFocus);
+      }
+    };
+  }, [refreshLatest]);
 
   const onSend = useCallback(async () => {
     const text = draft.trim();
