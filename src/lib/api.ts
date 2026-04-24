@@ -1626,6 +1626,82 @@ export function setReconcileDismissedKeys(keys: string[]) {
   }
 }
 
+/** 機能キー（feature_permissions と揃える） */
+export const FEATURE_RECEIPT_AI = "receipt_ai";
+export const FEATURE_NAV_SKINS_PREMIUM = "nav_skins_premium";
+export const FEATURE_EXPORT_CSV = "export_csv";
+export const FEATURE_SUPPORT_CHAT = "support_chat";
+
+export type FeaturePermissionCheckResult = {
+  allowed: boolean;
+  feature: string;
+  minPlan: "standard" | "premium" | null;
+  effectivePlan: "standard" | "premium";
+  labelJa?: string | null;
+  reason?: string;
+};
+
+export type FeaturePermissionSummaryItem = {
+  feature: string;
+  allowed: boolean;
+  minPlan: "standard" | "premium";
+  labelJa: string | null;
+};
+
+export async function getCheckPermission(feature: string): Promise<FeaturePermissionCheckResult> {
+  const sp = new URLSearchParams();
+  sp.set("feature", feature.trim());
+  const res = await apiFetch(`${BASE}/check-permission?${sp.toString()}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<FeaturePermissionCheckResult>(res);
+}
+
+export async function getFeaturePermissionsSummary(): Promise<{
+  effectivePlan: "standard" | "premium";
+  items: FeaturePermissionSummaryItem[];
+  tableMissing?: boolean;
+}> {
+  const res = await apiFetch(`${BASE}/feature-permissions?t=${Date.now()}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    effectivePlan: "standard" | "premium";
+    items: FeaturePermissionSummaryItem[];
+    tableMissing?: boolean;
+  }>(res);
+}
+
+export type AdminFeaturePermissionRow = {
+  feature_key: string;
+  min_plan: "standard" | "premium";
+  label_ja: string | null;
+  sort_order: number;
+};
+
+export async function getAdminFeaturePermissions(): Promise<{ items: AdminFeaturePermissionRow[] }> {
+  const res = await apiFetch(`${BASE}/admin/feature-permissions`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ items: AdminFeaturePermissionRow[] }>(res);
+}
+
+export async function patchAdminFeaturePermission(body: {
+  feature_key: string;
+  min_plan: "standard" | "premium";
+}): Promise<{ ok: boolean; feature_key?: string; min_plan?: string }> {
+  const res = await apiFetch(`${BASE}/admin/feature-permissions`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  return parse<{ ok: boolean; feature_key?: string; min_plan?: string }>(res);
+}
+
 
 export type ChatReadState = {
   user_id: number;

@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App.tsx";
 import { AuthProvider } from "./context/AuthContext";
+import { FeaturePermissionProvider } from "./context/FeaturePermissionContext";
 import { SettingsProvider } from "./context/SettingsContext";
 import {
   registerPwaBackgroundUpdateChecks,
@@ -33,9 +34,11 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter basename={routerBasename}>
       <AuthProvider>
-        <SettingsProvider>
-          <App />
-        </SettingsProvider>
+        <FeaturePermissionProvider>
+          <SettingsProvider>
+            <App />
+          </SettingsProvider>
+        </FeaturePermissionProvider>
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,

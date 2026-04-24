@@ -4,12 +4,14 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   commitPayPayCsvImport,
   createTransaction,
+  FEATURE_RECEIPT_AI,
   getCategories,
   parseReceiptImage,
   previewPayPayCsvImport,
   saveReceiptOcrCorrection,
   type PayPayImportResult,
 } from "../lib/api";
+import { FeatureGate } from "../components/FeatureGate";
 import { isReservedLedgerFixedCostCategoryName } from "../lib/transactionCategories";
 import { normalizeReceiptDateToYmd } from "../lib/receiptDate";
 import { prepareReceiptImageForApi } from "../lib/receiptImage";
@@ -841,19 +843,21 @@ export function ReceiptPage() {
           aria-hidden
         />
       )}
-      <div className={styles.receiptPickRow}>
-        <button
-          type="button"
-          className={`${styles.receiptPickBtn} ${styles.receiptPickBtnPrimary} ${pickDisabled}`}
-          onClick={() => {
-            setNotice(null);
-            galleryInputRef.current?.click();
-          }}
-          disabled={isBusy}
-        >
-          写真・データ取込
-        </button>
-      </div>
+      <FeatureGate feature={FEATURE_RECEIPT_AI} mode="lock">
+        <div className={styles.receiptPickRow}>
+          <button
+            type="button"
+            className={`${styles.receiptPickBtn} ${styles.receiptPickBtnPrimary} ${pickDisabled}`}
+            onClick={() => {
+              setNotice(null);
+              galleryInputRef.current?.click();
+            }}
+            disabled={isBusy}
+          >
+            写真・データ取込
+          </button>
+        </div>
+      </FeatureGate>
 
       {receiptImageObjectUrl && unifiedMode === "receipt" ? (
         <div

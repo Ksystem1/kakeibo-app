@@ -36,6 +36,7 @@
     "db:migrate-v27": "npm run db:migrate-v27 --prefix backend",
     "db:migrate-v28": "npm run db:migrate-v28 --prefix backend",
     "db:migrate-v29": "npm run db:migrate-v29 --prefix backend",
+    "db:migrate-v32": "npm run db:migrate-v32 --prefix backend",
     "verify:stripe-config": "node scripts/verify-stripe-config.mjs",
     "verify:frontend-api": "node scripts/verify-frontend-api-fetch.mjs",
     "backup:release": "node scripts/backup-release.mjs"

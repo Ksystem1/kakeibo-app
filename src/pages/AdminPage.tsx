@@ -4,17 +4,20 @@ import {
   createAdminUser,
   deleteAdminUser,
   getAdminAnnouncement,
+  getAdminFeaturePermissions,
   getAdminMonitorRecruitmentSettings,
   getAdminPayPayImportSummary,
   getAdminSubscriptionReconcile,
   getAdminUsers,
   getReconcileDismissedKeys,
+  patchAdminFeaturePermission,
   postAdminSubscriptionReconcileApply,
   putAdminAnnouncement,
   setReconcileDismissedKeys,
   putAdminMonitorRecruitmentSettings,
   resetAdminUserPassword,
   updateAdminUser,
+  type AdminFeaturePermissionRow,
 } from "../lib/api";
 import {
   ADMIN_SUBSCRIPTION_STATUSES,
@@ -239,6 +242,9 @@ export function AdminPage() {
   const [reconcileError, setReconcileError] = useState<string | null>(null);
   const [reconcileDismissed, setReconcileDismissed] = useState<string[]>(() => getReconcileDismissedKeys());
   const [reconcileApplyBusy, setReconcileApplyBusy] = useState<string | null>(null);
+  const [featurePermRows, setFeaturePermRows] = useState<AdminFeaturePermissionRow[]>([]);
+  const [featurePermError, setFeaturePermError] = useState<string | null>(null);
+  const [featurePermSaving, setFeaturePermSaving] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -298,6 +304,14 @@ export function AdminPage() {
         return { items: [] };
       });
       const list = Array.isArray(res.items) ? res.items : [];
+      setFeaturePermError(null);
+      try {
+        const fp = await getAdminFeaturePermissions();
+        setFeaturePermRows(Array.isArray(fp.items) ? fp.items : []);
+      } catch (e) {
+        setFeaturePermRows([]);
+        setFeaturePermError(e instanceof Error ? e.message : String(e));
+      }
       setItems(list);
       if (Array.isArray(monitor.items)) {
         setPaypayMonitorError(null);
@@ -602,6 +616,123 @@ export function AdminPage() {
           サポートチャット（家族一覧・返信）→
         </Link>
       </p>
+      <div
+        style={{
+          margin: "0.75rem 0 1rem",
+          padding: "0.9rem 1rem",
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+        }}
+      >
+        <h2 style={{ margin: "0 0 0.45rem", fontSize: "1.02rem" }}>機能権限（プラン）</h2>
+        <p style={{ margin: "0 0 0.55rem", fontSize: "0.84rem", color: "var(--text-muted)", lineHeight: 1.45 }}>
+          機能ごとに<strong>最小プラン</strong>を設定します。Standard＝ログイン済みユーザーが利用可。Premium＝プレミアム契約（既存の課金判定）が必要です。
+        </p>
+        {featurePermError ? (
+          <p role="alert" style={{ fontSize: "0.86rem", color: "var(--danger, #b44)" }}>
+            {featurePermError}
+          </p>
+        ) : featurePermRows.length === 0 ? (
+          <p style={{ fontSize: "0.86rem", color: "var(--text-muted)" }}>
+            データがありません。RDS に <code>db/migration_v32_feature_permissions.sql</code>（v32）を適用してください。
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: "0.82rem",
+              }}
+            >
+              <thead>
+                <tr>
+                  <th style={adminTableTh}>機能</th>
+                  <th style={adminTableTh}>キー</th>
+                  <th style={adminTableTh}>最小プラン</th>
+                </tr>
+              </thead>
+              <tbody>
+                {featurePermRows.map((r) => {
+                  const fk = String(r.feature_key);
+                  const busy = featurePermSaving === fk;
+                  const isStd = String(r.min_plan).toLowerCase() === "standard";
+                  return (
+                    <tr key={fk}>
+                      <td style={adminTableTd}>{r.label_ja ?? fk}</td>
+                      <td style={{ ...adminTableTd, fontFamily: "ui-monospace, monospace" }}>{fk}</td>
+                      <td style={adminTableTd}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", alignItems: "center" }}>
+                          <button
+                            type="button"
+                            disabled={loading || busy || isStd}
+                            onClick={async () => {
+                              setFeaturePermSaving(fk);
+                              setError(null);
+                              try {
+                                await patchAdminFeaturePermission({ feature_key: fk, min_plan: "standard" });
+                                setFeaturePermRows((prev) =>
+                                  prev.map((x) => (x.feature_key === fk ? { ...x, min_plan: "standard" } : x)),
+                                );
+                              } catch (e) {
+                                setError(e instanceof Error ? e.message : "権限の更新に失敗しました");
+                              } finally {
+                                setFeaturePermSaving(null);
+                              }
+                            }}
+                            style={{
+                              font: "inherit",
+                              fontSize: "0.78rem",
+                              padding: "0.25rem 0.55rem",
+                              borderRadius: 8,
+                              border: "1px solid var(--border)",
+                              background: isStd ? "color-mix(in srgb, var(--accent) 22%, var(--bg-card))" : "var(--input-bg)",
+                              cursor: isStd ? "default" : "pointer",
+                            }}
+                          >
+                            Standard
+                          </button>
+                          <button
+                            type="button"
+                            disabled={loading || busy || !isStd}
+                            onClick={async () => {
+                              setFeaturePermSaving(fk);
+                              setError(null);
+                              try {
+                                await patchAdminFeaturePermission({ feature_key: fk, min_plan: "premium" });
+                                setFeaturePermRows((prev) =>
+                                  prev.map((x) => (x.feature_key === fk ? { ...x, min_plan: "premium" } : x)),
+                                );
+                              } catch (e) {
+                                setError(e instanceof Error ? e.message : "権限の更新に失敗しました");
+                              } finally {
+                                setFeaturePermSaving(null);
+                              }
+                            }}
+                            style={{
+                              font: "inherit",
+                              fontSize: "0.78rem",
+                              padding: "0.25rem 0.55rem",
+                              borderRadius: 8,
+                              border: "1px solid var(--border)",
+                              background: !isStd ? "color-mix(in srgb, var(--accent) 22%, var(--bg-card))" : "var(--input-bg)",
+                              cursor: !isStd ? "default" : "pointer",
+                            }}
+                          >
+                            Premium
+                          </button>
+                          {busy ? <span style={{ fontSize: "0.75rem" }}>保存中…</span> : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
       {reconcileError != null && reconcileError !== "" && (() => {
         const help = explainStripeReconcileLoadError(reconcileError);
         return (

@@ -70,6 +70,14 @@ import {
   applyOneUserMismatch,
   compareStripeSubscriptionsWithDb,
 } from "./stripe-subscription-reconcile-core.mjs";
+import {
+  evaluateAllFeaturesForUser,
+  evaluateFeatureForUser,
+  fetchAllFeaturePermissions,
+  normalizeFeatureKey,
+  normalizeMinPlan,
+  setFeaturePermissionMinPlan,
+} from "./feature-permissions.mjs";
 
 const logger = createLogger("api");
 
@@ -1970,6 +1978,10 @@ export async function handleApiRequest(req, options = {}) {
             adminSupportChatMessages: "/admin/support/chat/messages",
             adminSubscriptionReconcile: "/admin/subscription-reconcile",
             adminSubscriptionReconcileApply: "/admin/subscription-reconcile/apply",
+            checkPermission: "/check-permission?feature=…",
+            checkPermissionApiPrefixed: "/api/check-permission?feature=…",
+            featurePermissions: "/feature-permissions",
+            adminFeaturePermissions: "/admin/feature-permissions",
             paypayImportPreview: "/import/paypay-csv/preview",
             paypayImportCommit: "/import/paypay-csv/commit",
           },
@@ -2133,6 +2145,31 @@ export async function handleApiRequest(req, options = {}) {
     }
 
     const q = req.queryStringParameters || {};
+    const rkFeatEarly = routeKey(method, path);
+    if (rkFeatEarly === "GET /check-permission" || rkFeatEarly === "GET /api/check-permission") {
+      const feature = normalizeFeatureKey(q.feature ?? q.f);
+      if (!feature) {
+        return json(
+          400,
+          {
+            error: "BadRequest",
+            messageJa:
+              "クエリ feature に機能キー（英小文字・数字・アンダースコア、例: receipt_ai）を指定してください。",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+      const subRow = await loadUserSubscriptionRowFull(pool, userId);
+      const result = await evaluateFeatureForUser(pool, userId, feature, subRow);
+      return json(200, result, hdrs, skipCors);
+    }
+    if (rkFeatEarly === "GET /feature-permissions" || rkFeatEarly === "GET /api/feature-permissions") {
+      const subRow = await loadUserSubscriptionRowFull(pool, userId);
+      const summary = await evaluateAllFeaturesForUser(pool, userId, subRow);
+      return json(200, summary, hdrs, skipCors);
+    }
+
     const familyId = await getDefaultFamilyId(pool, userId);
 
     const catWhere = `(c.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (c.family_id IS NULL AND c.user_id = ?))`;
@@ -2373,6 +2410,73 @@ export async function handleApiRequest(req, options = {}) {
         hdrs,
         skipCors,
       );
+    }
+
+    if (routeKey(method, path) === "GET /admin/feature-permissions") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const rows = await fetchAllFeaturePermissions(pool);
+      if (rows == null) {
+        return json(
+          503,
+          {
+            error: "MigrationRequired",
+            messageJa:
+              "feature_permissions テーブルがありません。backend で npm run db:migrate-v32 を実行してください。",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+      return json(200, { items: rows }, hdrs, skipCors);
+    }
+
+    if (routeKey(method, path) === "PATCH /admin/feature-permissions") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      const fk = normalizeFeatureKey(b.feature_key ?? b.featureKey);
+      if (!fk) {
+        return json(
+          400,
+          { error: "BadRequest", messageJa: "feature_key（英小文字ではじまるキー）が必要です。" },
+          hdrs,
+          skipCors,
+        );
+      }
+      const mp = normalizeMinPlan(b.min_plan ?? b.minPlan);
+      const rows = await fetchAllFeaturePermissions(pool);
+      if (rows == null) {
+        return json(
+          503,
+          {
+            error: "MigrationRequired",
+            messageJa:
+              "feature_permissions テーブルがありません。backend で npm run db:migrate-v32 を実行してください。",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+      const ok = await setFeaturePermissionMinPlan(pool, fk, mp);
+      if (!ok) {
+        return json(
+          404,
+          {
+            error: "UnknownFeature",
+            messageJa:
+              "この feature_key は登録されていません。マイグレ v32 のシードに含まれるキーのみ変更できます。",
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+      return json(200, { ok: true, feature_key: fk, min_plan: mp }, hdrs, skipCors);
     }
 
     if (routeKey(method, path) === "GET /admin/subscription-reconcile") {

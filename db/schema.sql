@@ -271,4 +271,20 @@ CREATE TABLE IF NOT EXISTS monitor_logs (
     ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------------
+-- プラン別機能権限（Standard / Premium）
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS feature_permissions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  feature_key VARCHAR(64) NOT NULL COMMENT '英小文字・数字・アンダースコア',
+  min_plan ENUM('standard', 'premium') NOT NULL DEFAULT 'standard' COMMENT '利用に必要な最小プラン',
+  label_ja VARCHAR(128) NULL COMMENT '管理画面表示用',
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_feature_permissions_key (feature_key),
+  KEY idx_feature_permissions_sort (sort_order, feature_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
