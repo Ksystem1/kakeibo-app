@@ -19,6 +19,8 @@ import {
 } from "../hooks/useAdminSupportNeedsReplyBadge";
 
 const PAGE_SIZE = 40;
+const ADMIN_CHAT_POLL_MS_ACTIVE = 3500;
+const ADMIN_CHAT_POLL_MS_IDLE = 9000;
 
 function formatMemberLoginLine(m: {
   display_name: string | null;
@@ -70,6 +72,11 @@ export function AdminSupportChatPage() {
   const itemsRef = useRef<SupportChatMessage[]>([]);
   const lastPostedReadRef = useRef(0);
 
+  const familiesWithMessages = useMemo(
+    () => families.filter((f) => f.last_message != null),
+    [families],
+  );
+
   const memberUserIds = useMemo(() => {
     if (selectedFamilyId == null) return [];
     const f = families.find((x) => x.family_id === selectedFamilyId);
@@ -92,6 +99,35 @@ export function AdminSupportChatPage() {
       setListLoading(false);
     }
   }, []);
+
+  const refreshThreadLatest = useCallback(async () => {
+    if (selectedFamilyId == null || threadLoading || loadingOlder || sending || bodyEditBusy) return;
+    try {
+      const el = scrollRef.current;
+      const nearBottomBefore =
+        el != null ? el.scrollHeight - el.scrollTop - el.clientHeight < 96 : true;
+      const res = await getAdminSupportChatMessages({
+        family_id: selectedFamilyId,
+        limit: PAGE_SIZE,
+      });
+      const latest = Array.isArray(res.items) ? res.items : [];
+      const prevMax = itemsRef.current.length > 0 ? Math.max(...itemsRef.current.map((m) => m.id)) : 0;
+      const nextMax = latest.length > 0 ? Math.max(...latest.map((m) => m.id)) : 0;
+      if (nextMax <= prevMax) return;
+      setItems(latest);
+      if (res.read_states) setReadStates(res.read_states);
+      setHasMore(res.has_more);
+      setNextBeforeId(res.next_before_id);
+      if (nearBottomBefore) {
+        requestAnimationFrame(() => {
+          const box = scrollRef.current;
+          if (box) box.scrollTop = box.scrollHeight;
+        });
+      }
+    } catch {
+      /* ポーリング失敗は無視 */
+    }
+  }, [selectedFamilyId, threadLoading, loadingOlder, sending, bodyEditBusy]);
 
   useEffect(() => {
     void loadFamilies();
@@ -123,6 +159,17 @@ export function AdminSupportChatPage() {
     if (selectedFamilyId == null) return;
     void loadThreadInitial(selectedFamilyId);
   }, [selectedFamilyId, loadThreadInitial]);
+
+  useEffect(() => {
+    if (familiesWithMessages.length === 0) {
+      if (selectedFamilyId != null) setSelectedFamilyId(null);
+      return;
+    }
+    const exists = familiesWithMessages.some((f) => f.family_id === selectedFamilyId);
+    if (!exists) {
+      setSelectedFamilyId(familiesWithMessages[0].family_id);
+    }
+  }, [familiesWithMessages, selectedFamilyId]);
 
   useEffect(() => {
     setBodyEditId(null);
@@ -211,6 +258,36 @@ export function AdminSupportChatPage() {
     if (threadLoading || items.length === 0 || selectedFamilyId == null) return;
     flushAdminSupportRead();
   }, [threadLoading, items.length, selectedFamilyId, flushAdminSupportRead]);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    const loop = async () => {
+      if (cancelled) return;
+      const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
+      const wait = hidden ? ADMIN_CHAT_POLL_MS_IDLE : ADMIN_CHAT_POLL_MS_ACTIVE;
+      timer = setTimeout(async () => {
+        await Promise.all([refreshThreadLatest(), loadFamilies()]);
+        await loop();
+      }, wait);
+    };
+    void loop();
+    const onFocus = () => {
+      void Promise.all([refreshThreadLatest(), loadFamilies()]);
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", onFocus);
+      window.addEventListener("online", onFocus);
+    }
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", onFocus);
+        window.removeEventListener("online", onFocus);
+      }
+    };
+  }, [refreshThreadLatest, loadFamilies]);
 
   const onSend = useCallback(async () => {
     if (selectedFamilyId == null) return;
@@ -317,7 +394,7 @@ export function AdminSupportChatPage() {
   const selectedName =
     selectedFamilyId == null
       ? ""
-      : families.find((f) => f.family_id === selectedFamilyId)?.family_name ?? "";
+      : familiesWithMessages.find((f) => f.family_id === selectedFamilyId)?.family_name ?? "";
 
   return (
     <section style={{ padding: "1rem", maxWidth: 1200, margin: "0 auto" }}>
@@ -370,10 +447,10 @@ export function AdminSupportChatPage() {
           <div style={{ overflowY: "auto", flex: 1 }}>
             {listLoading ? (
               <p style={{ padding: "0.75rem", color: "var(--text-muted)" }}>読み込み中…</p>
-            ) : families.length === 0 ? (
-              <p style={{ padding: "0.75rem", color: "var(--text-muted)" }}>家族がありません</p>
+            ) : familiesWithMessages.length === 0 ? (
+              <p style={{ padding: "0.75rem", color: "var(--text-muted)" }}>メッセージがある家族はありません</p>
             ) : (
-              families.map((f) => {
+              familiesWithMessages.map((f) => {
                 const needs = familyNeedsAdminReply(f);
                 return (
                 <button
