@@ -5,16 +5,17 @@ export const DEMO_MEDICAL_YEAR = 2026;
 export const DEMO_MEDICAL_TOTAL_YEN = 120_000;
 export const DEMO_MEDICAL_TX_COUNT = 12;
 
-export const demoMedicalByPatient: { name: string; amount: number }[] = [
-  { name: "本人", amount: 45_000 },
-  { name: "配偶者", amount: 52_000 },
-  { name: "子", amount: 23_000 },
-];
+export type DemoMedicalMatrixRow = {
+  name: string;
+  treatment: number;
+  medicine: number;
+  other: number;
+};
 
-export const demoMedicalByType: { label: string; amount: number }[] = [
-  { label: "診療・治療", amount: 68_000 },
-  { label: "医薬品", amount: 35_000 },
-  { label: "その他", amount: 17_000 },
+export const demoMedicalMatrixRows: DemoMedicalMatrixRow[] = [
+  { name: "本人", treatment: 28_000, medicine: 12_000, other: 5_000 },
+  { name: "配偶者", treatment: 27_000, medicine: 16_000, other: 9_000 },
+  { name: "子", treatment: 13_000, medicine: 7_000, other: 3_000 },
 ];
 
 export type DemoSpendingChartDatum = {

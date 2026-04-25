@@ -3,8 +3,7 @@ import {
   DEMO_MEDICAL_TX_COUNT,
   DEMO_MEDICAL_TOTAL_YEN,
   DEMO_MEDICAL_YEAR,
-  demoMedicalByPatient,
-  demoMedicalByType,
+  demoMedicalMatrixRows,
 } from "../../data/demoMockData";
 
 function yen(n: number) {
@@ -16,6 +15,16 @@ export type DemoSectionClassProps = { className?: string };
 /** 医療費控除（プレミアム）— 静的プレビュー。DB 非接触 */
 export function DemoMedicalDeductionSection({ className }: DemoSectionClassProps) {
   const [demoTap, setDemoTap] = useState(false);
+  const typeTotals = demoMedicalMatrixRows.reduce(
+    (acc, row) => {
+      acc.treatment += row.treatment;
+      acc.medicine += row.medicine;
+      acc.other += row.other;
+      return acc;
+    },
+    { treatment: 0, medicine: 0, other: 0 },
+  );
+  const grand = typeTotals.treatment + typeTotals.medicine + typeTotals.other;
   return (
     <section
       className={`rounded-2xl border border-emerald-200/90 bg-gradient-to-b from-white to-emerald-50/40 p-4 shadow-md ring-1 ring-emerald-900/[0.06] md:p-5 ${className ?? ""}`}
@@ -25,8 +34,8 @@ export function DemoMedicalDeductionSection({ className }: DemoSectionClassProps
           <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Premium</p>
           <h2 className="text-base font-bold text-slate-900">医療費控除の集計</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-600">
-            氏名別・区分別の合計が一目で分かり、<strong>国税庁の医療費集計用CSV</strong>
-            へ一括で落とせます。確定申告の手間を大きく減らせます（デモ表示・ダウンロードなし）。
+            氏名（行）× 区分（列）のマトリックスで一目で確認でき、<strong>国税庁の医療費集計用CSV</strong>
+            へ一括で落とせます（デモ表示・ダウンロードなし）。
           </p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-right text-xs text-slate-600 shadow-sm">
@@ -43,35 +52,41 @@ export function DemoMedicalDeductionSection({ className }: DemoSectionClassProps
         還付を想定した家族3人分のサンプル合計 {yen(DEMO_MEDICAL_TOTAL_YEN)} です
       </p>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200/90 bg-white p-3 shadow-sm">
-          <h3 className="text-xs font-bold text-slate-800">氏名別</h3>
-          <ul className="mt-2 space-y-1.5 text-xs">
-            {demoMedicalByPatient.map((r) => (
-              <li
-                key={r.name}
-                className="flex items-baseline justify-between gap-2 rounded-md bg-slate-50 px-2 py-1.5"
-              >
-                <span className="text-slate-700">{r.name}</span>
-                <span className="font-semibold tabular-nums text-slate-900">{yen(r.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="rounded-xl border border-slate-200/90 bg-white p-3 shadow-sm">
-          <h3 className="text-xs font-bold text-slate-800">区分別</h3>
-          <ul className="mt-2 space-y-1.5 text-xs">
-            {demoMedicalByType.map((r) => (
-              <li
-                key={r.label}
-                className="flex items-baseline justify-between gap-2 rounded-md bg-slate-50 px-2 py-1.5"
-              >
-                <span className="text-slate-700">{r.label}</span>
-                <span className="font-semibold tabular-nums text-slate-900">{yen(r.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+      <div className="overflow-x-auto rounded-xl border border-slate-200/90 bg-white shadow-sm">
+        <table className="w-full min-w-[520px] border-collapse text-xs">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-100/80 text-slate-700">
+              <th className="p-2.5 text-left font-semibold">氏名</th>
+              <th className="p-2.5 text-right font-semibold">診療・治療</th>
+              <th className="p-2.5 text-right font-semibold">医薬品</th>
+              <th className="p-2.5 text-right font-semibold">その他</th>
+              <th className="p-2.5 text-right font-semibold">合計</th>
+            </tr>
+          </thead>
+          <tbody>
+            {demoMedicalMatrixRows.map((row) => {
+              const rowTotal = row.treatment + row.medicine + row.other;
+              return (
+                <tr key={row.name} className="border-b border-slate-100">
+                  <th className="p-2.5 text-left font-medium text-slate-800">{row.name}</th>
+                  <td className="p-2.5 text-right tabular-nums text-slate-800">{yen(row.treatment)}</td>
+                  <td className="p-2.5 text-right tabular-nums text-slate-800">{yen(row.medicine)}</td>
+                  <td className="p-2.5 text-right tabular-nums text-slate-800">{yen(row.other)}</td>
+                  <td className="p-2.5 text-right font-semibold tabular-nums text-emerald-800">{yen(rowTotal)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="bg-emerald-50/70 text-slate-900">
+              <th className="p-2.5 text-left font-semibold">合計</th>
+              <td className="p-2.5 text-right font-semibold tabular-nums">{yen(typeTotals.treatment)}</td>
+              <td className="p-2.5 text-right font-semibold tabular-nums">{yen(typeTotals.medicine)}</td>
+              <td className="p-2.5 text-right font-semibold tabular-nums">{yen(typeTotals.other)}</td>
+              <td className="p-2.5 text-right font-bold tabular-nums text-emerald-900">{yen(grand)}</td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
 
       <div className="mt-4">

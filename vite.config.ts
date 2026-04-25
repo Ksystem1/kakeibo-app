@@ -97,5 +97,9 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    build: {
+      // 大きめチャンクの既知構成（pdf worker同梱）で警告ノイズを抑える
+      chunkSizeWarningLimit: 1600,
+    },
   };
 });

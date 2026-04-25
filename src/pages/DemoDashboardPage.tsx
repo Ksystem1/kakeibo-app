@@ -5,6 +5,7 @@ import { DemoBeforeChaosSection } from "../components/demo/DemoBeforeChaosSectio
 import { DemoPayPayImportPreview } from "../components/demo/DemoPayPayImportPreview";
 import {
   DemoMedicalDeductionSection,
+  DemoPlanCompareSection,
   DemoReceiptImportSection,
   DemoResponsiveUiSection,
 } from "../components/demo/DemoFeatureSections";
@@ -16,10 +17,10 @@ import {
   demoImportIdealRecent,
 } from "../data/demoMockData";
 
-const STEP_COUNT = 5;
-/** ステップ0は約1秒。1以降は各3秒。合計約13秒（15秒以内）。 */
+const STEP_COUNT = 6;
+/** ステップ0は約1秒。1以降は各2.4秒。合計約13秒（15秒以内）。 */
 const SLIDE_MS_BEFORE = 1000;
-const SLIDE_MS_AFTER = 3000;
+const SLIDE_MS_AFTER = 2400;
 
 function slideDurationMs(s: number) {
   return s === 0 ? SLIDE_MS_BEFORE : SLIDE_MS_AFTER;
@@ -33,11 +34,12 @@ const HIGHLIGHT_BEFORE =
 
 /** ステップ0は共感用の少し長めの文、その後はリール用ショートコピー */
 const CATCH = [
-  "手入力に限界を感じていませんか？",
-  "家計簿、もう書かない。",
-  "何でも置くだけ。形式はアプリが自動判定。",
-  "医療費は氏名×区分、ワン表で。",
-  "迷わない家計簿。取り込み口は、ひとつだけ。",
+  "家計簿、もう限界…",
+  "レシート撮影で、爆速入力。",
+  "PayPay・カードCSVを、ドロップ一括反映。",
+  "医療費は氏名×区分で、すぐ整理。",
+  "どの端末でも、見やすく操作しやすい。",
+  "最後はプラン比較で、最適な一歩を。",
 ] as const;
 
 export function DemoDashboardPage() {
@@ -88,6 +90,7 @@ export function DemoDashboardPage() {
       s3: step === 3,
       s4chart: step === 4,
       s4ui: step === 4,
+      s5: step === 5,
     };
   }, [step]);
 
@@ -191,6 +194,7 @@ export function DemoDashboardPage() {
               <DemoResponsiveUiSection className={stepHighlights.s4ui ? HIGHLIGHT : undefined} />
             </div>
           )}
+          {step === 5 && <DemoPlanCompareSection className={stepHighlights.s5 ? HIGHLIGHT : undefined} />}
         </div>
       </div>
 
@@ -248,10 +252,10 @@ export function DemoDashboardPage() {
                 </button>
               ) : (
                 <Link
-                  to="/register"
+                  to="/settings"
                   className="inline-flex items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-5 py-2.5 text-sm font-bold text-slate-900 shadow-lg hover:from-amber-300 hover:to-orange-400"
                 >
-                  今すぐ無料で始める
+                  プランを確認する
                 </Link>
               )}
             </div>
