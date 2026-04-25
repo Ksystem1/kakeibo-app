@@ -82,18 +82,25 @@
     flex-wrap: nowrap;
     align-items: stretch;
     justify-content: flex-start;
-    gap: 0.42rem;
+    gap: 0.65rem;
     width: 100%;
+    height: auto !important;
+    min-height: 0;
+    overflow: visible;
   }
 
   .app-nav--mobile-column .nav-icon-link {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
-    padding: 0.18rem 0;
+    padding: 0.32rem 0;
     margin: 0;
     flex: 0 0 auto;
     min-width: 0;
+    height: auto !important;
+    min-height: 84px;
+    max-height: none;
+    overflow: visible;
   }
 
   .app-nav--mobile-column .nav-icon-img {
@@ -101,9 +108,10 @@
     max-width: 96%;
     height: auto;
     aspect-ratio: 214 / 66;
-    max-height: none;
+    max-height: 96px;
     object-fit: contain;
     margin-inline: auto;
+    display: block;
   }
 }
 
