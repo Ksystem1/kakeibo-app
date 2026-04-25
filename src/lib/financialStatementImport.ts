@@ -72,6 +72,9 @@ const MEDICAL_HINT_RE =
 const DESCRIPTION_HEADER_RE = /摘要|内容|店|店舗|利用先|支払先|加盟店|取引先|ご利用場所|お取り扱い内容|備考|明細/i;
 const EXPENSE_HEADER_RE = /お引出し|出金|引落|支払|請求|利用金額|ご利用金額|debit/i;
 const INCOME_HEADER_RE = /お預入れ|入金|credit/i;
+const IGNORE_PREAMBLE_RE = /月別ご利用明細|カードご利用明細|種別|お支払明細|ご利用期間|お支払開始月/i;
+const IGNORE_NOTE_RE = /^※\d*|注[記釈]|備考|但し/i;
+const IGNORE_TOTAL_RE = /ショッピング合計|キャッシング合計|ご利用合計|当月合計|総合計|合計/i;
 
 function normalizeDate(raw: string): string | null {
   const s = String(raw ?? "").trim();
@@ -164,6 +167,27 @@ function inferHeaderIndices(header: string[]): HeaderIndices | null {
 
 function hasDateCell(cells: string[]): boolean {
   return cells.some((c) => extractNormalizedDate(c) != null);
+}
+
+function rowJoined(cells: string[]): string {
+  return cells.map((c) => String(c ?? "").trim()).filter(Boolean).join(" ");
+}
+
+function isIgnorablePreambleRow(cells: string[]): boolean {
+  const joined = rowJoined(cells);
+  if (!joined) return true;
+  if (IGNORE_PREAMBLE_RE.test(joined) && !hasDateCell(cells)) return true;
+  if (IGNORE_NOTE_RE.test(joined) && !hasDateCell(cells)) return true;
+  return false;
+}
+
+function isIgnorableDataRow(cells: string[]): boolean {
+  const joined = rowJoined(cells);
+  if (!joined) return true;
+  if (IGNORE_NOTE_RE.test(joined)) return true;
+  if (IGNORE_TOTAL_RE.test(joined) && !hasDateCell(cells)) return true;
+  if (!hasDateCell(cells) && /^(小計|総計|合算)/.test(joined)) return true;
+  return false;
 }
 
 function countTextRichChars(v: string): number {
@@ -304,6 +328,7 @@ export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): Imp
     // 武蔵野銀行のように先頭が口座情報のみで、ヘッダー行が欠ける形式にも対応する。
     let firstDataRow = -1;
     for (let i = 0; i < Math.min(120, rows.length); i++) {
+      if (isIgnorablePreambleRow(rows[i])) continue;
       if (hasDateCell(rows[i])) {
         firstDataRow = i;
         break;
@@ -316,6 +341,7 @@ export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): Imp
   const out: ImportedStatementRow[] = [];
   for (let i = dynamic.dataStart; i < rows.length; i++) {
     const cells = rows[i];
+    if (isIgnorableDataRow(cells)) continue;
     const date = extractNormalizedDate(cells[dynamic.iDate] ?? "");
     const amount = pickExpenseAmount(cells, dynamic);
     const description = combineDescription(cells, dynamic);

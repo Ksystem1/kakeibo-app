@@ -5404,6 +5404,20 @@ export async function handleApiRequest(req, options = {}) {
       }
 
       case "POST /import/csv": {
+        const subRow = await loadUserSubscriptionRowFull(pool, userId);
+        const csvFeature = await evaluateFeatureForUser(pool, userId, "export_csv", subRow);
+        if (!csvFeature?.allowed) {
+          return json(
+            403,
+            {
+              error: "FeatureNotAllowed",
+              detail: "CSV取込はプレミアム限定機能です。",
+              feature: "export_csv",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
         const b = JSON.parse(req.body || "{}");
         const csvSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
         if (csvSubRej) return csvSubRej;
