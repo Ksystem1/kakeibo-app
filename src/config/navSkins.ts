@@ -1,6 +1,7 @@
 /**
  * ナビ用アイコンのスキン（着せ替え）。
- * 各スキンは `public/skins/<id>/` に `1_1.png` … `1_6.png`（ASCII 名）を配置。
+ * スタンダード（Tmp01）は `public/icons/nav/*.svg`（フラット・#4A90E2）。
+ * プレミアム系（Tmp02〜）は `public/skins/<id>/` に `1_1.png` … `1_6.png`（ASCII 名）を配置。
  *
  * 画面上部の切替は「スタンダード」「プレミアム」の2ボタンのみ。
  * プレミアム会員は Tmp02 / Tmp03 / Tmp04 … を別行で選択可能（フォルダが存在しアセットが揃う場合のみ表示）。
@@ -108,15 +109,38 @@ export type NavIconPaths = {
   admin: string;
 };
 
+const SKIN_PNG = {
+  dashboard: "1_1.png",
+  kakeibo: "1_2.png",
+  receipt: "1_4.png",
+  settings: "1_5.png",
+  admin: "1_6.png",
+} as const;
+
+const NAV_FLAT: NavIconPaths = (() => {
+  const b = `${import.meta.env.BASE_URL}icons/nav`.replace(/\/+$/, "");
+  return {
+    dashboard: `${b}/dashboard.svg`,
+    kakeibo: `${b}/kakeibo.svg`,
+    receipt: `${b}/import.svg`,
+    settings: `${b}/settings.svg`,
+    admin: `${b}/admin.svg`,
+  };
+})();
+
 /** メインナビ 5 種（ダッシュボード / 家計簿 / おまかせ取込 / 設定 / 管理） */
 export function buildNavIconPaths(skinId: string): NavIconPaths {
-  const skinBase = `${import.meta.env.BASE_URL}skins/${skinId}`;
+  /** スタンダード: フラット SVG（#4A90E2）。後方互換の PNG 代わり。 */
+  if (skinId === "Tmp01") {
+    return NAV_FLAT;
+  }
+  const skinBase = `${import.meta.env.BASE_URL}skins/${skinId}`.replace(/\/+$/, "");
   return {
-    dashboard: `${skinBase}/1_1.png`,
-    kakeibo: `${skinBase}/1_2.png`,
-    receipt: `${skinBase}/1_4.png`,
-    settings: `${skinBase}/1_5.png`,
-    admin: `${skinBase}/1_6.png`,
+    dashboard: `${skinBase}/${SKIN_PNG.dashboard}`,
+    kakeibo: `${skinBase}/${SKIN_PNG.kakeibo}`,
+    receipt: `${skinBase}/${SKIN_PNG.receipt}`,
+    settings: `${skinBase}/${SKIN_PNG.settings}`,
+    admin: `${skinBase}/${SKIN_PNG.admin}`,
   };
 }
 

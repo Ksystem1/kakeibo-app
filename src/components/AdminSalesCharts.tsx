@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import {
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Legend,
   Line,
@@ -13,8 +14,12 @@ import {
 } from "recharts";
 import type { AdminSalesDailySummaryRow } from "../lib/api";
 
+/** 目標未設定 or 従来の単色 */
 const BAR = "#4A90E2";
-const BAR_ACTIVE = "#2d6ab8";
+/** 目標あり・未達（日次純利益 < 目標） */
+const BAR_BELOW_TARGET = "#7eb0ea";
+/** 目標あり・達成以上（日次純利益 ≥ 目標） */
+const BAR_MEETS_TARGET = "#2d6ab8";
 const LINE = "#2563c7";
 
 function parseYmd(s: string): Date {
@@ -40,9 +45,29 @@ type ChartRow = {
   salesCount: number;
   fee: number;
   gross: number;
+  /** 棒の塗り（目標比で出し分け） */
+  barFill: string;
+  /** ツールチップ用（目標未設定は null） */
+  targetY: number | null;
 };
 
-function buildChartRows(from: string, to: string, items: AdminSalesDailySummaryRow[]): ChartRow[] {
+type ChartRowBase = Omit<ChartRow, "barFill" | "targetY">;
+
+function withBarFills(rows: ChartRowBase[], targetNetY: number | null): ChartRow[] {
+  const t = targetNetY != null && Number.isFinite(targetNetY) ? targetNetY : null;
+  return rows.map((r) => ({
+    ...r,
+    targetY: t,
+    barFill:
+      t == null
+        ? BAR
+        : r.net >= t
+          ? BAR_MEETS_TARGET
+          : BAR_BELOW_TARGET,
+  }));
+}
+
+function buildChartRows(from: string, to: string, items: AdminSalesDailySummaryRow[]): ChartRowBase[] {
   const byDay = new Map<string, AdminSalesDailySummaryRow>();
   for (const r of items) {
     const k = String((r as { day_key?: string }).day_key ?? "")
@@ -50,7 +75,7 @@ function buildChartRows(from: string, to: string, items: AdminSalesDailySummaryR
       .slice(0, 10);
     if (k) byDay.set(k, r);
   }
-  const out: ChartRow[] = [];
+  const out: ChartRowBase[] = [];
   let d = parseYmd(from);
   const end = parseYmd(to);
   let cum = 0;
@@ -84,6 +109,7 @@ type TooltipProps = {
       net: number;
       cumulative: number;
       salesCount: number;
+      targetY: number | null;
     };
   }>;
 };
@@ -105,6 +131,16 @@ function AdminSalesTooltip({ active, payload }: TooltipProps) {
       <div style={{ fontWeight: 700, marginBottom: "0.2rem" }}>{p.dayKey}</div>
       <div>件数：{p.salesCount.toLocaleString("ja-JP")} 件</div>
       <div>純利益：¥{Math.round(p.net).toLocaleString("ja-JP")}</div>
+      {typeof p.targetY === "number" && Number.isFinite(p.targetY) ? (
+        <div
+          style={{
+            marginTop: "0.2rem",
+            color: p.net >= p.targetY ? "#0f5132" : "var(--text-muted, #666)",
+          }}
+        >
+          目標（{Math.round(p.targetY).toLocaleString("ja-JP")}）：{p.net >= p.targetY ? "達成" : "未達"}
+        </div>
+      ) : null}
       <div style={{ color: "var(--text-muted, #666)" }}>
         累積純利益：¥{Math.round(p.cumulative).toLocaleString("ja-JP")}
       </div>
@@ -127,11 +163,12 @@ export function AdminSalesCharts({ from, to, items, loading, error, targetNetY }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
       return [];
     }
-    return buildChartRows(from, to, items);
-  }, [from, to, items]);
+    return withBarFills(buildChartRows(from, to, items), targetNetY);
+  }, [from, to, items, targetNetY]);
 
   const nTicks = data.length;
   const xInterval = nTicks > 45 ? Math.ceil(nTicks / 12) : nTicks > 20 ? 2 : 0;
+  const chartWidthPx = Math.max(100, nTicks * 12);
 
   if (error) {
     return (
@@ -161,8 +198,23 @@ export function AdminSalesCharts({ from, to, items, loading, error, targetNetY }
     >
       <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "0.4rem" }}>
         期間: {from} 〜 {to}（日付は管理画面の開始日・終了日に連動。取引のない日は 0 として表示）
+        {targetNetY != null && Number.isFinite(targetNetY) ? (
+          <span style={{ display: "block", marginTop: "0.25rem" }}>
+            棒の色: 淡い青＝純利益が目標未満、濃い青＝目標以上
+          </span>
+        ) : null}
       </div>
-      <div style={{ width: "100%", height: 340 }}>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "100%",
+          overflowX: "auto",
+          WebkitOverflowScrolling: "touch",
+        }}
+        role="region"
+        aria-label="純利益の推移チャート"
+      >
+        <div style={{ minWidth: chartWidthPx, width: "100%", height: 300, minHeight: 280 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="color-mix(in srgb, var(--text, #888) 20%, transparent)" />
@@ -200,11 +252,14 @@ export function AdminSalesCharts({ from, to, items, loading, error, targetNetY }
               yAxisId="left"
               dataKey="net"
               name="日次純利益"
-              fill={BAR}
               maxBarSize={32}
               radius={[2, 2, 0, 0]}
-              activeBar={{ fill: BAR_ACTIVE, radius: 2 }}
-            />
+              activeBar={{ opacity: 0.9, stroke: "rgba(15, 50, 90, 0.45)", strokeWidth: 0.5 }}
+            >
+              {data.map((entry) => (
+                <Cell key={entry.dayKey} fill={entry.barFill} />
+              ))}
+            </Bar>
             <Line
               yAxisId="right"
               type="monotone"
@@ -216,6 +271,7 @@ export function AdminSalesCharts({ from, to, items, loading, error, targetNetY }
             />
           </ComposedChart>
         </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
