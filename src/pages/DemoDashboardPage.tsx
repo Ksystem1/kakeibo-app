@@ -9,7 +9,13 @@ import {
 import { MetricCard } from "../components/demo/MetricCard";
 import { RecentTransactions } from "../components/demo/RecentTransactions";
 import { SpendingChart } from "../components/demo/SpendingChart";
-import { demoBaseSpendingForChart, demoRecentForHero, demoTypingInputs } from "../data/demoMockData";
+import {
+  type DemoRecentTransaction,
+  type DemoSpendingChartDatum,
+  demoBaseSpendingForChart,
+  demoRecentForHero,
+  demoTypingInputs,
+} from "../data/demoMockData";
 
 type SpeedPreset = "slow" | "normal" | "fast";
 
@@ -71,8 +77,10 @@ export function DemoDashboardPage() {
   const [remainingBudget, setRemainingBudget] = useState(42800);
   const [savings, setSavings] = useState(1284000);
   const [monthDelta, setMonthDelta] = useState(-12.4);
-  const [spendingData, setSpendingData] = useState(baseSpendingData);
-  const [recentItems, setRecentItems] = useState(baseRecentItems);
+  const [spendingData, setSpendingData] = useState<DemoSpendingChartDatum[]>(() => [
+    ...demoBaseSpendingForChart,
+  ]);
+  const [recentItems, setRecentItems] = useState<DemoRecentTransaction[]>(() => [...demoRecentForHero]);
   const rafRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
   const loopIndexRef = useRef(0);
@@ -166,12 +174,12 @@ export function DemoDashboardPage() {
                 setTypedCategory("");
                 setTypedAmount("");
 
-                setSpendingData((prev) =>
-                  prev.map((d) =>
+                setSpendingData((prev: DemoSpendingChartDatum[]) =>
+                  prev.map((d: DemoSpendingChartDatum) =>
                     d.name === demo.category ? { ...d, value: d.value + demo.amount } : d,
                   ),
                 );
-                setRecentItems((prev) => [
+                setRecentItems((prev: DemoRecentTransaction[]) => [
                   {
                     id: Date.now(),
                     category: demo.category,

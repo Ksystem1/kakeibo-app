@@ -17,8 +17,22 @@ export const demoMedicalByType: { label: string; amount: number }[] = [
   { label: "その他", amount: 17_000 },
 ];
 
+export type DemoSpendingChartDatum = {
+  name: string;
+  value: number;
+  color: string;
+};
+
+export type DemoRecentTransaction = {
+  id: number;
+  category: string;
+  title: string;
+  amount: number;
+  time: string;
+};
+
 /** カテゴリ別（固定費を大きく見せる） */
-export const demoBaseSpendingForChart = [
+export const demoBaseSpendingForChart: DemoSpendingChartDatum[] = [
   { name: "固定費（毎月自動）", value: 48_000, color: "#6366f1" },
   { name: "食費", value: 32_000, color: "#22c55e" },
   { name: "光熱費", value: 12_000, color: "#86efac" },
@@ -27,13 +41,7 @@ export const demoBaseSpendingForChart = [
   { name: "その他", value: 12_000, color: "#a78bfa" },
 ];
 
-export const demoRecentForHero: {
-  id: number;
-  category: string;
-  title: string;
-  amount: number;
-  time: string;
-}[] = [
+export const demoRecentForHero: DemoRecentTransaction[] = [
   { id: 1, category: "食費", title: "スーパー（レシート取込）", amount: 1_280, time: "今日 18:45" },
   { id: 2, category: "光熱費", title: "電気料金（固定費）", amount: 6_380, time: "昨日 09:10" },
   { id: 3, category: "日用品", title: "PayPay ドラッグストア", amount: 980, time: "2/3 20:12" },
