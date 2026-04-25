@@ -7,6 +7,8 @@ import {
   getAdminFeaturePermissions,
   getAdminMonitorRecruitmentSettings,
   getAdminPayPayImportSummary,
+  getAdminSalesLogs,
+  getAdminSalesMonthlySummary,
   getAdminSubscriptionReconcile,
   getAdminUsers,
   getReconcileDismissedKeys,
@@ -17,7 +19,10 @@ import {
   putAdminMonitorRecruitmentSettings,
   resetAdminUserPassword,
   updateAdminUser,
+  downloadAdminSalesCsv,
   type AdminFeaturePermissionRow,
+  type AdminSalesLogRow,
+  type AdminSalesMonthlySummaryRow,
 } from "../lib/api";
 import {
   ADMIN_SUBSCRIPTION_STATUSES,
@@ -176,6 +181,16 @@ function formatDateOnly(value: string | null | undefined): string {
   }).format(d);
 }
 
+function thisMonthDateRange() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const from = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+  const last = new Date(y, m + 1, 0).getDate();
+  const to = `${y}-${String(m + 1).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+  return { from, to };
+}
+
 export function AdminPage() {
   const [items, setItems] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -217,6 +232,14 @@ export function AdminPage() {
     }>
   >([]);
   const [paypayMonitorError, setPaypayMonitorError] = useState<string | null>(null);
+  const [salesMonthlySummary, setSalesMonthlySummary] = useState<AdminSalesMonthlySummaryRow[]>([]);
+  const [salesLogs, setSalesLogs] = useState<AdminSalesLogRow[]>([]);
+  const [salesError, setSalesError] = useState<string | null>(null);
+  const [salesFilterYm, setSalesFilterYm] = useState("");
+  const monthRange = useMemo(() => thisMonthDateRange(), []);
+  const [salesCsvFrom, setSalesCsvFrom] = useState(monthRange.from);
+  const [salesCsvTo, setSalesCsvTo] = useState(monthRange.to);
+  const [salesCsvBusy, setSalesCsvBusy] = useState(false);
   const [reconcileData, setReconcileData] = useState<Awaited<
     ReturnType<typeof getAdminSubscriptionReconcile>
   > | null>(null);
@@ -276,6 +299,16 @@ export function AdminPage() {
         );
         return { items: [] };
       });
+      const monthlySales = await getAdminSalesMonthlySummary().catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        setSalesError(msg && msg.trim() ? msg : "売上集計の取得に失敗しました。");
+        return { items: [] as AdminSalesMonthlySummaryRow[] };
+      });
+      const sales = await getAdminSalesLogs({ ym: salesFilterYm || undefined }).catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        setSalesError(msg && msg.trim() ? msg : "売上明細の取得に失敗しました。");
+        return { items: [] as AdminSalesLogRow[] };
+      });
       const list = Array.isArray(res.items) ? res.items : [];
       setFeaturePermError(null);
       try {
@@ -289,7 +322,12 @@ export function AdminPage() {
       if (Array.isArray(monitor.items)) {
         setPaypayMonitorError(null);
       }
+      if (Array.isArray(monthlySales.items) && Array.isArray(sales.items)) {
+        setSalesError(null);
+      }
       setPaypayImportSummary(Array.isArray(monitor.items) ? monitor.items : []);
+      setSalesMonthlySummary(Array.isArray(monthlySales.items) ? monthlySales.items : []);
+      setSalesLogs(Array.isArray(sales.items) ? sales.items : []);
       setSubscriptionStatusWritable(res.meta?.subscriptionStatusWritable !== false);
       setDisplayNameDrafts(
         Object.fromEntries(
@@ -326,13 +364,24 @@ export function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [salesFilterYm]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const adminCount = useMemo(() => items.filter((x) => x.isAdmin).length, [items]);
+  const salesSummaryTotals = useMemo(() => {
+    return salesMonthlySummary.reduce(
+      (acc, row) => {
+        acc.gross += Number(row.gross_total ?? 0);
+        acc.fee += Number(row.fee_total ?? 0);
+        acc.net += Number(row.net_total ?? 0);
+        return acc;
+      },
+      { gross: 0, fee: 0, net: 0 },
+    );
+  }, [salesMonthlySummary]);
 
   const visibleFamilyMismatches = useMemo(() => {
     if (!reconcileData) return [];
@@ -598,6 +647,29 @@ export function AdminPage() {
       setCreating(false);
     }
   }, [newEmail, newLoginName, newDisplayName, newPassword, newIsAdmin, load]);
+
+  const onDownloadSalesCsv = useCallback(async () => {
+    setSalesCsvBusy(true);
+    setSalesError(null);
+    try {
+      const out = await downloadAdminSalesCsv({
+        from: salesCsvFrom || undefined,
+        to: salesCsvTo || undefined,
+      });
+      const url = URL.createObjectURL(out.blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = out.filename || "sales-report.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setSalesError(e instanceof Error ? e.message : "売上CSVの出力に失敗しました");
+    } finally {
+      setSalesCsvBusy(false);
+    }
+  }, [salesCsvFrom, salesCsvTo]);
 
   return (
     <section style={{ padding: "1rem", maxWidth: 1400, margin: "0 auto" }}>
@@ -1161,6 +1233,125 @@ export function AdminPage() {
           {announcementMessage ? (
             <span style={{ fontSize: "0.88rem", color: "var(--text-muted)" }}>{announcementMessage}</span>
           ) : null}
+        </div>
+      </div>
+      <div
+        style={{
+          margin: "0.8rem 0 1rem",
+          padding: "0.75rem 0.9rem",
+          borderRadius: 10,
+          border: "1px solid var(--border)",
+          background: "var(--panel-bg)",
+        }}
+      >
+        <h2 style={{ margin: "0 0 0.5rem", fontSize: "0.98rem" }}>
+          Stripe売上管理（税理士提出用）
+        </h2>
+        <p style={{ margin: "0 0 0.5rem", color: "var(--text-muted)", fontSize: "0.86rem" }}>
+          payments 相当データは <code>sales_logs</code> から集計しています（総額・手数料・純利益）。
+        </p>
+        {salesError ? (
+          <p style={{ margin: "0.35rem 0 0.6rem", color: "#b42318", fontWeight: 600 }}>{salesError}</p>
+        ) : null}
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "end", marginBottom: "0.65rem" }}>
+          <label style={{ display: "grid", gap: "0.2rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>明細表示月（YYYY-MM）</span>
+            <input
+              type="month"
+              value={salesFilterYm}
+              onChange={(e) => setSalesFilterYm(e.target.value)}
+              style={{ font: "inherit", padding: "0.25rem 0.4rem" }}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              void load();
+            }}
+            disabled={loading}
+            style={{ height: 34 }}
+          >
+            再集計
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap", marginBottom: "0.7rem" }}>
+          <div style={{ padding: "0.45rem 0.6rem", border: "1px solid var(--border)", borderRadius: 8 }}>
+            24か月総売上:{" "}
+            <strong>{salesSummaryTotals.gross.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</strong>
+          </div>
+          <div style={{ padding: "0.45rem 0.6rem", border: "1px solid var(--border)", borderRadius: 8 }}>
+            24か月総手数料:{" "}
+            <strong>{salesSummaryTotals.fee.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</strong>
+          </div>
+          <div style={{ padding: "0.45rem 0.6rem", border: "1px solid var(--border)", borderRadius: 8 }}>
+            24か月純利益:{" "}
+            <strong>{salesSummaryTotals.net.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</strong>
+          </div>
+        </div>
+        <div style={{ overflowX: "auto", marginBottom: "0.8rem" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+            <thead>
+              <tr style={{ background: "var(--bg-card)" }}>
+                <th style={adminTableTh}>月</th>
+                <th style={adminTableTh}>件数</th>
+                <th style={adminTableTh}>総額</th>
+                <th style={adminTableTh}>手数料</th>
+                <th style={adminTableTh}>純利益</th>
+              </tr>
+            </thead>
+            <tbody>
+              {salesMonthlySummary.map((r) => (
+                <tr key={`sales-month-${r.ym}`} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={adminTableTd}>{r.ym}</td>
+                  <td style={adminTableTd}>{Number(r.sales_count ?? 0)}</td>
+                  <td style={adminTableTd}>{Number(r.gross_total ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
+                  <td style={adminTableTd}>{Number(r.fee_total ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
+                  <td style={adminTableTd}>{Number(r.net_total ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ overflowX: "auto", marginBottom: "0.8rem" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 940 }}>
+            <thead>
+              <tr style={{ background: "var(--bg-card)" }}>
+                <th style={adminTableTh}>日時</th>
+                <th style={adminTableTh}>ユーザー</th>
+                <th style={adminTableTh}>家族</th>
+                <th style={adminTableTh}>総額</th>
+                <th style={adminTableTh}>手数料</th>
+                <th style={adminTableTh}>純利益</th>
+                <th style={adminTableTh}>通貨</th>
+              </tr>
+            </thead>
+            <tbody>
+              {salesLogs.map((r) => (
+                <tr key={`sales-log-${r.id}`} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={adminTableTd}>{formatDateTime(r.occurred_at)}</td>
+                  <td style={adminTableTd}>{r.user_email ?? "—"}（ID:{r.user_id ?? "—"}）</td>
+                  <td style={adminTableTd}>{r.family_name ?? "—"}（ID:{r.family_id ?? "—"}）</td>
+                  <td style={adminTableTd}>{Number(r.gross_amount ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
+                  <td style={adminTableTd}>{Number(r.stripe_fee_amount ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
+                  <td style={adminTableTd}>{Number(r.net_amount ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
+                  <td style={adminTableTd}>{String(r.currency ?? "").toUpperCase() || "JPY"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "end" }}>
+          <label style={{ display: "grid", gap: "0.2rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>CSV開始日</span>
+            <input type="date" value={salesCsvFrom} onChange={(e) => setSalesCsvFrom(e.target.value)} />
+          </label>
+          <label style={{ display: "grid", gap: "0.2rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>CSV終了日</span>
+            <input type="date" value={salesCsvTo} onChange={(e) => setSalesCsvTo(e.target.value)} />
+          </label>
+          <button type="button" onClick={() => void onDownloadSalesCsv()} disabled={salesCsvBusy}>
+            {salesCsvBusy ? "CSV生成中..." : "税理士提出用CSVを出力"}
+          </button>
         </div>
       </div>
       <div

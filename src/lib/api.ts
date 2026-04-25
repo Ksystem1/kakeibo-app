@@ -1157,6 +1157,81 @@ export async function getAdminPayPayImportSummary() {
   return parse<{ items: AdminPayPayMonitorSummaryRow[] }>(res);
 }
 
+export type AdminSalesMonthlySummaryRow = {
+  ym: string;
+  gross_total: number;
+  fee_total: number;
+  net_total: number;
+  sales_count: number;
+};
+
+export type AdminSalesLogRow = {
+  id: number;
+  occurred_at: string;
+  currency: string;
+  gross_amount: number;
+  stripe_fee_amount: number;
+  net_amount: number;
+  user_id: number | null;
+  family_id: number | null;
+  user_email: string | null;
+  family_name: string | null;
+  stripe_source_type: string;
+  stripe_source_id: string;
+};
+
+export async function getAdminSalesMonthlySummary() {
+  const res = await apiFetch(`${BASE}/admin/payments/monthly-summary`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ items: AdminSalesMonthlySummaryRow[] }>(res);
+}
+
+export async function getAdminSalesLogs(params?: { ym?: string; from?: string; to?: string }) {
+  const sp = new URLSearchParams();
+  if (params?.ym) sp.set("ym", params.ym);
+  if (params?.from) sp.set("from", params.from);
+  if (params?.to) sp.set("to", params.to);
+  const q = sp.toString();
+  const res = await apiFetch(`${BASE}/admin/payments/sales-logs${q ? `?${q}` : ""}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ items: AdminSalesLogRow[] }>(res);
+}
+
+export async function downloadAdminSalesCsv(params?: { from?: string; to?: string }) {
+  const sp = new URLSearchParams();
+  if (params?.from) sp.set("from", params.from);
+  if (params?.to) sp.set("to", params.to);
+  const q = sp.toString();
+  const res = await apiFetch(`${BASE}/admin/payments/export.csv${q ? `?${q}` : ""}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let msg = `CSV出力に失敗しました (${res.status})`;
+    try {
+      const t = await res.text();
+      if (t) {
+        const j = JSON.parse(t) as { detail?: string; error?: string };
+        msg = j.detail || j.error || msg;
+      }
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  return {
+    blob,
+    filename:
+      res.headers.get("content-disposition")?.match(/filename=\"?([^\";]+)\"?/)?.[1] ??
+      "sales-report.csv",
+  };
+}
+
 export type ParseReceiptDebugTier = "server" | "free" | "subscribed";
 
 export async function parseReceiptImage(

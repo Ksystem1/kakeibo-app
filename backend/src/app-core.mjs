@@ -123,6 +123,42 @@ function routeKey(method, path) {
   return `${method} ${p}`;
 }
 
+function formatDateYmd(value) {
+  if (value == null || value === "") return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function toCsvCell(value) {
+  const s = value == null ? "" : String(value);
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function buildSalesDailyCsv(rows) {
+  const header = ["日付", "総額", "手数料", "純利益"];
+  const lines = [header.map((x) => toCsvCell(x)).join(",")];
+  for (const row of rows) {
+    lines.push(
+      [
+        formatDateYmd(row.day_key),
+        Number(row.gross_total ?? 0).toFixed(4),
+        Number(row.fee_total ?? 0).toFixed(4),
+        Number(row.net_total ?? 0).toFixed(4),
+      ]
+        .map((x) => toCsvCell(x))
+        .join(","),
+    );
+  }
+  return `\uFEFF${lines.join("\r\n")}\r\n`;
+}
+
 /** 収入は 0 円可。支出は正の数のみ。 */
 function validateTransactionAmount(kind, amt) {
   if (!Number.isFinite(amt) || amt < 0) {
@@ -2116,6 +2152,9 @@ export async function handleApiRequest(req, options = {}) {
             checkPermissionApiPrefixed: "/api/check-permission?feature=…",
             featurePermissions: "/feature-permissions",
             adminFeaturePermissions: "/admin/feature-permissions",
+            adminSalesMonthlySummary: "/admin/payments/monthly-summary",
+            adminSalesLogs: "/admin/payments/sales-logs",
+            adminSalesCsv: "/admin/payments/export.csv",
             paypayImportPreview: "/import/paypay-csv/preview",
             paypayImportCommit: "/import/paypay-csv/commit",
           },
@@ -5707,6 +5746,165 @@ export async function handleApiRequest(req, options = {}) {
             hdrs,
             skipCors,
           );
+        }
+      }
+
+      case "GET /admin/payments/monthly-summary": {
+        const admin = await ensureAdmin(pool, userId);
+        if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+        try {
+          const [rows] = await pool.query(
+            `SELECT
+               DATE_FORMAT(occurred_at, '%Y-%m') AS ym,
+               COALESCE(SUM(gross_amount), 0) AS gross_total,
+               COALESCE(SUM(stripe_fee_amount), 0) AS fee_total,
+               COALESCE(SUM(net_amount), 0) AS net_total,
+               COUNT(*) AS sales_count
+             FROM sales_logs
+             GROUP BY DATE_FORMAT(occurred_at, '%Y-%m')
+             ORDER BY ym DESC
+             LIMIT 24`,
+          );
+          return json(200, { items: rows }, hdrs, skipCors);
+        } catch (e) {
+          logError("admin.payments.monthly_summary", e, { userId });
+          const code = String(e?.code || "");
+          if (code === "ER_NO_SUCH_TABLE") {
+            return json(
+              503,
+              {
+                error: "SalesLogsUnavailable",
+                detail:
+                  "sales_logs テーブルがありません。db/migration_v37_sales_logs.sql を適用してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          return json(500, { error: "SalesSummaryReadError" }, hdrs, skipCors);
+        }
+      }
+
+      case "GET /admin/payments/sales-logs": {
+        const admin = await ensureAdmin(pool, userId);
+        if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+        const ym = String(q.ym ?? "").trim();
+        const from = String(q.from ?? "").trim();
+        const to = String(q.to ?? "").trim();
+        const where = [];
+        const params = [];
+        if (/^\d{4}-\d{2}$/.test(ym)) {
+          where.push("DATE_FORMAT(sl.occurred_at, '%Y-%m') = ?");
+          params.push(ym);
+        }
+        if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+          where.push("DATE(sl.occurred_at) >= ?");
+          params.push(from);
+        }
+        if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+          where.push("DATE(sl.occurred_at) <= ?");
+          params.push(to);
+        }
+        const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+        try {
+          const [rows] = await pool.query(
+            `SELECT
+               sl.id,
+               sl.occurred_at,
+               sl.currency,
+               sl.gross_amount,
+               sl.stripe_fee_amount,
+               sl.net_amount,
+               sl.user_id,
+               sl.family_id,
+               u.email AS user_email,
+               f.name AS family_name,
+               sl.stripe_source_type,
+               sl.stripe_source_id
+             FROM sales_logs sl
+             LEFT JOIN users u ON u.id = sl.user_id
+             LEFT JOIN families f ON f.id = sl.family_id
+             ${whereSql}
+             ORDER BY sl.occurred_at DESC, sl.id DESC
+             LIMIT 500`,
+            params,
+          );
+          return json(200, { items: rows }, hdrs, skipCors);
+        } catch (e) {
+          logError("admin.payments.sales_logs", e, { userId });
+          const code = String(e?.code || "");
+          if (code === "ER_NO_SUCH_TABLE") {
+            return json(
+              503,
+              {
+                error: "SalesLogsUnavailable",
+                detail:
+                  "sales_logs テーブルがありません。db/migration_v37_sales_logs.sql を適用してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          return json(500, { error: "SalesLogsReadError" }, hdrs, skipCors);
+        }
+      }
+
+      case "GET /admin/payments/export.csv": {
+        const admin = await ensureAdmin(pool, userId);
+        if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+        const from = String(q.from ?? "").trim();
+        const to = String(q.to ?? "").trim();
+        const where = [];
+        const params = [];
+        if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+          where.push("DATE(sl.occurred_at) >= ?");
+          params.push(from);
+        }
+        if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+          where.push("DATE(sl.occurred_at) <= ?");
+          params.push(to);
+        }
+        const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+        try {
+          const [rows] = await pool.query(
+            `SELECT
+               DATE(sl.occurred_at) AS day_key,
+               COALESCE(SUM(sl.gross_amount), 0) AS gross_total,
+               COALESCE(SUM(sl.stripe_fee_amount), 0) AS fee_total,
+               COALESCE(SUM(sl.net_amount), 0) AS net_total
+             FROM sales_logs sl
+             ${whereSql}
+             GROUP BY DATE(sl.occurred_at)
+             ORDER BY day_key ASC`,
+            params,
+          );
+          const csv = buildSalesDailyCsv(rows);
+          const cors = skipCors ? {} : buildCorsHeaders(req.headers || {});
+          return {
+            statusCode: 200,
+            headers: {
+              "content-type": "text/csv; charset=utf-8",
+              "content-disposition": `attachment; filename=\"sales-report-${Date.now()}.csv\"`,
+              ...cors,
+            },
+            body: csv,
+          };
+        } catch (e) {
+          logError("admin.payments.export_csv", e, { userId });
+          const code = String(e?.code || "");
+          if (code === "ER_NO_SUCH_TABLE") {
+            return json(
+              503,
+              {
+                error: "SalesLogsUnavailable",
+                detail:
+                  "sales_logs テーブルがありません。db/migration_v37_sales_logs.sql を適用してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          return json(500, { error: "SalesCsvExportError" }, hdrs, skipCors);
         }
       }
 
