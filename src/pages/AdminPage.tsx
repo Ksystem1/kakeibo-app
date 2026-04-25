@@ -8,7 +8,7 @@ import {
   getAdminMonitorRecruitmentSettings,
   getAdminPayPayImportSummary,
   getAdminSalesLogs,
-  getAdminSalesDailySummary,
+  getAdminSalesDailySummaryWithFallback,
   getAdminSalesMonthlySummary,
   getAdminSubscriptionReconcile,
   getAdminUsers,
@@ -287,6 +287,10 @@ export function AdminPage() {
   const [salesDaily, setSalesDaily] = useState<AdminSalesDailySummaryRow[]>([]);
   const [salesDailyLoading, setSalesDailyLoading] = useState(false);
   const [salesDailyError, setSalesDailyError] = useState<string | null>(null);
+  /** 専用 API が 404 のとき明細から再集計した */
+  const [salesDailyFromLogs, setSalesDailyFromLogs] = useState(false);
+  /** 明細 API の 500 件上限に達した（フォールバック時の近似） */
+  const [salesDailyLogsTruncated, setSalesDailyLogsTruncated] = useState(false);
   /** グラフ上の日次純利益目標（点線）— 任意 */
   const [salesChartTarget, setSalesChartTarget] = useState("");
   const [reconcileData, setReconcileData] = useState<Awaited<
@@ -433,15 +437,24 @@ export function AdminPage() {
     let cancelled = false;
     setSalesDailyLoading(true);
     setSalesDailyError(null);
-    getAdminSalesDailySummary({ from: salesCsvFrom, to: salesCsvTo })
+    setSalesDailyFromLogs(false);
+    setSalesDailyLogsTruncated(false);
+    getAdminSalesDailySummaryWithFallback({ from: salesCsvFrom, to: salesCsvTo })
       .then((r) => {
         if (cancelled) return;
         setSalesDaily(Array.isArray(r.items) ? r.items : []);
+        setSalesDailyFromLogs(r.usedLogsFallback);
+        setSalesDailyLogsTruncated(r.salesLogsHitRowCap);
       })
       .catch((e) => {
         if (cancelled) return;
         setSalesDaily([]);
-        setSalesDailyError(e instanceof Error ? e.message : "日次集計（グラフ）の取得に失敗しました。");
+        setSalesDailyError(
+          formatAdminApiError(e).replace(
+            "ユーザー一覧の取得に失敗しました",
+            "日次集計（グラフ）の取得に失敗しました。",
+          ),
+        );
       })
       .finally(() => {
         if (!cancelled) {
@@ -1436,6 +1449,25 @@ export function AdminPage() {
             />
           </label>
         </div>
+        {salesDailyFromLogs && !salesDailyError ? (
+          <p
+            style={{
+              margin: "0 0 0.5rem",
+              padding: "0.45rem 0.6rem",
+              fontSize: "0.84rem",
+              lineHeight: 1.45,
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "color-mix(in srgb, var(--warning, #b45309) 10%, var(--panel-bg, #fff))",
+              color: "var(--text)",
+            }}
+          >
+            日次専用 API（<code>/admin/payments/daily-summary</code>）が利用できないため、明細を日付別に合算して表示しています。バックエンドを最新版にデプロイすると専用集計に切り替わります。
+            {salesDailyLogsTruncated
+              ? " 明細の取得は最大 500 件のため、取引が多い期間はグラフが実際の合計より小さくなることがあります。"
+              : ""}
+          </p>
+        ) : null}
         <AdminSalesCharts
           from={salesCsvFrom}
           to={salesCsvTo}

@@ -1,5 +1,9 @@
 import { getStoredToken } from "../context/AuthContext";
 import { isSubscriptionServiceSubscribedClient } from "./subscriptionAccess";
+import {
+  aggregateAdminSalesLogsByDay,
+  isApiRouteNotFoundError,
+} from "./adminSalesDailyFromLogs";
 
 /**
  * 開発（import.meta.env.DEV）では環境変数を使わず、API を常にこのオリジンに固定する。
@@ -1205,6 +1209,33 @@ export async function getAdminSalesDailySummary(params: { from: string; to: stri
     cache: "no-store",
   });
   return parse<{ items: AdminSalesDailySummaryRow[]; from: string; to: string }>(res);
+}
+
+/** 本番未デプロイ等で日次専用 API が 404 のとき、明細（最大 500 件）から日次集計 */
+const ADMIN_SALES_LOGS_QUERY_LIMIT = 500;
+
+export async function getAdminSalesDailySummaryWithFallback(params: { from: string; to: string }): Promise<{
+  items: AdminSalesDailySummaryRow[];
+  from: string;
+  to: string;
+  usedLogsFallback: boolean;
+  salesLogsHitRowCap: boolean;
+}> {
+  try {
+    return { ...(await getAdminSalesDailySummary(params)), usedLogsFallback: false, salesLogsHitRowCap: false };
+  } catch (e) {
+    if (!isApiRouteNotFoundError(e)) throw e;
+    const { items: logs } = await getAdminSalesLogs({ from: params.from, to: params.to });
+    const list = Array.isArray(logs) ? logs : [];
+    const ag = aggregateAdminSalesLogsByDay(list);
+    return {
+      items: ag,
+      from: params.from,
+      to: params.to,
+      usedLogsFallback: true,
+      salesLogsHitRowCap: list.length >= ADMIN_SALES_LOGS_QUERY_LIMIT,
+    };
+  }
 }
 
 export async function getAdminSalesLogs(params?: { ym?: string; from?: string; to?: string }) {
