@@ -374,7 +374,7 @@ export function AppLayout() {
             .join(" ")}
           style={{
             display: "flex",
-            flexWrap: mobile && token ? "wrap" : "nowrap",
+            flexWrap: "nowrap",
             alignItems: "center",
             gap: mobile ? "0.2rem" : "0.28rem",
             width: "100%",

@@ -75,32 +75,35 @@
   }
 }
 
-/* スマホ: 5ボタンを等間隔の横並びに整列 */
+/* スマホ: 5ボタンを縦一列に整列 */
 @media (max-width: 768px) {
   .app-nav--mobile-column {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-around;
-    gap: 0.28rem;
+    flex-direction: column !important;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0.42rem;
     width: 100%;
   }
 
   .app-nav--mobile-column .nav-icon-link {
     width: 100%;
-    max-width: none;
+    max-width: 100%;
     box-sizing: border-box;
-    padding: 0;
-    flex: 1 1 calc(20% - 0.28rem);
+    padding: 0.18rem 0;
+    margin: 0;
+    flex: 0 0 auto;
     min-width: 0;
   }
 
   .app-nav--mobile-column .nav-icon-img {
-    width: auto;
-    height: 64px;
-    max-width: 100%;
-    max-height: 64px;
+    width: 96%;
+    max-width: 96%;
+    height: auto;
+    aspect-ratio: 214 / 66;
+    max-height: none;
     object-fit: contain;
+    margin-inline: auto;
   }
 }
 
