@@ -12,6 +12,18 @@ export type ImportedStatementRow = {
   medicalAuto: boolean;
 };
 
+export type FinancialCsvParseResult = {
+  rows: ImportedStatementRow[];
+  needsManualMapping: boolean;
+  message?: string;
+  detected?: {
+    dateCol: number;
+    amountCol: number;
+    descriptionCol: number;
+    dataStartRow: number;
+  };
+};
+
 let pdfWorkerConfigured = false;
 function ensurePdfWorkerConfigured() {
   if (pdfWorkerConfigured) return;
@@ -72,13 +84,19 @@ const MEDICAL_HINT_RE =
 const DESCRIPTION_HEADER_RE = /摘要|内容|店|店舗|利用先|支払先|加盟店|取引先|ご利用場所|お取り扱い内容|備考|明細/i;
 const EXPENSE_HEADER_RE = /お引出し|出金|引落|支払|請求|利用金額|ご利用金額|debit/i;
 const INCOME_HEADER_RE = /お預入れ|入金|credit/i;
+const DATE_HEADER_RE = /利用日|年月日|取引日|日付|date|ご利用年月日|伝票日付/i;
+const AMOUNT_HEADER_GENERIC_RE = /利用金額|金額|お引出し|お預入れ|支払金額|amount|請求額|出金/i;
 const IGNORE_PREAMBLE_RE = /月別ご利用明細|カードご利用明細|種別|お支払明細|ご利用期間|お支払開始月/i;
 const IGNORE_NOTE_RE = /^※\d*|注[記釈]|備考|但し/i;
-const IGNORE_TOTAL_RE = /ショッピング合計|キャッシング合計|ご利用合計|当月合計|総合計|合計/i;
+const IGNORE_TOTAL_RE = /ショッピング合計|キャッシング合計|ご利用合計|当月合計|総合計|合計|振替予定/i;
 
 function normalizeDate(raw: string): string | null {
   const s = String(raw ?? "").trim();
   if (!s) return null;
+  const mYearKanji = s.match(/^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日$/);
+  if (mYearKanji) {
+    return `${mYearKanji[1]}-${mYearKanji[2].padStart(2, "0")}-${mYearKanji[3].padStart(2, "0")}`;
+  }
   const m0 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (m0) return `${m0[1]}-${m0[2]}-${m0[3]}`;
   const m1 = s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
@@ -140,6 +158,23 @@ type DynamicIndices = HeaderIndices & {
 };
 
 function inferHeaderIndices(header: string[]): HeaderIndices | null {
+  const normalized = header.map(normalizeHeaderCell);
+  const iDateGeneric = normalized.findIndex((h) => DATE_HEADER_RE.test(h));
+  const iDescGeneric = normalized.findIndex((h) => DESCRIPTION_HEADER_RE.test(h));
+  const iAmtGeneric = normalized.findIndex((h) => AMOUNT_HEADER_GENERIC_RE.test(h));
+  if (iDateGeneric >= 0 && iAmtGeneric >= 0) {
+    const iExpenseAmt = normalized.findIndex((h) => EXPENSE_HEADER_RE.test(h));
+    const iIncomeAmt = normalized.findIndex((h) => INCOME_HEADER_RE.test(h));
+    return {
+      iDate: iDateGeneric,
+      iDesc: iDescGeneric,
+      iDesc2: -1,
+      iAmt: iAmtGeneric,
+      iExpenseAmt,
+      iIncomeAmt,
+    };
+  }
+
   for (const p of KNOWN_HEADER_PATTERNS) {
     const iDate = findByAliases(header, p.date);
     const iDesc = findByAliases(header, p.description);
@@ -167,6 +202,14 @@ function inferHeaderIndices(header: string[]): HeaderIndices | null {
 
 function hasDateCell(cells: string[]): boolean {
   return cells.some((c) => extractNormalizedDate(c) != null);
+}
+
+function firstDateRowIndex(rows: string[][]): number {
+  for (let i = 0; i < Math.min(rows.length, 160); i++) {
+    if (isIgnorablePreambleRow(rows[i])) continue;
+    if (hasDateCell(rows[i])) return i;
+  }
+  return -1;
 }
 
 function rowJoined(cells: string[]): string {
@@ -207,11 +250,11 @@ function inferIndicesFromData(rows: string[][], startRow: number): DynamicIndice
   if (!headerCandidate.some((c) => String(c ?? "").trim())) headerCandidate = [];
 
   if (headerCandidate.length > 0) {
-    iDate = findByAliases(headerCandidate, ["日付", "利用日", "取引日", "年月日"]);
-    iDesc = findByAliases(headerCandidate, ["摘要", "内容", "利用先", "加盟店", "店", "明細", "場所", "取引先"]);
-    iExpenseAmt = findByAliases(headerCandidate, ["お引出し", "出金", "引落", "支払", "請求", "利用金額", "ご利用金額"]);
+    iDate = findByAliases(headerCandidate, ["利用日", "年月日", "取引日", "日付", "date", "ご利用年月日"]);
+    iDesc = findByAliases(headerCandidate, ["ご利用場所", "加盟店", "摘要", "店名", "内容", "取引先", "利用店", "支払先"]);
+    iExpenseAmt = findByAliases(headerCandidate, ["お引出し", "出金", "引落", "支払金額", "利用金額", "ご利用金額"]);
     iIncomeAmt = findByAliases(headerCandidate, ["お預入れ", "入金"]);
-    iAmt = findByAliases(headerCandidate, ["金額", "出金", "引落", "支払", "請求", "利用"]);
+    iAmt = findByAliases(headerCandidate, ["利用金額", "金額", "お引出し", "お預入れ", "支払金額", "amount"]);
   }
 
   const sampleRows = rows.slice(startRow, Math.min(rows.length, startRow + 40));
@@ -310,9 +353,11 @@ function inferMedicalType(description: string): "treatment" | "medicine" | null 
   return null;
 }
 
-export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): ImportedStatementRow[] {
+export function parseFinancialCsvWithInference(csvText: string, sourceLabel = "CSV"): FinancialCsvParseResult {
   const lines = String(csvText ?? "").split(/\r?\n/);
-  if (lines.length < 2) return [];
+  if (lines.length < 2) {
+    return { rows: [], needsManualMapping: true, message: "データ行が不足しています。" };
+  }
 
   const rows = lines.map(parseCsvLine).filter((cells) => cells.some((c) => String(c ?? "").trim() !== ""));
   let dynamic: DynamicIndices | null = null;
@@ -325,18 +370,17 @@ export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): Imp
     }
   }
   if (!dynamic) {
-    // 武蔵野銀行のように先頭が口座情報のみで、ヘッダー行が欠ける形式にも対応する。
-    let firstDataRow = -1;
-    for (let i = 0; i < Math.min(120, rows.length); i++) {
-      if (isIgnorablePreambleRow(rows[i])) continue;
-      if (hasDateCell(rows[i])) {
-        firstDataRow = i;
-        break;
-      }
-    }
+    // 先頭の口座情報・広告・注釈を飛ばし、最初に日付を含む行から推論する。
+    const firstDataRow = firstDateRowIndex(rows);
     if (firstDataRow >= 0) dynamic = inferIndicesFromData(rows, firstDataRow);
   }
-  if (!dynamic) return [];
+  if (!dynamic) {
+    return {
+      rows: [],
+      needsManualMapping: true,
+      message: "列を自動判定できませんでした。手動で列を選択してください。",
+    };
+  }
 
   const out: ImportedStatementRow[] = [];
   for (let i = dynamic.dataStart; i < rows.length; i++) {
@@ -358,7 +402,33 @@ export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): Imp
       medicalAuto,
     });
   }
-  return out;
+  if (out.length === 0) {
+    return {
+      rows: [],
+      needsManualMapping: true,
+      message: "明細行を抽出できませんでした。手動で列を選択してください。",
+      detected: {
+        dateCol: dynamic.iDate,
+        amountCol: dynamic.iExpenseAmt >= 0 ? dynamic.iExpenseAmt : dynamic.iAmt,
+        descriptionCol: dynamic.iDesc,
+        dataStartRow: dynamic.dataStart,
+      },
+    };
+  }
+  return {
+    rows: out,
+    needsManualMapping: false,
+    detected: {
+      dateCol: dynamic.iDate,
+      amountCol: dynamic.iExpenseAmt >= 0 ? dynamic.iExpenseAmt : dynamic.iAmt,
+      descriptionCol: dynamic.iDesc,
+      dataStartRow: dynamic.dataStart,
+    },
+  };
+}
+
+export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): ImportedStatementRow[] {
+  return parseFinancialCsvWithInference(csvText, sourceLabel).rows;
 }
 
 function parsePdfLine(line: string): { date: string; description: string; amount: number } | null {

@@ -6,6 +6,7 @@ import { tryConvertBankCardCsvToKakeibo } from "../lib/bankCardCsvToKakeibo";
 import {
   type ImportedStatementRow,
   duplicateKey,
+  parseFinancialCsvWithInference,
   parseFinancialCsvText,
   parseFinancialPdfFile,
   toImportCsvText,
@@ -42,6 +43,7 @@ export function ImportCsvPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [parsing, setParsing] = useState(false);
+  const [manualMappingHint, setManualMappingHint] = useState<string | null>(null);
 
   useEffect(() => {
     const s = location.state;
@@ -112,6 +114,7 @@ export function ImportCsvPage() {
     if (list.length === 0) return;
     setErr(null);
     setMsg(null);
+    setManualMappingHint(null);
     setParsing(true);
     try {
       const collected: ImportedStatementRow[] = [];
@@ -125,13 +128,18 @@ export function ImportCsvPage() {
         if (name.endsWith(".csv") || name.endsWith(".txt")) {
           const decoded = await readFileTextAutoEncoding(f);
           const raw = decoded.text;
-          const parsed = parseFinancialCsvText(raw, f.name);
-          if (parsed.length > 0) {
-            collected.push(...parsed);
+          const inferred = parseFinancialCsvWithInference(raw, f.name);
+          if (inferred.rows.length > 0) {
+            collected.push(...inferred.rows);
             setText(raw);
             setMsg(
               `${f.name} を ${decoded.encoding === "shift_jis" ? "Shift-JIS" : "UTF-8"} として読み込みました。`,
             );
+          } else if (inferred.needsManualMapping) {
+            setManualMappingHint(
+              inferred.message ?? "列を自動判定できませんでした。次画面で手動列選択に切り替える準備をしています。",
+            );
+            setText(raw);
           } else {
             setText(raw);
           }
@@ -188,6 +196,7 @@ export function ImportCsvPage() {
     e.preventDefault();
     setErr(null);
     setMsg(null);
+    setManualMappingHint(null);
     setLoading(true);
     try {
       if (!canUseStatementImport) {
@@ -223,11 +232,16 @@ export function ImportCsvPage() {
       if (bankConverted) {
         toSend = bankConverted.text;
       } else {
-        const parsed = parseFinancialCsvText(text, "貼り付けCSV");
-        if (parsed.length > 0) {
-          await applyDuplicateFlags(parsed);
-          setMsg(`${parsed.length}件を解析しました。プレビューで確認後に保存してください。`);
+        const inferred = parseFinancialCsvWithInference(text, "貼り付けCSV");
+        if (inferred.rows.length > 0) {
+          await applyDuplicateFlags(inferred.rows);
+          setMsg(`${inferred.rows.length}件を解析しました。プレビューで確認後に保存してください。`);
           return;
+        }
+        if (inferred.needsManualMapping) {
+          setManualMappingHint(
+            inferred.message ?? "列を自動判定できませんでした。手動で列を選択してください。",
+          );
         }
       }
       const r = await importCsvText(toSend);
@@ -363,6 +377,11 @@ export function ImportCsvPage() {
         ) : null}
         {msg ? (
           <p style={{ color: "var(--accent)", marginBottom: "0.75rem" }}>{msg}</p>
+        ) : null}
+        {manualMappingHint ? (
+          <p style={{ color: "#b45309", marginBottom: "0.75rem", fontWeight: 600 }}>
+            {manualMappingHint}
+          </p>
         ) : null}
         <button
           type="submit"
