@@ -56,6 +56,23 @@ function formatSalesNumber(n: number): string {
   return n.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
 }
 
+function salesSourceTypeClassName(t: string | null | undefined): string {
+  const s = String(t || "").trim();
+  const base = apStyles.salesKind;
+  switch (s) {
+    case "checkout_session":
+      return `${base} ${apStyles.salesKindCheckout}`;
+    case "invoice":
+      return `${base} ${apStyles.salesKindInvoice}`;
+    case "payment_intent":
+      return `${base} ${apStyles.salesKindPi}`;
+    case "refund":
+      return `${base} ${apStyles.salesKindRefund}`;
+    default:
+      return `${base} ${apStyles.salesKindDefault}`;
+  }
+}
+
 function familyMismatchKey(r: { familyId: number; stripeCustomerId: string }): string {
   return `f:${r.familyId}:${r.stripeCustomerId}`;
 }
@@ -139,6 +156,10 @@ const adminTableTd = {
   lineHeight: 1.25,
   verticalAlign: "middle" as const,
 };
+
+const adminTableThRight = { ...adminTableTh, textAlign: "right" as const };
+const adminTableTdRight = { ...adminTableTd, textAlign: "right" as const };
+
 const adminTableBtn = {
   whiteSpace: "nowrap" as const,
   padding: "0.2rem 0.5rem",
@@ -1324,10 +1345,18 @@ export function AdminPage() {
             <thead>
               <tr style={{ background: "var(--bg-card)" }}>
                 <th style={adminTableTh}>月</th>
-                <th style={adminTableTh}>件数</th>
-                <th style={adminTableTh}>総額</th>
-                <th style={adminTableTh}>手数料</th>
-                <th style={adminTableTh}>純利益</th>
+                <th className={apStyles.salesNumCell} style={adminTableThRight}>
+                  件数
+                </th>
+                <th className={apStyles.salesNumCell} style={adminTableThRight}>
+                  総額
+                </th>
+                <th className={apStyles.salesNumCell} style={adminTableThRight}>
+                  手数料
+                </th>
+                <th className={apStyles.salesNumCell} style={adminTableThRight}>
+                  純利益
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1340,12 +1369,27 @@ export function AdminPage() {
                     style={{ borderTop: "1px solid var(--border)" }}
                   >
                     <td style={adminTableTd}>{r.ym}</td>
-                    <td style={adminTableTd}>{Number(r.sales_count ?? 0)}</td>
-                    <td style={adminTableTd}>{formatSalesNumber(Number(r.gross_total ?? 0))}</td>
-                    <td style={adminTableTd}>{formatSalesNumber(Number(r.fee_total ?? 0))}</td>
+                    <td className={apStyles.salesNumCell} style={adminTableTdRight}>
+                      {Number(r.sales_count ?? 0).toLocaleString("ja-JP")}
+                    </td>
+                    <td className={apStyles.salesNumCell} style={adminTableTdRight}>
+                      {formatSalesNumber(Number(r.gross_total ?? 0))}
+                    </td>
+                    <td className={apStyles.salesNumCell} style={adminTableTdRight}>
+                      {formatSalesNumber(Number(r.fee_total ?? 0))}
+                    </td>
                     <td
-                      style={adminTableTd}
-                      className={netM < 0 ? apStyles.salesNetNeg : netM > 0 ? apStyles.salesNetPos : undefined}
+                      className={[
+                        apStyles.salesNumCell,
+                        netM < 0
+                          ? apStyles.salesNetNeg
+                          : netM > 0
+                            ? apStyles.salesNetPos
+                            : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      style={adminTableTdRight}
                     >
                       {formatSalesNumber(netM)}
                     </td>
@@ -1366,9 +1410,15 @@ export function AdminPage() {
                 <th style={adminTableTh}>種別</th>
                 <th style={adminTableTh}>ユーザー</th>
                 <th style={adminTableTh}>家族</th>
-                <th style={adminTableTh}>総額</th>
-                <th style={adminTableTh}>手数料</th>
-                <th style={adminTableTh}>純利益</th>
+                <th className={apStyles.salesNumCell} style={adminTableThRight}>
+                  総額
+                </th>
+                <th className={apStyles.salesNumCell} style={adminTableThRight}>
+                  手数料
+                </th>
+                <th className={apStyles.salesNumCell} style={adminTableThRight}>
+                  純利益
+                </th>
                 <th style={adminTableTh}>通貨</th>
               </tr>
             </thead>
@@ -1382,18 +1432,35 @@ export function AdminPage() {
                     style={{ borderTop: "1px solid var(--border)" }}
                   >
                     <td style={adminTableTd}>{formatDateTime(r.occurred_at)}</td>
-                    <td style={adminTableTd}>{salesSourceTypeLabel(r.stripe_source_type)}</td>
+                    <td style={adminTableTd}>
+                      <span className={salesSourceTypeClassName(r.stripe_source_type)}>
+                        {salesSourceTypeLabel(r.stripe_source_type)}
+                      </span>
+                    </td>
                     <td style={adminTableTd}>
                       {r.user_email ?? "—"}（ID:{r.user_id ?? "—"}）
                     </td>
                     <td style={adminTableTd}>
                       {r.family_name ?? "—"}（ID:{r.family_id ?? "—"}）
                     </td>
-                    <td style={adminTableTd}>{formatSalesNumber(Number(r.gross_amount ?? 0))}</td>
-                    <td style={adminTableTd}>{formatSalesNumber(Number(r.stripe_fee_amount ?? 0))}</td>
+                    <td className={apStyles.salesNumCell} style={adminTableTdRight}>
+                      {formatSalesNumber(Number(r.gross_amount ?? 0))}
+                    </td>
+                    <td className={apStyles.salesNumCell} style={adminTableTdRight}>
+                      {formatSalesNumber(Number(r.stripe_fee_amount ?? 0))}
+                    </td>
                     <td
-                      style={adminTableTd}
-                      className={netL < 0 ? apStyles.salesNetNeg : netL > 0 ? apStyles.salesNetPos : undefined}
+                      className={[
+                        apStyles.salesNumCell,
+                        netL < 0
+                          ? apStyles.salesNetNeg
+                          : netL > 0
+                            ? apStyles.salesNetPos
+                            : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      style={adminTableTdRight}
                     >
                       {formatSalesNumber(netL)}
                     </td>

@@ -133,8 +133,44 @@ td.featurePermColFeature {
   vertical-align: top;
 }
 
+.salesNumCell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.salesDataTable tr.salesDataRow {
+  transition: background-color 0.12s ease;
+}
+
 .salesDataTable tr.salesDataRow:hover td {
-  background: color-mix(in srgb, var(--text, #111) 5%, transparent);
+  background: color-mix(in srgb, var(--text, #111) 7%, transparent);
+}
+
+.salesKind {
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.salesKindCheckout {
+  color: #0f7a3d;
+}
+
+.salesKindInvoice {
+  color: #5b21b6;
+}
+
+.salesKindPi {
+  color: #a16207;
+}
+
+.salesKindRefund {
+  color: #b42318;
+}
+
+.salesKindDefault {
+  color: var(--text, #111);
 }
 
 .salesNetPos {
