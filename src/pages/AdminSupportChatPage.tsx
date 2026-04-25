@@ -50,6 +50,7 @@ function formatListTime(iso: string | null | undefined): string {
 export function AdminSupportChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const loadingOlderRef = useRef(false);
+  const draftRef = useRef<HTMLTextAreaElement>(null);
 
   const [families, setFamilies] = useState<AdminSupportChatFamilyRow[]>([]);
   const [listLoading, setListLoading] = useState(true);
@@ -64,7 +65,6 @@ export function AdminSupportChatPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [sending, setSending] = useState(false);
   const [threadError, setThreadError] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
   const [markImportant, setMarkImportant] = useState(false);
   const [bodyEditId, setBodyEditId] = useState<number | null>(null);
   const [bodyEditDraft, setBodyEditDraft] = useState("");
@@ -100,8 +100,17 @@ export function AdminSupportChatPage() {
     }
   }, []);
 
+  const isUserTypingIntoInput = useCallback(() => {
+    if (typeof document === "undefined") return false;
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return false;
+    const tag = active.tagName.toLowerCase();
+    return tag === "input" || tag === "textarea" || active.isContentEditable;
+  }, []);
+
   const refreshThreadLatest = useCallback(async () => {
     if (selectedFamilyId == null || threadLoading || loadingOlder || sending || bodyEditBusy) return;
+    if (isUserTypingIntoInput()) return;
     try {
       const el = scrollRef.current;
       const nearBottomBefore =
@@ -127,7 +136,7 @@ export function AdminSupportChatPage() {
     } catch {
       /* ポーリング失敗は無視 */
     }
-  }, [selectedFamilyId, threadLoading, loadingOlder, sending, bodyEditBusy]);
+  }, [selectedFamilyId, threadLoading, loadingOlder, sending, bodyEditBusy, isUserTypingIntoInput]);
 
   useEffect(() => {
     void loadFamilies();
@@ -159,6 +168,11 @@ export function AdminSupportChatPage() {
     if (selectedFamilyId == null) return;
     void loadThreadInitial(selectedFamilyId);
   }, [selectedFamilyId, loadThreadInitial]);
+
+  useEffect(() => {
+    if (draftRef.current) draftRef.current.value = "";
+    setMarkImportant(false);
+  }, [selectedFamilyId]);
 
   useEffect(() => {
     if (familiesWithMessages.length === 0) {
@@ -291,7 +305,7 @@ export function AdminSupportChatPage() {
 
   const onSend = useCallback(async () => {
     if (selectedFamilyId == null) return;
-    const text = draft.trim();
+    const text = draftRef.current?.value.trim() ?? "";
     if (!text || sending) return;
     setSending(true);
     setThreadError(null);
@@ -301,7 +315,7 @@ export function AdminSupportChatPage() {
         body: text,
         is_important: markImportant,
       });
-      setDraft("");
+      if (draftRef.current) draftRef.current.value = "";
       setMarkImportant(false);
       setItems((prev) => {
         if (prev.some((x) => x.id === res.message.id)) return prev;
@@ -319,7 +333,7 @@ export function AdminSupportChatPage() {
     } finally {
       setSending(false);
     }
-  }, [draft, sending, selectedFamilyId, markImportant, loadFamilies, flushAdminSupportRead]);
+  }, [sending, selectedFamilyId, markImportant, loadFamilies, flushAdminSupportRead]);
 
   const onDelete = useCallback(
     async (m: SupportChatMessage) => {
@@ -713,8 +727,8 @@ export function AdminSupportChatPage() {
                 </label>
                 <div style={{ display: "flex", gap: "0.45rem", alignItems: "flex-end" }}>
                   <textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
+                    ref={draftRef}
+                    defaultValue=""
                     placeholder="返信を入力…"
                     rows={2}
                     disabled={sending || threadLoading}
@@ -738,7 +752,7 @@ export function AdminSupportChatPage() {
                   />
                   <button
                     type="button"
-                    disabled={sending || threadLoading || !draft.trim()}
+                    disabled={sending || threadLoading}
                     onClick={() => {
                       void onSend();
                     }}

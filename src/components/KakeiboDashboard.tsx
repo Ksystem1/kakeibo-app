@@ -390,7 +390,17 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       ]);
       if (seq !== loadSeqRef.current) return;
       setCategories(normalizeCategoryRows(items));
-      setTransactions((txRes.items ?? []) as Transaction[]);
+      const fetchedTransactions = (txRes.items ?? []) as Transaction[];
+      const activeEl = typeof document !== "undefined" ? document.activeElement : null;
+      const isEditingFieldFocused =
+        activeEl instanceof HTMLElement &&
+        (activeEl.tagName.toLowerCase() === "input" || activeEl.tagName.toLowerCase() === "textarea") &&
+        activeEl.closest(`.${styles.txTable}`) != null;
+      if (isEditingFieldFocused) {
+        setTransactions((prev) => prev);
+      } else {
+        setTransactions(fetchedTransactions);
+      }
       setSummary(sumRes);
       if (memRes && isParentForKidWatch) {
         const memItems = (memRes.items ?? []) as FamilyMemberRow[];

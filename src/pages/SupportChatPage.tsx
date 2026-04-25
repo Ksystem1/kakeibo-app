@@ -24,6 +24,7 @@ export function SupportChatPage() {
   const { user } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
   const loadingOlderRef = useRef(false);
+  const draftRef = useRef<HTMLTextAreaElement>(null);
 
   const [items, setItems] = useState<SupportChatMessage[]>([]);
   const [readStates, setReadStates] = useState<ChatReadState[]>([]);
@@ -33,7 +34,6 @@ export function SupportChatPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
   const [bodyEditId, setBodyEditId] = useState<number | null>(null);
   const [bodyEditDraft, setBodyEditDraft] = useState("");
   const [bodyEditBusy, setBodyEditBusy] = useState(false);
@@ -71,8 +71,17 @@ export function SupportChatPage() {
     }
   }, [familyId]);
 
+  const isUserTypingIntoInput = useCallback(() => {
+    if (typeof document === "undefined") return false;
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return false;
+    const tag = active.tagName.toLowerCase();
+    return tag === "input" || tag === "textarea" || active.isContentEditable;
+  }, []);
+
   const refreshLatest = useCallback(async () => {
     if (loading || loadingOlder || sending) return;
+    if (isUserTypingIntoInput()) return;
     try {
       const el = scrollRef.current;
       const nearBottomBefore =
@@ -99,7 +108,7 @@ export function SupportChatPage() {
     } catch {
       /* ポーリング失敗は無視（画面操作を妨げない） */
     }
-  }, [familyId, loading, loadingOlder, sending]);
+  }, [familyId, loading, loadingOlder, sending, isUserTypingIntoInput]);
 
   useEffect(() => {
     void loadInitial();
@@ -217,7 +226,7 @@ export function SupportChatPage() {
   }, [refreshLatest]);
 
   const onSend = useCallback(async () => {
-    const text = draft.trim();
+    const text = draftRef.current?.value.trim() ?? "";
     if (!text || sending) return;
     setSending(true);
     setError(null);
@@ -226,7 +235,7 @@ export function SupportChatPage() {
         body: text,
         ...(familyId != null ? { family_id: familyId } : {}),
       });
-      setDraft("");
+      if (draftRef.current) draftRef.current.value = "";
       setItems((prev) => {
         if (prev.some((x) => x.id === res.message.id)) return prev;
         const next = [...prev, res.message];
@@ -244,7 +253,7 @@ export function SupportChatPage() {
     } finally {
       setSending(false);
     }
-  }, [draft, sending, familyId, flushReadReceipt]);
+  }, [sending, familyId, flushReadReceipt]);
 
   const onSaveBodyEdit = useCallback(async () => {
     if (bodyEditId == null) return;
@@ -419,8 +428,8 @@ export function SupportChatPage() {
           }}
         >
           <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            ref={draftRef}
+            defaultValue=""
             placeholder="メッセージを入力…"
             rows={2}
             disabled={sending || loading}
@@ -445,7 +454,7 @@ export function SupportChatPage() {
           <button
             type="button"
             className={styles.btn}
-            disabled={sending || loading || !draft.trim()}
+            disabled={sending || loading}
             onClick={() => {
               void onSend();
             }}
