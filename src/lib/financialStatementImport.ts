@@ -86,6 +86,7 @@ const EXPENSE_HEADER_RE = /お引出し|出金|引落|支払|請求|利用金額
 const INCOME_HEADER_RE = /お預入れ|入金|credit/i;
 const DATE_HEADER_RE = /利用日|年月日|取引日|日付|date|ご利用年月日|伝票日付/i;
 const AMOUNT_HEADER_GENERIC_RE = /利用金額|金額|お引出し|お預入れ|支払金額|amount|請求額|出金/i;
+const NON_DATA_HEADER_RE = /^no$|^no\.$|番号|連番|空白|blank/i;
 const IGNORE_PREAMBLE_RE = /月別ご利用明細|カードご利用明細|種別|お支払明細|ご利用期間|お支払開始月/i;
 const IGNORE_NOTE_RE = /^※\d*|注[記釈]|備考|但し/i;
 const IGNORE_TOTAL_RE = /ショッピング合計|キャッシング合計|ご利用合計|当月合計|総合計|合計|振替予定/i;
@@ -251,7 +252,7 @@ function inferIndicesFromData(rows: string[][], startRow: number): DynamicIndice
 
   if (headerCandidate.length > 0) {
     iDate = findByAliases(headerCandidate, ["利用日", "年月日", "取引日", "日付", "date", "ご利用年月日"]);
-    iDesc = findByAliases(headerCandidate, ["ご利用場所", "加盟店", "摘要", "店名", "内容", "取引先", "利用店", "支払先"]);
+    iDesc = findByAliases(headerCandidate, ["ご利用場所", "加盟店", "摘要", "店名", "内容", "取引先", "利用店", "支払先", "備考"]);
     iExpenseAmt = findByAliases(headerCandidate, ["お引出し", "出金", "引落", "支払金額", "利用金額", "ご利用金額"]);
     iIncomeAmt = findByAliases(headerCandidate, ["お預入れ", "入金"]);
     iAmt = findByAliases(headerCandidate, ["利用金額", "金額", "お引出し", "お預入れ", "支払金額", "amount"]);
@@ -278,9 +279,10 @@ function inferIndicesFromData(rows: string[][], startRow: number): DynamicIndice
     let bestDescScore = -1;
     for (let c = 0; c < maxCols; c++) {
       if (c === iDate) continue;
+      const headerCell = normalizeHeaderCell(headerCandidate[c] ?? "");
+      if (NON_DATA_HEADER_RE.test(headerCell)) continue;
       const numericHits = sampleRows.filter((row) => parseAmount(row[c] ?? "") != null).length;
       const textScore = sampleRows.reduce((acc, row) => acc + countTextRichChars(row[c] ?? ""), 0);
-      const headerCell = normalizeHeaderCell(headerCandidate[c] ?? "");
       const descHeaderBoost = DESCRIPTION_HEADER_RE.test(headerCell) ? 50 : 0;
       const expenseHeaderBoost = EXPENSE_HEADER_RE.test(headerCell) ? 40 : 0;
       const incomeHeaderBoost = INCOME_HEADER_RE.test(headerCell) ? 25 : 0;
