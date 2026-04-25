@@ -9,6 +9,7 @@ import {
   parseFinancialPdfFile,
   toImportCsvText,
 } from "../lib/financialStatementImport";
+import { readFileTextAutoEncoding } from "../lib/fileTextDecode";
 import styles from "../components/KakeiboDashboard.module.css";
 import importStyles from "./ImportCsvPage.module.css";
 
@@ -103,7 +104,8 @@ export function ImportCsvPage() {
           continue;
         }
         if (name.endsWith(".csv") || name.endsWith(".txt")) {
-          const raw = await f.text();
+          const decoded = await readFileTextAutoEncoding(f);
+          const raw = decoded.text;
           if (looksLikePayPayCsv(raw)) {
             navigate("/receipt", { state: { paypayPrefillText: raw } });
             return;
@@ -111,6 +113,10 @@ export function ImportCsvPage() {
           const parsed = parseFinancialCsvText(raw, f.name);
           if (parsed.length > 0) {
             collected.push(...parsed);
+            setText(raw);
+            setMsg(
+              `${f.name} を ${decoded.encoding === "shift_jis" ? "Shift-JIS" : "UTF-8"} として読み込みました。`,
+            );
           } else {
             setText(raw);
           }
@@ -120,7 +126,7 @@ export function ImportCsvPage() {
       if (collected.length > 0) {
         setMsg(`${collected.length}件を読み込みました。保存前に修正できます。`);
       } else if (!text.trim()) {
-        setMsg("ファイルから明細を抽出できませんでした。CSVテキスト貼り付けも可能です。");
+        setMsg("明細行を抽出できませんでした。ヘッダー行（例: 利用日 / 内容 / 金額）を確認してください。");
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
