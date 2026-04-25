@@ -98,10 +98,30 @@ export async function processStripeWebhook(payload, sigHeader, pool) {
   return { ok: true, statusCode: 200, body: { received: true } };
 }
 
-function normalizeAmountToDecimal(amountMinorUnit) {
+const ZERO_DECIMAL_CURRENCIES = new Set([
+  "bif",
+  "clp",
+  "djf",
+  "gnf",
+  "jpy",
+  "kmf",
+  "krw",
+  "mga",
+  "pyg",
+  "rwf",
+  "ugx",
+  "vnd",
+  "vuv",
+  "xaf",
+  "xof",
+  "xpf",
+]);
+
+function normalizeAmountToDecimal(amountMinorUnit, currency) {
   const n = Number(amountMinorUnit);
   if (!Number.isFinite(n)) return null;
-  return n / 100;
+  const code = String(currency || "").trim().toLowerCase();
+  return ZERO_DECIMAL_CURRENCIES.has(code) ? n : n / 100;
 }
 
 async function insertSaleLog(pool, row) {
@@ -200,15 +220,16 @@ async function extractPaymentAmountsByPaymentIntent(paymentIntentId) {
       ? pi.latest_charge.balance_transaction
       : null;
   if (!bt) return null;
-  const gross = normalizeAmountToDecimal(bt.amount);
-  const fee = normalizeAmountToDecimal(bt.fee);
-  const net = normalizeAmountToDecimal(bt.net);
+  const ccy = String(bt.currency || "jpy").toLowerCase();
+  const gross = normalizeAmountToDecimal(bt.amount, ccy);
+  const fee = normalizeAmountToDecimal(bt.fee, ccy);
+  const net = normalizeAmountToDecimal(bt.net, ccy);
   if (gross == null || fee == null || net == null) return null;
   return {
     grossAmount: gross,
     stripeFeeAmount: fee,
     netAmount: net,
-    currency: String(bt.currency || "jpy").toLowerCase(),
+    currency: ccy,
     occurredAt:
       bt.created != null && Number.isFinite(Number(bt.created))
         ? new Date(Number(bt.created) * 1000)
@@ -227,15 +248,16 @@ async function extractPaymentAmountsByCharge(chargeId) {
       ? charge.balance_transaction
       : null;
   if (!bt) return null;
-  const gross = normalizeAmountToDecimal(bt.amount);
-  const fee = normalizeAmountToDecimal(bt.fee);
-  const net = normalizeAmountToDecimal(bt.net);
+  const ccy = String(bt.currency || charge.currency || "jpy").toLowerCase();
+  const gross = normalizeAmountToDecimal(bt.amount, ccy);
+  const fee = normalizeAmountToDecimal(bt.fee, ccy);
+  const net = normalizeAmountToDecimal(bt.net, ccy);
   if (gross == null || fee == null || net == null) return null;
   return {
     grossAmount: gross,
     stripeFeeAmount: fee,
     netAmount: net,
-    currency: String(bt.currency || charge.currency || "jpy").toLowerCase(),
+    currency: ccy,
     occurredAt:
       bt.created != null && Number.isFinite(Number(bt.created))
         ? new Date(Number(bt.created) * 1000)
@@ -266,11 +288,11 @@ async function logSaleFromCheckoutSession(pool, stripeEventId, session) {
         ? session.payment_intent.id
         : null;
   const amountByBt = await extractPaymentAmountsByPaymentIntent(paymentIntentId);
-  const grossFallback = normalizeAmountToDecimal(session.amount_total);
+  const currency = String(amountByBt?.currency ?? session.currency ?? "jpy").toLowerCase();
+  const grossFallback = normalizeAmountToDecimal(session.amount_total, currency);
   const grossAmount = amountByBt?.grossAmount ?? grossFallback ?? 0;
   const stripeFeeAmount = amountByBt?.stripeFeeAmount ?? 0;
   const netAmount = amountByBt?.netAmount ?? grossAmount - stripeFeeAmount;
-  const currency = String(amountByBt?.currency ?? session.currency ?? "jpy").toLowerCase();
   const occurredAt =
     amountByBt?.occurredAt ??
     (session.created != null && Number.isFinite(Number(session.created))
@@ -319,11 +341,11 @@ async function logSaleFromInvoicePaid(pool, stripeEventId, invoice) {
         ? invoice.charge.id
         : null;
   const amountByBt = await extractPaymentAmountsByCharge(chargeId);
-  const grossFallback = normalizeAmountToDecimal(invoice.amount_paid);
+  const currency = String(amountByBt?.currency ?? invoice.currency ?? "jpy").toLowerCase();
+  const grossFallback = normalizeAmountToDecimal(invoice.amount_paid, currency);
   const grossAmount = amountByBt?.grossAmount ?? grossFallback ?? 0;
   const stripeFeeAmount = amountByBt?.stripeFeeAmount ?? 0;
   const netAmount = amountByBt?.netAmount ?? grossAmount - stripeFeeAmount;
-  const currency = String(amountByBt?.currency ?? invoice.currency ?? "jpy").toLowerCase();
   const occurredAt =
     amountByBt?.occurredAt ??
     (invoice.status_transitions?.paid_at != null &&
