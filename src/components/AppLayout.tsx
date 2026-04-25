@@ -366,7 +366,12 @@ export function AppLayout() {
         {/* 2段目: ナビゲーション（KID は親向けアイコン行ごと非表示） */}
         {token && isFamilyKid ? null : (
         <nav
-          className={token && mobile ? "app-nav--mobile-column" : undefined}
+          className={[
+            token ? "app-nav--icon-grid" : "",
+            token && mobile ? "app-nav--mobile-column" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           style={{
             display: "flex",
             flexWrap: mobile && token ? "nowrap" : "wrap",
@@ -422,7 +427,7 @@ export function AppLayout() {
               <NavLink
                 to="/import"
                 className={navIconLinkClassName}
-                aria-label="取込・入力"
+                aria-label="おまかせ取込"
                 onClick={onMobileIconNavClick("/import")}
               >
                 <img className="nav-icon-img" src={navIconPaths.receipt} alt="" aria-hidden="true" onError={withDefaultIconFallback("receipt")} />

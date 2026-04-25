@@ -21,7 +21,7 @@
   opacity: 0.9;
   transform: none;
   transition: opacity 0.15s ease, transform 0.15s ease;
-  flex: 0 0 auto;
+  flex: 1 1 0;
   isolation: isolate;
   box-sizing: border-box;
   overflow: hidden;
@@ -52,12 +52,20 @@
   mix-blend-mode: multiply;
 }
 
-/* タブレット〜PC: 各ナビスロットを同一ピクセル幅に固定 */
+/* タブレット〜PC: 5ボタンを等間隔で整列 */
 @media (min-width: 769px) {
+  .app-nav--icon-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+    gap: 0.28rem;
+    align-items: center;
+  }
+
   .nav-icon-link {
-    width: 214px;
+    width: 100%;
     height: 66px;
-    flex: 0 0 214px;
+    min-width: 0;
+    flex: 1 1 0;
   }
 }
 

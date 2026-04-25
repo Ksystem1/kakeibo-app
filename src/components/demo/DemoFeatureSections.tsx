@@ -193,7 +193,7 @@ export function DemoReceiptImportSection({ className }: DemoSectionClassProps) {
           type="button"
           className="mt-3 w-full rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 py-2.5 text-sm font-bold text-white shadow-md"
         >
-          + 取込・入力
+          + おまかせ取込
         </button>
         <p className="mt-2 text-center text-[10px] text-stone-500">JPG/PNG/CSV/PDF すべて対応</p>
       </div>

@@ -14,8 +14,8 @@ export function ImportHubPage() {
 
   return (
     <div className={styles.wrap}>
-      <h1 className={styles.title}>取込・入力ハブ</h1>
-      <p className={styles.sub}>何でもここに置くだけで OK。形式はアプリが自動判別します。</p>
+      <h1 className={styles.title}>おまかせ取込</h1>
+      <p className={styles.sub}>レシート画像・CSV・PDFをここに置くだけ。形式を自動判別して取り込みます。</p>
 
       <UniversalImporter
         onRoutedFiles={(list, kind) => {
@@ -29,7 +29,7 @@ export function ImportHubPage() {
             setMsg("CSV/PDF 取込はプレミアム限定です。");
             return;
           }
-          setMsg("CSV/PDF を検出しました。明細インポートへ移動します。");
+          setMsg("CSV/PDF を検出しました。おまかせ解析を開始します。");
           navigate("/import/files", { state: { prefillFiles: list } });
         }}
       />

@@ -346,7 +346,6 @@ export function SettingsPage() {
     "dashboard",
     "kakeibo",
     "receipt",
-    "csvPc",
     "settings",
     "admin",
   ];

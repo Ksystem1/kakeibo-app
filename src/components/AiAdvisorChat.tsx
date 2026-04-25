@@ -52,10 +52,10 @@ function buildClientFallback(
       ? Math.round(summary.netMonthlyBalance)
       : Math.max(0, Math.round(summary.incomeTotal - summary.expenseTotal - fixedInNet));
   if (q.includes("解析") || q.includes("読み取り") || q.includes("読取")) {
-    return "レシート画面の「レシート取込」から画像を選ぶと、合計・日付・カテゴリ候補が自動入力されます。内容を確認して「登録」を押すと保存できます。";
+    return "レシート画面の「おまかせ取込」から画像を選ぶと、合計・日付・カテゴリ候補が自動入力されます。内容を確認して「登録」を押すと保存できます。";
   }
   if (q.includes("登録方法") || q.includes("登録") || lower.includes("how to register")) {
-    return "家計簿の「取引を追加」で種別・カテゴリ・日付・金額を入力して「追加」を押すと登録できます。レシート取込でも同様に最後は「登録」を押せば保存されます。";
+    return "家計簿の「取引を追加」で種別・カテゴリ・日付・金額を入力して「追加」を押すと登録できます。おまかせ取込でも同様に最後は「登録」を押せば保存されます。";
   }
   if (q.includes("使い方")) {
     return `「食費を月5,000円下げたい」のように数値つきで聞くと、より具体的に提案できます。今月は${summary.topCategoryName}が${summary.topCategoryTotal.toLocaleString("ja-JP")}円なので、まずここから見直しましょう。`;

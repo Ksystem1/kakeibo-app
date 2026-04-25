@@ -39,7 +39,6 @@ const OWNED_NAV_SKINS_KEY = "kakeibo_owned_nav_skins";
 const NAV_ICON_FILE_KEYS: Array<keyof NavIconPaths> = [
   "dashboard",
   "kakeibo",
-  "csvPc",
   "receipt",
   "settings",
   "admin",

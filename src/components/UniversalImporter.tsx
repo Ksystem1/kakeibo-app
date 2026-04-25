@@ -74,7 +74,7 @@ export function UniversalImporter({ onRoutedFiles }: UniversalImporterProps) {
             style={{ marginTop: "0.7rem" }}
             onClick={() => inputRef.current?.click()}
           >
-            + 取込・入力
+            + おまかせ取込
           </button>
           <input
             ref={inputRef}

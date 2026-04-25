@@ -103,19 +103,17 @@ export function isNavSkinUnlocked(skinId: string, ownedSkinIds: readonly string[
 export type NavIconPaths = {
   dashboard: string;
   kakeibo: string;
-  csvPc: string;
   receipt: string;
   settings: string;
   admin: string;
 };
 
-/** メインナビ 6 種（1 ダッシュボード 2 家計簿 3 CSV 4 レシート 5 設定 6 管理） */
+/** メインナビ 5 種（ダッシュボード / 家計簿 / おまかせ取込 / 設定 / 管理） */
 export function buildNavIconPaths(skinId: string): NavIconPaths {
   const skinBase = `${import.meta.env.BASE_URL}skins/${skinId}`;
   return {
     dashboard: `${skinBase}/1_1.png`,
     kakeibo: `${skinBase}/1_2.png`,
-    csvPc: `${skinBase}/1_3.png`,
     receipt: `${skinBase}/1_4.png`,
     settings: `${skinBase}/1_5.png`,
     admin: `${skinBase}/1_6.png`,

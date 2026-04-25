@@ -43,7 +43,7 @@ export const demoBaseSpendingForChart: DemoSpendingChartDatum[] = [
 ];
 
 export const demoRecentForHero: DemoRecentTransaction[] = [
-  { id: 1, category: "食費", title: "スーパー（レシート取込）", amount: 1_280, time: "今日 18:45" },
+  { id: 1, category: "食費", title: "スーパー（おまかせ取込）", amount: 1_280, time: "今日 18:45" },
   { id: 2, category: "光熱費", title: "電気料金（固定費）", amount: 6_380, time: "昨日 09:10" },
   { id: 3, category: "日用品", title: "PayPay ドラッグストア", amount: 980, time: "2/3 20:12" },
 ];
