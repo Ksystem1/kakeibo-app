@@ -301,8 +301,8 @@ CREATE TABLE IF NOT EXISTS feature_permissions (
 CREATE TABLE IF NOT EXISTS sales_logs (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   stripe_event_id VARCHAR(255) NOT NULL COMMENT 'Stripe webhook event id (evt_...)',
-  stripe_source_type ENUM('checkout_session','invoice','payment_intent') NOT NULL DEFAULT 'checkout_session',
-  stripe_source_id VARCHAR(255) NOT NULL COMMENT 'source object id (cs_/in_/pi_)',
+  stripe_source_type ENUM('checkout_session','invoice','payment_intent','refund') NOT NULL DEFAULT 'checkout_session',
+  stripe_source_id VARCHAR(255) NOT NULL COMMENT 'source object id (cs_/in_/pi_/re_)',
   user_id BIGINT UNSIGNED NULL COMMENT 'metadata または customer 紐付けから解決したユーザー',
   family_id BIGINT UNSIGNED NULL COMMENT '課金対象の家族ID',
   currency CHAR(3) NOT NULL DEFAULT 'jpy',

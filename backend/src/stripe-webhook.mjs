@@ -83,6 +83,14 @@ export async function processStripeWebhook(payload, sigHeader, pool) {
         await logSaleFromInvoicePaid(pool, event.id, invoice);
         break;
       }
+      case "refund.created":
+      case "refund.updated": {
+        const ref = event.data.object;
+        if (String(ref.status) === "succeeded") {
+          await logSaleFromRefund(pool, event.id, ref);
+        }
+        break;
+      }
       default:
         logger.info("stripe.event_unhandled", { type: event.type });
     }
@@ -206,28 +214,48 @@ async function resolveUserAndFamilyForSaleLog(pool, rawUserId, customerId) {
   return { userId: null, familyId: null };
 }
 
-async function extractPaymentAmountsByPaymentIntent(paymentIntentId) {
-  if (!paymentIntentId) return null;
-  const stripe = new Stripe(requireStripeSecretKey());
-  const pi = await stripe.paymentIntents.retrieve(String(paymentIntentId), {
-    expand: ["latest_charge.balance_transaction"],
-  });
-  const bt =
-    pi.latest_charge &&
-    typeof pi.latest_charge === "object" &&
-    pi.latest_charge.balance_transaction &&
-    typeof pi.latest_charge.balance_transaction === "object"
-      ? pi.latest_charge.balance_transaction
-      : null;
-  if (!bt) return null;
-  const ccy = String(bt.currency || "jpy").toLowerCase();
-  const gross = normalizeAmountToDecimal(bt.amount, ccy);
-  const fee = normalizeAmountToDecimal(bt.fee, ccy);
+/**
+ * Charge/Customer 支払額（gross）と入金額（net）から手数料を一貫させる。
+ * BT 単体の `fee` だけに依存すると、テスト環境等で total=fee, net=0 になり
+ * 実務的な水準と合わないことがあるため、必要なら gross - net を優先する。
+ */
+function deriveGrossFeeNetFromBalanceTransaction(bt, ccy, options = {}) {
+  const { chargeAmountMinor } = options;
   const net = normalizeAmountToDecimal(bt.net, ccy);
-  if (gross == null || fee == null || net == null) return null;
+  if (net == null) return null;
+  const rawFee = normalizeAmountToDecimal(bt.fee, ccy);
+  const btGross = normalizeAmountToDecimal(bt.amount, ccy);
+  if (btGross == null) return null;
+  const chargeGross =
+    chargeAmountMinor != null && chargeAmountMinor !== "" && Number.isFinite(Number(chargeAmountMinor))
+      ? normalizeAmountToDecimal(Number(chargeAmountMinor), ccy)
+      : null;
+  const gross = chargeGross != null ? chargeGross : btGross;
+  if (gross == null) return null;
+  const impliedFee = gross - net;
+  let stripeFeeAmount = rawFee;
+  if (rawFee == null) {
+    stripeFeeAmount = impliedFee;
+  } else if (Math.abs(rawFee - impliedFee) > 0.5) {
+    logger.info("stripe.sales_fee_reconciled_to_implied", {
+      currency: ccy,
+      impliedFee,
+      rawFee,
+    });
+    stripeFeeAmount = impliedFee;
+  } else {
+    stripeFeeAmount = rawFee;
+  }
+  if (gross > 0 && net >= 0) {
+    if (stripeFeeAmount < 0) stripeFeeAmount = impliedFee;
+    if (stripeFeeAmount > gross) stripeFeeAmount = impliedFee;
+  } else if (gross < 0 && net <= 0) {
+    if (stripeFeeAmount > 0 && impliedFee < 0) stripeFeeAmount = impliedFee;
+    if (stripeFeeAmount < gross) stripeFeeAmount = impliedFee;
+  }
   return {
     grossAmount: gross,
-    stripeFeeAmount: fee,
+    stripeFeeAmount,
     netAmount: net,
     currency: ccy,
     occurredAt:
@@ -235,6 +263,34 @@ async function extractPaymentAmountsByPaymentIntent(paymentIntentId) {
         ? new Date(Number(bt.created) * 1000)
         : null,
   };
+}
+
+async function extractPaymentAmountsByPaymentIntent(paymentIntentId) {
+  if (!paymentIntentId) return null;
+  const stripe = new Stripe(requireStripeSecretKey());
+  const pi = await stripe.paymentIntents.retrieve(String(paymentIntentId), {
+    expand: ["latest_charge.balance_transaction", "latest_charge"],
+  });
+  const lc = pi.latest_charge;
+  let chargeObj = null;
+  if (typeof lc === "string" && lc.trim() !== "") {
+    chargeObj = await stripe.charges.retrieve(lc, { expand: ["balance_transaction"] });
+  } else if (lc && typeof lc === "object") {
+    chargeObj = lc;
+  }
+  if (!chargeObj) return null;
+  let bt = null;
+  if (chargeObj.balance_transaction && typeof chargeObj.balance_transaction === "object") {
+    bt = chargeObj.balance_transaction;
+  } else if (typeof chargeObj.balance_transaction === "string" && chargeObj.balance_transaction) {
+    bt = await stripe.balanceTransactions.retrieve(String(chargeObj.balance_transaction));
+  } else {
+    return null;
+  }
+  if (!bt) return null;
+  const ccy = String(bt.currency || "jpy").toLowerCase();
+  const chMinor = "amount" in chargeObj && chargeObj.amount != null ? chargeObj.amount : pi?.amount;
+  return deriveGrossFeeNetFromBalanceTransaction(bt, ccy, { chargeAmountMinor: chMinor });
 }
 
 async function extractPaymentAmountsByCharge(chargeId) {
@@ -249,20 +305,7 @@ async function extractPaymentAmountsByCharge(chargeId) {
       : null;
   if (!bt) return null;
   const ccy = String(bt.currency || charge.currency || "jpy").toLowerCase();
-  const gross = normalizeAmountToDecimal(bt.amount, ccy);
-  const fee = normalizeAmountToDecimal(bt.fee, ccy);
-  const net = normalizeAmountToDecimal(bt.net, ccy);
-  if (gross == null || fee == null || net == null) return null;
-  return {
-    grossAmount: gross,
-    stripeFeeAmount: fee,
-    netAmount: net,
-    currency: ccy,
-    occurredAt:
-      bt.created != null && Number.isFinite(Number(bt.created))
-        ? new Date(Number(bt.created) * 1000)
-        : null,
-  };
+  return deriveGrossFeeNetFromBalanceTransaction(bt, ccy, { chargeAmountMinor: charge.amount });
 }
 
 async function logSaleFromCheckoutSession(pool, stripeEventId, session) {
@@ -372,6 +415,60 @@ async function logSaleFromInvoicePaid(pool, stripeEventId, invoice) {
       currency: invoice.currency,
       charge: chargeId,
       customer: customerId,
+    },
+  });
+}
+
+/**
+ * 返金: 返金1件あたり1行。金額は原則負数（売上減少・入金戻し）で sales_logs に積算される。
+ */
+async function logSaleFromRefund(pool, stripeEventId, refund) {
+  if (String(refund?.status) !== "succeeded") return;
+  const id = String(refund?.id ?? "").trim();
+  if (!id) return;
+  const stripe = new Stripe(requireStripeSecretKey());
+  const rf = await stripe.refunds.retrieve(String(id), {
+    expand: ["balance_transaction", "charge"],
+  });
+  if (String(rf.status) !== "succeeded") return;
+  let bt = null;
+  if (rf.balance_transaction && typeof rf.balance_transaction === "object") {
+    bt = rf.balance_transaction;
+  } else if (typeof rf.balance_transaction === "string" && rf.balance_transaction) {
+    bt = await stripe.balanceTransactions.retrieve(String(rf.balance_transaction));
+  }
+  if (!bt) {
+    logger.warn("stripe.refund_no_balance_transaction", { refundId: rf.id });
+    return;
+  }
+  const ccy = String(bt.currency || "jpy").toLowerCase();
+  const amountByBt = deriveGrossFeeNetFromBalanceTransaction(bt, ccy, {});
+  if (!amountByBt) return;
+  const ch = typeof rf.charge === "object" && rf.charge ? rf.charge : null;
+  const customerId = ch
+    ? typeof ch.customer === "string"
+      ? ch.customer
+      : ch.customer && typeof ch.customer === "object"
+        ? ch.customer.id
+        : null
+    : null;
+  const userAndFamily = await resolveUserAndFamilyForSaleLog(pool, null, customerId);
+  const occurredAt = amountByBt.occurredAt ?? new Date();
+  await insertSaleLog(pool, {
+    stripeEventId,
+    stripeSourceType: "refund",
+    stripeSourceId: String(rf.id),
+    userId: userAndFamily.userId,
+    familyId: userAndFamily.familyId,
+    currency: amountByBt.currency,
+    grossAmount: amountByBt.grossAmount,
+    stripeFeeAmount: amountByBt.stripeFeeAmount,
+    netAmount: amountByBt.netAmount,
+    occurredAt,
+    rawPayload: {
+      id: rf.id,
+      charge: typeof rf.charge === "string" ? rf.charge : ch?.id ?? null,
+      amount: rf.amount,
     },
   });
 }

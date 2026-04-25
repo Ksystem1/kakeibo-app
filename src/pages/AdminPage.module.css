@@ -102,3 +102,35 @@ td.featurePermColFeature {
     font-size: 0.8rem;
   }
 }
+
+/* Stripe 売上管理: KPI カード・テーブル行ホバー・純利益の色分け */
+.salesKpiRow {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.7rem;
+}
+
+.salesKpiCard {
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--text, #111) 8%, transparent);
+  min-width: 10rem;
+  font-size: 0.9rem;
+}
+
+.salesDataTable tr.salesDataRow:hover td {
+  background: color-mix(in srgb, var(--text, #111) 5%, transparent);
+}
+
+.salesNetPos {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.salesNetNeg {
+  color: #b42318;
+  font-weight: 600;
+}

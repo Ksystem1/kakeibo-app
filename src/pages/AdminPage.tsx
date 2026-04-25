@@ -36,6 +36,26 @@ import {
 } from "../lib/passwordPolicy";
 import apStyles from "./AdminPage.module.css";
 
+function salesSourceTypeLabel(t: string | null | undefined): string {
+  const s = String(t || "").trim();
+  switch (s) {
+    case "checkout_session":
+      return "Checkout";
+    case "invoice":
+      return "請求";
+    case "payment_intent":
+      return "PI";
+    case "refund":
+      return "返金";
+    default:
+      return s || "—";
+  }
+}
+
+function formatSalesNumber(n: number): string {
+  return n.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+}
+
 function familyMismatchKey(r: { familyId: number; stripeCustomerId: string }): string {
   return `f:${r.familyId}:${r.stripeCustomerId}`;
 }
@@ -1274,22 +1294,33 @@ export function AdminPage() {
             再集計
           </button>
         </div>
-        <div style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap", marginBottom: "0.7rem" }}>
-          <div style={{ padding: "0.45rem 0.6rem", border: "1px solid var(--border)", borderRadius: 8 }}>
-            24か月総売上:{" "}
-            <strong>{salesSummaryTotals.gross.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</strong>
+        <div className={apStyles.salesKpiRow}>
+          <div className={apStyles.salesKpiCard}>
+            24か月総売上: <strong>{formatSalesNumber(salesSummaryTotals.gross)}</strong>
           </div>
-          <div style={{ padding: "0.45rem 0.6rem", border: "1px solid var(--border)", borderRadius: 8 }}>
-            24か月総手数料:{" "}
-            <strong>{salesSummaryTotals.fee.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</strong>
+          <div className={apStyles.salesKpiCard}>
+            24か月総手数料: <strong>{formatSalesNumber(salesSummaryTotals.fee)}</strong>
           </div>
-          <div style={{ padding: "0.45rem 0.6rem", border: "1px solid var(--border)", borderRadius: 8 }}>
+          <div className={apStyles.salesKpiCard}>
             24か月純利益:{" "}
-            <strong>{salesSummaryTotals.net.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</strong>
+            <strong
+              className={
+                salesSummaryTotals.net < 0
+                  ? apStyles.salesNetNeg
+                  : salesSummaryTotals.net > 0
+                    ? apStyles.salesNetPos
+                    : undefined
+              }
+            >
+              {formatSalesNumber(salesSummaryTotals.net)}
+            </strong>
           </div>
         </div>
         <div style={{ overflowX: "auto", marginBottom: "0.8rem" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+          <table
+            className={apStyles.salesDataTable}
+            style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}
+          >
             <thead>
               <tr style={{ background: "var(--bg-card)" }}>
                 <th style={adminTableTh}>月</th>
@@ -1300,23 +1331,39 @@ export function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {salesMonthlySummary.map((r) => (
-                <tr key={`sales-month-${r.ym}`} style={{ borderTop: "1px solid var(--border)" }}>
-                  <td style={adminTableTd}>{r.ym}</td>
-                  <td style={adminTableTd}>{Number(r.sales_count ?? 0)}</td>
-                  <td style={adminTableTd}>{Number(r.gross_total ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
-                  <td style={adminTableTd}>{Number(r.fee_total ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
-                  <td style={adminTableTd}>{Number(r.net_total ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
-                </tr>
-              ))}
+              {salesMonthlySummary.map((r) => {
+                const netM = Number(r.net_total ?? 0);
+                return (
+                  <tr
+                    key={`sales-month-${r.ym}`}
+                    className={apStyles.salesDataRow}
+                    style={{ borderTop: "1px solid var(--border)" }}
+                  >
+                    <td style={adminTableTd}>{r.ym}</td>
+                    <td style={adminTableTd}>{Number(r.sales_count ?? 0)}</td>
+                    <td style={adminTableTd}>{formatSalesNumber(Number(r.gross_total ?? 0))}</td>
+                    <td style={adminTableTd}>{formatSalesNumber(Number(r.fee_total ?? 0))}</td>
+                    <td
+                      style={adminTableTd}
+                      className={netM < 0 ? apStyles.salesNetNeg : netM > 0 ? apStyles.salesNetPos : undefined}
+                    >
+                      {formatSalesNumber(netM)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
         <div style={{ overflowX: "auto", marginBottom: "0.8rem" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 940 }}>
+          <table
+            className={apStyles.salesDataTable}
+            style={{ width: "100%", borderCollapse: "collapse", minWidth: 1040 }}
+          >
             <thead>
               <tr style={{ background: "var(--bg-card)" }}>
                 <th style={adminTableTh}>日時</th>
+                <th style={adminTableTh}>種別</th>
                 <th style={adminTableTh}>ユーザー</th>
                 <th style={adminTableTh}>家族</th>
                 <th style={adminTableTh}>総額</th>
@@ -1326,17 +1373,34 @@ export function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {salesLogs.map((r) => (
-                <tr key={`sales-log-${r.id}`} style={{ borderTop: "1px solid var(--border)" }}>
-                  <td style={adminTableTd}>{formatDateTime(r.occurred_at)}</td>
-                  <td style={adminTableTd}>{r.user_email ?? "—"}（ID:{r.user_id ?? "—"}）</td>
-                  <td style={adminTableTd}>{r.family_name ?? "—"}（ID:{r.family_id ?? "—"}）</td>
-                  <td style={adminTableTd}>{Number(r.gross_amount ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
-                  <td style={adminTableTd}>{Number(r.stripe_fee_amount ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
-                  <td style={adminTableTd}>{Number(r.net_amount ?? 0).toLocaleString("ja-JP", { maximumFractionDigits: 2 })}</td>
-                  <td style={adminTableTd}>{String(r.currency ?? "").toUpperCase() || "JPY"}</td>
-                </tr>
-              ))}
+              {salesLogs.map((r) => {
+                const netL = Number(r.net_amount ?? 0);
+                return (
+                  <tr
+                    key={`sales-log-${r.id}`}
+                    className={apStyles.salesDataRow}
+                    style={{ borderTop: "1px solid var(--border)" }}
+                  >
+                    <td style={adminTableTd}>{formatDateTime(r.occurred_at)}</td>
+                    <td style={adminTableTd}>{salesSourceTypeLabel(r.stripe_source_type)}</td>
+                    <td style={adminTableTd}>
+                      {r.user_email ?? "—"}（ID:{r.user_id ?? "—"}）
+                    </td>
+                    <td style={adminTableTd}>
+                      {r.family_name ?? "—"}（ID:{r.family_id ?? "—"}）
+                    </td>
+                    <td style={adminTableTd}>{formatSalesNumber(Number(r.gross_amount ?? 0))}</td>
+                    <td style={adminTableTd}>{formatSalesNumber(Number(r.stripe_fee_amount ?? 0))}</td>
+                    <td
+                      style={adminTableTd}
+                      className={netL < 0 ? apStyles.salesNetNeg : netL > 0 ? apStyles.salesNetPos : undefined}
+                    >
+                      {formatSalesNumber(netL)}
+                    </td>
+                    <td style={adminTableTd}>{String(r.currency ?? "").toUpperCase() || "JPY"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

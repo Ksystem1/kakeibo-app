@@ -148,12 +148,13 @@ function formatRoundedInteger(value) {
 }
 
 function buildSalesDailyCsv(rows) {
-  const header = ["日付", "総額", "手数料", "純利益", "ユーザー名", "Stripe決済ID"];
+  const header = ["日付", "取引種別", "総額", "手数料", "純利益", "ユーザー名", "Stripe決済ID"];
   const lines = [header.map((x) => toCsvCell(x)).join(",")];
   for (const row of rows) {
     lines.push(
       [
         formatDateYmd(row.day_key),
+        String(row.source_kind ?? ""),
         formatRoundedInteger(row.gross_total),
         formatRoundedInteger(row.fee_total),
         formatRoundedInteger(row.net_total),
@@ -5877,6 +5878,7 @@ export async function handleApiRequest(req, options = {}) {
           const [rows] = await pool.query(
             `SELECT
                sl.occurred_at AS day_key,
+               sl.stripe_source_type AS source_kind,
                sl.gross_amount AS gross_total,
                sl.stripe_fee_amount AS fee_total,
                sl.net_amount AS net_total,
