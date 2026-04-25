@@ -187,6 +187,7 @@ export function ImportCsvPage() {
           setMsg("取り込む対象がありません（すべて除外中）。");
           return;
         }
+        const medicalSelected = selected.filter((r) => r.medical_checked).length;
         const csv = toImportCsvText(
           selected.map((r) => ({
             ...r,
@@ -196,7 +197,10 @@ export function ImportCsvPage() {
           })),
         );
         const r = await importCsvText(csv);
-        setMsg(`保存完了: ${selected.length}件を取込候補から登録しました。追加 ${r.inserted}件。`);
+        setMsg(
+          `保存完了: ${selected.length}件を取込候補から登録しました。追加 ${r.inserted}件。` +
+            (medicalSelected > 0 ? ` 医療費関連 ${medicalSelected} 件は「医療費集計」画面で確認してください。` : ""),
+        );
         setRows([]);
         setText("");
         return;

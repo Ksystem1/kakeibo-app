@@ -157,33 +157,30 @@ export function DemoResponsiveUiSection({ className }: DemoSectionClassProps) {
   );
 }
 
-/** レシート取込（最新余白）のイメージ */
+/** 統合取込ハブ（画像/CSV/PDF 自動判別）のイメージ */
 export function DemoReceiptImportSection({ className }: DemoSectionClassProps) {
   return (
     <section
       className={`rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/90 to-stone-50/80 p-4 shadow-md md:p-5 ${className ?? ""}`}
     >
-      <h2 className="text-base font-bold text-stone-900">レシート取込：撮るだけ</h2>
+      <h2 className="text-base font-bold text-stone-900">ユニバーサル取込ハブ</h2>
       <p className="mt-1 text-xs leading-relaxed text-stone-600">
-        家計簿アプリ内のレシート画面と同じトーンで、<strong>余白を抑えたモバイル向けヘッダー</strong>
-        からすぐ取り込めます（デモ表示）。
+        入口はひとつ。画像は AI レシート解析、CSV/PDF は明細解析へ
+        <strong>自動で振り分け</strong>ます（デモ表示）。
       </p>
       <div
         className="mt-3 rounded-xl border border-stone-200/90 bg-stone-50/50 p-3"
         style={{ minHeight: "8rem" }}
       >
-        <p className="text-center text-xs font-bold text-stone-800">レシート・明細取込</p>
-        <p className="mt-2 text-center text-[10px] text-stone-500">レシートを撮影または画像を選択</p>
+        <p className="text-center text-xs font-bold text-stone-800">ファイルをここにドロップ</p>
+        <p className="mt-2 text-center text-[10px] text-stone-500">何でも置くだけ。形式はアプリが自動判定</p>
         <button
           type="button"
           className="mt-3 w-full rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 py-2.5 text-sm font-bold text-white shadow-md"
         >
-          写真・データ取込
+          + 取込・入力
         </button>
-        <p className="mt-2 text-center text-[10px] text-stone-500">
-          銀行の明細用CSVは
-          <span className="text-teal-700">銀行・カード明細取込</span> へ
-        </p>
+        <p className="mt-2 text-center text-[10px] text-stone-500">JPG/PNG/CSV/PDF すべて対応</p>
       </div>
     </section>
   );

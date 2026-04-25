@@ -1,4 +1,6 @@
 import { parseCsvLine } from "./csvLine";
+import * as pdfjs from "pdfjs-dist";
+import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 export type ImportedStatementRow = {
   id: string;
@@ -9,6 +11,14 @@ export type ImportedStatementRow = {
   categoryGuess: string;
   medicalAuto: boolean;
 };
+
+let pdfWorkerConfigured = false;
+function ensurePdfWorkerConfigured() {
+  if (pdfWorkerConfigured) return;
+  const g = (pdfjs as unknown as { GlobalWorkerOptions?: { workerSrc?: string } }).GlobalWorkerOptions;
+  if (g) g.workerSrc = workerSrc;
+  pdfWorkerConfigured = true;
+}
 
 type HeaderAlias = {
   date: string[];
@@ -163,39 +173,43 @@ function parsePdfLine(line: string): { date: string; description: string; amount
 }
 
 export async function parseFinancialPdfFile(file: File): Promise<ImportedStatementRow[]> {
-  const data = new Uint8Array(await file.arrayBuffer());
-  const pdfjs = await import("pdfjs-dist");
-  const workerSrc = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
-  (pdfjs as { GlobalWorkerOptions?: { workerSrc?: string } }).GlobalWorkerOptions = {
-    workerSrc,
-  };
-  const doc = await pdfjs.getDocument({ data }).promise;
+  try {
+    ensurePdfWorkerConfigured();
+    const data = new Uint8Array(await file.arrayBuffer());
+    const doc = await pdfjs.getDocument({ data }).promise;
   const out: ImportedStatementRow[] = [];
 
   for (let p = 1; p <= doc.numPages; p++) {
-    const page = await doc.getPage(p);
-    const text = await page.getTextContent();
-    const lines = text.items
-      .map((it) => ("str" in it ? String(it.str) : ""))
-      .join("\n")
-      .split(/\n+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    for (let i = 0; i < lines.length; i++) {
-      const parsed = parsePdfLine(lines[i]);
-      if (!parsed) continue;
-      out.push({
-        id: toRowId(file.name, out.length),
-        date: parsed.date,
-        description: parsed.description,
-        amount: parsed.amount,
-        source: `${file.name} p.${p}`,
-        categoryGuess: guessCategory(parsed.description),
-        medicalAuto: MEDICAL_HINT_RE.test(parsed.description),
-      });
+    try {
+      const page = await doc.getPage(p);
+      const text = await page.getTextContent();
+      const lines = text.items
+        .map((it) => ("str" in it ? String(it.str) : ""))
+        .join("\n")
+        .split(/\n+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (let i = 0; i < lines.length; i++) {
+        const parsed = parsePdfLine(lines[i]);
+        if (!parsed) continue;
+        out.push({
+          id: toRowId(file.name, out.length),
+          date: parsed.date,
+          description: parsed.description,
+          amount: parsed.amount,
+          source: `${file.name} p.${p}`,
+          categoryGuess: guessCategory(parsed.description),
+          medicalAuto: MEDICAL_HINT_RE.test(parsed.description),
+        });
+      }
+    } catch {
+      // 1ページの抽出失敗では全体を落とさない
     }
   }
-  return out;
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 export function toImportCsvText(rows: ImportedStatementRow[]): string {
