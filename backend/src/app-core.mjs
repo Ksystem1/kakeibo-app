@@ -141,16 +141,24 @@ function toCsvCell(value) {
   return s;
 }
 
+function formatRoundedInteger(value) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return "0";
+  return String(Math.round(n));
+}
+
 function buildSalesDailyCsv(rows) {
-  const header = ["日付", "総額", "手数料", "純利益"];
+  const header = ["日付", "総額", "手数料", "純利益", "ユーザー名", "Stripe決済ID"];
   const lines = [header.map((x) => toCsvCell(x)).join(",")];
   for (const row of rows) {
     lines.push(
       [
         formatDateYmd(row.day_key),
-        Number(row.gross_total ?? 0).toFixed(4),
-        Number(row.fee_total ?? 0).toFixed(4),
-        Number(row.net_total ?? 0).toFixed(4),
+        formatRoundedInteger(row.gross_total),
+        formatRoundedInteger(row.fee_total),
+        formatRoundedInteger(row.net_total),
+        String(row.user_name ?? ""),
+        String(row.stripe_payment_id ?? ""),
       ]
         .map((x) => toCsvCell(x))
         .join(","),
@@ -5868,14 +5876,16 @@ export async function handleApiRequest(req, options = {}) {
         try {
           const [rows] = await pool.query(
             `SELECT
-               DATE(sl.occurred_at) AS day_key,
-               COALESCE(SUM(sl.gross_amount), 0) AS gross_total,
-               COALESCE(SUM(sl.stripe_fee_amount), 0) AS fee_total,
-               COALESCE(SUM(sl.net_amount), 0) AS net_total
+               sl.occurred_at AS day_key,
+               sl.gross_amount AS gross_total,
+               sl.stripe_fee_amount AS fee_total,
+               sl.net_amount AS net_total,
+               COALESCE(NULLIF(TRIM(u.display_name), ''), NULLIF(TRIM(u.email), ''), IFNULL(CONCAT('user#', sl.user_id), '')) AS user_name,
+               sl.stripe_source_id AS stripe_payment_id
              FROM sales_logs sl
+             LEFT JOIN users u ON u.id = sl.user_id
              ${whereSql}
-             GROUP BY DATE(sl.occurred_at)
-             ORDER BY day_key ASC`,
+             ORDER BY sl.occurred_at ASC, sl.id ASC`,
             params,
           );
           const csv = buildSalesDailyCsv(rows);
