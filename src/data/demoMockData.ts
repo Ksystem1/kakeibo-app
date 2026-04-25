@@ -63,19 +63,20 @@ export const demoTypingInputs: { category: string; amount: number; title: string
   { category: "光熱費", amount: 2200, title: "プロパン明細" },
 ];
 
-/** PayPay 一括取込イメージ（ステップ2） */
-export type DemoPayPayRow = {
+/** 銀行・カード・PayPay 一括取込イメージ（ステップ2） */
+export type DemoImportPreviewRow = {
   id: string;
+  source: string;
   date: string;
-  payee: string;
+  description: string;
   amount: number;
   category: string;
 };
 
-export const demoPayPayRows: DemoPayPayRow[] = [
-  { id: "1", date: "2026/02/24", payee: "PayPay支払い：セブンイレブン", amount: 485, category: "食費" },
-  { id: "2", date: "2026/02/24", payee: "PayPay支払い：スターバックス", amount: 520, category: "外食" },
-  { id: "3", date: "2026/02/23", payee: "PayPay支払い：コンビニ", amount: 320, category: "食費" },
-  { id: "4", date: "2026/02/23", payee: "PayPay支払い：社食ランチ", amount: 650, category: "外食" },
-  { id: "5", date: "2026/02/22", payee: "PayPay支払い：ドラッグストア", amount: 1280, category: "日用品" },
+export const demoImportPreviewRows: DemoImportPreviewRow[] = [
+  { id: "1", source: "武蔵野銀行", date: "2026/02/14", description: "フードスクエア", amount: 3980, category: "食費" },
+  { id: "2", source: "エポスカード", date: "2026/02/15", description: "マツモトキヨシ", amount: 1680, category: "日用品" },
+  { id: "3", source: "PayPay", date: "2026/02/15", description: "PayPay支払い：セブンイレブン", amount: 485, category: "食費" },
+  { id: "4", source: "武蔵野銀行", date: "2026/02/16", description: "〇〇クリニック", amount: 3600, category: "医療" },
+  { id: "5", source: "エポスカード", date: "2026/02/17", description: "AMAZON.CO.JP", amount: 1750, category: "日用品" },
 ];

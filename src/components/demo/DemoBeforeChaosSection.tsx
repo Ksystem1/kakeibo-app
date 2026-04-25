@@ -142,7 +142,7 @@ export function DemoBeforeChaosSection({ className }: DemoSectionClassProps) {
         </p>
       </div>
 
-      <p className="sr-only">手書き帳面と散らばるレシートの煩雑さのイメージ。表示はモックです。</p>
+      <p className="sr-only">手書き帳面と散らばるレシートの煩雑さのイメージ。</p>
     </section>
   );
 }

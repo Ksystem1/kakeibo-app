@@ -16,7 +16,7 @@ let pdfWorkerConfigured = false;
 function ensurePdfWorkerConfigured() {
   if (pdfWorkerConfigured) return;
   const g = (pdfjs as unknown as { GlobalWorkerOptions?: { workerSrc?: string } }).GlobalWorkerOptions;
-  if (g) g.workerSrc = workerSrc;
+  if (g && g.workerSrc !== workerSrc) g.workerSrc = workerSrc;
   pdfWorkerConfigured = true;
 }
 
@@ -65,14 +65,19 @@ const KNOWN_HEADER_PATTERNS: HeaderAlias[] = [
   },
 ];
 
-const DATE_RE = /\b(\d{4}[\/.-]\d{1,2}[\/.-]\d{1,2}|\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4})\b/;
+const DATE_RE = /\b(\d{4}[\/.-]\d{1,2}[\/.-]\d{1,2}|\d{8}|\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4})\b/;
 const AMOUNT_RE = /([+-]?\d[\d,]*(?:\.\d+)?)(?:\s*円)?/;
 const MEDICAL_HINT_RE =
   /病院|医院|クリニック|薬局|調剤|歯科|眼科|内科|外科|整形|皮膚科|耳鼻科|小児科|産婦人|医療|処方|ドラッグ/i;
+const DESCRIPTION_HEADER_RE = /摘要|内容|店|店舗|利用先|支払先|加盟店|取引先|ご利用場所|お取り扱い内容|備考|明細/i;
+const EXPENSE_HEADER_RE = /お引出し|出金|引落|支払|請求|利用金額|ご利用金額|debit/i;
+const INCOME_HEADER_RE = /お預入れ|入金|credit/i;
 
 function normalizeDate(raw: string): string | null {
   const s = String(raw ?? "").trim();
   if (!s) return null;
+  const m0 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m0) return `${m0[1]}-${m0[2]}-${m0[3]}`;
   const m1 = s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
   if (m1) return `${m1[1]}-${m1[2].padStart(2, "0")}-${m1[3].padStart(2, "0")}`;
   const m2 = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
@@ -80,6 +85,14 @@ function normalizeDate(raw: string): string | null {
   const year = m2[3].length === 2 ? 2000 + Number(m2[3]) : Number(m2[3]);
   if (!Number.isFinite(year)) return null;
   return `${String(year).padStart(4, "0")}-${m2[1].padStart(2, "0")}-${m2[2].padStart(2, "0")}`;
+}
+
+function extractNormalizedDate(raw: string): string | null {
+  const direct = normalizeDate(raw);
+  if (direct) return direct;
+  const m = String(raw ?? "").match(DATE_RE);
+  if (!m) return null;
+  return normalizeDate(m[1]);
 }
 
 function parseAmount(raw: string): number | null {
@@ -119,6 +132,10 @@ type HeaderIndices = {
   iIncomeAmt: number;
 };
 
+type DynamicIndices = HeaderIndices & {
+  dataStart: number;
+};
+
 function inferHeaderIndices(header: string[]): HeaderIndices | null {
   for (const p of KNOWN_HEADER_PATTERNS) {
     const iDate = findByAliases(header, p.date);
@@ -143,6 +160,89 @@ function inferHeaderIndices(header: string[]): HeaderIndices | null {
     return { iDate, iDesc, iDesc2, iAmt, iExpenseAmt, iIncomeAmt };
   }
   return null;
+}
+
+function hasDateCell(cells: string[]): boolean {
+  return cells.some((c) => extractNormalizedDate(c) != null);
+}
+
+function countTextRichChars(v: string): number {
+  const s = String(v ?? "").trim();
+  if (!s) return 0;
+  return (s.match(/[ぁ-んァ-ヶ一-龯A-Za-z]/g) ?? []).length;
+}
+
+function inferIndicesFromData(rows: string[][], startRow: number): DynamicIndices | null {
+  let iDate = -1;
+  let iAmt = -1;
+  let iExpenseAmt = -1;
+  let iIncomeAmt = -1;
+  let iDesc = -1;
+
+  let headerCandidate = startRow > 0 ? rows[startRow - 1] ?? [] : [];
+  if (!headerCandidate.some((c) => String(c ?? "").trim())) headerCandidate = [];
+
+  if (headerCandidate.length > 0) {
+    iDate = findByAliases(headerCandidate, ["日付", "利用日", "取引日", "年月日"]);
+    iDesc = findByAliases(headerCandidate, ["摘要", "内容", "利用先", "加盟店", "店", "明細", "場所", "取引先"]);
+    iExpenseAmt = findByAliases(headerCandidate, ["お引出し", "出金", "引落", "支払", "請求", "利用金額", "ご利用金額"]);
+    iIncomeAmt = findByAliases(headerCandidate, ["お預入れ", "入金"]);
+    iAmt = findByAliases(headerCandidate, ["金額", "出金", "引落", "支払", "請求", "利用"]);
+  }
+
+  const sampleRows = rows.slice(startRow, Math.min(rows.length, startRow + 40));
+  const maxCols = sampleRows.reduce((m, r) => Math.max(m, r.length), 0);
+
+  if (iDate < 0) {
+    for (let c = 0; c < maxCols; c++) {
+      const hits = sampleRows.filter((row) => normalizeDate(row[c] ?? "") != null).length;
+      if (hits >= 1) {
+        iDate = c;
+        break;
+      }
+    }
+  }
+  if (iDate < 0) return null;
+
+  if (iExpenseAmt < 0 || iIncomeAmt < 0 || iAmt < 0 || iDesc < 0) {
+    let bestAmountCol = -1;
+    let bestAmountScore = -1;
+    let bestDescCol = -1;
+    let bestDescScore = -1;
+    for (let c = 0; c < maxCols; c++) {
+      if (c === iDate) continue;
+      const numericHits = sampleRows.filter((row) => parseAmount(row[c] ?? "") != null).length;
+      const textScore = sampleRows.reduce((acc, row) => acc + countTextRichChars(row[c] ?? ""), 0);
+      const headerCell = normalizeHeaderCell(headerCandidate[c] ?? "");
+      const descHeaderBoost = DESCRIPTION_HEADER_RE.test(headerCell) ? 50 : 0;
+      const expenseHeaderBoost = EXPENSE_HEADER_RE.test(headerCell) ? 40 : 0;
+      const incomeHeaderBoost = INCOME_HEADER_RE.test(headerCell) ? 25 : 0;
+      if (expenseHeaderBoost > 0 && iExpenseAmt < 0) iExpenseAmt = c;
+      if (incomeHeaderBoost > 0 && iIncomeAmt < 0) iIncomeAmt = c;
+      if (numericHits * 10 + expenseHeaderBoost > bestAmountScore) {
+        bestAmountScore = numericHits * 10 + expenseHeaderBoost;
+        bestAmountCol = c;
+      }
+      if (textScore + descHeaderBoost > bestDescScore) {
+        bestDescScore = textScore + descHeaderBoost;
+        bestDescCol = c;
+      }
+    }
+    if (iAmt < 0) iAmt = bestAmountCol;
+    if (iDesc < 0) iDesc = bestDescCol;
+  }
+
+  if (iAmt < 0 && iExpenseAmt < 0) return null;
+  if (iDesc < 0) iDesc = -1;
+  return {
+    iDate,
+    iDesc,
+    iDesc2: -1,
+    iAmt,
+    iExpenseAmt,
+    iIncomeAmt,
+    dataStart: startRow,
+  };
 }
 
 function guessCategory(description: string): string {
@@ -191,25 +291,34 @@ export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): Imp
   if (lines.length < 2) return [];
 
   const rows = lines.map(parseCsvLine).filter((cells) => cells.some((c) => String(c ?? "").trim() !== ""));
-  let headerRowIdx = -1;
-  let indices: HeaderIndices | null = null;
+  let dynamic: DynamicIndices | null = null;
   for (let i = 0; i < Math.min(80, rows.length); i++) {
     const h = rows[i];
     const found = inferHeaderIndices(h);
     if (found) {
-      headerRowIdx = i;
-      indices = found;
+      dynamic = { ...found, dataStart: i + 1 };
       break;
     }
   }
-  if (!indices || headerRowIdx < 0) return [];
+  if (!dynamic) {
+    // 武蔵野銀行のように先頭が口座情報のみで、ヘッダー行が欠ける形式にも対応する。
+    let firstDataRow = -1;
+    for (let i = 0; i < Math.min(120, rows.length); i++) {
+      if (hasDateCell(rows[i])) {
+        firstDataRow = i;
+        break;
+      }
+    }
+    if (firstDataRow >= 0) dynamic = inferIndicesFromData(rows, firstDataRow);
+  }
+  if (!dynamic) return [];
 
   const out: ImportedStatementRow[] = [];
-  for (let i = headerRowIdx + 1; i < rows.length; i++) {
+  for (let i = dynamic.dataStart; i < rows.length; i++) {
     const cells = rows[i];
-    const date = normalizeDate(cells[indices.iDate] ?? "");
-    const amount = pickExpenseAmount(cells, indices);
-    const description = combineDescription(cells, indices);
+    const date = extractNormalizedDate(cells[dynamic.iDate] ?? "");
+    const amount = pickExpenseAmount(cells, dynamic);
+    const description = combineDescription(cells, dynamic);
     if (!date || amount == null) continue;
     const inferredMedicalType = inferMedicalType(description);
     const medicalAuto = inferredMedicalType != null || MEDICAL_HINT_RE.test(description);
@@ -244,36 +353,37 @@ export async function parseFinancialPdfFile(file: File): Promise<ImportedStateme
   try {
     ensurePdfWorkerConfigured();
     const data = new Uint8Array(await file.arrayBuffer());
-    const doc = await pdfjs.getDocument({ data }).promise;
-  const out: ImportedStatementRow[] = [];
+    const loadingTask = pdfjs.getDocument({ data });
+    const doc = await loadingTask.promise;
+    const out: ImportedStatementRow[] = [];
 
-  for (let p = 1; p <= doc.numPages; p++) {
-    try {
-      const page = await doc.getPage(p);
-      const text = await page.getTextContent();
-      const lines = text.items
-        .map((it) => ("str" in it ? String(it.str) : ""))
-        .join("\n")
-        .split(/\n+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-      for (let i = 0; i < lines.length; i++) {
-        const parsed = parsePdfLine(lines[i]);
-        if (!parsed) continue;
-        out.push({
-          id: toRowId(file.name, out.length),
-          date: parsed.date,
-          description: parsed.description,
-          amount: parsed.amount,
-          source: `${file.name} p.${p}`,
-          categoryGuess: guessCategory(parsed.description),
-          medicalAuto: MEDICAL_HINT_RE.test(parsed.description),
-        });
+    for (let p = 1; p <= doc.numPages; p++) {
+      try {
+        const page = await doc.getPage(p);
+        const text = await page.getTextContent();
+        const lines = text.items
+          .map((it) => ("str" in it ? String(it.str) : ""))
+          .join("\n")
+          .split(/\n+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        for (let i = 0; i < lines.length; i++) {
+          const parsed = parsePdfLine(lines[i]);
+          if (!parsed) continue;
+          out.push({
+            id: toRowId(file.name, out.length),
+            date: parsed.date,
+            description: parsed.description,
+            amount: parsed.amount,
+            source: `${file.name} p.${p}`,
+            categoryGuess: guessCategory(parsed.description),
+            medicalAuto: MEDICAL_HINT_RE.test(parsed.description),
+          });
+        }
+      } catch {
+        // 1ページの抽出失敗では全体を落とさない
       }
-    } catch {
-      // 1ページの抽出失敗では全体を落とさない
     }
-  }
     return out;
   } catch {
     return [];

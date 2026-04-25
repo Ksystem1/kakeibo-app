@@ -35,7 +35,7 @@ export function DemoMedicalDeductionSection({ className }: DemoSectionClassProps
           <h2 className="text-base font-bold text-slate-900">医療費控除の集計</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-600">
             氏名（行）× 区分（列）のマトリックスで一目で確認でき、<strong>国税庁の医療費集計用CSV</strong>
-            へ一括で落とせます（デモ表示・ダウンロードなし）。
+            へ一括で落とせます。
           </p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-right text-xs text-slate-600 shadow-sm">
@@ -99,10 +99,10 @@ export function DemoMedicalDeductionSection({ className }: DemoSectionClassProps
         </button>
         {demoTap ? (
           <p className="mt-2 rounded-lg border border-teal-200 bg-teal-50/80 px-2 py-1.5 text-center text-[11px] text-teal-900">
-            デモのためダウンロードは行いません。本番の「医療費集計」画面で同じ操作ができます。
+            ここで流れを確認したら、本番画面でそのまま使えます。
           </p>
         ) : null}
-        <p className="mt-1.5 text-center text-[10px] text-slate-500">※ この画面はモックです。DB やファイルは更新されません。</p>
+        <p className="mt-1.5 text-center text-[10px] text-slate-500">取り込みから申告準備まで、同じ流れで迷わず進めます。</p>
       </div>
     </section>
   );
@@ -181,7 +181,7 @@ export function DemoReceiptImportSection({ className }: DemoSectionClassProps) {
       <h2 className="text-base font-bold text-stone-900">ユニバーサル取込ハブ</h2>
       <p className="mt-1 text-xs leading-relaxed text-stone-600">
         入口はひとつ。画像は AI レシート解析、CSV/PDF は明細解析へ
-        <strong>自動で振り分け</strong>ます（デモ表示）。
+        <strong>自動で振り分け</strong>ます。
       </p>
       <div
         className="mt-3 rounded-xl border border-stone-200/90 bg-stone-50/50 p-3"
@@ -239,7 +239,7 @@ export function DemoPlanCompareSection({ className }: DemoSectionClassProps) {
       >
         今すぐプレミアムを体験
       </button>
-      <p className="mt-1.5 text-center text-[10px] text-slate-500">※ デモ表示です。実際の請求は行いません。</p>
+      <p className="mt-1.5 text-center text-[10px] text-slate-500">使う機能だけを、わかりやすく比較できます。</p>
     </section>
   );
 }
