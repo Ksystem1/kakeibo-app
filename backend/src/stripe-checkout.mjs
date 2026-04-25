@@ -143,6 +143,9 @@ export async function createBillingCheckoutSession(pool, userId, body) {
     cancel_url: cancelUrl,
     client_reference_id: String(userId),
     metadata: { kakeibo_user_id: String(userId) },
+    subscription_data: {
+      metadata: { kakeibo_user_id: String(userId) },
+    },
   };
 
   const email = user.email != null ? String(user.email).trim() : "";

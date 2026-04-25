@@ -75,6 +75,12 @@ export async function processStripeWebhook(payload, sigHeader, pool) {
       case "checkout.session.completed": {
         const session = event.data.object;
         await linkStripeCustomerFromCheckout(pool, session);
+        await logSaleFromCheckoutSession(pool, event.id, session);
+        break;
+      }
+      case "invoice.paid": {
+        const invoice = event.data.object;
+        await logSaleFromInvoicePaid(pool, event.id, invoice);
         break;
       }
       default:
@@ -90,6 +96,262 @@ export async function processStripeWebhook(payload, sigHeader, pool) {
   }
 
   return { ok: true, statusCode: 200, body: { received: true } };
+}
+
+function normalizeAmountToDecimal(amountMinorUnit) {
+  const n = Number(amountMinorUnit);
+  if (!Number.isFinite(n)) return null;
+  return n / 100;
+}
+
+async function insertSaleLog(pool, row) {
+  try {
+    await pool.query(
+      `INSERT INTO sales_logs
+       (stripe_event_id, stripe_source_type, stripe_source_id, user_id, family_id, currency,
+        gross_amount, stripe_fee_amount, net_amount, occurred_at, raw_payload_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE
+        user_id = VALUES(user_id),
+        family_id = VALUES(family_id),
+        currency = VALUES(currency),
+        gross_amount = VALUES(gross_amount),
+        stripe_fee_amount = VALUES(stripe_fee_amount),
+        net_amount = VALUES(net_amount),
+        occurred_at = VALUES(occurred_at),
+        raw_payload_json = VALUES(raw_payload_json),
+        updated_at = NOW()`,
+      [
+        row.stripeEventId,
+        row.stripeSourceType,
+        row.stripeSourceId,
+        row.userId ?? null,
+        row.familyId ?? null,
+        row.currency,
+        row.grossAmount,
+        row.stripeFeeAmount,
+        row.netAmount,
+        row.occurredAt,
+        JSON.stringify(row.rawPayload ?? {}),
+      ],
+    );
+  } catch (e) {
+    const errno = Number(e?.errno);
+    const code = String(e?.code || "");
+    if (errno === 1146 || code === "ER_NO_SUCH_TABLE") {
+      logger.warn("stripe.sales_logs_table_missing", {
+        detail: "sales_logs テーブルが未作成のため売上ログ保存をスキップしました",
+      });
+      return;
+    }
+    throw e;
+  }
+}
+
+async function resolveUserAndFamilyForSaleLog(pool, rawUserId, customerId) {
+  const parsedUserId = Number(rawUserId);
+  const directUserId = Number.isFinite(parsedUserId) && parsedUserId > 0 ? Math.trunc(parsedUserId) : null;
+  if (directUserId) {
+    const [[row]] = await pool.query(
+      `SELECT u.id AS user_id,
+              COALESCE(u.default_family_id, (SELECT fm.family_id FROM family_members fm WHERE fm.user_id = u.id ORDER BY fm.id LIMIT 1)) AS family_id
+       FROM users u
+       WHERE u.id = ?
+       LIMIT 1`,
+      [directUserId],
+    );
+    if (row?.user_id != null) {
+      return {
+        userId: Number(row.user_id),
+        familyId: row.family_id != null ? Number(row.family_id) : null,
+      };
+    }
+  }
+  const customer = String(customerId || "").trim();
+  if (!customer) return { userId: null, familyId: null };
+  const [[rowByFamily]] = await pool.query(
+    `SELECT f.id AS family_id,
+            (SELECT fm.user_id FROM family_members fm WHERE fm.family_id = f.id ORDER BY (fm.role = 'owner') DESC, fm.id ASC LIMIT 1) AS user_id
+     FROM families f
+     WHERE TRIM(COALESCE(f.stripe_customer_id, '')) = ?
+     LIMIT 1`,
+    [customer],
+  );
+  if (rowByFamily?.family_id != null) {
+    return {
+      userId: rowByFamily.user_id != null ? Number(rowByFamily.user_id) : null,
+      familyId: Number(rowByFamily.family_id),
+    };
+  }
+  return { userId: null, familyId: null };
+}
+
+async function extractPaymentAmountsByPaymentIntent(paymentIntentId) {
+  if (!paymentIntentId) return null;
+  const stripe = new Stripe(requireStripeSecretKey());
+  const pi = await stripe.paymentIntents.retrieve(String(paymentIntentId), {
+    expand: ["latest_charge.balance_transaction"],
+  });
+  const bt =
+    pi.latest_charge &&
+    typeof pi.latest_charge === "object" &&
+    pi.latest_charge.balance_transaction &&
+    typeof pi.latest_charge.balance_transaction === "object"
+      ? pi.latest_charge.balance_transaction
+      : null;
+  if (!bt) return null;
+  const gross = normalizeAmountToDecimal(bt.amount);
+  const fee = normalizeAmountToDecimal(bt.fee);
+  const net = normalizeAmountToDecimal(bt.net);
+  if (gross == null || fee == null || net == null) return null;
+  return {
+    grossAmount: gross,
+    stripeFeeAmount: fee,
+    netAmount: net,
+    currency: String(bt.currency || "jpy").toLowerCase(),
+    occurredAt:
+      bt.created != null && Number.isFinite(Number(bt.created))
+        ? new Date(Number(bt.created) * 1000)
+        : null,
+  };
+}
+
+async function extractPaymentAmountsByCharge(chargeId) {
+  if (!chargeId) return null;
+  const stripe = new Stripe(requireStripeSecretKey());
+  const charge = await stripe.charges.retrieve(String(chargeId), {
+    expand: ["balance_transaction"],
+  });
+  const bt =
+    charge.balance_transaction && typeof charge.balance_transaction === "object"
+      ? charge.balance_transaction
+      : null;
+  if (!bt) return null;
+  const gross = normalizeAmountToDecimal(bt.amount);
+  const fee = normalizeAmountToDecimal(bt.fee);
+  const net = normalizeAmountToDecimal(bt.net);
+  if (gross == null || fee == null || net == null) return null;
+  return {
+    grossAmount: gross,
+    stripeFeeAmount: fee,
+    netAmount: net,
+    currency: String(bt.currency || charge.currency || "jpy").toLowerCase(),
+    occurredAt:
+      bt.created != null && Number.isFinite(Number(bt.created))
+        ? new Date(Number(bt.created) * 1000)
+        : null,
+  };
+}
+
+async function logSaleFromCheckoutSession(pool, stripeEventId, session) {
+  const paymentStatus = String(session?.payment_status || "");
+  if (paymentStatus !== "paid") return;
+  const sourceId = String(session?.id || "").trim();
+  if (!sourceId) return;
+  const rawMeta =
+    session?.metadata && typeof session.metadata === "object" ? session.metadata : {};
+  const rawUserId =
+    rawMeta.kakeibo_user_id ?? rawMeta.user_id ?? session?.client_reference_id ?? null;
+  const customerId =
+    typeof session.customer === "string"
+      ? session.customer
+      : session.customer && typeof session.customer === "object"
+        ? session.customer.id
+        : null;
+  const userAndFamily = await resolveUserAndFamilyForSaleLog(pool, rawUserId, customerId);
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent && typeof session.payment_intent === "object"
+        ? session.payment_intent.id
+        : null;
+  const amountByBt = await extractPaymentAmountsByPaymentIntent(paymentIntentId);
+  const grossFallback = normalizeAmountToDecimal(session.amount_total);
+  const grossAmount = amountByBt?.grossAmount ?? grossFallback ?? 0;
+  const stripeFeeAmount = amountByBt?.stripeFeeAmount ?? 0;
+  const netAmount = amountByBt?.netAmount ?? grossAmount - stripeFeeAmount;
+  const currency = String(amountByBt?.currency ?? session.currency ?? "jpy").toLowerCase();
+  const occurredAt =
+    amountByBt?.occurredAt ??
+    (session.created != null && Number.isFinite(Number(session.created))
+      ? new Date(Number(session.created) * 1000)
+      : new Date());
+  await insertSaleLog(pool, {
+    stripeEventId,
+    stripeSourceType: "checkout_session",
+    stripeSourceId: sourceId,
+    userId: userAndFamily.userId,
+    familyId: userAndFamily.familyId,
+    currency,
+    grossAmount,
+    stripeFeeAmount,
+    netAmount,
+    occurredAt,
+    rawPayload: {
+      id: session.id,
+      mode: session.mode,
+      payment_status: session.payment_status,
+      amount_total: session.amount_total,
+      currency: session.currency,
+      payment_intent: paymentIntentId,
+      customer: customerId,
+    },
+  });
+}
+
+async function logSaleFromInvoicePaid(pool, stripeEventId, invoice) {
+  const sourceId = String(invoice?.id || "").trim();
+  if (!sourceId) return;
+  const customerId =
+    typeof invoice.customer === "string"
+      ? invoice.customer
+      : invoice.customer && typeof invoice.customer === "object"
+        ? invoice.customer.id
+        : null;
+  const rawMeta =
+    invoice?.metadata && typeof invoice.metadata === "object" ? invoice.metadata : {};
+  const rawUserId = rawMeta.kakeibo_user_id ?? rawMeta.user_id ?? null;
+  const userAndFamily = await resolveUserAndFamilyForSaleLog(pool, rawUserId, customerId);
+  const chargeId =
+    typeof invoice.charge === "string"
+      ? invoice.charge
+      : invoice.charge && typeof invoice.charge === "object"
+        ? invoice.charge.id
+        : null;
+  const amountByBt = await extractPaymentAmountsByCharge(chargeId);
+  const grossFallback = normalizeAmountToDecimal(invoice.amount_paid);
+  const grossAmount = amountByBt?.grossAmount ?? grossFallback ?? 0;
+  const stripeFeeAmount = amountByBt?.stripeFeeAmount ?? 0;
+  const netAmount = amountByBt?.netAmount ?? grossAmount - stripeFeeAmount;
+  const currency = String(amountByBt?.currency ?? invoice.currency ?? "jpy").toLowerCase();
+  const occurredAt =
+    amountByBt?.occurredAt ??
+    (invoice.status_transitions?.paid_at != null &&
+    Number.isFinite(Number(invoice.status_transitions.paid_at))
+      ? new Date(Number(invoice.status_transitions.paid_at) * 1000)
+      : invoice.created != null && Number.isFinite(Number(invoice.created))
+        ? new Date(Number(invoice.created) * 1000)
+        : new Date());
+  await insertSaleLog(pool, {
+    stripeEventId,
+    stripeSourceType: "invoice",
+    stripeSourceId: sourceId,
+    userId: userAndFamily.userId,
+    familyId: userAndFamily.familyId,
+    currency,
+    grossAmount,
+    stripeFeeAmount,
+    netAmount,
+    occurredAt,
+    rawPayload: {
+      id: invoice.id,
+      subscription: invoice.subscription ?? null,
+      amount_paid: invoice.amount_paid,
+      currency: invoice.currency,
+      charge: chargeId,
+      customer: customerId,
+    },
+  });
 }
 
 /** @param {Record<string, unknown>} subscription */
