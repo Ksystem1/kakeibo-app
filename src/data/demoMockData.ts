@@ -52,3 +52,20 @@ export const demoTypingInputs: { category: string; amount: number; title: string
   { category: "日用品", amount: 980, title: "ドラッグストア" },
   { category: "光熱費", amount: 2200, title: "プロパン明細" },
 ];
+
+/** PayPay 一括取込イメージ（ステップ2） */
+export type DemoPayPayRow = {
+  id: string;
+  date: string;
+  payee: string;
+  amount: number;
+  category: string;
+};
+
+export const demoPayPayRows: DemoPayPayRow[] = [
+  { id: "1", date: "2026/02/24", payee: "PayPay支払い：セブンイレブン", amount: 485, category: "食費" },
+  { id: "2", date: "2026/02/24", payee: "PayPay支払い：スターバックス", amount: 520, category: "外食" },
+  { id: "3", date: "2026/02/23", payee: "PayPay支払い：コンビニ", amount: 320, category: "食費" },
+  { id: "4", date: "2026/02/23", payee: "PayPay支払い：社食ランチ", amount: 650, category: "外食" },
+  { id: "5", date: "2026/02/22", payee: "PayPay支払い：ドラッグストア", amount: 1280, category: "日用品" },
+];

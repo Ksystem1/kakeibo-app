@@ -10,6 +10,7 @@ type RecentTransaction = {
 
 type RecentTransactionsProps = {
   items: RecentTransaction[];
+  className?: string;
 };
 
 function iconForCategory(category: string) {
@@ -18,9 +19,11 @@ function iconForCategory(category: string) {
   return <Coffee size={16} />;
 }
 
-export function RecentTransactions({ items }: RecentTransactionsProps) {
+export function RecentTransactions({ items, className }: RecentTransactionsProps) {
   return (
-    <section className="rounded-2xl border border-slate-200/95 bg-white p-4 shadow-md ring-1 ring-slate-900/[0.04]">
+    <section
+      className={`rounded-2xl border border-slate-200/95 bg-white p-4 shadow-md ring-1 ring-slate-900/[0.04] ${className ?? ""}`}
+    >
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900">最新の支出</h2>
         <button className="text-xs font-semibold text-mint-600">すべて見る</button>

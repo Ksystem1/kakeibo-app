@@ -16,11 +16,14 @@ type SpendingChartProps = {
   data: SpendingDatum[];
   title?: string;
   description?: string;
+  className?: string;
 };
 
-export function SpendingChart({ data, title, description }: SpendingChartProps) {
+export function SpendingChart({ data, title, description, className }: SpendingChartProps) {
   return (
-    <section className="rounded-2xl border border-slate-200/95 bg-white p-4 shadow-md ring-1 ring-slate-900/[0.04]">
+    <section
+      className={`rounded-2xl border border-slate-200/95 bg-white p-4 shadow-md ring-1 ring-slate-900/[0.04] ${className ?? ""}`}
+    >
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-slate-900">{title ?? "今月のカテゴリ別支出"}</h2>
         <p className="mt-1 text-xs text-slate-500">

@@ -11,11 +11,15 @@ function yen(n: number) {
   return `¥${n.toLocaleString("ja-JP")}`;
 }
 
+export type DemoSectionClassProps = { className?: string };
+
 /** 医療費控除（プレミアム）— 静的プレビュー。DB 非接触 */
-export function DemoMedicalDeductionSection() {
+export function DemoMedicalDeductionSection({ className }: DemoSectionClassProps) {
   const [demoTap, setDemoTap] = useState(false);
   return (
-    <section className="rounded-2xl border border-emerald-200/90 bg-gradient-to-b from-white to-emerald-50/40 p-4 shadow-md ring-1 ring-emerald-900/[0.06] md:p-5">
+    <section
+      className={`rounded-2xl border border-emerald-200/90 bg-gradient-to-b from-white to-emerald-50/40 p-4 shadow-md ring-1 ring-emerald-900/[0.06] md:p-5 ${className ?? ""}`}
+    >
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Premium</p>
@@ -90,9 +94,11 @@ export function DemoMedicalDeductionSection() {
 }
 
 /** 最新のレスポンシブUI（カテゴリ / 明細）のイメージ */
-export function DemoResponsiveUiSection() {
+export function DemoResponsiveUiSection({ className }: DemoSectionClassProps) {
   return (
-    <section className="rounded-2xl border border-slate-200/95 bg-white p-4 shadow-md ring-1 ring-slate-900/[0.04] md:p-5">
+    <section
+      className={`rounded-2xl border border-slate-200/95 bg-white p-4 shadow-md ring-1 ring-slate-900/[0.04] md:p-5 ${className ?? ""}`}
+    >
       <h2 className="text-base font-bold text-slate-900">スッキリしたカテゴリ管理・明細</h2>
       <p className="mt-1 text-xs leading-relaxed text-slate-600">
         横スクロール付きの管理画面・モバイルではカード型の明細など、
@@ -152,9 +158,11 @@ export function DemoResponsiveUiSection() {
 }
 
 /** レシート取込（最新余白）のイメージ */
-export function DemoReceiptImportSection() {
+export function DemoReceiptImportSection({ className }: DemoSectionClassProps) {
   return (
-    <section className="rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/90 to-stone-50/80 p-4 shadow-md md:p-5">
+    <section
+      className={`rounded-2xl border border-amber-200/80 bg-gradient-to-b from-amber-50/90 to-stone-50/80 p-4 shadow-md md:p-5 ${className ?? ""}`}
+    >
       <h2 className="text-base font-bold text-stone-900">レシート取込：撮るだけ</h2>
       <p className="mt-1 text-xs leading-relaxed text-stone-600">
         家計簿アプリ内のレシート画面と同じトーンで、<strong>余白を抑えたモバイル向けヘッダー</strong>
