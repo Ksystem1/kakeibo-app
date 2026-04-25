@@ -31,6 +31,7 @@ const MEDICAL_TYPE_LABELS: Record<MedicalType, string> = {
   medicine: "医薬品",
   other: "その他",
 };
+const MEDICAL_TYPE_ORDER: MedicalType[] = ["treatment", "medicine", "other"];
 
 function yearRange(year: number) {
   return {
@@ -158,25 +159,26 @@ function MedicalDeductionPageInner() {
     [rows],
   );
 
-  const totalByPatient = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of rows) {
-      const k = r.patientName;
-      m.set(k, (m.get(k) ?? 0) + r.amount);
-    }
-    return [...m.entries()]
-      .filter(([, total]) => total > 0)
-      .sort((a, b) => a[0].localeCompare(b[0], "ja"));
-  }, [rows]);
+  const matrix = useMemo(() => {
+    const patientSet = new Set<string>();
+    const cellMap = new Map<string, number>();
+    const rowTotals = new Map<string, number>();
+    const colTotals = new Map<MedicalType, number>(
+      MEDICAL_TYPE_ORDER.map((t) => [t, 0]),
+    );
+    let grandTotal = 0;
 
-  const totalByMedicalType = useMemo(() => {
-    const m = new Map<MedicalType, number>();
     for (const r of rows) {
-      m.set(r.medicalType, (m.get(r.medicalType) ?? 0) + r.amount);
+      patientSet.add(r.patientName);
+      const cellKey = `${r.patientName}\t${r.medicalType}`;
+      cellMap.set(cellKey, (cellMap.get(cellKey) ?? 0) + r.amount);
+      rowTotals.set(r.patientName, (rowTotals.get(r.patientName) ?? 0) + r.amount);
+      colTotals.set(r.medicalType, (colTotals.get(r.medicalType) ?? 0) + r.amount);
+      grandTotal += r.amount;
     }
-    return (["treatment", "medicine", "other"] as const)
-      .map((t) => ({ type: t, total: m.get(t) ?? 0, label: MEDICAL_TYPE_LABELS[t] }))
-      .filter((x) => x.total > 0);
+
+    const patients = [...patientSet].sort((a, b) => a.localeCompare(b, "ja"));
+    return { patients, cellMap, rowTotals, colTotals, grandTotal };
   }, [rows]);
 
   const exportFilename = `医療費控除明細_${year}年度_${sanitizeFileNameSegment(familyLabel)}.csv`;
@@ -237,43 +239,47 @@ function MedicalDeductionPageInner() {
             内訳合計
           </h2>
           <p className={styles.sub} style={{ margin: "0 0 0.65rem", fontSize: "0.88rem" }}>
-            氏名ごと・医療費3区分ごとの合計です（詳細行の合計と一致します）。
+            氏名 × 区分で集計したマトリックスです（右端は氏名合計、最下段は区分合計）。
           </p>
-          <div className={styles.medicalSummaryGrids}>
-            <div>
-              <h3 className={styles.medicalSummarySubheading}>氏名別</h3>
-              {totalByPatient.length === 0 ? (
-                <p className={styles.sub} style={{ margin: 0, fontSize: "0.86rem" }}>—</p>
-              ) : (
-                <ul className={styles.medicalSummaryList}>
-                  {totalByPatient.map(([patient, amount]) => (
-                    <li key={patient} className={styles.medicalSummaryListItem}>
-                      <span className={styles.medicalSummaryLabel}>{patient}</span>
-                      <span className={styles.medicalSummaryAmount}>
-                        {amount.toLocaleString("ja-JP")}円
-                      </span>
-                    </li>
+          <div className={styles.medicalSummaryMatrixWrap}>
+            <table className={styles.medicalSummaryMatrixTable}>
+              <thead>
+                <tr>
+                  <th>氏名</th>
+                  {MEDICAL_TYPE_ORDER.map((t) => (
+                    <th key={t}>{MEDICAL_TYPE_LABELS[t]}</th>
                   ))}
-                </ul>
-              )}
-            </div>
-            <div>
-              <h3 className={styles.medicalSummarySubheading}>区分別</h3>
-              {totalByMedicalType.length === 0 ? (
-                <p className={styles.sub} style={{ margin: 0, fontSize: "0.86rem" }}>—</p>
-              ) : (
-                <ul className={styles.medicalSummaryList}>
-                  {totalByMedicalType.map((x) => (
-                    <li key={x.type} className={styles.medicalSummaryListItem}>
-                      <span className={styles.medicalSummaryLabel}>{x.label}</span>
-                      <span className={styles.medicalSummaryAmount}>
-                        {x.total.toLocaleString("ja-JP")}円
-                      </span>
-                    </li>
+                  <th>合計</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.patients.map((patient) => (
+                  <tr key={patient}>
+                    <th scope="row">{patient}</th>
+                    {MEDICAL_TYPE_ORDER.map((t) => {
+                      const v = matrix.cellMap.get(`${patient}\t${t}`) ?? 0;
+                      return <td key={`${patient}-${t}`}>{v.toLocaleString("ja-JP")}円</td>;
+                    })}
+                    <td className={styles.medicalSummaryMatrixTotalCell}>
+                      {(matrix.rowTotals.get(patient) ?? 0).toLocaleString("ja-JP")}円
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th>区分合計</th>
+                  {MEDICAL_TYPE_ORDER.map((t) => (
+                    <td key={`total-${t}`} className={styles.medicalSummaryMatrixTotalCell}>
+                      {(matrix.colTotals.get(t) ?? 0).toLocaleString("ja-JP")}円
+                    </td>
                   ))}
-                </ul>
-              )}
-            </div>
+                  <td className={styles.medicalSummaryMatrixGrandTotalCell}>
+                    {matrix.grandTotal.toLocaleString("ja-JP")}円
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
       ) : null}

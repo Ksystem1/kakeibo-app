@@ -1640,6 +1640,57 @@
   margin-left: auto;
 }
 
+/* 医療費集計: 氏名×区分マトリックス */
+.medicalSummaryMatrixWrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.medicalSummaryMatrixTable {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.medicalSummaryMatrixTable th,
+.medicalSummaryMatrixTable td {
+  border: 1px solid var(--border);
+  padding: 0.46rem 0.52rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  background: var(--bg-card);
+}
+
+.medicalSummaryMatrixTable thead th {
+  background: color-mix(in oklab, var(--bg-card) 72%, var(--accent) 8%);
+  font-weight: 700;
+}
+
+.medicalSummaryMatrixTable th:first-child,
+.medicalSummaryMatrixTable td:first-child {
+  text-align: left;
+}
+
+.medicalSummaryMatrixTotalCell {
+  font-weight: 700;
+  background: color-mix(in oklab, var(--bg-card) 70%, var(--accent) 7%);
+}
+
+.medicalSummaryMatrixGrandTotalCell {
+  font-weight: 800;
+  background: color-mix(in oklab, var(--bg-card) 62%, var(--accent) 14%);
+}
+
+@media (max-width: 640px) {
+  .medicalSummaryMatrixTable {
+    min-width: 560px;
+    font-size: 0.84rem;
+  }
+}
+
 /* 固定費フォーム末尾: グリッドの狭セルで「入力行を追加」が折り返さないよう全幅フレックス */
 .settingsFixedCostFormActions {
   grid-column: 1 / -1;

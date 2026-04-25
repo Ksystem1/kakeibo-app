@@ -746,7 +746,6 @@ function CategoryRow({
           onChange={(e) => setName(e.target.value)}
           maxLength={100}
           className={`${styles.monthInput} ${catStyles.categoryNameInput}`}
-          style={{ minWidth: 0 }}
           disabled={disabled}
         />
       </td>
