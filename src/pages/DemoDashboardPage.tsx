@@ -5,6 +5,7 @@ import { DemoBeforeChaosSection } from "../components/demo/DemoBeforeChaosSectio
 import { DemoPayPayImportPreview } from "../components/demo/DemoPayPayImportPreview";
 import {
   DemoMedicalDeductionSection,
+  DemoPlanCompareSection,
   DemoReceiptImportSection,
   DemoResponsiveUiSection,
 } from "../components/demo/DemoFeatureSections";
@@ -16,7 +17,7 @@ import {
   demoImportIdealRecent,
 } from "../data/demoMockData";
 
-const STEP_COUNT = 5;
+const STEP_COUNT = 6;
 /** ステップ0は約1秒。1以降は各3秒。合計約13秒（15秒以内）。 */
 const SLIDE_MS_BEFORE = 1000;
 const SLIDE_MS_AFTER = 3000;
@@ -37,7 +38,8 @@ const CATCH = [
   "家計簿、もう書かない。",
   "何でも置くだけ。形式はアプリが自動判定。",
   "医療費は氏名×区分、ワン表で。",
-  "迷わない家計簿。取り込み口は、ひとつだけ。",
+  "家計管理を、どこからでも。",
+  "あなたにぴったりのプランを。",
 ] as const;
 
 export function DemoDashboardPage() {
@@ -101,7 +103,7 @@ export function DemoDashboardPage() {
         "relative min-h-screen w-full max-w-6xl overflow-x-hidden px-3 pb-48 pt-9 transition-[color,background-color,background-image] duration-500 ease-out sm:px-4 md:mx-auto md:px-6",
         isBefore
           ? "bg-gradient-to-b from-rose-50/50 via-white to-slate-100 text-slate-900"
-          : "bg-gradient-to-b from-amber-50/30 via-white to-slate-100 text-slate-900",
+          : "bg-gradient-to-b from-emerald-50/55 via-white to-cyan-50/45 text-slate-900",
       ].join(" ")}
     >
       <div className="pointer-events-none fixed left-0 right-0 top-0 z-50 flex items-center gap-2 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] text-slate-500 sm:px-4">
@@ -154,7 +156,7 @@ export function DemoDashboardPage() {
 
           {step === 1 && (
             <>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 animate-pulse">
                 <DemoReceiptImportSection
                   className={stepHighlights.s1receipt ? HIGHLIGHT : undefined}
                 />
@@ -191,6 +193,7 @@ export function DemoDashboardPage() {
               <DemoResponsiveUiSection className={stepHighlights.s4ui ? HIGHLIGHT : undefined} />
             </div>
           )}
+          {step === 5 && <DemoPlanCompareSection className={HIGHLIGHT} />}
         </div>
       </div>
 

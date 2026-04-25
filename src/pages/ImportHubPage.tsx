@@ -2,10 +2,15 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import styles from "../components/KakeiboDashboard.module.css";
 import { UniversalImporter } from "../components/UniversalImporter";
+import { FEATURE_EXPORT_CSV } from "../lib/api";
+import { useFeaturePermissions } from "../context/FeaturePermissionContext";
 
 export function ImportHubPage() {
   const navigate = useNavigate();
+  const { allowedFor } = useFeaturePermissions();
+  const canUseStatementImport = allowedFor(FEATURE_EXPORT_CSV);
   const [msg, setMsg] = useState<string | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   return (
     <div className={styles.wrap}>
@@ -17,6 +22,11 @@ export function ImportHubPage() {
           if (kind === "image") {
             setMsg("画像を検出しました。AIレシート解析へ移動します。");
             navigate("/receipt", { state: { prefillImportFile: list[0] } });
+            return;
+          }
+          if (!canUseStatementImport) {
+            setShowUpgradeModal(true);
+            setMsg("CSV/PDF 取込はプレミアム限定です。");
             return;
           }
           setMsg("CSV/PDF を検出しました。明細インポートへ移動します。");
@@ -50,7 +60,13 @@ export function ImportHubPage() {
           type="button"
           className={`${styles.btn} ${styles.btnPrimary}`}
           style={{ minHeight: "3rem" }}
-          onClick={() => navigate("/import/files")}
+          onClick={() => {
+            if (!canUseStatementImport) {
+              setShowUpgradeModal(true);
+              return;
+            }
+            navigate("/import/files");
+          }}
         >
           CSV/PDF を選択
         </button>
@@ -70,6 +86,29 @@ export function ImportHubPage() {
           AIレシート詳細
         </Link>
       </p>
+      {showUpgradeModal ? (
+        <div className={styles.categoryDetailBackdrop} role="presentation" onClick={() => setShowUpgradeModal(false)}>
+          <div
+            className={styles.categoryDetailDialog}
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>プレミアム限定機能</h2>
+            <p className={styles.sub}>
+              銀行・カードの CSV/PDF 取込はプレミアムでご利用いただけます。Standard ではレシートAIと手入力をご利用ください。
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.8rem" }}>
+              <button type="button" className={styles.btn} onClick={() => setShowUpgradeModal(false)}>
+                閉じる
+              </button>
+              <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => navigate("/settings")}>
+                今すぐプレミアムを体験
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

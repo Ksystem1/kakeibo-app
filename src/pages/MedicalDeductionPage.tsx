@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Lock } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   FEATURE_MEDICAL_DEDUCTION_CSV,
@@ -6,7 +7,7 @@ import {
   getTransactions,
   type MedicalType,
 } from "../lib/api";
-import { FeatureGate } from "../components/FeatureGate";
+import { useFeaturePermissions } from "../context/FeaturePermissionContext";
 import styles from "../components/KakeiboDashboard.module.css";
 
 type TxMedical = {
@@ -88,6 +89,8 @@ function sanitizeFileNameSegment(s: string): string {
 }
 
 function MedicalDeductionPageInner() {
+  const { allowedFor } = useFeaturePermissions();
+  const canExportCsv = allowedFor(FEATURE_MEDICAL_DEDUCTION_CSV);
   const now = new Date();
   const [year, setYear] = useState<number>(now.getFullYear());
   const [rows, setRows] = useState<MedicalSummaryRow[]>([]);
@@ -218,11 +221,25 @@ function MedicalDeductionPageInner() {
             type="button"
             className={`${styles.btn} ${styles.btnPrimary}`}
             style={{ fontSize: "1rem", padding: "0.72rem 1.15rem" }}
-            disabled={loading || rows.length === 0}
-            onClick={() => downloadCsvUtf8Bom(buildCsv(rows), exportFilename)}
-            title="BOM付きUTF-8で出力します（Windows Excel向け）"
+            disabled={loading || rows.length === 0 || !canExportCsv}
+            onClick={() => {
+              if (!canExportCsv) return;
+              downloadCsvUtf8Bom(buildCsv(rows), exportFilename);
+            }}
+            title={
+              canExportCsv
+                ? "BOM付きUTF-8で出力します（Windows Excel向け）"
+                : "国税庁フォーマットCSV出力はプレミアム限定です"
+            }
           >
-            CSVで書き出す
+            {canExportCsv ? (
+              "CSVで書き出す"
+            ) : (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                <Lock size={14} />
+                CSVで書き出す（プレミアム）
+              </span>
+            )}
           </button>
           <span className={styles.sub} style={{ margin: 0 }}>
             {loading ? "集計中…" : `${rows.length}件 / 合計 ${totalAmount.toLocaleString("ja-JP")}円`}
@@ -322,25 +339,5 @@ function MedicalDeductionPageInner() {
 }
 
 export function MedicalDeductionPage() {
-  return (
-    <FeatureGate
-      feature={FEATURE_MEDICAL_DEDUCTION_CSV}
-      mode="lock"
-      lockedFallback={
-        <div className={styles.wrap}>
-          <div style={{ marginBottom: "0.65rem" }}>
-            <Link to="/settings" style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
-              ← 設定へ戻る
-            </Link>
-          </div>
-          <h1 className={styles.title}>医療費集計</h1>
-          <p className={styles.sub}>
-            この機能はお使いのプランでは利用できません。プレミアムが必要な場合は、設定のサブスクリプションからご確認ください。
-          </p>
-        </div>
-      }
-    >
-      <MedicalDeductionPageInner />
-    </FeatureGate>
-  );
+  return <MedicalDeductionPageInner />;
 }

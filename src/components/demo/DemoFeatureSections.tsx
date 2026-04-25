@@ -185,3 +185,46 @@ export function DemoReceiptImportSection({ className }: DemoSectionClassProps) {
     </section>
   );
 }
+
+export function DemoPlanCompareSection({ className }: DemoSectionClassProps) {
+  return (
+    <section
+      className={`rounded-2xl border border-cyan-200/80 bg-gradient-to-b from-cyan-50/90 via-white to-emerald-50/70 p-4 shadow-md md:p-5 ${className ?? ""}`}
+    >
+      <h2 className="text-base font-bold text-slate-900">あなたにぴったりのプランを</h2>
+      <p className="mt-1 text-xs text-slate-600">Standard と Premium を、目的に合わせて選べます。</p>
+      <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <table className="w-full min-w-[460px] border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-100 text-slate-700">
+              <th className="p-2 text-left">機能</th>
+              <th className="p-2 text-center">Standard</th>
+              <th className="p-2 text-center">Premium</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              ["レシートAI", "○（枠あり）", "○（無制限）"],
+              ["CSV/PDF 取込", "×", "○"],
+              ["医療費CSV出力", "×", "○"],
+              ["プレミアムスキン", "×", "○"],
+            ].map((r) => (
+              <tr key={r[0]} className="border-t border-slate-100">
+                <td className="p-2 text-slate-800">{r[0]}</td>
+                <td className="p-2 text-center">{r[1]}</td>
+                <td className="p-2 text-center font-semibold text-emerald-700">{r[2]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <button
+        type="button"
+        className="mt-3 w-full rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 py-2.5 text-sm font-bold text-slate-900 shadow-lg shadow-orange-300/35"
+      >
+        今すぐプレミアムを体験
+      </button>
+      <p className="mt-1.5 text-center text-[10px] text-slate-500">※ デモ表示です。実際の請求は行いません。</p>
+    </section>
+  );
+}

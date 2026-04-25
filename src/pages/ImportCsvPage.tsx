@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { getTransactions, importCsvText } from "../lib/api";
+import { FEATURE_EXPORT_CSV } from "../lib/api";
 import { looksLikePayPayCsv, tryConvertBankCardCsvToKakeibo } from "../lib/bankCardCsvToKakeibo";
 import {
   type ImportedStatementRow,
@@ -12,6 +13,7 @@ import {
 import { readFileTextAutoEncoding } from "../lib/fileTextDecode";
 import styles from "../components/KakeiboDashboard.module.css";
 import importStyles from "./ImportCsvPage.module.css";
+import { useFeaturePermissions } from "../context/FeaturePermissionContext";
 
 /**
  * 銀行・カード向けのレガシー形式 CSV（手書き行）取込。
@@ -20,6 +22,8 @@ import importStyles from "./ImportCsvPage.module.css";
 export function ImportCsvPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { allowedFor } = useFeaturePermissions();
+  const canUseStatementImport = allowedFor(FEATURE_EXPORT_CSV);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [text, setText] = useState("");
   const [rows, setRows] = useState<
@@ -95,6 +99,10 @@ export function ImportCsvPage() {
   }
 
   async function parseFiles(files: FileList | File[]) {
+    if (!canUseStatementImport) {
+      setErr("CSV/PDF 取込はプレミアム限定機能です。設定画面からアップグレードできます。");
+      return;
+    }
     const list = Array.from(files ?? []);
     if (list.length === 0) return;
     setErr(null);
@@ -181,6 +189,10 @@ export function ImportCsvPage() {
     setMsg(null);
     setLoading(true);
     try {
+      if (!canUseStatementImport) {
+        setErr("CSV取込はプレミアム限定です。");
+        return;
+      }
       if (rows.length > 0) {
         const selected = rows.filter((r) => r.include);
         if (selected.length === 0) {
@@ -253,6 +265,13 @@ export function ImportCsvPage() {
   return (
     <div className={styles.wrap}>
       <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
+      {!canUseStatementImport ? (
+        <div className={styles.settingsPanel} style={{ marginBottom: "0.9rem" }}>
+          <p className={styles.sub} style={{ margin: 0 }}>
+            この機能はプレミアム限定です。<Link to="/settings" style={{ color: "var(--accent)" }}>プランを確認する</Link>
+          </p>
+        </div>
+      ) : null}
       <div
         className={styles.settingsPanel}
         onDragOver={(e) => {
@@ -329,16 +348,18 @@ export function ImportCsvPage() {
           </Link>
         </p>
       </div>
-      <div className={styles.settingsPanel} style={{ marginTop: 0, marginBottom: "0.9rem" }}>
-        <p className={styles.sub} style={{ margin: 0, lineHeight: 1.55 }}>
-          <strong>PayPay</strong> 明細は
-          <Link to="/receipt" style={{ color: "var(--accent)", margin: "0 0.2rem" }}>
-            レシート・明細取込
-          </Link>
-          へ。PayPay のログイン情報は当サービスに不要で、
-          <strong> PayPay 公式アプリ等から書き出した CSV をアップロード</strong>してください。
-        </p>
-      </div>
+      {text.trim() || rows.length > 0 || msg ? (
+        <div className={styles.settingsPanel} style={{ marginTop: 0, marginBottom: "0.9rem" }}>
+          <p className={styles.sub} style={{ margin: 0, lineHeight: 1.55 }}>
+            <strong>PayPay</strong> 明細は
+            <Link to="/receipt" style={{ color: "var(--accent)", margin: "0 0.2rem" }}>
+              レシート・明細取込
+            </Link>
+            へ。PayPay のログイン情報は当サービスに不要で、
+            <strong> PayPay 公式アプリ等から書き出した CSV をアップロード</strong>してください。
+          </p>
+        </div>
+      ) : null}
       <p className={styles.sub}>
         順: カテゴリ,日付,金額,メモ。対象月の支出を置き換え（収入はそのまま）。
       </p>

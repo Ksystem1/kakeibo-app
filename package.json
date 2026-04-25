@@ -40,6 +40,7 @@
     "db:migrate-v33": "npm run db:migrate-v33 --prefix backend",
     "db:migrate-v34": "npm run db:migrate-v34 --prefix backend",
     "db:migrate-v35": "npm run db:migrate-v35 --prefix backend",
+    "db:migrate-v36": "npm run db:migrate-v36 --prefix backend",
     "verify:stripe-config": "node scripts/verify-stripe-config.mjs",
     "verify:frontend-api": "node scripts/verify-frontend-api-fetch.mjs",
     "backup:release": "node scripts/backup-release.mjs"
