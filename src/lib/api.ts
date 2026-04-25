@@ -1165,6 +1165,14 @@ export type AdminSalesMonthlySummaryRow = {
   sales_count: number;
 };
 
+export type AdminSalesDailySummaryRow = {
+  day_key: string;
+  gross_total: number;
+  fee_total: number;
+  net_total: number;
+  sales_count: number;
+};
+
 export type AdminSalesLogRow = {
   id: number;
   occurred_at: string;
@@ -1186,6 +1194,17 @@ export async function getAdminSalesMonthlySummary() {
     cache: "no-store",
   });
   return parse<{ items: AdminSalesMonthlySummaryRow[] }>(res);
+}
+
+export async function getAdminSalesDailySummary(params: { from: string; to: string }) {
+  const sp = new URLSearchParams();
+  sp.set("from", params.from);
+  sp.set("to", params.to);
+  const res = await apiFetch(`${BASE}/admin/payments/daily-summary?${sp.toString()}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ items: AdminSalesDailySummaryRow[]; from: string; to: string }>(res);
 }
 
 export async function getAdminSalesLogs(params?: { ym?: string; from?: string; to?: string }) {

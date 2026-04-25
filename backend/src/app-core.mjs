@@ -2163,6 +2163,7 @@ export async function handleApiRequest(req, options = {}) {
             featurePermissions: "/feature-permissions",
             adminFeaturePermissions: "/admin/feature-permissions",
             adminSalesMonthlySummary: "/admin/payments/monthly-summary",
+            adminSalesDailySummary: "/admin/payments/daily-summary?from=…&to=…",
             adminSalesLogs: "/admin/payments/sales-logs",
             adminSalesCsv: "/admin/payments/export.csv",
             paypayImportPreview: "/import/paypay-csv/preview",
@@ -5820,6 +5821,95 @@ export async function handleApiRequest(req, options = {}) {
             );
           }
           return json(500, { error: "SalesSummaryReadError" }, hdrs, skipCors);
+        }
+      }
+
+      case "GET /admin/payments/daily-summary": {
+        const admin = await ensureAdmin(pool, userId);
+        if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+        const from = String(q.from ?? "").trim();
+        const to = String(q.to ?? "").trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+          return json(
+            400,
+            { error: "InvalidRequest", detail: "from と to（YYYY-MM-DD）が必要です" },
+            hdrs,
+            skipCors,
+          );
+        }
+        if (from > to) {
+          return json(400, { error: "InvalidRequest", detail: "from <= to である必要があります" }, hdrs, skipCors);
+        }
+        const startMs = Date.parse(`${from}T00:00:00+09:00`);
+        const endMs = Date.parse(`${to}T00:00:00+09:00`);
+        const daySpan = Math.floor((endMs - startMs) / 86400000) + 1;
+        if (daySpan > 400) {
+          return json(
+            400,
+            { error: "RangeTooLarge", detail: "日付範囲は 400 日以内にしてください" },
+            hdrs,
+            skipCors,
+          );
+        }
+        try {
+          const [rows] = await pool.query(
+            `SELECT
+               DATE_FORMAT(occurred_at, '%Y-%m-%d') AS day_key,
+               COALESCE(SUM(gross_amount), 0) AS gross_total,
+               COALESCE(SUM(
+                 CASE
+                   WHEN gross_amount > 0.0001
+                    AND (stripe_fee_amount IS NULL OR ABS(COALESCE(stripe_fee_amount, 0)) < 0.0001)
+                    AND (
+                      (gross_amount - COALESCE(net_amount, gross_amount)) > 0.0001
+                      AND (gross_amount - COALESCE(net_amount, gross_amount)) < (gross_amount * 0.5)
+                    )
+                   THEN (gross_amount - COALESCE(net_amount, 0))
+                   WHEN gross_amount > 0.0001
+                    AND (stripe_fee_amount IS NULL OR ABS(COALESCE(stripe_fee_amount, 0)) < 0.0001)
+                   THEN ROUND(gross_amount * 0.036, 0)
+                   ELSE COALESCE(stripe_fee_amount, 0)
+                 END
+               ), 0) AS fee_total,
+               COALESCE(SUM(
+                 CASE
+                   WHEN gross_amount > 0.0001
+                    AND (stripe_fee_amount IS NULL OR ABS(COALESCE(stripe_fee_amount, 0)) < 0.0001)
+                    AND (
+                      (gross_amount - COALESCE(net_amount, gross_amount)) > 0.0001
+                      AND (gross_amount - COALESCE(net_amount, gross_amount)) < (gross_amount * 0.5)
+                    )
+                   THEN COALESCE(net_amount, 0)
+                   WHEN gross_amount > 0.0001
+                    AND (stripe_fee_amount IS NULL OR ABS(COALESCE(stripe_fee_amount, 0)) < 0.0001)
+                   THEN (gross_amount - ROUND(gross_amount * 0.036, 0))
+                   ELSE COALESCE(net_amount, 0)
+                 END
+               ), 0) AS net_total,
+               COUNT(*) AS sales_count
+             FROM sales_logs
+             WHERE DATE(occurred_at) >= ? AND DATE(occurred_at) <= ?
+             GROUP BY DATE(occurred_at)
+             ORDER BY day_key ASC`,
+            [from, to],
+          );
+          return json(200, { items: rows, from, to }, hdrs, skipCors);
+        } catch (e) {
+          logError("admin.payments.daily_summary", e, { userId });
+          const code = String(e?.code || "");
+          if (code === "ER_NO_SUCH_TABLE") {
+            return json(
+              503,
+              {
+                error: "SalesLogsUnavailable",
+                detail:
+                  "sales_logs テーブルがありません。db/migration_v37_sales_logs.sql を適用してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          return json(500, { error: "SalesDailyReadError" }, hdrs, skipCors);
         }
       }
 

@@ -8,6 +8,7 @@ import {
   getAdminMonitorRecruitmentSettings,
   getAdminPayPayImportSummary,
   getAdminSalesLogs,
+  getAdminSalesDailySummary,
   getAdminSalesMonthlySummary,
   getAdminSubscriptionReconcile,
   getAdminUsers,
@@ -21,9 +22,11 @@ import {
   updateAdminUser,
   downloadAdminSalesCsv,
   type AdminFeaturePermissionRow,
+  type AdminSalesDailySummaryRow,
   type AdminSalesLogRow,
   type AdminSalesMonthlySummaryRow,
 } from "../lib/api";
+import { AdminSalesCharts } from "../components/AdminSalesCharts";
 import {
   ADMIN_SUBSCRIPTION_STATUSES,
   subscriptionStatusLabelJa,
@@ -281,6 +284,11 @@ export function AdminPage() {
   const [salesCsvFrom, setSalesCsvFrom] = useState(monthRange.from);
   const [salesCsvTo, setSalesCsvTo] = useState(monthRange.to);
   const [salesCsvBusy, setSalesCsvBusy] = useState(false);
+  const [salesDaily, setSalesDaily] = useState<AdminSalesDailySummaryRow[]>([]);
+  const [salesDailyLoading, setSalesDailyLoading] = useState(false);
+  const [salesDailyError, setSalesDailyError] = useState<string | null>(null);
+  /** グラフ上の日次純利益目標（点線）— 任意 */
+  const [salesChartTarget, setSalesChartTarget] = useState("");
   const [reconcileData, setReconcileData] = useState<Awaited<
     ReturnType<typeof getAdminSubscriptionReconcile>
   > | null>(null);
@@ -411,6 +419,40 @@ export function AdminPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(salesCsvFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(salesCsvTo)) {
+      setSalesDailyError("グラフ: 開始日・終了日を有効な日付にしてください。");
+      setSalesDaily([]);
+      return;
+    }
+    if (salesCsvFrom > salesCsvTo) {
+      setSalesDailyError("グラフ: 開始日は終了日以前にしてください。");
+      setSalesDaily([]);
+      return;
+    }
+    let cancelled = false;
+    setSalesDailyLoading(true);
+    setSalesDailyError(null);
+    getAdminSalesDailySummary({ from: salesCsvFrom, to: salesCsvTo })
+      .then((r) => {
+        if (cancelled) return;
+        setSalesDaily(Array.isArray(r.items) ? r.items : []);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setSalesDaily([]);
+        setSalesDailyError(e instanceof Error ? e.message : "日次集計（グラフ）の取得に失敗しました。");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSalesDailyLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [salesCsvFrom, salesCsvTo]);
+
   const adminCount = useMemo(() => items.filter((x) => x.isAdmin).length, [items]);
   const salesSummaryTotals = useMemo(() => {
     return salesMonthlySummary.reduce(
@@ -423,6 +465,13 @@ export function AdminPage() {
       { gross: 0, fee: 0, net: 0 },
     );
   }, [salesMonthlySummary]);
+
+  const salesChartTargetNetY = useMemo((): number | null => {
+    const t = salesChartTarget.trim();
+    if (t === "") return null;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : null;
+  }, [salesChartTarget]);
 
   const visibleFamilyMismatches = useMemo(() => {
     if (!reconcileData) return [];
@@ -1337,6 +1386,64 @@ export function AdminPage() {
             </strong>
           </div>
         </div>
+        <h3 style={{ margin: "0.4rem 0 0.35rem", fontSize: "0.92rem" }}>純利益の推移（日次）</h3>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "end",
+            gap: "0.65rem",
+            marginBottom: "0.4rem",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "0.78rem",
+              color: "var(--text-muted)",
+              width: "100%",
+            }}
+          >
+            期間（下の税理士提出用 CSV 出力と同じ開始日・終了日です。変更するとグラフだけ非同期で再集計されます）
+          </span>
+          <label style={{ display: "grid", gap: "0.15rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>開始日</span>
+            <input
+              type="date"
+              value={salesCsvFrom}
+              onChange={(e) => setSalesCsvFrom(e.target.value)}
+              style={{ font: "inherit", padding: "0.25rem 0.4rem" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: "0.15rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>終了日</span>
+            <input
+              type="date"
+              value={salesCsvTo}
+              onChange={(e) => setSalesCsvTo(e.target.value)}
+              style={{ font: "inherit", padding: "0.25rem 0.4rem" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: "0.15rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>日次純利益の目標（任意・点線）</span>
+            <input
+              type="number"
+              value={salesChartTarget}
+              onChange={(e) => setSalesChartTarget(e.target.value)}
+              placeholder="例: 5000"
+              min={0}
+              step={100}
+              style={{ font: "inherit", padding: "0.25rem 0.4rem", maxWidth: 140 }}
+            />
+          </label>
+        </div>
+        <AdminSalesCharts
+          from={salesCsvFrom}
+          to={salesCsvTo}
+          items={salesDaily}
+          loading={salesDailyLoading}
+          error={salesDailyError}
+          targetNetY={salesChartTargetNetY}
+        />
         <div style={{ overflowX: "auto", marginBottom: "0.8rem" }}>
           <table
             className={apStyles.salesDataTable}
