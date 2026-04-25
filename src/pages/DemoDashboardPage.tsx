@@ -5,7 +5,6 @@ import { DemoBeforeChaosSection } from "../components/demo/DemoBeforeChaosSectio
 import { DemoPayPayImportPreview } from "../components/demo/DemoPayPayImportPreview";
 import {
   DemoMedicalDeductionSection,
-  DemoPlanCompareSection,
   DemoReceiptImportSection,
   DemoResponsiveUiSection,
 } from "../components/demo/DemoFeatureSections";
@@ -17,7 +16,7 @@ import {
   demoImportIdealRecent,
 } from "../data/demoMockData";
 
-const STEP_COUNT = 6;
+const STEP_COUNT = 5;
 /** ステップ0は約1秒。1以降は各3秒。合計約13秒（15秒以内）。 */
 const SLIDE_MS_BEFORE = 1000;
 const SLIDE_MS_AFTER = 3000;
@@ -38,8 +37,7 @@ const CATCH = [
   "家計簿、もう書かない。",
   "何でも置くだけ。形式はアプリが自動判定。",
   "医療費は氏名×区分、ワン表で。",
-  "家計管理を、どこからでも。",
-  "あなたにぴったりのプランを。",
+  "迷わない家計簿。取り込み口は、ひとつだけ。",
 ] as const;
 
 export function DemoDashboardPage() {
@@ -193,7 +191,6 @@ export function DemoDashboardPage() {
               <DemoResponsiveUiSection className={stepHighlights.s4ui ? HIGHLIGHT : undefined} />
             </div>
           )}
-          {step === 5 && <DemoPlanCompareSection className={HIGHLIGHT} />}
         </div>
       </div>
 
