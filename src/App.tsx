@@ -20,6 +20,7 @@ import { DemoDashboardPage } from "./pages/DemoDashboardPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ChildProfileSelectPage } from "./pages/ChildProfileSelectPage";
 import { MedicalDeductionPage } from "./pages/MedicalDeductionPage";
+import { LegalInfoPage } from "./pages/LegalInfoPage";
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/demo-dashboard" element={<DemoDashboardPage />} />
       <Route element={<AppLayout />}>
+        <Route path="/legal" element={<LegalInfoPage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<HomeLedgerGate />} />
           <Route path="/import" element={<ImportCsvPage />} />

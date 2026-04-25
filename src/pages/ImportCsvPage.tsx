@@ -54,13 +54,33 @@ export function ImportCsvPage() {
   return (
     <div className={styles.wrap}>
       <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
-      <div className={styles.settingsPanel} style={{ marginTop: "0.75rem", marginBottom: "0.9rem" }}>
+      <div
+        className={styles.settingsPanel}
+        style={{
+          marginTop: "0.75rem",
+          marginBottom: "0.75rem",
+          border: "1px solid color-mix(in srgb, var(--accent) 45%, transparent)",
+          background: "color-mix(in srgb, var(--accent) 10%, transparent)",
+        }}
+      >
+        <p className={styles.sub} style={{ margin: 0, lineHeight: 1.6, fontWeight: 600 }}>
+          銀行等との接続（API ・自動取得）は行いません。口座明細の CSV は、各金融機関等が提供する書出し等の手順に従い
+          ご利用者自身が取得した内容を、下の欄に貼り付けてください。
+        </p>
+        <p className={styles.sub} style={{ margin: "0.5rem 0 0", lineHeight: 1.6 }}>
+          <Link to="/legal" style={{ color: "var(--accent)" }}>
+            特商法・取り込み方針（よくある質問）
+          </Link>
+        </p>
+      </div>
+      <div className={styles.settingsPanel} style={{ marginTop: 0, marginBottom: "0.9rem" }}>
         <p className={styles.sub} style={{ margin: 0, lineHeight: 1.55 }}>
-          PayPay 明細は{" "}
-          <Link to="/receipt" style={{ color: "var(--accent)" }}>
+          <strong>PayPay</strong> 明細は
+          <Link to="/receipt" style={{ color: "var(--accent)", margin: "0 0.2rem" }}>
             レシート・明細取込
           </Link>
-          。
+          へ。PayPay のログイン情報は当サービスに不要で、
+          <strong> PayPay 公式アプリ等から書き出した CSV をアップロード</strong>してください。
         </p>
       </div>
       <p className={styles.sub}>

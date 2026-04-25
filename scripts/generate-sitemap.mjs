@@ -28,6 +28,7 @@ const routes = [
   { path: "/register", changefreq: "monthly", priority: "0.9" },
   { path: "/forgot-password", changefreq: "monthly", priority: "0.5" },
   { path: "/reset-password", changefreq: "yearly", priority: "0.3" },
+  { path: "/legal", changefreq: "yearly", priority: "0.4" },
   { path: "/import", changefreq: "monthly", priority: "0.6" },
   { path: "/receipt", changefreq: "monthly", priority: "0.6" },
   { path: "/members", changefreq: "monthly", priority: "0.6" },

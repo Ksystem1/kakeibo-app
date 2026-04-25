@@ -165,6 +165,11 @@ export function LoginPage() {
               新規登録
             </Link>
           </p>
+          <p className={styles.footer} style={{ marginTop: "0.5rem" }}>
+            <Link to="/legal" className={styles.link}>
+              特商法の表記・取り込み方針（利用規約・よくある質問）
+            </Link>
+          </p>
           <aside className={styles.qrUnderFooter} aria-label="スマートフォンアクセス">
             <MobileAccessQr fixedPath={`${import.meta.env.BASE_URL}login`} />
           </aside>

@@ -928,6 +928,24 @@ export function ReceiptPage() {
           className={styles.settingsPanel}
           style={{ marginBottom: "0.75rem", padding: "0.75rem 0.85rem" }}
         >
+          <div
+            role="status"
+            style={{
+              marginBottom: "0.75rem",
+              padding: "0.65rem 0.8rem",
+              borderRadius: 8,
+              border: "1px solid color-mix(in srgb, var(--accent, #2d9f6c) 45%, transparent)",
+              background: "color-mix(in srgb, var(--accent, #2d9f6c) 12%, transparent)",
+              lineHeight: 1.55,
+            }}
+          >
+            <p style={{ margin: 0, fontWeight: 600, fontSize: "0.95rem" }}>
+              PayPay のログイン情報は求めていません
+            </p>
+            <p className={styles.reclassifyHint} style={{ margin: "0.4rem 0 0" }}>
+              PayPay 公式アプリ等から取引明細の CSV を書き出し、下欄に貼り付けるかファイルとして選んでアップロードしてください。
+            </p>
+          </div>
           <p className={styles.sub} style={{ margin: "0 0 0.5rem" }}>
             PayPay 明細: 拡張子 <code>.csv</code> を優先、内容の1行目で判別（<code>file.type</code> には依存しません）。
           </p>

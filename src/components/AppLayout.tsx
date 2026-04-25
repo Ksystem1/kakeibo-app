@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import {
   Outlet,
+  Link,
   NavLink,
   matchPath,
   useLocation,
@@ -542,6 +543,22 @@ export function AppLayout() {
       ) : null}
       {token && !isFamilyKid ? <AiAdvisorChat /> : null}
       <AdSlot placement="footer" />
+      <footer
+        style={{
+          padding: "0.5rem 1rem 0.9rem",
+          textAlign: "center",
+          fontSize: "0.78rem",
+          color: "var(--text-muted, #6b7280)",
+          borderTop: "1px solid var(--border, #e5e7eb)",
+        }}
+      >
+        <Link
+          to="/legal"
+          style={{ color: "var(--accent, #2d9f6c)", textDecoration: "none" }}
+        >
+          特商法の表記・利用規約・取り込み方針（よくある質問）
+        </Link>
+      </footer>
     </div>
     </>
   );
