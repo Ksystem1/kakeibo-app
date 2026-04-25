@@ -381,6 +381,10 @@ export function AppLayout() {
             minWidth: 0,
             paddingTop: "0.4rem",
             borderTop: "1px solid var(--border)",
+            position: "relative",
+            zIndex: 30,
+            pointerEvents: "auto",
+            overflow: "visible",
           }}
           aria-label="メインメニュー"
         >
@@ -543,11 +547,17 @@ export function AppLayout() {
           fontSize: "0.78rem",
           color: "var(--text-muted, #6b7280)",
           borderTop: "1px solid var(--border, #e5e7eb)",
+          position: "relative",
+          zIndex: 35,
+          pointerEvents: "auto",
+          minHeight: 44,
+          overflow: "visible",
         }}
       >
         <Link
           to="/legal"
-          style={{ color: "var(--accent, #2d9f6c)", textDecoration: "none" }}
+          className="app-legal-link"
+          style={{ color: "var(--accent, #2d9f6c)", textDecoration: "none", padding: "0.35rem 0.4rem" }}
         >
           特商法の表記・利用規約・取り込み方針（よくある質問）
         </Link>

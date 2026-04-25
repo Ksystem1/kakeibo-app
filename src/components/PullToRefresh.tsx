@@ -28,6 +28,15 @@ function isEditableTarget(el: EventTarget | null): boolean {
   return true;
 }
 
+function isInteractiveTapTarget(el: EventTarget | null): boolean {
+  if (!el || !(el instanceof Element)) return false;
+  return Boolean(
+    el.closest(
+      "a, button, label, summary, details, [role='button'], [role='link'], [data-no-pull-refresh='1']",
+    ),
+  );
+}
+
 function pageScrollTop(): number {
   const se = document.scrollingElement ?? document.documentElement;
   return se.scrollTop ?? 0;
@@ -110,6 +119,7 @@ export function PullToRefresh() {
       if (ev.touches.length !== 1) return;
       const t = ev.touches[0];
       const el = document.elementFromPoint(t.clientX, t.clientY);
+      if (isInteractiveTapTarget(el)) return;
       if (isEditableTarget(el)) return;
       if (pageScrollTop() > 2) return;
       if (nestedScrollNotAtTop(el)) return;

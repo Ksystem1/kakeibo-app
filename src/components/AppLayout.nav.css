@@ -24,10 +24,14 @@
   flex: 1 1 0;
   isolation: isolate;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
   min-height: 64px;
   max-height: 64px;
   height: 64px;
+  position: relative;
+  z-index: 20;
+  pointer-events: auto !important;
+  touch-action: manipulation;
 }
 
 .nav-icon-link.is-active {
@@ -87,6 +91,9 @@
     height: auto !important;
     min-height: 0;
     overflow: visible;
+    position: relative;
+    z-index: 30;
+    pointer-events: auto !important;
   }
 
   .app-nav--mobile-column .nav-icon-link {
@@ -101,6 +108,7 @@
     min-height: 84px;
     max-height: none;
     overflow: visible;
+    pointer-events: auto !important;
   }
 
   .app-nav--mobile-column .nav-icon-img {
@@ -113,6 +121,20 @@
     margin-inline: auto;
     display: block;
   }
+}
+
+.app-nav--icon-grid {
+  position: relative;
+  z-index: 30;
+  pointer-events: auto !important;
+}
+
+.app-legal-link {
+  position: relative;
+  z-index: 40;
+  display: inline-block;
+  pointer-events: auto !important;
+  touch-action: manipulation;
 }
 
 /* スマホ: 押したナビの直下に表示するページ領域 */
