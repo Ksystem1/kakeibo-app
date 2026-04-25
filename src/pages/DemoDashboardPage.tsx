@@ -1,28 +1,15 @@
 import { Pause, PiggyBank, Play, Plus, Wallet, WalletCards } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  DemoMedicalDeductionSection,
+  DemoReceiptImportSection,
+  DemoResponsiveUiSection,
+} from "../components/demo/DemoFeatureSections";
 import { MetricCard } from "../components/demo/MetricCard";
 import { RecentTransactions } from "../components/demo/RecentTransactions";
 import { SpendingChart } from "../components/demo/SpendingChart";
-
-const baseSpendingData = [
-  { name: "食費", value: 27600, color: "#2fbf71" },
-  { name: "光熱費", value: 9300, color: "#86efac" },
-  { name: "日用品", value: 7400, color: "#fdba74" },
-  { name: "交通費", value: 6200, color: "#fb923c" },
-];
-
-const baseRecentItems = [
-  { id: 1, category: "食費", title: "スーパー まいばすけっと", amount: 1280, time: "今日 18:45" },
-  { id: 2, category: "光熱費", title: "電気料金", amount: 6380, time: "昨日 09:10" },
-  { id: 3, category: "日用品", title: "ドラッグストア", amount: 980, time: "4/4 20:12" },
-];
-
-const demoInputs = [
-  { category: "食費", amount: 1200, title: "コンビニ ランチ" },
-  { category: "日用品", amount: 980, title: "ドラッグストア" },
-  { category: "カフェ", amount: 650, title: "カフェ休憩" },
-];
+import { demoBaseSpendingForChart, demoRecentForHero, demoTypingInputs } from "../data/demoMockData";
 
 type SpeedPreset = "slow" | "normal" | "fast";
 
@@ -160,7 +147,7 @@ export function DemoDashboardPage() {
 
     const runLoop = () => {
       if (!runningRef.current) return;
-      const demo = demoInputs[loopIndexRef.current % demoInputs.length];
+      const demo = demoTypingInputs[loopIndexRef.current % demoTypingInputs.length];
       loopIndexRef.current += 1;
       const conf = speedMap[speedRef.current];
 
@@ -241,8 +228,10 @@ export function DemoDashboardPage() {
       <header className="mb-4 flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold tracking-wide text-mint-600">Kakeibo Demo</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">今月の家計</h1>
-          <p className="mt-1 text-sm text-slate-500">4月の支出バランスと貯金の進捗</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">今月の家計（体験デモ）</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            下記はすべてフロントのサンプルです。ログイン不要・<strong>DB には接続しません</strong>。
+          </p>
           <Link
             to="/"
             className="mt-2 inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
@@ -295,29 +284,50 @@ export function DemoDashboardPage() {
         <MetricCard
           label="今月の残り予算"
           value={yen(remainingBudget)}
-          subLabel="登録ごとに自動更新"
+          subLabel="登録ごとに自動更新（デモ数値）"
           icon={<Wallet size={16} />}
           trend="down"
         />
         <MetricCard
           label="現在の貯金額"
           value={yen(savings)}
-          subLabel="目標まで 64%"
+          subLabel="目標まで 64%（イメージ）"
           icon={<PiggyBank size={16} />}
           trend="up"
         />
         <MetricCard
           label="前月比"
           value={pct(monthDelta)}
-          subLabel="支出が改善しています"
+          subLabel="支出の傾向（デモ）"
           icon={<WalletCards size={16} />}
           trend="up"
         />
       </section>
 
+      <p className="mb-3 mt-5 text-xs leading-relaxed text-slate-600">
+        医療費控除の集計、最新のモバイル／PC 向け UI、固定費を含む支出の見える化、レシート取込の流れを
+        <strong>この1ページ</strong>で掴めます（すべて静的データ）。
+      </p>
+
+      <div className="mb-5">
+        <DemoMedicalDeductionSection />
+      </div>
+
+      <div className="mb-5">
+        <DemoResponsiveUiSection />
+      </div>
+
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <SpendingChart data={spendingData} />
+        <SpendingChart
+          data={spendingData}
+          title="品目別・支出（固定費を含む）"
+          description="固定費は毎月の集計に自動で含まれる想定。カラフルな円で支出の内訳を把握できます。"
+        />
         <RecentTransactions items={recentItems} />
+      </div>
+
+      <div className="mt-5">
+        <DemoReceiptImportSection />
       </div>
 
       <button

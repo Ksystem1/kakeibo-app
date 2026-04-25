@@ -79,7 +79,9 @@ export function LoginPage() {
       <AuthHeroAside>
         <span className={styles.badge}>Kakeibo ✨</span>
         <h1 className={styles.heroTitle}>みんなの家計簿</h1>
-        <p className={styles.heroDesc}>家計簿を共有できます。</p>
+        <p className={styles.heroDesc}>
+          家計簿を共有できます。医療費控除の集計・固定費・レシート取込のイメージは「デモを見る」で体験できます（DB 非接続）。
+        </p>
         <Link to="/demo-dashboard" className={styles.demoCta}>
           🎬 デモを見る
         </Link>

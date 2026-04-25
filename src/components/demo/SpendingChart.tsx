@@ -14,14 +14,18 @@ type SpendingDatum = {
 
 type SpendingChartProps = {
   data: SpendingDatum[];
+  title?: string;
+  description?: string;
 };
 
-export function SpendingChart({ data }: SpendingChartProps) {
+export function SpendingChart({ data, title, description }: SpendingChartProps) {
   return (
     <section className="rounded-2xl border border-slate-200/95 bg-white p-4 shadow-md ring-1 ring-slate-900/[0.04]">
       <div className="mb-4">
-        <h2 className="text-sm font-semibold text-slate-900">今月のカテゴリ別支出</h2>
-        <p className="mt-1 text-xs text-slate-500">食費や光熱費の比率が一目でわかります</p>
+        <h2 className="text-sm font-semibold text-slate-900">{title ?? "今月のカテゴリ別支出"}</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          {description ?? "食費や光熱費の比率が一目でわかります"}
+        </p>
       </div>
 
       <div className="h-52 w-full">

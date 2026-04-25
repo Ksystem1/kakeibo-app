@@ -1,0 +1,46 @@
+/**
+ * ランディング「デモダッシュボード」専用の静的データ。API / DB には使いません。
+ */
+export const DEMO_MEDICAL_YEAR = 2026;
+export const DEMO_MEDICAL_TOTAL_YEN = 120_000;
+export const DEMO_MEDICAL_TX_COUNT = 12;
+
+export const demoMedicalByPatient: { name: string; amount: number }[] = [
+  { name: "本人", amount: 45_000 },
+  { name: "配偶者", amount: 52_000 },
+  { name: "子", amount: 23_000 },
+];
+
+export const demoMedicalByType: { label: string; amount: number }[] = [
+  { label: "診療・治療", amount: 68_000 },
+  { label: "医薬品", amount: 35_000 },
+  { label: "その他", amount: 17_000 },
+];
+
+/** カテゴリ別（固定費を大きく見せる） */
+export const demoBaseSpendingForChart = [
+  { name: "固定費（毎月自動）", value: 48_000, color: "#6366f1" },
+  { name: "食費", value: 32_000, color: "#22c55e" },
+  { name: "光熱費", value: 12_000, color: "#86efac" },
+  { name: "交通費", value: 9_000, color: "#fb923c" },
+  { name: "日用品", value: 11_000, color: "#fbbf24" },
+  { name: "その他", value: 12_000, color: "#a78bfa" },
+];
+
+export const demoRecentForHero: {
+  id: number;
+  category: string;
+  title: string;
+  amount: number;
+  time: string;
+}[] = [
+  { id: 1, category: "食費", title: "スーパー（レシート取込）", amount: 1_280, time: "今日 18:45" },
+  { id: 2, category: "光熱費", title: "電気料金（固定費）", amount: 6_380, time: "昨日 09:10" },
+  { id: 3, category: "日用品", title: "PayPay ドラッグストア", amount: 980, time: "2/3 20:12" },
+];
+
+export const demoTypingInputs: { category: string; amount: number; title: string }[] = [
+  { category: "食費", amount: 1200, title: "コンビニ" },
+  { category: "日用品", amount: 980, title: "ドラッグストア" },
+  { category: "光熱費", amount: 2200, title: "プロパン明細" },
+];
