@@ -14,6 +14,7 @@ import { createLogger } from "./logger.mjs";
 import { getStripeWebhookSecret, requireStripeSecretKey } from "./stripe-config.mjs";
 import { mapStripeSubscriptionStatusToDb } from "./subscription-logic.mjs";
 import { clearIsPremiumAfterSubscriptionEndedDb } from "./stripe-user-premium-sync.mjs";
+import { applyEstimatedFeeIfZero } from "./stripe-sales-fee-estimate.mjs";
 
 const logger = createLogger("stripe-webhook");
 
@@ -336,6 +337,12 @@ async function logSaleFromCheckoutSession(pool, stripeEventId, session) {
   const grossAmount = amountByBt?.grossAmount ?? grossFallback ?? 0;
   const stripeFeeAmount = amountByBt?.stripeFeeAmount ?? 0;
   const netAmount = amountByBt?.netAmount ?? grossAmount - stripeFeeAmount;
+  const est = applyEstimatedFeeIfZero({
+    gross: grossAmount,
+    fee: stripeFeeAmount,
+    net: netAmount,
+    currency,
+  });
   const occurredAt =
     amountByBt?.occurredAt ??
     (session.created != null && Number.isFinite(Number(session.created))
@@ -348,9 +355,9 @@ async function logSaleFromCheckoutSession(pool, stripeEventId, session) {
     userId: userAndFamily.userId,
     familyId: userAndFamily.familyId,
     currency,
-    grossAmount,
-    stripeFeeAmount,
-    netAmount,
+    grossAmount: est.gross,
+    stripeFeeAmount: est.fee,
+    netAmount: est.net,
     occurredAt,
     rawPayload: {
       id: session.id,
@@ -389,6 +396,12 @@ async function logSaleFromInvoicePaid(pool, stripeEventId, invoice) {
   const grossAmount = amountByBt?.grossAmount ?? grossFallback ?? 0;
   const stripeFeeAmount = amountByBt?.stripeFeeAmount ?? 0;
   const netAmount = amountByBt?.netAmount ?? grossAmount - stripeFeeAmount;
+  const estI = applyEstimatedFeeIfZero({
+    gross: grossAmount,
+    fee: stripeFeeAmount,
+    net: netAmount,
+    currency,
+  });
   const occurredAt =
     amountByBt?.occurredAt ??
     (invoice.status_transitions?.paid_at != null &&
@@ -404,9 +417,9 @@ async function logSaleFromInvoicePaid(pool, stripeEventId, invoice) {
     userId: userAndFamily.userId,
     familyId: userAndFamily.familyId,
     currency,
-    grossAmount,
-    stripeFeeAmount,
-    netAmount,
+    grossAmount: estI.gross,
+    stripeFeeAmount: estI.fee,
+    netAmount: estI.net,
     occurredAt,
     rawPayload: {
       id: invoice.id,
@@ -454,6 +467,12 @@ async function logSaleFromRefund(pool, stripeEventId, refund) {
     : null;
   const userAndFamily = await resolveUserAndFamilyForSaleLog(pool, null, customerId);
   const occurredAt = amountByBt.occurredAt ?? new Date();
+  const estR = applyEstimatedFeeIfZero({
+    gross: amountByBt.grossAmount,
+    fee: amountByBt.stripeFeeAmount,
+    net: amountByBt.netAmount,
+    currency: amountByBt.currency,
+  });
   await insertSaleLog(pool, {
     stripeEventId,
     stripeSourceType: "refund",
@@ -461,9 +480,9 @@ async function logSaleFromRefund(pool, stripeEventId, refund) {
     userId: userAndFamily.userId,
     familyId: userAndFamily.familyId,
     currency: amountByBt.currency,
-    grossAmount: amountByBt.grossAmount,
-    stripeFeeAmount: amountByBt.stripeFeeAmount,
-    netAmount: amountByBt.netAmount,
+    grossAmount: estR.gross,
+    stripeFeeAmount: estR.fee,
+    netAmount: estR.net,
     occurredAt,
     rawPayload: {
       id: rf.id,

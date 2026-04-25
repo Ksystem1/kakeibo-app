@@ -70,6 +70,7 @@ import {
   applyOneUserMismatch,
   compareStripeSubscriptionsWithDb,
 } from "./stripe-subscription-reconcile-core.mjs";
+import { applyEstimatedFeeToLogRowForDisplay } from "./stripe-sales-fee-estimate.mjs";
 import {
   evaluateAllFeaturesForUser,
   evaluateFeatureForUser,
@@ -5766,8 +5767,36 @@ export async function handleApiRequest(req, options = {}) {
             `SELECT
                DATE_FORMAT(occurred_at, '%Y-%m') AS ym,
                COALESCE(SUM(gross_amount), 0) AS gross_total,
-               COALESCE(SUM(stripe_fee_amount), 0) AS fee_total,
-               COALESCE(SUM(net_amount), 0) AS net_total,
+               COALESCE(SUM(
+                 CASE
+                   WHEN gross_amount > 0.0001
+                    AND (stripe_fee_amount IS NULL OR ABS(COALESCE(stripe_fee_amount, 0)) < 0.0001)
+                    AND (
+                      (gross_amount - COALESCE(net_amount, gross_amount)) > 0.0001
+                      AND (gross_amount - COALESCE(net_amount, gross_amount)) < (gross_amount * 0.5)
+                    )
+                   THEN (gross_amount - COALESCE(net_amount, 0))
+                   WHEN gross_amount > 0.0001
+                    AND (stripe_fee_amount IS NULL OR ABS(COALESCE(stripe_fee_amount, 0)) < 0.0001)
+                   THEN ROUND(gross_amount * 0.036, 0)
+                   ELSE COALESCE(stripe_fee_amount, 0)
+                 END
+               ), 0) AS fee_total,
+               COALESCE(SUM(
+                 CASE
+                   WHEN gross_amount > 0.0001
+                    AND (stripe_fee_amount IS NULL OR ABS(COALESCE(stripe_fee_amount, 0)) < 0.0001)
+                    AND (
+                      (gross_amount - COALESCE(net_amount, gross_amount)) > 0.0001
+                      AND (gross_amount - COALESCE(net_amount, gross_amount)) < (gross_amount * 0.5)
+                    )
+                   THEN COALESCE(net_amount, 0)
+                   WHEN gross_amount > 0.0001
+                    AND (stripe_fee_amount IS NULL OR ABS(COALESCE(stripe_fee_amount, 0)) < 0.0001)
+                   THEN (gross_amount - ROUND(gross_amount * 0.036, 0))
+                   ELSE COALESCE(net_amount, 0)
+                 END
+               ), 0) AS net_total,
                COUNT(*) AS sales_count
              FROM sales_logs
              GROUP BY DATE_FORMAT(occurred_at, '%Y-%m')
@@ -5838,7 +5867,10 @@ export async function handleApiRequest(req, options = {}) {
              LIMIT 500`,
             params,
           );
-          return json(200, { items: rows }, hdrs, skipCors);
+          const items = Array.isArray(rows)
+            ? rows.map((r) => applyEstimatedFeeToLogRowForDisplay(r))
+            : rows;
+          return json(200, { items }, hdrs, skipCors);
         } catch (e) {
           logError("admin.payments.sales_logs", e, { userId });
           const code = String(e?.code || "");
@@ -5882,6 +5914,7 @@ export async function handleApiRequest(req, options = {}) {
                sl.gross_amount AS gross_total,
                sl.stripe_fee_amount AS fee_total,
                sl.net_amount AS net_total,
+               sl.currency,
                COALESCE(NULLIF(TRIM(u.display_name), ''), NULLIF(TRIM(u.email), ''), IFNULL(CONCAT('user#', sl.user_id), '')) AS user_name,
                sl.stripe_source_id AS stripe_payment_id
              FROM sales_logs sl
@@ -5890,7 +5923,24 @@ export async function handleApiRequest(req, options = {}) {
              ORDER BY sl.occurred_at ASC, sl.id ASC`,
             params,
           );
-          const csv = buildSalesDailyCsv(rows);
+          const mapped = (Array.isArray(rows) ? rows : []).map((r) => {
+            const a = applyEstimatedFeeToLogRowForDisplay({
+              ...r,
+              gross_amount: r.gross_total,
+              stripe_fee_amount: r.fee_total,
+              net_amount: r.net_total,
+            });
+            return {
+              day_key: r.day_key,
+              source_kind: r.source_kind,
+              user_name: r.user_name,
+              stripe_payment_id: r.stripe_payment_id,
+              gross_total: a.gross_amount,
+              fee_total: a.stripe_fee_amount,
+              net_total: a.net_amount,
+            };
+          });
+          const csv = buildSalesDailyCsv(mapped);
           const cors = skipCors ? {} : buildCorsHeaders(req.headers || {});
           return {
             statusCode: 200,
