@@ -35,9 +35,9 @@ const HIGHLIGHT_BEFORE =
 const CATCH = [
   "手入力に限界を感じていませんか？",
   "家計簿、もう書かない。",
-  "カード＆ PayPay 履歴のまとめ取込。",
+  "何でも置くだけ。形式はアプリが自動判定。",
   "医療費は氏名×区分、ワン表で。",
-  "家計管理を、どこからでも。",
+  "迷わない家計簿。取り込み口は、ひとつだけ。",
 ] as const;
 
 export function DemoDashboardPage() {

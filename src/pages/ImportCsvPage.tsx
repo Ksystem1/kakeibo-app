@@ -42,10 +42,16 @@ export function ImportCsvPage() {
   useEffect(() => {
     const s = location.state;
     if (!s || typeof s !== "object") return;
+    const maybeFiles = (s as { prefillFiles?: File[] }).prefillFiles;
+    if (Array.isArray(maybeFiles) && maybeFiles.length > 0) {
+      void parseFiles(maybeFiles);
+      navigate(location.pathname, { replace: true, state: null });
+      return;
+    }
     const raw = (s as { paypayPrefillText?: string }).paypayPrefillText;
     if (typeof raw !== "string" || !raw.trim()) return;
     navigate("/receipt", { replace: true, state: { paypayPrefillText: raw } });
-  }, [location.state, navigate]);
+  }, [location.state, navigate, location.pathname]);
 
   const isDemoMode = useMemo(() => {
     const q = new URLSearchParams(location.search);

@@ -7,6 +7,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { HomeLedgerGate } from "./components/HomeLedgerGate";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ImportCsvPage } from "./pages/ImportCsvPage";
+import { ImportHubPage } from "./pages/ImportHubPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ReceiptPage } from "./pages/ReceiptPage";
 import { RegisterPage } from "./pages/RegisterPage";
@@ -38,7 +39,8 @@ export default function App() {
         <Route path="/legal" element={<LegalInfoPage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<HomeLedgerGate />} />
-          <Route path="/import" element={<ImportCsvPage />} />
+          <Route path="/import" element={<ImportHubPage />} />
+          <Route path="/import/files" element={<ImportCsvPage />} />
           <Route path="/receipt" element={<ReceiptPage />} />
           <Route path="/members" element={<Navigate to="/settings" replace />} />
           <Route path="/categories" element={<Navigate to="/settings" replace />} />

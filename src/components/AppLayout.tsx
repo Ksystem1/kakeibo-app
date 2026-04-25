@@ -420,25 +420,13 @@ export function AppLayout() {
                 />
               ) : null}
               <NavLink
-                to="/receipt"
+                to="/import"
                 className={navIconLinkClassName}
-                aria-label="レシート"
-                onClick={onMobileIconNavClick("/receipt")}
+                aria-label="取込・入力"
+                onClick={onMobileIconNavClick("/import")}
               >
                 <img className="nav-icon-img" src={navIconPaths.receipt} alt="" aria-hidden="true" onError={withDefaultIconFallback("receipt")} />
               </NavLink>
-              {useMobileInlineOutlet ? (
-                <MobileInlineOutlet
-                  path="/receipt"
-                  pathname={location.pathname}
-                  visible={showMobileInlineOutlet}
-                />
-              ) : null}
-              {!mobile ? (
-                <NavLink to="/import" className={navIconLinkClassName} aria-label="CSV取込（PC）">
-                  <img className="nav-icon-img" src={navIconPaths.csvPc} alt="" aria-hidden="true" onError={withDefaultIconFallback("csvPc")} />
-                </NavLink>
-              ) : null}
               {useMobileInlineOutlet ? (
                 <MobileInlineOutlet
                   path="/import"

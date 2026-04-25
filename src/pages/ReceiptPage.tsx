@@ -443,6 +443,12 @@ export function ReceiptPage() {
   useEffect(() => {
     const s = location.state;
     if (!s || typeof s !== "object") return;
+    const prefillImportFile = (s as { prefillImportFile?: File }).prefillImportFile;
+    if (prefillImportFile instanceof File) {
+      void onFile(prefillImportFile);
+      navigate(location.pathname, { replace: true, state: null });
+      return;
+    }
     const raw = (s as { paypayPrefillText?: string }).paypayPrefillText;
     if (typeof raw !== "string" || !raw.trim()) return;
     setPaypayText(raw);
