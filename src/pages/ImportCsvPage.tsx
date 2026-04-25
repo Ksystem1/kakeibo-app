@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { getTransactions, importCsvText } from "../lib/api";
 import { FEATURE_EXPORT_CSV } from "../lib/api";
-import { looksLikePayPayCsv, tryConvertBankCardCsvToKakeibo } from "../lib/bankCardCsvToKakeibo";
+import { tryConvertBankCardCsvToKakeibo } from "../lib/bankCardCsvToKakeibo";
 import {
   type ImportedStatementRow,
   duplicateKey,
@@ -54,7 +54,12 @@ export function ImportCsvPage() {
     }
     const raw = (s as { paypayPrefillText?: string }).paypayPrefillText;
     if (typeof raw !== "string" || !raw.trim()) return;
-    navigate("/receipt", { replace: true, state: { paypayPrefillText: raw } });
+    setText(raw);
+    const parsed = parseFinancialCsvText(raw, "PayPay");
+    if (parsed.length > 0) {
+      void applyDuplicateFlags(parsed);
+      setMsg(`${parsed.length}件を解析しました。プレビューで確認後に保存してください。`);
+    }
   }, [location.state, navigate, location.pathname]);
 
   const isDemoMode = useMemo(() => {
@@ -120,10 +125,6 @@ export function ImportCsvPage() {
         if (name.endsWith(".csv") || name.endsWith(".txt")) {
           const decoded = await readFileTextAutoEncoding(f);
           const raw = decoded.text;
-          if (looksLikePayPayCsv(raw)) {
-            navigate("/receipt", { state: { paypayPrefillText: raw } });
-            return;
-          }
           const parsed = parseFinancialCsvText(raw, f.name);
           if (parsed.length > 0) {
             collected.push(...parsed);
@@ -215,10 +216,6 @@ export function ImportCsvPage() {
         );
         setRows([]);
         setText("");
-        return;
-      }
-      if (looksLikePayPayCsv(text)) {
-        navigate("/receipt", { replace: false, state: { paypayPrefillText: text } });
         return;
       }
       let toSend = text;
@@ -348,20 +345,8 @@ export function ImportCsvPage() {
           </Link>
         </p>
       </div>
-      {text.trim() || rows.length > 0 || msg ? (
-        <div className={styles.settingsPanel} style={{ marginTop: 0, marginBottom: "0.9rem" }}>
-          <p className={styles.sub} style={{ margin: 0, lineHeight: 1.55 }}>
-            <strong>PayPay</strong> 明細は
-            <Link to="/receipt" style={{ color: "var(--accent)", margin: "0 0.2rem" }}>
-              レシート・明細取込
-            </Link>
-            へ。PayPay のログイン情報は当サービスに不要で、
-            <strong> PayPay 公式アプリ等から書き出した CSV をアップロード</strong>してください。
-          </p>
-        </div>
-      ) : null}
       <p className={styles.sub}>
-        順: カテゴリ,日付,金額,メモ。対象月の支出を置き換え（収入はそのまま）。
+        ヘッダー行を自動判定し、日付・内容・金額を抽出します（列順は不問）。対象月の支出を置き換え（収入はそのまま）。
       </p>
       <form onSubmit={onSubmit}>
         <textarea

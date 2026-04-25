@@ -23,10 +23,28 @@ function ensurePdfWorkerConfigured() {
 type HeaderAlias = {
   date: string[];
   description: string[];
+  descriptionSecondary?: string[];
+  expenseAmount?: string[];
+  incomeAmount?: string[];
   amount: string[];
 };
 
 const KNOWN_HEADER_PATTERNS: HeaderAlias[] = [
+  {
+    // PayPay
+    date: ["取引日", "日時", "利用日"],
+    description: ["取引先", "支払先", "加盟店", "内容"],
+    descriptionSecondary: ["取引内容", "種別", "取引種別"],
+    amount: ["取引金額", "支払金額", "金額", "利用金額"],
+  },
+  {
+    // 三井住友銀行（Web明細）
+    date: ["年月日", "取引日", "お取引日"],
+    description: ["お取り扱い内容", "摘要", "取引内容", "内容"],
+    expenseAmount: ["お引出し", "出金", "引落"],
+    incomeAmount: ["お預入れ", "入金"],
+    amount: ["金額", "お引出し", "出金金額", "お支払額"],
+  },
   {
     // 三菱UFJ / みずほ / 地銀系
     date: ["取引日", "お取引日", "日付", "起算日", "利用日"],
@@ -41,9 +59,9 @@ const KNOWN_HEADER_PATTERNS: HeaderAlias[] = [
   },
   {
     // エポス / VISA / Mastercard
-    date: ["利用日", "利用年月日", "売上日", "確定日", "利用日付"],
-    description: ["利用店名・商品名", "ご利用店名", "加盟店名", "内容"],
-    amount: ["利用金額", "お支払い金額", "請求額", "利用額"],
+    date: ["利用日", "利用年月日", "売上日", "確定日", "利用日付", "ご利用年月日"],
+    description: ["利用店名・商品名", "ご利用店名", "加盟店名", "内容", "ご利用場所"],
+    amount: ["利用金額", "お支払い金額", "請求額", "利用額", "ご利用金額"],
   },
 ];
 
@@ -74,7 +92,12 @@ function parseAmount(raw: string): number | null {
 }
 
 function normalizeHeaderCell(h: string): string {
-  return String(h ?? "").trim().toLowerCase();
+  return String(h ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .replace(/[()（）・:：]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
 function findByAliases(header: string[], aliases: string[]): number {
@@ -87,19 +110,38 @@ function findByAliases(header: string[], aliases: string[]): number {
   return -1;
 }
 
-function inferHeaderIndices(header: string[]): { iDate: number; iDesc: number; iAmt: number } | null {
+type HeaderIndices = {
+  iDate: number;
+  iDesc: number;
+  iDesc2: number;
+  iAmt: number;
+  iExpenseAmt: number;
+  iIncomeAmt: number;
+};
+
+function inferHeaderIndices(header: string[]): HeaderIndices | null {
   for (const p of KNOWN_HEADER_PATTERNS) {
     const iDate = findByAliases(header, p.date);
     const iDesc = findByAliases(header, p.description);
+    const iDesc2 = findByAliases(header, p.descriptionSecondary ?? []);
+    const iExpenseAmt = findByAliases(header, p.expenseAmount ?? []);
+    const iIncomeAmt = findByAliases(header, p.incomeAmount ?? []);
     const iAmt = findByAliases(header, p.amount);
-    if (iDate >= 0 && iAmt >= 0) return { iDate, iDesc, iAmt };
+    if (iDate >= 0 && (iAmt >= 0 || iExpenseAmt >= 0)) {
+      return { iDate, iDesc, iDesc2, iAmt, iExpenseAmt, iIncomeAmt };
+    }
   }
 
   // フォールバック推定
   const iDate = findByAliases(header, ["日付", "利用日", "取引", "年月日"]);
-  const iDesc = findByAliases(header, ["内容", "摘要", "利用先", "店", "加盟店", "相手"]);
+  const iDesc = findByAliases(header, ["内容", "摘要", "利用先", "店", "加盟店", "相手", "場所"]);
+  const iDesc2 = findByAliases(header, ["取引内容", "種別", "備考", "メモ"]);
+  const iExpenseAmt = findByAliases(header, ["お引出し", "出金", "引落", "支払", "請求"]);
+  const iIncomeAmt = findByAliases(header, ["お預入れ", "入金"]);
   const iAmt = findByAliases(header, ["金額", "支払", "引落", "利用", "請求", "出金"]);
-  if (iDate >= 0 && iAmt >= 0) return { iDate, iDesc, iAmt };
+  if (iDate >= 0 && (iAmt >= 0 || iExpenseAmt >= 0)) {
+    return { iDate, iDesc, iDesc2, iAmt, iExpenseAmt, iIncomeAmt };
+  }
   return null;
 }
 
@@ -117,17 +159,41 @@ function toRowId(source: string, idx: number): string {
   return `${source}#${idx + 1}`;
 }
 
+function normalizeDataCell(v: string): string {
+  return String(v ?? "").normalize("NFKC").trim();
+}
+
+function pickExpenseAmount(cells: string[], indices: HeaderIndices): number | null {
+  const expense = indices.iExpenseAmt >= 0 ? parseAmount(cells[indices.iExpenseAmt] ?? "") : null;
+  const income = indices.iIncomeAmt >= 0 ? parseAmount(cells[indices.iIncomeAmt] ?? "") : null;
+  if (expense != null && expense > 0) return expense;
+  if (income != null && income > 0) return null;
+  if (indices.iAmt >= 0) return parseAmount(cells[indices.iAmt] ?? "");
+  return null;
+}
+
+function combineDescription(cells: string[], indices: HeaderIndices): string {
+  const primary = indices.iDesc >= 0 ? normalizeDataCell(cells[indices.iDesc] ?? "") : "";
+  const secondary = indices.iDesc2 >= 0 ? normalizeDataCell(cells[indices.iDesc2] ?? "") : "";
+  if (primary && secondary && !primary.includes(secondary)) return `${secondary} ${primary}`.trim();
+  return primary || secondary || "明細";
+}
+
+function inferMedicalType(description: string): "treatment" | "medicine" | null {
+  const s = description.toLowerCase();
+  if (/薬局|調剤|ドラッグ|マツキヨ|ウエルシア|スギ薬局|ココカラ/.test(s)) return "medicine";
+  if (/病院|医院|クリニック|歯科|内科|外科|皮膚科|眼科|耳鼻|小児科|整形/.test(s)) return "treatment";
+  return null;
+}
+
 export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): ImportedStatementRow[] {
-  const lines = String(csvText ?? "")
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const lines = String(csvText ?? "").split(/\r?\n/);
   if (lines.length < 2) return [];
 
-  const rows = lines.map(parseCsvLine);
+  const rows = lines.map(parseCsvLine).filter((cells) => cells.some((c) => String(c ?? "").trim() !== ""));
   let headerRowIdx = -1;
-  let indices: { iDate: number; iDesc: number; iAmt: number } | null = null;
-  for (let i = 0; i < Math.min(20, rows.length); i++) {
+  let indices: HeaderIndices | null = null;
+  for (let i = 0; i < Math.min(80, rows.length); i++) {
     const h = rows[i];
     const found = inferHeaderIndices(h);
     if (found) {
@@ -142,9 +208,11 @@ export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): Imp
   for (let i = headerRowIdx + 1; i < rows.length; i++) {
     const cells = rows[i];
     const date = normalizeDate(cells[indices.iDate] ?? "");
-    const amount = parseAmount(cells[indices.iAmt] ?? "");
-    const description = String(cells[indices.iDesc] ?? "").trim() || "明細";
+    const amount = pickExpenseAmount(cells, indices);
+    const description = combineDescription(cells, indices);
     if (!date || amount == null) continue;
+    const inferredMedicalType = inferMedicalType(description);
+    const medicalAuto = inferredMedicalType != null || MEDICAL_HINT_RE.test(description);
     out.push({
       id: toRowId(sourceLabel, i),
       date,
@@ -152,7 +220,7 @@ export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): Imp
       description,
       source: sourceLabel,
       categoryGuess: guessCategory(description),
-      medicalAuto: MEDICAL_HINT_RE.test(description),
+      medicalAuto,
     });
   }
   return out;

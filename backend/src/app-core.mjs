@@ -214,6 +214,23 @@ function normalizeTxMemo(raw) {
   return s === "" ? null : s;
 }
 
+function inferMedicalByText(memo, categoryRaw) {
+  const text = `${String(categoryRaw ?? "")} ${String(memo ?? "")}`.toLowerCase();
+  if (!text.trim()) {
+    return { isMedicalExpense: false, medicalType: null, medicalPatientName: null };
+  }
+  const medicine = /薬局|調剤|ドラッグ|マツキヨ|ウエルシア|スギ薬局|ココカラ/.test(text);
+  const treatment = /病院|医院|クリニック|歯科|内科|外科|皮膚科|眼科|耳鼻|小児科|整形|医療/.test(text);
+  if (!medicine && !treatment) {
+    return { isMedicalExpense: false, medicalType: null, medicalPatientName: null };
+  }
+  return {
+    isMedicalExpense: true,
+    medicalType: medicine ? "medicine" : "treatment",
+    medicalPatientName: "本人",
+  };
+}
+
 const MEDICAL_TYPES = new Set(["treatment", "medicine", "other"]);
 
 function normalizeMedicalType(raw) {
@@ -5392,7 +5409,7 @@ export async function handleApiRequest(req, options = {}) {
         if (csvSubRej) return csvSubRej;
         const text = String(b.csvText || "");
         const lines = text.split(/\r?\n/).filter((l) => l.trim());
-        /** @type {Array<{ dateStr: string; categoryRaw: string; amount: number; memoVal: string | null }>} */
+        /** @type {Array<{ dateStr: string; categoryRaw: string; amount: number; memoVal: string | null; isMedicalExpense: boolean; medicalType: ("treatment"|"medicine"|"other"|null); medicalPatientName: string | null }>} */
         const validRows = [];
         for (const line of lines) {
           const parts = line.split(/[,，\t]/).map((s) => s.trim());
@@ -5406,11 +5423,15 @@ export async function handleApiRequest(req, options = {}) {
           let memo = parts.slice(3).join(" ").trim();
           if (memo.length > 500) memo = memo.slice(0, 500);
           const memoVal = memo || null;
+          const medical = inferMedicalByText(memoVal, categoryRaw);
           validRows.push({
             dateStr,
             categoryRaw,
             amount: Math.abs(amount),
             memoVal,
+            isMedicalExpense: medical.isMedicalExpense,
+            medicalType: medical.medicalType,
+            medicalPatientName: medical.medicalPatientName,
           });
         }
         if (validRows.length === 0) {
@@ -5486,8 +5507,11 @@ export async function handleApiRequest(req, options = {}) {
               );
           if (created) categoriesCreated += 1;
           await pool.query(
-            `INSERT INTO transactions (user_id, family_id, kind, amount, transaction_date, memo, category_id)
-             VALUES (?, ?, 'expense', ?, ?, ?, ?)`,
+            `INSERT INTO transactions (
+               user_id, family_id, kind, amount, transaction_date, memo, category_id,
+               is_medical_expense, medical_type, medical_patient_name
+             )
+             VALUES (?, ?, 'expense', ?, ?, ?, ?, ?, ?, ?)`,
             [
               userId,
               familyId,
@@ -5495,6 +5519,9 @@ export async function handleApiRequest(req, options = {}) {
               row.dateStr,
               row.memoVal,
               categoryId,
+              row.isMedicalExpense ? 1 : 0,
+              row.medicalType,
+              row.medicalPatientName,
             ],
           );
           inserted += 1;
