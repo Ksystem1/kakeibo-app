@@ -13,12 +13,12 @@ import { SpendingChart } from "../components/demo/SpendingChart";
 import {
   type DemoSpendingChartDatum,
   demoBaseSpendingForChart,
-  demoRecentForHero,
+  demoImportIdealRecent,
 } from "../data/demoMockData";
 
 const STEP_COUNT = 5;
-/** ステップ0はフック（約1.2秒）。1以降は各3秒。合計約13.2秒（15秒以内）。 */
-const SLIDE_MS_BEFORE = 1200;
+/** ステップ0は約1秒。1以降は各3秒。合計約13秒（15秒以内）。 */
+const SLIDE_MS_BEFORE = 1000;
 const SLIDE_MS_AFTER = 3000;
 
 function slideDurationMs(s: number) {
@@ -33,11 +33,11 @@ const HIGHLIGHT_BEFORE =
 
 /** ステップ0は共感用の少し長めの文、その後はリール用ショートコピー */
 const CATCH = [
-  "家計簿、毎日手入力で挫折していませんか？レシートの山、細かいPayPayの支払い、医療費の集計...もう限界！",
+  "手入力に限界を感じていませんか？",
   "家計簿、もう書かない。",
-  "PayPay履歴を自動で仕分け",
-  "確定申告の医療費、これ1つで完了",
-  "一生モノの家計管理を、スマホに。",
+  "カード＆ PayPay 履歴のまとめ取込。",
+  "医療費は氏名×区分、ワン表で。",
+  "家計管理を、どこからでも。",
 ] as const;
 
 export function DemoDashboardPage() {
@@ -48,7 +48,7 @@ export function DemoDashboardPage() {
   const isBefore = step === 0;
 
   const [spendingData] = useState<DemoSpendingChartDatum[]>(() => [...demoBaseSpendingForChart]);
-  const [recentItems] = useState(() => [...demoRecentForHero]);
+  const [recentItems] = useState(() => [...demoImportIdealRecent]);
 
   const copy = CATCH[step] ?? CATCH[0];
   const isLast = step === STEP_COUNT - 1;
@@ -162,7 +162,7 @@ export function DemoDashboardPage() {
                   className={stepHighlights.s1chart ? HIGHLIGHT : undefined}
                   data={spendingData}
                   title="日々の支出"
-                  description="円で比率"
+                  description=""
                 />
               </div>
               <RecentTransactions
@@ -186,7 +186,7 @@ export function DemoDashboardPage() {
                 className={stepHighlights.s4chart ? HIGHLIGHT : undefined}
                 data={spendingData}
                 title="毎月の家計"
-                description="固定費も一緒に"
+                description=""
               />
               <DemoResponsiveUiSection className={stepHighlights.s4ui ? HIGHLIGHT : undefined} />
             </div>

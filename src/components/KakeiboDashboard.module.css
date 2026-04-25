@@ -1684,6 +1684,13 @@
   background: color-mix(in oklab, var(--bg-card) 62%, var(--accent) 14%);
 }
 
+.medicalMatrixGrandLabel {
+  font-size: 0.82em;
+  font-weight: 700;
+  color: var(--text-muted, #6b7280);
+  margin-right: 0.2rem;
+}
+
 @media (max-width: 640px) {
   .medicalSummaryMatrixTable {
     min-width: 560px;
@@ -2475,5 +2482,38 @@
 
   .categoryDetailCard .categoryDetailEditMedicalRow {
     flex-wrap: wrap;
+  }
+}
+
+/* PC: カテゴリ明細の編集行 — 日付・内容（種別/メモ）・金額・操作を1段に近づける */
+@media (min-width: 900px) {
+  .categoryDetailTable tr.rowEditing .categoryDetailEditCell {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.55rem;
+  }
+
+  .categoryDetailTable tr.rowEditing .categoryDetailEditKindRow {
+    flex: 0 0 auto;
+  }
+
+  .categoryDetailTable tr.rowEditing .categoryDetailEditMemoField {
+    flex: 1 1 10rem;
+    min-width: 5rem;
+    max-width: none;
+  }
+
+  .categoryDetailTable tr.rowEditing .categoryDetailEditMedical {
+    flex: 1 0 100%;
+    margin-top: 0.15rem;
+  }
+
+  .categoryDetailTable tr.rowEditing td {
+    vertical-align: middle;
+  }
+
+  .categoryDetailTable tr.rowEditing td:nth-child(2) {
+    vertical-align: top;
   }
 }

@@ -10,8 +10,7 @@ export function DemoPayPayImportPreview({ className }: Props) {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-wider text-sky-700">Premium · 新機能</p>
-          <h2 className="text-base font-bold text-slate-900">PayPay 利用履歴の一括取込</h2>
-          <p className="mt-1 text-xs text-slate-600">CSV を読み込み、店舗名からカテゴリを推定（イメージ）</p>
+          <h2 className="text-base font-bold text-slate-900">クレカ・ PayPay 明細 CSV 取込</h2>
         </div>
         <span className="rounded-full border border-emerald-300 bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-800">
           取込プレビュー完了

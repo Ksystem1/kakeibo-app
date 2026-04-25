@@ -47,6 +47,15 @@ export const demoRecentForHero: DemoRecentTransaction[] = [
   { id: 3, category: "日用品", title: "PayPay ドラッグストア", amount: 980, time: "2/3 20:12" },
 ];
 
+/** クレカ・PayPay 取込後のイメージ明細（デモダッシュボード Step1 専用） */
+export const demoImportIdealRecent: DemoRecentTransaction[] = [
+  { id: 1, category: "食費", title: "JCB: 生鮮スーパー 〇〇", amount: 1_280, time: "今日 18:12" },
+  { id: 2, category: "外食", title: "PayPay支払い：社食ランチ", amount: 650, time: "今日 12:20" },
+  { id: 3, category: "日用品", title: "VISA: ドラッグストア", amount: 980, time: "昨日 20:15" },
+  { id: 4, category: "交通", title: "VISA: ＩＣチャージ", amount: 2_000, time: "昨日 8:00" },
+  { id: 5, category: "雑費", title: "PayPay支払い：コンビニ", amount: 320, time: "2/3 21:30" },
+];
+
 export const demoTypingInputs: { category: string; amount: number; title: string }[] = [
   { category: "食費", amount: 1200, title: "コンビニ" },
   { category: "日用品", amount: 980, title: "ドラッグストア" },

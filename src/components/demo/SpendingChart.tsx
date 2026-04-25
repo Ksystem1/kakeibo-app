@@ -26,9 +26,11 @@ export function SpendingChart({ data, title, description, className }: SpendingC
     >
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-slate-900">{title ?? "今月のカテゴリ別支出"}</h2>
-        <p className="mt-1 text-xs text-slate-500">
-          {description ?? "食費や光熱費の比率が一目でわかります"}
-        </p>
+        {description === "" ? null : (
+          <p className="mt-1 text-xs text-slate-500">
+            {description ?? "食費や光熱費の比率が一目でわかります"}
+          </p>
+        )}
       </div>
 
       <div className="h-52 w-full">

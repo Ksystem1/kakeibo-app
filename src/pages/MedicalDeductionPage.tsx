@@ -239,7 +239,7 @@ function MedicalDeductionPageInner() {
             内訳合計
           </h2>
           <p className={styles.sub} style={{ margin: "0 0 0.65rem", fontSize: "0.88rem" }}>
-            氏名 × 区分で集計したマトリックスです（右端は氏名合計、最下段は区分合計）。
+            氏名 × 区分。各行末・各列末に小計、右下が総合計です。
           </p>
           <div className={styles.medicalSummaryMatrixWrap}>
             <table className={styles.medicalSummaryMatrixTable}>
@@ -268,13 +268,14 @@ function MedicalDeductionPageInner() {
               </tbody>
               <tfoot>
                 <tr>
-                  <th>区分合計</th>
+                  <th>小計</th>
                   {MEDICAL_TYPE_ORDER.map((t) => (
                     <td key={`total-${t}`} className={styles.medicalSummaryMatrixTotalCell}>
                       {(matrix.colTotals.get(t) ?? 0).toLocaleString("ja-JP")}円
                     </td>
                   ))}
                   <td className={styles.medicalSummaryMatrixGrandTotalCell}>
+                    <span className={styles.medicalMatrixGrandLabel}>総合計</span>{" "}
                     {matrix.grandTotal.toLocaleString("ja-JP")}円
                   </td>
                 </tr>

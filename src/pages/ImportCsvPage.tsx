@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { importCsvText } from "../lib/api";
+import { looksLikePayPayCsv, tryConvertBankCardCsvToKakeibo } from "../lib/bankCardCsvToKakeibo";
 import styles from "../components/KakeiboDashboard.module.css";
 import importStyles from "./ImportCsvPage.module.css";
 
@@ -30,18 +31,33 @@ export function ImportCsvPage() {
     setMsg(null);
     setLoading(true);
     try {
-      const r = await importCsvText(text);
+      if (looksLikePayPayCsv(text)) {
+        navigate("/receipt", { replace: false, state: { paypayPrefillText: text } });
+        return;
+      }
+      let toSend = text;
+      const bankConverted = tryConvertBankCardCsvToKakeibo(text);
+      if (bankConverted) toSend = bankConverted.text;
+      const r = await importCsvText(toSend);
       const created = r.categoriesCreated ?? 0;
       const deleted = r.deleted ?? 0;
       if (r.inserted > 0 || deleted > 0) {
-        const parts = [
-          `支出を ${deleted} 件削除し、${r.inserted} 件追加しました。`,
-        ];
+        const parts: string[] = [];
+        if (bankConverted) parts.push(bankConverted.message);
+        parts.push(`支出を ${deleted} 件削除し、${r.inserted} 件追加しました。`);
         if (created > 0) parts.push(`新規カテゴリ ${created} 件を追加しました。`);
         if (r.message) parts.push(r.message);
         setMsg(parts.join(""));
       } else {
-        setMsg(r.message ?? "取り込める行がありませんでした。");
+        if (bankConverted) {
+          setMsg(
+            bankConverted.text.trim()
+              ? `${bankConverted.message} 取り込めた行はありません。`
+              : (r.message ?? "取り込める行がありませんでした。"),
+          );
+        } else {
+          setMsg(r.message ?? "取り込める行がありませんでした。");
+        }
       }
       setText("");
     } catch (ex) {
