@@ -1,5 +1,6 @@
 /**
- * Stripe Checkout Session（サブスク課金・Test mode 想定）
+ * Stripe Checkout Session（サブスク課金）
+ * Price ID は getSubscriptionPriceId() が秘密鍵（sk_live_ / sk_test_）に合わせて選ぶ。
  */
 import Stripe from "stripe";
 import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
@@ -64,10 +65,24 @@ export function assertAllowedRedirectUrl(urlStr, allowedOrigins) {
   }
 }
 
-/** Checkout 用 Price ID（STRIPE_TEST_PRICE_ID を STRIPE_PRICE_ID より優先） */
+/**
+ * Checkout 用サブスク Price ID。
+ * Stripe 秘密鍵のモードと一致する ID を優先し、Live 鍵で誤って Test の price_ だけが選ばれることを防ぐ。
+ *
+ * - sk_live_: STRIPE_PRICE_ID を優先、無ければ STRIPE_TEST_PRICE_ID（ECS の従来1本注入用）
+ * - sk_test_: STRIPE_TEST_PRICE_ID を優先、無ければ STRIPE_PRICE_ID
+ * - 鍵が未設定・不明形式: 後方互換のため testVar || liveVar
+ */
 export function getSubscriptionPriceId() {
   const testPrice = String(process.env.STRIPE_TEST_PRICE_ID ?? "").trim();
   const livePrice = String(process.env.STRIPE_PRICE_ID ?? "").trim();
+  const key = String(getStripeSecretKey() ?? "").trim();
+  if (key.startsWith("sk_live_")) {
+    return livePrice || testPrice;
+  }
+  if (key.startsWith("sk_test_")) {
+    return testPrice || livePrice;
+  }
   return testPrice || livePrice;
 }
 

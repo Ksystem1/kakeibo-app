@@ -10,5 +10,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env") });
 dotenv.config({ path: join(__dirname, "..", "..", ".env") });
 
-// 動作確認後は削除してよい（一時ログ）
-console.log("Loaded Price ID:", process.env.STRIPE_TEST_PRICE_ID);
+if (String(process.env.STRIPE_LOG_PRICE_ID_ON_BOOT ?? "").trim() === "1") {
+  console.log(
+    "[load-env] STRIPE_LOG_PRICE_ID_ON_BOOT=1 — STRIPE_TEST_PRICE_ID / STRIPE_PRICE_ID:",
+    process.env.STRIPE_TEST_PRICE_ID ?? "",
+    process.env.STRIPE_PRICE_ID ?? "",
+  );
+}
