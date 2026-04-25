@@ -29,6 +29,7 @@ import {
   NEW_PASSWORD_LABEL,
   NEW_PASSWORD_TOOLTIP,
 } from "../lib/passwordPolicy";
+import apStyles from "./AdminPage.module.css";
 
 function familyMismatchKey(r: { familyId: number; stripeCustomerId: string }): string {
   return `f:${r.familyId}:${r.stripeCustomerId}`;
@@ -638,33 +639,25 @@ export function AdminPage() {
             データがありません。RDS に <code>db/migration_v32_feature_permissions.sql</code>（v32）を適用してください。
           </p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: "0.82rem",
-                tableLayout: "fixed",
-              }}
-            >
-              <colgroup>
-                <col style={{ width: "44%" }} />
-                <col style={{ width: "32%" }} />
-                <col style={{ width: "24%" }} />
-              </colgroup>
+          <div className={apStyles.featurePermScroll}>
+            <table className={apStyles.featurePermTable}>
               <thead>
                 <tr>
                   <th
+                    className={apStyles.featurePermColFeature}
                     style={{
                       ...adminTableTh,
                       whiteSpace: "normal",
-                      minWidth: "7.5rem",
                     }}
                   >
                     機能
                   </th>
-                  <th style={adminTableTh}>キー</th>
-                  <th style={adminTableTh}>最小プラン</th>
+                  <th className={apStyles.featurePermColKey} style={adminTableTh}>
+                    キー
+                  </th>
+                  <th className={apStyles.featurePermColPlan} style={adminTableTh}>
+                    最小プラン
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -675,16 +668,13 @@ export function AdminPage() {
                   return (
                     <tr key={fk}>
                       <td
-                        style={{
-                          ...adminTableTd,
-                          whiteSpace: "normal",
-                          lineHeight: 1.4,
-                          wordBreak: "keep-all",
-                        }}
+                        className={apStyles.featurePermColFeature}
+                        style={adminTableTd}
                       >
                         {r.label_ja ?? fk}
                       </td>
                       <td
+                        className={apStyles.featurePermColKey}
                         style={{
                           ...adminTableTd,
                           fontFamily: "ui-monospace, monospace",
@@ -693,10 +683,11 @@ export function AdminPage() {
                       >
                         {fk}
                       </td>
-                      <td style={adminTableTd}>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", alignItems: "center" }}>
+                      <td className={apStyles.featurePermColPlan} style={adminTableTd}>
+                        <div className={apStyles.featurePermPlanRow}>
                           <button
                             type="button"
+                            className={apStyles.featurePermPlanBtn}
                             disabled={loading || busy || isStd}
                             onClick={async () => {
                               setFeaturePermSaving(fk);
@@ -726,6 +717,7 @@ export function AdminPage() {
                           </button>
                           <button
                             type="button"
+                            className={apStyles.featurePermPlanBtn}
                             disabled={loading || busy || !isStd}
                             onClick={async () => {
                               setFeaturePermSaving(fk);

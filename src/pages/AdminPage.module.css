@@ -1,0 +1,104 @@
+/**
+ * 管理者: 機能権限（プラン）テーブル
+ * - 769px 以上: 従来の固定列幅（PC レイアウト維持）
+ * - 768px 以下: 最小幅を確保して横スクロール、端に薄い影でスクロール可を示唆
+ */
+
+.featurePermScroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+.featurePermTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.featurePermPlanRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+td.featurePermColFeature {
+  line-height: 1.4;
+}
+
+@media (min-width: 769px) {
+  th.featurePermColFeature {
+    white-space: normal;
+  }
+
+  td.featurePermColFeature {
+    white-space: normal;
+    word-break: keep-all;
+  }
+
+  .featurePermTable {
+    table-layout: fixed;
+  }
+
+  .featurePermColFeature {
+    width: 44%;
+  }
+
+  .featurePermColKey {
+    width: 32%;
+  }
+
+  .featurePermColPlan {
+    width: 24%;
+  }
+}
+
+@media (max-width: 768px) {
+  .featurePermScroll {
+    position: relative;
+    margin: 0 -0.15rem;
+    padding: 0.1rem 0.15rem 0.45rem;
+    border-radius: 8px;
+    box-shadow:
+      inset 12px 0 10px -10px color-mix(in srgb, var(--text, #0f0f0f) 12%, transparent),
+      inset -12px 0 10px -10px color-mix(in srgb, var(--text, #0f0f0f) 12%, transparent);
+  }
+
+  .featurePermTable {
+    table-layout: auto;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  /* 機能: 短い行に潰れないよう最小幅＋1行表示 */
+  .featurePermColFeature {
+    min-width: 12.5rem;
+    max-width: 22rem;
+    white-space: nowrap;
+  }
+
+  /* キー: 等幅の可読最小幅 */
+  .featurePermColKey {
+    min-width: 8.5rem;
+    max-width: 16rem;
+    white-space: nowrap;
+  }
+
+  /* プラン: 2 ボタン横並び＋余白 */
+  .featurePermColPlan {
+    min-width: 14.5rem;
+  }
+
+  .featurePermPlanRow {
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+  }
+
+  .featurePermPlanBtn {
+    min-height: 40px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8rem;
+  }
+}
