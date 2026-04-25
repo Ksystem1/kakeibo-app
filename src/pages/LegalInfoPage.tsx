@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import styles from "../components/KakeiboDashboard.module.css";
 
@@ -5,7 +6,32 @@ import styles from "../components/KakeiboDashboard.module.css";
  * Stripe 審査・利用者向け：データ取り込み方針、特商法備考、利用規約（個人情報）、FAQ。
  * 認証不要で閲覧可能。
  */
+type LegalTabId = "tokusho" | "terms" | "privacy" | "faq";
+
+const TABS: Array<{ id: LegalTabId; label: string }> = [
+  { id: "tokusho", label: "特商法" },
+  { id: "terms", label: "利用規約" },
+  { id: "privacy", label: "個人情報" },
+  { id: "faq", label: "よくある質問" },
+];
+
 export function LegalInfoPage() {
+  const [activeTab, setActiveTab] = useState<LegalTabId>("tokusho");
+
+  const tabBtnStyle = (active: boolean) =>
+    ({
+      border: "1px solid var(--border)",
+      background: active ? "var(--accent-dim)" : "var(--bg-card)",
+      color: "var(--text)",
+      borderRadius: 8,
+      cursor: "pointer",
+      font: "inherit",
+      fontWeight: active ? 700 : 600,
+      padding: "0.42rem 0.72rem",
+      minHeight: 44,
+      lineHeight: 1.2,
+    }) as const;
+
   return (
     <div className={styles.wrap}>
       <header className={styles.header}>
@@ -21,19 +47,59 @@ export function LegalInfoPage() {
 
       <nav
         className={styles.settingsPanel}
-        style={{ marginBottom: "1rem", padding: "0.75rem 1rem", lineHeight: 1.6 }}
-        aria-label="本ページ内リンク"
+        style={{ marginBottom: "1rem", padding: "0.75rem 1rem" }}
+        aria-label="法的情報タブ"
       >
-        <a href="#tokusho" style={{ marginRight: "0.75rem" }}>特商法・備考</a>
-        <a href="#terms" style={{ marginRight: "0.75rem" }}>利用規約</a>
-        <a href="#privacy" style={{ marginRight: "0.75rem" }}>個人情報の取扱い</a>
-        <a href="#faq">よくある質問</a>
+        <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              style={tabBtnStyle(activeTab === tab.id)}
+              onClick={() => setActiveTab(tab.id)}
+              aria-selected={activeTab === tab.id}
+              role="tab"
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </nav>
 
+      {activeTab === "tokusho" ? (
       <section id="tokusho" className={styles.settingsPanel} style={{ marginBottom: "1rem" }}>
         <h2 className={styles.title} style={{ marginTop: 0, fontSize: "clamp(1.15rem, 3.5vw, 1.4rem)" }}>
           特定商取引法に基づく表記
         </h2>
+        <div style={{ overflowX: "auto", margin: "0.55rem 0 0.85rem" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+            <tbody>
+              {[
+                ["販売価格", "各プランのページに表示"],
+                ["代金の支払時期", "クレジットカード決済時、または毎月更新時"],
+                ["商品の引渡時期", "決済完了後、即時利用可能"],
+                ["返品・キャンセル", "デジタルコンテンツの特性上、返品・返金は不可。解約はいつでも設定画面から可能"],
+                ["販売事業者名・連絡先", "【ダミー】株式会社○○○○ / 〒000-0000 東京都○○区○○ 0-0-0 / support@example.com"],
+              ].map(([k, v]) => (
+                <tr key={k} style={{ borderTop: "1px solid var(--border)" }}>
+                  <th
+                    style={{
+                      textAlign: "left",
+                      verticalAlign: "top",
+                      whiteSpace: "nowrap",
+                      width: "13rem",
+                      padding: "0.52rem 0.65rem",
+                      background: "var(--bg-card)",
+                    }}
+                  >
+                    {k}
+                  </th>
+                  <td style={{ padding: "0.52rem 0.65rem", lineHeight: 1.6 }}>{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <p className={styles.sub} style={{ margin: "0.4rem 0", lineHeight: 1.6 }}>
           事業者名、所在地、連絡先、販売価格、支払条件、解約条件等、法令及び所管庁のガイドラインに従い必要事項を示します。具体的な
           記載箇所は、本アプリ内の料金・お支払い、または本サービスのお問い合わせ先に従います。以下の「備考」は
@@ -62,7 +128,9 @@ export function LegalInfoPage() {
           </li>
         </ul>
       </section>
+      ) : null}
 
+      {activeTab === "terms" ? (
       <section id="terms" className={styles.settingsPanel} style={{ marginBottom: "1rem" }}>
         <h2 className={styles.title} style={{ marginTop: 0, fontSize: "clamp(1.15rem, 3.5vw, 1.4rem)" }}>利用規約（抜粋）</h2>
         <p className={styles.sub} style={{ lineHeight: 1.65, margin: "0.35rem 0" }}>
@@ -98,7 +166,29 @@ export function LegalInfoPage() {
           当社に送信（アップロード、貼り付け等）した<strong>CSV ファイル等</strong>に含まれる情報に限るものとします。
         </p>
       </section>
+      ) : null}
 
+      {activeTab === "privacy" ? (
+      <section id="privacy" className={styles.settingsPanel} style={{ marginBottom: "1.5rem" }}>
+        <h2 className={styles.title} style={{ marginTop: 0, fontSize: "clamp(1.15rem, 3.5vw, 1.4rem)" }}>
+          個人情報の取扱い（抜粋）
+        </h2>
+        <p className={styles.sub} style={{ lineHeight: 1.75, margin: "0.3rem 0" }}>
+          <strong>第7条（個人情報等の取扱い）【抜粋】</strong>
+        </p>
+        <p className={styles.sub} style={{ lineHeight: 1.75, margin: "0.35rem 0" }}>
+          当社は、氏名、メールアドレス、本サービス上で登録・入力された家計データ、および利用者の操作により
+          当社のサーバへ送信されたファイルの内容等を、本サービス提供、本人確認、不具合対応、
+          法令の遵守、および利用者案内（メール等）の目的の範囲で取り扱います。
+        </p>
+        <p className={styles.sub} style={{ lineHeight: 1.75, margin: "0.35rem 0" }}>
+          なお、当社は金融機関等に利用者代理でログインして明細を自動取得する仕組み（API連携・画面連携・スクレイピング等）を
+          <strong>提供しません</strong>。取り扱う取引履歴等は、利用者が自ら送信した CSV 等に含まれる情報に限ります。
+        </p>
+      </section>
+      ) : null}
+
+      {activeTab === "faq" ? (
       <section id="faq" className={styles.settingsPanel} style={{ marginBottom: "1.5rem" }}>
         <h2 className={styles.title} style={{ marginTop: 0, fontSize: "clamp(1.15rem, 3.5vw, 1.4rem)" }}>よくある質問</h2>
         <dl className={styles.reclassifyHint} style={{ lineHeight: 1.75, margin: 0 }}>
@@ -117,6 +207,7 @@ export function LegalInfoPage() {
           </dd>
         </dl>
       </section>
+      ) : null}
     </div>
   );
 }
