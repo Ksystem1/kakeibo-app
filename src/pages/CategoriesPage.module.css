@@ -43,9 +43,29 @@
   font-size: 0.92rem;
 }
 
-/** 横スクロールで1行表示を維持 */
+/** 横スクロールで1行表示を維持（PC・タブレット） */
 .tableWide {
   min-width: 820px;
+}
+
+/** モバイル: 1行1カード（縦方向に分割）、横820px不要 */
+.tableMobile {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.tableMobile thead {
+  display: none;
+}
+
+/** 外側の横スクロールを外し、行カード幅＝表示幅 */
+.tableScrollMobile {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: auto;
 }
 
 /** カテゴリ名・収入名: セル全幅に伸びすぎないよう上限 */
@@ -58,6 +78,143 @@
   width: 100%;
   max-width: 12rem;
   box-sizing: border-box;
+}
+
+/** モバイル専用: 名前欄をセル全幅 */
+.categoryNameInputMobile {
+  max-width: none;
+  min-width: 0;
+  width: 100%;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+/* ---- カテゴリ行（モバイル1カード）---- */
+.categoryRowMobileCell {
+  padding: 0.55rem 0.1rem 0.65rem;
+  vertical-align: top;
+  border: none;
+}
+
+.categoryRowMobile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.categoryRowMobileNameRow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.categoryRowMobileFieldLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted, #94a3b8);
+  letter-spacing: 0.02em;
+}
+
+.categoryRowMobileFieldLabelSub {
+  font-size: 0.7rem;
+  color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.categoryRowMobileMetaRow {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+  min-width: 0;
+}
+
+.categoryInputKindMobile {
+  min-width: 4.1rem;
+  max-width: 5.4rem;
+  width: 5.25rem;
+  flex: 0 0 auto;
+}
+
+.categoryRowMobileColorWrap,
+.categoryRowMobileOrderWrap {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+}
+
+.categoryRowMobileColorInput {
+  width: 2.4rem;
+  height: 2.1rem;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: var(--input-bg, #fff);
+}
+
+.categoryInputOrderMobile {
+  width: 3.4rem;
+  min-width: 2.8rem;
+  max-width: 3.8rem;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+}
+
+.categoryRowMobileMedical {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.4rem 0.15rem 0;
+  margin: 0 -0.1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  min-width: 0;
+}
+
+.categoryMedicalRowTight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  min-width: 0;
+}
+
+.categoryMedicalTypeMobile {
+  flex: 1 1 6.5rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.categoryRowMobilePatientRow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.2rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.categoryMedicalPatientMobile {
+  max-width: none;
+  min-width: 0;
+  width: 100%;
+  flex: none;
+  font-size: 0.95rem;
+}
+
+.categoryRowMobileActions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+  align-items: center;
+  padding-top: 0.15rem;
 }
 
 /** 新規カテゴリ名（一覧の名前欄と同程度の幅） */
@@ -208,7 +365,19 @@
   margin-left: auto;
 }
 
-@media (max-width: 520px) {
+/* 768px: 新規「名前」・対象者名は画面幅に合わせて可視性優先 */
+@media (max-width: 768px) {
+  .categoryAddNameInput {
+    flex: 1 1 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .addMedicalRow input.addMedicalPatient {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
   .addMedicalSubmit {
     width: 100%;
     margin-left: 0;

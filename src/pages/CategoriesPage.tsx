@@ -259,6 +259,7 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
           <CategoryTable
             title="支出"
             showMedicalColumn
+            isMobile={mobile}
             rows={expenseRows}
             savingId={savingId}
             allowReorder={!mobile}
@@ -270,6 +271,7 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
           <CategoryTable
             title="収入"
             showMedicalColumn={false}
+            isMobile={mobile}
             rows={incomeRows}
             savingId={savingId}
             allowReorder={!mobile}
@@ -307,6 +309,7 @@ const DND_TYPE = "application/x-kakeibo-category-id";
 function CategoryTable({
   title,
   showMedicalColumn = true,
+  isMobile = false,
   rows,
   savingId,
   allowReorder,
@@ -318,6 +321,8 @@ function CategoryTable({
   title: string;
   /** 収入カテゴリでは医療費控除の既定列は出さない */
   showMedicalColumn?: boolean;
+  /** 狭い幅では1行1カード（縦2段）で名前欄を広く */
+  isMobile?: boolean;
   rows: CategoryItem[];
   savingId: number | null;
   allowReorder: boolean;
@@ -434,8 +439,15 @@ function CategoryTable({
       {rows.length === 0 ? (
         <p className={styles.sub}>カテゴリがありません。</p>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table className={`${catStyles.table} ${catStyles.tableWide}`}>
+        <div
+          className={isMobile ? catStyles.tableScrollMobile : undefined}
+          style={isMobile ? { overflowX: "visible" } : { overflowX: "auto" }}
+        >
+          <table
+            className={`${catStyles.table} ${
+              isMobile ? catStyles.tableMobile : catStyles.tableWide
+            }`}
+          >
             <thead>
               <tr>
                 {allowReorder ? (
@@ -467,6 +479,16 @@ function CategoryTable({
                 <CategoryRow
                   key={c.id}
                   c={c}
+                  isMobile={isMobile}
+                  colSpanMobile={
+                    (allowReorder ? 1 : 0) +
+                    1 +
+                    1 +
+                    1 +
+                    1 +
+                    (showMedicalColumn ? 1 : 0) +
+                    1
+                  }
                   showMedicalColumn={showMedicalColumn}
                   disabled={reordering || savingId === c.id}
                   allowReorder={allowReorder}
@@ -490,6 +512,8 @@ function CategoryTable({
 
 function CategoryRow({
   c,
+  isMobile = false,
+  colSpanMobile = 6,
   showMedicalColumn = true,
   disabled,
   allowReorder,
@@ -503,6 +527,8 @@ function CategoryRow({
   onRemove,
 }: {
   c: CategoryItem;
+  isMobile?: boolean;
+  colSpanMobile?: number;
   showMedicalColumn?: boolean;
   disabled: boolean;
   allowReorder: boolean;
@@ -549,6 +575,146 @@ function CategoryRow({
   ]);
 
   const trClass = dragOver ? catStyles.dragOver : undefined;
+
+  const savePayload: CategoryDraft = {
+    name,
+    kind,
+    color_hex: colorHex,
+    sort_order: sortOrder,
+    is_medical_default: isMedicalDefault,
+    default_medical_type: defaultMedicalType,
+    default_patient_name: defaultPatientName,
+  };
+
+  if (isMobile) {
+    return (
+      <tr
+        className={trClass}
+        style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}
+      >
+        <td
+          colSpan={colSpanMobile}
+          className={catStyles.categoryRowMobileCell}
+        >
+          <div className={catStyles.categoryRowMobile}>
+            <div className={catStyles.categoryRowMobileNameRow}>
+              <span className={catStyles.categoryRowMobileFieldLabel}>名前</span>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={100}
+                className={`${styles.monthInput} ${catStyles.categoryNameInput} ${catStyles.categoryNameInputMobile}`}
+                disabled={disabled}
+              />
+            </div>
+            <div
+              className={catStyles.categoryRowMobileMetaRow}
+              aria-label="種別・色・並び順"
+            >
+              <select
+                value={kind}
+                onChange={(e) =>
+                  setKind(e.target.value === "income" ? "income" : "expense")
+                }
+                className={`${styles.monthInput} ${catStyles.categoryInputKind} ${catStyles.categoryInputKindMobile}`}
+                disabled={disabled}
+                aria-label="種別"
+              >
+                <option value="expense">支出</option>
+                <option value="income">収入</option>
+              </select>
+              <div className={catStyles.categoryRowMobileColorWrap}>
+                <span className={catStyles.categoryRowMobileFieldLabelSub}>色</span>
+                <input
+                  type="color"
+                  value={colorHex}
+                  onChange={(e) => setColorHex(e.target.value)}
+                  disabled={disabled}
+                  className={catStyles.categoryRowMobileColorInput}
+                  title="色"
+                />
+              </div>
+              <div className={catStyles.categoryRowMobileOrderWrap}>
+                <span className={catStyles.categoryRowMobileFieldLabelSub}>並び</span>
+                <input
+                  type="number"
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value)}
+                  className={`${styles.monthInput} ${catStyles.categoryInputOrder} ${catStyles.categoryInputOrderMobile}`}
+                  disabled={disabled}
+                  aria-label="並び順"
+                />
+              </div>
+            </div>
+            {showMedicalColumn ? (
+              <div className={catStyles.categoryRowMobileMedical}>
+                <div className={catStyles.categoryMedicalRowTight}>
+                  <label className={catStyles.categoryMedicalLabel}>
+                    <input
+                      type="checkbox"
+                      checked={isMedicalDefault}
+                      onChange={(e) => setIsMedicalDefault(e.target.checked)}
+                      disabled={disabled || kind !== "expense"}
+                    />
+                    医療控除
+                  </label>
+                  <select
+                    className={`${styles.monthInput} ${catStyles.categoryMedicalType} ${catStyles.categoryMedicalTypeMobile}`}
+                    value={defaultMedicalType}
+                    onChange={(e) =>
+                      setDefaultMedicalType((e.target.value as MedicalType | "") ?? "")
+                    }
+                    disabled={disabled || !isMedicalDefault || kind !== "expense"}
+                    aria-label="医療費3区分"
+                  >
+                    <option value="">3区分</option>
+                    <option value="treatment">診療・治療</option>
+                    <option value="medicine">医薬品</option>
+                    <option value="other">その他</option>
+                  </select>
+                </div>
+                <div className={catStyles.categoryRowMobilePatientRow}>
+                  <span className={catStyles.categoryRowMobileFieldLabelSub}>
+                    対象者名
+                  </span>
+                  <input
+                    type="text"
+                    value={defaultPatientName}
+                    onChange={(e) => setDefaultPatientName(e.target.value)}
+                    maxLength={120}
+                    placeholder="対象者名"
+                    className={`${styles.monthInput} ${catStyles.categoryMedicalPatient} ${catStyles.categoryMedicalPatientMobile}`}
+                    disabled={disabled || !isMedicalDefault || kind !== "expense"}
+                    aria-label="医療費の対象者名"
+                  />
+                </div>
+              </div>
+            ) : null}
+            <div className={catStyles.categoryRowMobileActions}>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnPrimary}`}
+                disabled={disabled}
+                onClick={() => void onSave(c, savePayload)}
+              >
+                保存
+              </button>
+              <button
+                type="button"
+                className={styles.btn}
+                disabled={disabled}
+                onClick={() => onRemove(c)}
+                style={{ color: "#fecaca" }}
+              >
+                削除
+              </button>
+            </div>
+          </div>
+        </td>
+      </tr>
+    );
+  }
 
   return (
     <tr
@@ -657,17 +823,7 @@ function CategoryRow({
           type="button"
           className={`${styles.btn} ${styles.btnPrimary}`}
           disabled={disabled}
-          onClick={() =>
-            void onSave(c, {
-              name,
-              kind,
-              color_hex: colorHex,
-              sort_order: sortOrder,
-              is_medical_default: isMedicalDefault,
-              default_medical_type: defaultMedicalType,
-              default_patient_name: defaultPatientName,
-            })
-          }
+          onClick={() => void onSave(c, savePayload)}
         >
           保存
         </button>{" "}
