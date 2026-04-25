@@ -1,92 +1,148 @@
+import { FileWarning, Receipt, Sparkles } from "lucide-react";
 import type { DemoSectionClassProps } from "./DemoFeatureSections";
 
+const SCRIBBLES = [
+  { t: "298？？", x: "8%", y: "12%", r: -8 },
+  { t: "未入力", x: "68%", y: "8%", r: 6 },
+  { t: "いくら？", x: "75%", y: "38%", r: 14 },
+  { t: "…", x: "18%", y: "58%", r: 3 },
+  { t: "医療費？", x: "42%", y: "22%", r: -5 },
+  { t: "Pay", x: "12%", y: "78%", r: 10 },
+] as const;
+
+const RECEIPT_STYLES = [
+  { x: "72%", y: "12%", r: 12, s: 1 },
+  { x: "82%", y: "28%", r: -8, s: 0.85 },
+  { x: "88%", y: "48%", r: 18, s: 0.9 },
+  { x: "78%", y: "64%", r: -4, s: 0.95 },
+  { x: "14%", y: "26%", r: -14, s: 0.75 },
+] as const;
+
 /**
- * ステップ0（Before）— 家計の「手入力の限界」を想起させるビジュアル。DB 非接触。
+ * ステップ0（Before）— 明るいトーンで「情報の煩雑さ・手入力の限界」を表現。DB 非接触。
  */
 export function DemoBeforeChaosSection({ className }: DemoSectionClassProps) {
   return (
     <section
       className={[
         "relative isolate min-h-[min(58vh,420px)] overflow-hidden rounded-2xl",
-        "border border-slate-700/90 bg-slate-950 p-4 shadow-2xl shadow-black/50 md:min-h-[min(50vh,480px)] md:p-6",
-        "ring-1 ring-amber-950/20",
+        "border border-slate-200/95 bg-gradient-to-b from-white via-slate-50/95 to-slate-100/90 p-4 shadow-md md:min-h-[min(50vh,480px)] md:p-6",
+        "ring-1 ring-slate-200/60",
         className ?? "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
+      {/* うっすら見える「きれいな家計UI」のゴースト（本番UIの雰囲気のみ） */}
       <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,rgba(30,27,20,0.4),transparent_55%)]"
+        className="pointer-events-none absolute inset-2 grid grid-cols-2 gap-2 opacity-[0.22] sm:inset-3"
         aria-hidden
-      />
+      >
+        <div className="rounded-xl border border-slate-200/60 bg-white/60 p-2">
+          <div className="mx-auto size-20 rounded-full border-8 border-slate-200/80 border-t-mint-500/30" />
+          <div className="mt-2 h-1.5 w-3/4 rounded bg-slate-200/80" />
+        </div>
+        <div className="space-y-1.5 rounded-xl border border-slate-200/60 bg-white/60 p-2">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex justify-between gap-1">
+              <div className="h-1.5 flex-1 rounded bg-slate-200/70" />
+              <div className="h-1.5 w-10 rounded bg-slate-200/50" />
+            </div>
+          ))}
+        </div>
+        <div className="col-span-2 space-y-1.5 rounded-xl border border-slate-200/60 bg-white/50 p-2">
+          <div className="h-2 w-1/3 rounded bg-slate-200/60" />
+          <div className="h-1.5 w-full rounded bg-slate-200/50" />
+          <div className="h-1.5 w-4/5 rounded bg-slate-200/50" />
+        </div>
+      </div>
+
       <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_80%_100%,rgba(20,20,30,0.5),transparent_50%)]"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-rose-50/25 via-transparent to-amber-50/20"
         aria-hidden
       />
 
-      {/* 手書き風のぐちゃぐちゃ帳面 */}
-      <div className="absolute left-4 top-1/2 w-[min(45%,200px)] -translate-y-1/2 -rotate-6 sm:left-6">
-        <div
-          className="rounded border border-amber-900/60 bg-[#2a2520] p-3 shadow-lg"
-          style={{ boxShadow: "4px 6px 0 rgba(0,0,0,0.4)" }}
+      {/* 散らばった「文字の乱れ」 */}
+      {SCRIBBLES.map((s) => (
+        <span
+          key={s.t}
+          className="pointer-events-none absolute font-mono text-[10px] font-bold text-slate-500/70 sm:text-xs"
+          style={{ left: s.x, top: s.y, transform: `rotate(${s.r}deg)` }}
         >
-          <p className="font-mono text-[9px] text-amber-200/30 line-through decoration-red-500/60">
-            1/5 雑費
-          </p>
-          <ul className="mt-1.5 space-y-1">
-            {[0, 1, 2, 3, 4, 5].map((i) => (
+          {s.t}
+        </span>
+      ))}
+
+      {/* レシート風アイコン（重なり＝煩雑さ） */}
+      {RECEIPT_STYLES.map((r, i) => (
+        <div
+          key={i}
+          className="pointer-events-none absolute text-slate-400/90"
+          style={{
+            left: r.x,
+            top: r.y,
+            transform: `translate(-50%, -50%) rotate(${r.r}deg) scale(${r.s})`,
+          }}
+          aria-hidden
+        >
+          <Receipt className="size-9 drop-shadow sm:size-10" strokeWidth={1.25} />
+        </div>
+      ))}
+
+      {/* 手書きメモ風（明るい紙） */}
+      <div className="absolute left-3 top-1/2 w-[min(44%,180px)] -translate-y-1/2 -rotate-3 sm:left-5 sm:w-[200px]">
+        <div className="rounded-lg border border-amber-200/80 bg-[#fcfaf6] p-2.5 shadow-sm ring-1 ring-amber-100/80">
+          <p className="font-mono text-[9px] text-slate-500 line-through decoration-rose-300/80">1/5 雑費</p>
+          <ul className="mt-1.5 space-y-0.5">
+            {[0, 1, 2, 3, 4, 5, 6].map((i) => (
               <li
                 key={i}
-                className="h-0.5 w-full origin-left bg-amber-200/20"
-                style={{ transform: `translateX(${(i % 3) * 4 - 2}px) rotate(${(i % 5) * 0.8}deg) scaleX(${0.85 + (i % 3) * 0.05})` }}
+                className="h-px w-full origin-left bg-slate-300/50"
+                style={{ transform: `translateX(${(i % 3) * 3 - 1}px) rotate(${(i % 5) * 0.5}deg) scaleX(${0.8 + (i % 2) * 0.1})` }}
               />
             ))}
           </ul>
-          <p className="mt-2 text-[8px] text-red-300/50">?円 いくつ？</p>
+          <p className="mt-1.5 font-mono text-[8px] text-rose-500/80">?円 合わない…</p>
         </div>
-        <p className="mt-1 text-center text-[8px] text-slate-500">修正だらけの手書き帳面</p>
       </div>
 
-      {/* レシートの山＋小さなシルエット感 */}
-      <div className="absolute bottom-0 right-0 w-[min(60%,320px)] translate-y-1">
-        <div className="relative h-44 sm:h-52">
-          {[
-            { r: 8, o: 0, y: 0, w: 85 },
-            { r: -6, o: 0.1, y: 8, w: 80 },
-            { r: 14, o: 0.2, y: 16, w: 90 },
-            { r: -4, o: 0.3, y: 28, w: 78 },
-            { r: 10, o: 0.45, y: 36, w: 88 },
-            { r: -2, o: 0.55, y: 50, w: 92 },
-          ].map((b, i) => (
-            <div
-              key={i}
-              className="absolute right-0 top-0 rounded-t border border-slate-600/80 bg-gradient-to-b from-slate-700/90 to-slate-900/90 shadow-md"
-              style={{
-                width: `${b.w}%`,
-                height: 34 + (i % 2) * 4,
-                transform: `translate(${b.o * 40}px, ${-b.y}px) rotate(${b.r}deg)`,
-                zIndex: i,
-              }}
-            />
-          ))}
-          <div
-            className="absolute -bottom-1 right-[12%] size-7 rounded-full bg-slate-800/90 ring-2 ring-slate-600"
-            style={{ zIndex: 7 }}
-            aria-hidden
-          />
-        </div>
-        <p className="pr-2 text-right text-[8px] text-slate-500">積み上がるレシート</p>
+      {/* 吹き出し・感情 */}
+      <div
+        className="absolute right-[8%] top-[18%] z-[2] max-w-[140px] rounded-2xl border border-rose-200/90 bg-white/95 px-2.5 py-1.5 text-center text-[11px] font-bold text-slate-800 shadow-md sm:max-w-[180px] sm:px-3 sm:py-2 sm:text-xs"
+        style={{ boxShadow: "0 6px 16px rgba(0,0,0,0.08)" }}
+      >
+        もう限界…
+        <span className="ml-0.5" aria-hidden>
+          😫
+        </span>
+        <div className="absolute -left-1.5 bottom-2 h-0 w-0 border-y-6 border-r-8 border-y-transparent border-r-white" />
       </div>
 
-      <div className="relative z-[1] mx-auto max-w-sm pt-2 text-center">
-        <p className="text-4xl" aria-hidden>
-          😮‍💨
+      <div className="absolute left-[28%] top-[8%] z-[2] flex items-center gap-0.5 rounded-full border border-slate-200/90 bg-white/90 px-2 py-0.5 text-sm font-bold text-amber-600 shadow-sm sm:text-base">
+        <span aria-hidden>⁉️</span>
+        <span className="text-[10px] font-bold text-slate-600 sm:text-xs">合計 いくつ？</span>
+      </div>
+
+      <div className="absolute bottom-[22%] right-[6%] z-[2] flex size-9 items-center justify-center rounded-full border border-amber-200/80 bg-amber-50/95 text-base shadow sm:size-10">
+        <FileWarning className="size-4 text-amber-600/90" />
+      </div>
+
+      <div className="relative z-[1] flex flex-col items-center justify-center gap-1 pt-6 text-center sm:pt-8">
+        <p className="flex items-center justify-center gap-1 text-2xl font-bold tracking-tight text-slate-800 sm:text-3xl">
+          <span aria-hidden>？</span>
+          <span className="text-rose-500" aria-hidden>
+            !
+          </span>
+          <span aria-hidden>？</span>
         </p>
-        <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">Before</p>
-        <p className="mt-1 text-xs leading-relaxed text-slate-400">細かい支出が雪だるま。今夜も、また入力…</p>
+        <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-slate-400">Before</p>
+        <p className="mt-0.5 max-w-xs px-2 text-xs leading-relaxed text-slate-500">
+          入力、メモ、支払い、レシート…{' '}
+          <Sparkles className="inline size-3.5 -translate-y-0.5 text-amber-400" aria-hidden />
+        </p>
       </div>
 
-      <p className="sr-only">手書き家計の混乱とレシートの山のイメージ。実データは使用していません。</p>
+      <p className="sr-only">手書き帳面と散らばるレシートの煩雑さのイメージ。表示はモックです。</p>
     </section>
   );
 }

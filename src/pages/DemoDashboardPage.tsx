@@ -17,12 +17,19 @@ import {
 } from "../data/demoMockData";
 
 const STEP_COUNT = 5;
-const SLIDE_MS = 5000;
+/** ステップ0はフック（約1.2秒）。1以降は各3秒。合計約13.2秒（15秒以内）。 */
+const SLIDE_MS_BEFORE = 1200;
+const SLIDE_MS_AFTER = 3000;
+
+function slideDurationMs(s: number) {
+  return s === 0 ? SLIDE_MS_BEFORE : SLIDE_MS_AFTER;
+}
 
 const HIGHLIGHT =
   "ring-[3px] ring-mint-500/90 ring-offset-2 ring-offset-slate-50 shadow-[0_0_24px_rgba(16,185,129,0.2)] z-[1]";
 
-const HIGHLIGHT_DARK = "ring-[3px] ring-amber-500/70 ring-offset-2 ring-offset-slate-950 z-[1]";
+const HIGHLIGHT_BEFORE =
+  "ring-[3px] ring-rose-400/75 ring-offset-2 ring-offset-white shadow-[0_0_20px_rgba(244,63,94,0.12)] z-[1]";
 
 /** ステップ0は共感用の少し長めの文、その後はリール用ショートコピー */
 const CATCH = [
@@ -51,11 +58,12 @@ export function DemoDashboardPage() {
       return;
     }
 
+    const duration = slideDurationMs(step);
     let raf = 0;
     const t0 = performance.now();
 
     function frame(now: number) {
-      const t = (now - t0) / SLIDE_MS;
+      const t = (now - t0) / duration;
       if (t >= 1) {
         setSegmentProgress(1);
         setStep((s) => (s + 1) % STEP_COUNT);
@@ -90,19 +98,13 @@ export function DemoDashboardPage() {
   return (
     <main
       className={[
-        "relative min-h-screen w-full max-w-6xl overflow-x-hidden px-3 pb-48 pt-9 transition-[color,background-color,background-image] duration-700 ease-out sm:px-4 md:mx-auto md:px-6",
+        "relative min-h-screen w-full max-w-6xl overflow-x-hidden px-3 pb-48 pt-9 transition-[color,background-color,background-image] duration-500 ease-out sm:px-4 md:mx-auto md:px-6",
         isBefore
-          ? "bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-200"
+          ? "bg-gradient-to-b from-rose-50/50 via-white to-slate-100 text-slate-900"
           : "bg-gradient-to-b from-amber-50/30 via-white to-slate-100 text-slate-900",
       ].join(" ")}
     >
-      {/* ストーリー風プログレス＋一時停止（上端固定、ステップ0から） */}
-      <div
-        className={[
-          "pointer-events-none fixed left-0 right-0 top-0 z-50 flex items-center gap-2 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-4",
-          isBefore ? "text-slate-200" : "text-slate-500",
-        ].join(" ")}
-      >
+      <div className="pointer-events-none fixed left-0 right-0 top-0 z-50 flex items-center gap-2 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] text-slate-500 sm:px-4">
         <div className="pointer-events-auto flex min-w-0 flex-1 gap-1.5">
           {Array.from({ length: STEP_COUNT }, (_, i) => {
             let fill: number;
@@ -116,19 +118,11 @@ export function DemoDashboardPage() {
             return (
               <div
                 key={i}
-                className={[
-                  "h-0.5 min-w-0 flex-1 overflow-hidden rounded-full",
-                  isBefore ? "bg-white/15" : "bg-slate-900/15",
-                ].join(" ")}
+                className="h-0.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-900/12"
                 aria-hidden
               >
                 <div
-                  className={[
-                    "h-full rounded-full transition-[width] duration-100 ease-out",
-                    isBefore
-                      ? "bg-gradient-to-r from-amber-600/90 via-orange-500/90 to-amber-200/80"
-                      : "bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500",
-                  ].join(" ")}
+                  className="h-full min-w-0 rounded-full bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 will-change-[width]"
                   style={{ width: `${fill * 100}%` }}
                 />
               </div>
@@ -138,10 +132,7 @@ export function DemoDashboardPage() {
         <button
           type="button"
           onClick={() => setIsPaused((p) => !p)}
-          className={[
-            "pointer-events-auto flex size-7 shrink-0 items-center justify-center rounded-full opacity-60 transition hover:opacity-100",
-            isBefore ? "hover:bg-white/10" : "hover:bg-slate-900/5",
-          ].join(" ")}
+          className="pointer-events-auto flex size-7 shrink-0 items-center justify-center rounded-full opacity-60 transition hover:bg-slate-900/5 hover:opacity-100"
           title={isPaused ? "再開" : "一時停止"}
           aria-label={isPaused ? "自動再生を再開" : "自動再生を一時停止"}
         >
@@ -149,10 +140,7 @@ export function DemoDashboardPage() {
         </button>
         <Link
           to="/"
-          className={[
-            "pointer-events-auto flex size-7 shrink-0 items-center justify-center rounded-full opacity-70 transition hover:opacity-100",
-            isBefore ? "hover:bg-white/10" : "hover:bg-slate-900/5",
-          ].join(" ")}
+          className="pointer-events-auto flex size-7 shrink-0 items-center justify-center rounded-full opacity-70 transition hover:bg-slate-900/5 hover:opacity-100"
           title="トップ"
           aria-label="トップへ戻る"
         >
@@ -160,52 +148,50 @@ export function DemoDashboardPage() {
         </Link>
       </div>
 
-      <div className="min-h-[48vh] space-y-4">
-        {step === 0 && <DemoBeforeChaosSection className={stepHighlights.before ? HIGHLIGHT_DARK : undefined} />}
+      <div className="relative min-h-[48vh]">
+        <div key={step} className="space-y-4 animate-demo-step-in">
+          {step === 0 && <DemoBeforeChaosSection className={stepHighlights.before ? HIGHLIGHT_BEFORE : undefined} />}
 
-        {step === 1 && (
-          <div className="space-y-4 opacity-100 transition-opacity duration-500">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <DemoReceiptImportSection
-                className={stepHighlights.s1receipt ? HIGHLIGHT : undefined}
+          {step === 1 && (
+            <>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <DemoReceiptImportSection
+                  className={stepHighlights.s1receipt ? HIGHLIGHT : undefined}
+                />
+                <SpendingChart
+                  className={stepHighlights.s1chart ? HIGHLIGHT : undefined}
+                  data={spendingData}
+                  title="日々の支出"
+                  description="円で比率"
+                />
+              </div>
+              <RecentTransactions
+                className={stepHighlights.s1recent ? HIGHLIGHT : undefined}
+                items={recentItems}
               />
-              <SpendingChart
-                className={stepHighlights.s1chart ? HIGHLIGHT : undefined}
-                data={spendingData}
-                title="日々の支出"
-                description="円で比率"
-              />
-            </div>
-            <RecentTransactions
-              className={stepHighlights.s1recent ? HIGHLIGHT : undefined}
-              items={recentItems}
-            />
-          </div>
-        )}
+            </>
+          )}
 
-        {step === 2 && (
-          <div className="opacity-100 transition-opacity duration-500">
+          {step === 2 && (
             <DemoPayPayImportPreview className={stepHighlights.s2 ? HIGHLIGHT : undefined} />
-          </div>
-        )}
+          )}
 
-        {step === 3 && (
-          <div className="opacity-100 transition-opacity duration-500">
+          {step === 3 && (
             <DemoMedicalDeductionSection className={stepHighlights.s3 ? HIGHLIGHT : undefined} />
-          </div>
-        )}
+          )}
 
-        {step === 4 && (
-          <div className="space-y-4 opacity-100 transition-opacity duration-500">
-            <SpendingChart
-              className={stepHighlights.s4chart ? HIGHLIGHT : undefined}
-              data={spendingData}
-              title="毎月の家計"
-              description="固定費も一緒に"
-            />
-            <DemoResponsiveUiSection className={stepHighlights.s4ui ? HIGHLIGHT : undefined} />
-          </div>
-        )}
+          {step === 4 && (
+            <div className="space-y-4">
+              <SpendingChart
+                className={stepHighlights.s4chart ? HIGHLIGHT : undefined}
+                data={spendingData}
+                title="毎月の家計"
+                description="固定費も一緒に"
+              />
+              <DemoResponsiveUiSection className={stepHighlights.s4ui ? HIGHLIGHT : undefined} />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-stretch p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:items-center sm:px-4">
@@ -213,20 +199,25 @@ export function DemoDashboardPage() {
           className={[
             "pointer-events-auto w-full max-w-2xl rounded-2xl border px-4 py-3.5 shadow-2xl backdrop-blur-2xl sm:px-6",
             isBefore
-              ? "border-amber-900/40 bg-slate-950/90 shadow-black/50"
-              : "border-white/30 bg-slate-950/75 shadow-slate-950/40",
+              ? "border-rose-200/60 bg-white/90 text-slate-800 shadow-rose-900/5"
+              : "border-white/30 bg-slate-950/75 text-white shadow-slate-950/40",
           ].join(" ")}
         >
           <p
             className={[
-              "text-center font-bold leading-snug tracking-tight text-white [text-shadow:0_1px_18px_rgba(0,0,0,0.35)]",
-              isBefore ? "text-sm sm:text-base" : "text-lg sm:text-xl",
+              "text-center font-bold leading-snug tracking-tight [text-shadow:0_1px_18px_rgba(0,0,0,0.06)]",
+              isBefore ? "text-sm text-slate-800 sm:text-base" : "text-lg text-white [text-shadow:0_1px_18px_rgba(0,0,0,0.35)] sm:text-xl",
             ].join(" ")}
           >
             {copy}
           </p>
           {isPaused ? (
-            <p className="mt-1.5 text-center text-[10px] font-medium tracking-wide text-slate-400/90">
+            <p
+              className={[
+                "mt-1.5 text-center text-[10px] font-medium tracking-wide",
+                isBefore ? "text-slate-500" : "text-slate-400/90",
+              ].join(" ")}
+            >
               一時停止中
             </p>
           ) : null}
@@ -235,7 +226,12 @@ export function DemoDashboardPage() {
               type="button"
               onClick={() => onManualStep(Math.max(0, step - 1))}
               disabled={step === 0}
-              className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3.5 py-2 text-sm font-medium text-white/90 transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-35"
+              className={[
+                "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-35",
+                isBefore
+                  ? "border-slate-200/90 bg-slate-50/90 text-slate-700 hover:bg-slate-100/90"
+                  : "border-white/15 bg-white/10 text-white/90 hover:bg-white/20",
+              ].join(" ")}
             >
               <ArrowLeft className="size-4" />
               戻る
