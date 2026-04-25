@@ -986,6 +986,18 @@ export async function deleteTransaction(id: number) {
   return parse<{ ok: boolean }>(res);
 }
 
+export async function deleteTransactionsBulk(ids: number[]) {
+  const normalized = Array.from(
+    new Set((Array.isArray(ids) ? ids : []).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0)),
+  );
+  const res = await apiFetch(`${BASE}/transactions/delete-bulk`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({ ids: normalized }),
+  });
+  return parse<{ ok: boolean; deleted: number }>(res);
+}
+
 export async function getMonthSummary(
   yearMonth: string,
   options?: { scope?: "family" | "all"; ledgerView?: "kid_watch"; kidUserId?: number },

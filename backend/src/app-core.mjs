@@ -5036,6 +5036,25 @@ export async function handleApiRequest(req, options = {}) {
         return json(200, { ok: true }, hdrs, skipCors);
       }
 
+      case "POST /transactions/delete-bulk": {
+        const b = JSON.parse(req.body || "{}");
+        const txDelSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (txDelSubRej) return txDelSubRej;
+        const idsRaw = Array.isArray(b.ids) ? b.ids : [];
+        const ids = [...new Set(idsRaw.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))];
+        if (ids.length === 0) {
+          return json(400, { error: "ids が不正です" }, hdrs, skipCors);
+        }
+        const placeholders = ids.map(() => "?").join(",");
+        const [delRes] = await pool.query(
+          `DELETE t FROM transactions t
+           WHERE t.id IN (${placeholders}) AND (${txWhere})`,
+          [...ids, ...txP2],
+        );
+        const deleted = Number(delRes?.affectedRows ?? 0);
+        return json(200, { ok: true, deleted }, hdrs, skipCors);
+      }
+
       case "GET /summary/month": {
         const ym = q.year_month || q.yearMonth;
         const familyScopeOnly = String(q.scope ?? "").toLowerCase() === "family";

@@ -11,6 +11,7 @@ import {
 import {
   createTransaction,
   deleteTransaction,
+  deleteTransactionsBulk,
   ensureDefaultCategories,
   getApiBaseUrl,
   getCategories,
@@ -546,6 +547,8 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   const [modalEditSaving, setModalEditSaving] = useState(false);
   const [fixedCostExpanded, setFixedCostExpanded] = useState(false);
   const [transactionsExpanded, setTransactionsExpanded] = useState(false);
+  const [selectedTxIds, setSelectedTxIds] = useState<number[]>([]);
+  const [bulkDeleteMessage, setBulkDeleteMessage] = useState<string | null>(null);
   const mobileFixedCostInitialRows = 6;
   const txInitialRows = 5;
   const visibleFixedCostItems = useMemo(() => {
@@ -557,6 +560,16 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     if (transactionsExpanded) return transactions;
     return transactions.slice(0, txInitialRows);
   }, [transactionsExpanded, transactions]);
+  const visibleTransactionIds = useMemo(
+    () => visibleTransactions.map((t) => Number(t.id)).filter((id) => Number.isFinite(id) && id > 0),
+    [visibleTransactions],
+  );
+  const selectedVisibleCount = useMemo(
+    () => visibleTransactionIds.filter((id) => selectedTxIds.includes(id)).length,
+    [visibleTransactionIds, selectedTxIds],
+  );
+  const allVisibleSelected = visibleTransactionIds.length > 0 && selectedVisibleCount === visibleTransactionIds.length;
+  const selectedCount = selectedTxIds.length;
 
   const expenseCategoryModalTx = useMemo(() => {
     if (!expenseCategoryModal) return [];
@@ -597,6 +610,10 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   useEffect(() => {
     setTransactionsExpanded(false);
   }, [ym]);
+
+  useEffect(() => {
+    setSelectedTxIds((prev) => prev.filter((id) => transactions.some((t) => Number(t.id) === id)));
+  }, [transactions]);
 
   useEffect(() => {
     if (kidWatchOn) setModalLineEdit(null);
@@ -952,8 +969,42 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     setError(null);
     try {
       await deleteTransaction(id);
+      setSelectedTxIds((prev) => prev.filter((x) => x !== id));
+      setBulkDeleteMessage("1件削除しました。");
       if (edit?.id === id) cancelEdit();
       if (modalLineEdit?.id === id) setModalLineEdit(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function toggleSelectOne(id: number, checked: boolean) {
+    setSelectedTxIds((prev) => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id];
+      return prev.filter((x) => x !== id);
+    });
+  }
+
+  function toggleSelectAllVisible(checked: boolean) {
+    if (!checked) {
+      setSelectedTxIds((prev) => prev.filter((id) => !visibleTransactionIds.includes(id)));
+      return;
+    }
+    setSelectedTxIds((prev) => [...new Set([...prev, ...visibleTransactionIds])]);
+  }
+
+  async function removeSelectedTransactions() {
+    const ids = [...new Set(selectedTxIds)].filter((id) => Number.isFinite(id) && id > 0);
+    if (ids.length === 0) return;
+    if (!window.confirm(`選択した${ids.length}件の明細を削除しますか？`)) return;
+    setError(null);
+    try {
+      const res = await deleteTransactionsBulk(ids);
+      setSelectedTxIds([]);
+      setBulkDeleteMessage(`${res.deleted}件削除しました。`);
+      if (edit && ids.includes(edit.id)) cancelEdit();
+      if (modalLineEdit && ids.includes(modalLineEdit.id)) setModalLineEdit(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1121,6 +1172,9 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         <div className={styles.err} role="alert">
           {error}
         </div>
+      ) : null}
+      {bulkDeleteMessage ? (
+        <div style={{ color: "var(--accent)", fontWeight: 700, marginBottom: "0.75rem" }}>{bulkDeleteMessage}</div>
       ) : null}
 
       {!error && categories.length === 0 && !loading && base ? (
@@ -1488,6 +1542,18 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       <h2 className={styles.sectionTitle}>
         取引一覧（{from} 〜 {to} / {transactions.length}件）
       </h2>
+      {!kidWatchOn && selectedCount > 0 ? (
+        <div style={{ marginBottom: "0.6rem", display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnDanger}`}
+            onClick={() => void removeSelectedTransactions()}
+            disabled={!base}
+          >
+            選択した項目を削除（{selectedCount}件）
+          </button>
+        </div>
+      ) : null}
       <div className={styles.tableWrap}>
         <table
           className={`${styles.table} ${styles.txTable}`}
@@ -1495,6 +1561,16 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         >
           <thead>
             <tr>
+              <th style={{ width: "2.4rem" }}>
+                {!kidWatchOn ? (
+                  <input
+                    type="checkbox"
+                    aria-label="すべて選択"
+                    checked={allVisibleSelected}
+                    onChange={(e) => toggleSelectAllVisible(e.target.checked)}
+                  />
+                ) : null}
+              </th>
               <th className={styles.kindCol}>種別</th>
               <th className={styles.txColCategory}>カテゴリ</th>
               <th className={styles.txColDate}>日付</th>
@@ -1505,7 +1581,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           <tbody>
             {transactions.length === 0 ? (
               <tr>
-                <td colSpan={5}>
+                <td colSpan={6}>
                   <div className={styles.empty}>
                     {kidWatchOn
                       ? "この月・この条件のお小遣い帳の取引はまだありません。"
@@ -1542,6 +1618,16 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                       key={t.id}
                       className={`${rowKind} ${styles.rowEditing} ${styles.mobileTxEditRow}`}
                     >
+                      <td>
+                        {!kidWatchOn ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedTxIds.includes(t.id)}
+                            onChange={(ev) => toggleSelectOne(t.id, ev.target.checked)}
+                            aria-label={`明細${t.id}を選択`}
+                          />
+                        ) : null}
+                      </td>
                       <td colSpan={5} className={styles.mobileTxEditCell}>
                         <div className={styles.mobileTxEdit}>
                           <div className={styles.mobileTxEditField}>
@@ -1703,6 +1789,16 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                 if (txMobileNarrow && !isEditing) {
                   return (
                     <tr key={t.id} className={`${rowKind} ${styles.mobileTxViewRow}`}>
+                      <td>
+                        {!kidWatchOn ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedTxIds.includes(t.id)}
+                            onChange={(ev) => toggleSelectOne(t.id, ev.target.checked)}
+                            aria-label={`明細${t.id}を選択`}
+                          />
+                        ) : null}
+                      </td>
                       <td colSpan={5} className={styles.mobileTxViewCell}>
                         <div className={styles.mobileTxView}>
                           <div className={styles.mobileTxViewRow1}>
@@ -1778,6 +1874,16 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                     key={t.id}
                     className={`${rowKind}${isEditing ? ` ${styles.rowEditing}` : ""}`}
                   >
+                    <td>
+                      {!kidWatchOn ? (
+                        <input
+                          type="checkbox"
+                          checked={selectedTxIds.includes(t.id)}
+                          onChange={(ev) => toggleSelectOne(t.id, ev.target.checked)}
+                          aria-label={`明細${t.id}を選択`}
+                        />
+                      ) : null}
+                    </td>
                     <td className={styles.kindCol}>
                       {isEditing && edit ? (
                         <select
