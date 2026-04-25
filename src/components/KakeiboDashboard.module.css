@@ -2168,7 +2168,8 @@
 .categoryDetailTable th:nth-child(2),
 .categoryDetailTable td:nth-child(2) {
   min-width: 0;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .categoryDetailTable th:nth-child(3),
@@ -2198,4 +2199,126 @@
 .categoryDetailTable .categoryDetailOpCell {
   white-space: nowrap;
   text-align: right;
+}
+
+/* カテゴリ明細モーダル（モバイル: 1件＝カード。日付+金額1行、内容2行目） */
+.categoryDetailMobileRoot {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0 0.05rem 0.25rem;
+  scrollbar-gutter: stable;
+  box-shadow:
+    inset 10px 0 8px -8px color-mix(in srgb, var(--text, #000) 10%, transparent),
+    inset -10px 0 8px -8px color-mix(in srgb, var(--text, #000) 10%, transparent);
+}
+
+.categoryDetailMobileList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.categoryDetailCard {
+  min-width: min(100%, 20rem);
+  max-width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem 0.6rem;
+  background: var(--bg-card);
+}
+
+.categoryDetailCardLine1 {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.categoryDetailCardDate {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+.categoryDetailCardAmount {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+  margin-left: auto;
+}
+
+.categoryDetailCardMemo {
+  min-width: 0;
+  margin: 0.4rem 0 0.45rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  white-space: normal;
+  color: var(--text);
+}
+
+.categoryDetailCardMemo .memoText {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.categoryDetailCardOps {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem 0.55rem;
+  min-width: 0;
+  padding-top: 0.15rem;
+  border-top: 1px solid var(--border);
+  margin: 0 -0.1rem;
+  padding-left: 0.1rem;
+  padding-right: 0.1rem;
+}
+
+.categoryDetailCardEditLine1 {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
+  min-width: 0;
+  margin-bottom: 0.45rem;
+}
+
+.categoryDetailCardDateInput {
+  flex: 1 1 9rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.categoryDetailCardAmountInput {
+  flex: 0 0 auto;
+  width: 7.5rem;
+  min-width: 5.5rem;
+  max-width: 9rem;
+}
+
+.categoryDetailCardEditForm {
+  min-width: 0;
+}
+
+.categoryDetailMobileEmpty {
+  padding: 0.7rem 0.25rem 0.85rem;
+  min-width: 0;
 }
