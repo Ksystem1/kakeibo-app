@@ -1,6 +1,7 @@
-import { ArrowLeft, ArrowRight, Link2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowLeft, ArrowRight, Home, Pause, Play } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { DemoBeforeChaosSection } from "../components/demo/DemoBeforeChaosSection";
 import { DemoPayPayImportPreview } from "../components/demo/DemoPayPayImportPreview";
 import {
   DemoMedicalDeductionSection,
@@ -15,144 +16,226 @@ import {
   demoRecentForHero,
 } from "../data/demoMockData";
 
-const STEP_COUNT = 4;
+const STEP_COUNT = 5;
+const SLIDE_MS = 5000;
 
 const HIGHLIGHT =
   "ring-[3px] ring-mint-500/90 ring-offset-2 ring-offset-slate-50 shadow-[0_0_24px_rgba(16,185,129,0.2)] z-[1]";
 
-const STORY = [
-  {
-    title: "ステップ1 / 4　無料機能",
-    body:
-      "スマホで撮るだけ。レシートをAIが解析し、家計簿を自動作成。日々の支出をグラフで可視化して、無駄遣いを一目で発見できます。",
-  },
-  {
-    title: "ステップ2 / 4　プレミアム新機能",
-    body:
-      "【新機能】PayPayの利用履歴を一括取込。コンビニやランチなどの細かい支払いも、入力の手間なく一瞬で家計簿に反映されます。",
-  },
-  {
-    title: "ステップ3 / 4　プレミアム機能",
-    body:
-      "家族全員の医療費を自動集計。国税庁フォーマットのCSV出力に対応し、面倒な確定申告の準備が数秒で完了します。",
-  },
-  {
-    title: "ステップ4 / 4　進化したUI",
-    body: "PCでもスマホでも。こだわりのUIで、どこにいてもサクサク管理。固定費の自動反映も、もう迷わせません。",
-  },
-] as const;
+const HIGHLIGHT_DARK = "ring-[3px] ring-amber-500/70 ring-offset-2 ring-offset-slate-950 z-[1]";
 
-function cn(...a: (string | false | undefined)[]) {
-  return a.filter(Boolean).join(" ");
-}
+/** ステップ0は共感用の少し長めの文、その後はリール用ショートコピー */
+const CATCH = [
+  "家計簿、毎日手入力で挫折していませんか？レシートの山、細かいPayPayの支払い、医療費の集計...もう限界！",
+  "家計簿、もう書かない。",
+  "PayPay履歴を自動で仕分け",
+  "確定申告の医療費、これ1つで完了",
+  "一生モノの家計管理を、スマホに。",
+] as const;
 
 export function DemoDashboardPage() {
   const [step, setStep] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [segmentProgress, setSegmentProgress] = useState(0);
+
+  const isBefore = step === 0;
 
   const [spendingData] = useState<DemoSpendingChartDatum[]>(() => [...demoBaseSpendingForChart]);
   const [recentItems] = useState(() => [...demoRecentForHero]);
 
-  const story = STORY[step] ?? STORY[0];
+  const copy = CATCH[step] ?? CATCH[0];
   const isLast = step === STEP_COUNT - 1;
+
+  useEffect(() => {
+    if (isPaused) {
+      return;
+    }
+
+    let raf = 0;
+    const t0 = performance.now();
+
+    function frame(now: number) {
+      const t = (now - t0) / SLIDE_MS;
+      if (t >= 1) {
+        setSegmentProgress(1);
+        setStep((s) => (s + 1) % STEP_COUNT);
+        return;
+      }
+      setSegmentProgress(t);
+      raf = requestAnimationFrame(frame);
+    }
+
+    setSegmentProgress(0);
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [step, isPaused]);
 
   const stepHighlights = useMemo(() => {
     return {
-      s0receipt: step === 0,
-      s0chart: step === 0,
-      s0recent: step === 0,
-      s1: step === 1,
+      before: step === 0,
+      s1receipt: step === 1,
+      s1chart: step === 1,
+      s1recent: step === 1,
       s2: step === 2,
-      s3chart: step === 3,
-      s3ui: step === 3,
+      s3: step === 3,
+      s4chart: step === 4,
+      s4ui: step === 4,
     };
   }, [step]);
 
-  return (
-    <main className="relative min-h-screen w-full max-w-6xl bg-gradient-to-b from-white to-slate-50 px-4 pb-52 pt-6 text-slate-900 md:mx-auto md:px-6">
-      <header className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold tracking-wide text-mint-600">Kakeibo 体験デモ</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">全{STEP_COUNT}ステップ紙芝居</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            フロントのモックデータのみ。DB には接続しません。下のカードで進めてください。
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              <Link2 className="size-3" />
-              トップへ戻る
-            </Link>
-            {Array.from({ length: STEP_COUNT }, (_, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => setStep(i)}
-                className={cn(
-                  "h-2 w-2 rounded-full transition",
-                  i === step ? "bg-mint-600 w-5" : "bg-slate-300 hover:bg-slate-400",
-                )}
-                aria-label={`ステップ${i + 1}へ`}
-              />
-            ))}
-          </div>
-        </div>
-      </header>
+  function onManualStep(next: number) {
+    setStep(next);
+  }
 
-      <div className="min-h-[42vh]">
-        {step === 0 && (
-          <div className="space-y-4">
+  return (
+    <main
+      className={[
+        "relative min-h-screen w-full max-w-6xl overflow-x-hidden px-3 pb-48 pt-9 transition-[color,background-color,background-image] duration-700 ease-out sm:px-4 md:mx-auto md:px-6",
+        isBefore
+          ? "bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-200"
+          : "bg-gradient-to-b from-amber-50/30 via-white to-slate-100 text-slate-900",
+      ].join(" ")}
+    >
+      {/* ストーリー風プログレス＋一時停止（上端固定、ステップ0から） */}
+      <div
+        className={[
+          "pointer-events-none fixed left-0 right-0 top-0 z-50 flex items-center gap-2 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-4",
+          isBefore ? "text-slate-200" : "text-slate-500",
+        ].join(" ")}
+      >
+        <div className="pointer-events-auto flex min-w-0 flex-1 gap-1.5">
+          {Array.from({ length: STEP_COUNT }, (_, i) => {
+            let fill: number;
+            if (i < step) {
+              fill = 1;
+            } else if (i > step) {
+              fill = 0;
+            } else {
+              fill = segmentProgress;
+            }
+            return (
+              <div
+                key={i}
+                className={[
+                  "h-0.5 min-w-0 flex-1 overflow-hidden rounded-full",
+                  isBefore ? "bg-white/15" : "bg-slate-900/15",
+                ].join(" ")}
+                aria-hidden
+              >
+                <div
+                  className={[
+                    "h-full rounded-full transition-[width] duration-100 ease-out",
+                    isBefore
+                      ? "bg-gradient-to-r from-amber-600/90 via-orange-500/90 to-amber-200/80"
+                      : "bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500",
+                  ].join(" ")}
+                  style={{ width: `${fill * 100}%` }}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsPaused((p) => !p)}
+          className={[
+            "pointer-events-auto flex size-7 shrink-0 items-center justify-center rounded-full opacity-60 transition hover:opacity-100",
+            isBefore ? "hover:bg-white/10" : "hover:bg-slate-900/5",
+          ].join(" ")}
+          title={isPaused ? "再開" : "一時停止"}
+          aria-label={isPaused ? "自動再生を再開" : "自動再生を一時停止"}
+        >
+          {isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+        </button>
+        <Link
+          to="/"
+          className={[
+            "pointer-events-auto flex size-7 shrink-0 items-center justify-center rounded-full opacity-70 transition hover:opacity-100",
+            isBefore ? "hover:bg-white/10" : "hover:bg-slate-900/5",
+          ].join(" ")}
+          title="トップ"
+          aria-label="トップへ戻る"
+        >
+          <Home className="size-3.5" />
+        </Link>
+      </div>
+
+      <div className="min-h-[48vh] space-y-4">
+        {step === 0 && <DemoBeforeChaosSection className={stepHighlights.before ? HIGHLIGHT_DARK : undefined} />}
+
+        {step === 1 && (
+          <div className="space-y-4 opacity-100 transition-opacity duration-500">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <DemoReceiptImportSection
-                className={stepHighlights.s0receipt ? HIGHLIGHT : undefined}
+                className={stepHighlights.s1receipt ? HIGHLIGHT : undefined}
               />
               <SpendingChart
-                className={stepHighlights.s0chart ? HIGHLIGHT : undefined}
+                className={stepHighlights.s1chart ? HIGHLIGHT : undefined}
                 data={spendingData}
-                title="日々の支出（グラフで可視化）"
-                description="レシート連携のイメージ。円で比率を把握（サンプル数値）"
+                title="日々の支出"
+                description="円で比率"
               />
             </div>
             <RecentTransactions
-              className={stepHighlights.s0recent ? HIGHLIGHT : undefined}
+              className={stepHighlights.s1recent ? HIGHLIGHT : undefined}
               items={recentItems}
             />
           </div>
         )}
 
-        {step === 1 && (
-          <DemoPayPayImportPreview className={stepHighlights.s1 ? HIGHLIGHT : undefined} />
-        )}
-
         {step === 2 && (
-          <DemoMedicalDeductionSection className={stepHighlights.s2 ? HIGHLIGHT : undefined} />
+          <div className="opacity-100 transition-opacity duration-500">
+            <DemoPayPayImportPreview className={stepHighlights.s2 ? HIGHLIGHT : undefined} />
+          </div>
         )}
 
         {step === 3 && (
-          <div className="space-y-4">
+          <div className="opacity-100 transition-opacity duration-500">
+            <DemoMedicalDeductionSection className={stepHighlights.s3 ? HIGHLIGHT : undefined} />
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="space-y-4 opacity-100 transition-opacity duration-500">
             <SpendingChart
-              className={stepHighlights.s3chart ? HIGHLIGHT : undefined}
+              className={stepHighlights.s4chart ? HIGHLIGHT : undefined}
               data={spendingData}
-              title="品目別・支出（固定費の自動反映）"
-              description="毎月の固定費も一緒に表示。大画面で俯瞰、スマホは下のカード"
+              title="毎月の家計"
+              description="固定費も一緒に"
             />
-            <DemoResponsiveUiSection className={stepHighlights.s3ui ? HIGHLIGHT : undefined} />
+            <DemoResponsiveUiSection className={stepHighlights.s4ui ? HIGHLIGHT : undefined} />
           </div>
         )}
       </div>
 
-      {/* 説明カード（下部固定・透過） */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center p-3 md:p-4">
-        <div className="pointer-events-auto w-full max-w-2xl rounded-2xl border border-white/20 bg-slate-900/80 px-4 py-3.5 shadow-2xl shadow-black/30 backdrop-blur-md md:px-5">
-          <p className="text-[11px] font-bold tracking-wide text-mint-300/95">{story.title}</p>
-          <p className="mt-1.5 text-sm leading-relaxed text-slate-100">{story.body}</p>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-stretch p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:items-center sm:px-4">
+        <div
+          className={[
+            "pointer-events-auto w-full max-w-2xl rounded-2xl border px-4 py-3.5 shadow-2xl backdrop-blur-2xl sm:px-6",
+            isBefore
+              ? "border-amber-900/40 bg-slate-950/90 shadow-black/50"
+              : "border-white/30 bg-slate-950/75 shadow-slate-950/40",
+          ].join(" ")}
+        >
+          <p
+            className={[
+              "text-center font-bold leading-snug tracking-tight text-white [text-shadow:0_1px_18px_rgba(0,0,0,0.35)]",
+              isBefore ? "text-sm sm:text-base" : "text-lg sm:text-xl",
+            ].join(" ")}
+          >
+            {copy}
+          </p>
+          {isPaused ? (
+            <p className="mt-1.5 text-center text-[10px] font-medium tracking-wide text-slate-400/90">
+              一時停止中
+            </p>
+          ) : null}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 sm:mt-3">
             <button
               type="button"
-              onClick={() => setStep((s) => Math.max(0, s - 1))}
+              onClick={() => onManualStep(Math.max(0, step - 1))}
               disabled={step === 0}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3.5 py-2 text-sm font-medium text-white/90 transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-35"
             >
               <ArrowLeft className="size-4" />
               戻る
@@ -161,8 +244,8 @@ export function DemoDashboardPage() {
               {!isLast ? (
                 <button
                   type="button"
-                  onClick={() => setStep((s) => Math.min(STEP_COUNT - 1, s + 1))}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-mint-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-mint-500/30 hover:bg-mint-600"
+                  onClick={() => onManualStep(Math.min(STEP_COUNT - 1, step + 1))}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-mint-500 to-emerald-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-mint-900/20 hover:from-mint-400 hover:to-emerald-400"
                 >
                   次へ
                   <ArrowRight className="size-4" />
@@ -170,7 +253,7 @@ export function DemoDashboardPage() {
               ) : (
                 <Link
                   to="/register"
-                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-5 py-2.5 text-sm font-bold text-slate-900 shadow-lg hover:from-amber-300 hover:to-orange-400"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-5 py-2.5 text-sm font-bold text-slate-900 shadow-lg hover:from-amber-300 hover:to-orange-400"
                 >
                   今すぐ無料で始める
                 </Link>
