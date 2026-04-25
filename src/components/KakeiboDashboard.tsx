@@ -2102,8 +2102,8 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                               />
                             </div>
                             <div className={styles.categoryDetailCardEditForm}>
-                              <div className={styles.memoCell} style={{ minWidth: 0 }}>
-                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                              <div className={styles.categoryDetailEditCell} style={{ minWidth: 0 }}>
+                                <div className={styles.categoryDetailEditKindRow}>
                                   <select
                                     className={styles.cellInput}
                                     value={m.kind}
@@ -2135,7 +2135,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                                   </select>
                                 </div>
                                 <input
-                                  className={styles.cellInput}
+                                  className={`${styles.cellInput} ${styles.categoryDetailEditMemoField}`}
                                   type="text"
                                   value={m.memo}
                                   onChange={(ev) => setModalLineEdit({ ...m, memo: ev.target.value })}
@@ -2143,16 +2143,8 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                                   aria-label="内容"
                                 />
                                 {m.kind === "expense" ? (
-                                  <div
-                                    style={{
-                                      display: "grid",
-                                      gap: 6,
-                                      marginTop: 6,
-                                    }}
-                                  >
-                                    <label
-                                      style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                                    >
+                                  <div className={styles.categoryDetailEditMedical}>
+                                    <label>
                                       <input
                                         type="checkbox"
                                         checked={m.is_medical_expense}
@@ -2166,10 +2158,10 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                                               : "",
                                           })
                                         }
-                                      />
+                                      />{" "}
                                       医療費控除の対象
                                     </label>
-                                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                    <div className={styles.categoryDetailEditMedicalRow}>
                                       <select
                                         className={styles.cellInput}
                                         value={m.medical_type}
@@ -2308,7 +2300,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                         <tr key={t.id} className={styles.rowEditing}>
                           <td>
                             <input
-                              className={styles.cellInput}
+                              className={`${styles.cellInput} ${styles.categoryDetailDateInput}`}
                               type="date"
                               value={m.transaction_date}
                               onChange={(ev) =>
@@ -2318,8 +2310,8 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                             />
                           </td>
                           <td>
-                            <div className={styles.memoCell} style={{ minWidth: "10rem" }}>
-                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                            <div className={styles.categoryDetailEditCell}>
+                              <div className={styles.categoryDetailEditKindRow}>
                                 <select
                                   className={styles.cellInput}
                                   value={m.kind}
@@ -2351,7 +2343,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                                 </select>
                               </div>
                               <input
-                                className={styles.cellInput}
+                                className={`${styles.cellInput} ${styles.categoryDetailEditMemoField}`}
                                 type="text"
                                 value={m.memo}
                                 onChange={(ev) => setModalLineEdit({ ...m, memo: ev.target.value })}
@@ -2359,16 +2351,8 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                                 aria-label="内容"
                               />
                               {m.kind === "expense" ? (
-                                <div
-                                  style={{
-                                    display: "grid",
-                                    gap: 6,
-                                    marginTop: 6,
-                                  }}
-                                >
-                                  <label
-                                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                                  >
+                                <div className={styles.categoryDetailEditMedical}>
+                                  <label>
                                     <input
                                       type="checkbox"
                                       checked={m.is_medical_expense}
@@ -2382,10 +2366,10 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                                             : "",
                                         })
                                       }
-                                    />
+                                    />{" "}
                                     医療費控除の対象
                                   </label>
-                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                  <div className={styles.categoryDetailEditMedicalRow}>
                                     <select
                                       className={styles.cellInput}
                                       value={m.medical_type}
