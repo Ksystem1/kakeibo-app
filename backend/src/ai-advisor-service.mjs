@@ -641,10 +641,30 @@ function normalizeReceiptAiPayload(data) {
   } else {
     totalAmount = null;
   }
+  let taxAmount = data.taxAmount;
+  if (taxAmount != null) {
+    const t = Number(taxAmount);
+    taxAmount = Number.isFinite(t) && t >= 0 ? Math.round(t) : null;
+  } else {
+    taxAmount = null;
+  }
+  let lineItems = null;
+  if (Array.isArray(data.lineItems) && data.lineItems.length) {
+    const raw = data.lineItems
+      .map((x) => {
+        if (!x || typeof x !== "object") return null;
+        const name = String(x.name ?? x.itemName ?? "").trim() || "（品目）";
+        const a = Number(x.amount ?? x.unitPrice ?? x.price ?? NaN);
+        const amount = Number.isFinite(a) && a >= 0 ? Math.round(a) : null;
+        return { name: name.slice(0, 200), amount };
+      })
+      .filter((x) => x != null);
+    lineItems = raw.length ? raw.slice(0, 80) : null;
+  }
   let categoryName = data.categoryName != null ? String(data.categoryName).trim() : null;
   if (categoryName === "" || /^不明$/u.test(categoryName)) categoryName = null;
   const reason = data.reason != null ? String(data.reason).trim().slice(0, 500) : "";
-  return { vendorName, date, totalAmount, categoryName, reason };
+  return { vendorName, date, totalAmount, taxAmount, lineItems, categoryName, reason };
 }
 
 function normalizeHybridReceiptPayload(data) {
@@ -671,6 +691,8 @@ function normalizeHybridReceiptPayload(data) {
       : null;
   const totalRaw = Number(data.totalAmount ?? data.total ?? NaN);
   const totalAmount = Number.isFinite(totalRaw) && totalRaw > 0 ? Math.round(totalRaw) : null;
+  const taxRaw = Number(data.taxAmount ?? data.consumptionTax ?? data.tax ?? NaN);
+  const taxAmount = Number.isFinite(taxRaw) && taxRaw >= 0 ? Math.round(taxRaw) : null;
   const srcItems = Array.isArray(data.items) ? data.items : [];
   const items = srcItems
     .map((x) => {
@@ -688,7 +710,7 @@ function normalizeHybridReceiptPayload(data) {
   const mainCategory = allowedItemCategories.has(mainCategoryRaw)
     ? mainCategoryRaw
     : inferMainCategoryFromItems(items);
-  return { storeName, date, totalAmount, items, mainCategory };
+  return { storeName, date, totalAmount, taxAmount, items, mainCategory };
 }
 
 function inferMainCategoryFromItems(items) {
@@ -728,6 +750,8 @@ function buildReceiptAiPromptBundle(opts) {
   const categoryCandidates = opts.categoryCandidates;
   const historyHints = opts.historyHints;
   const heuristic = opts.heuristicCategorySuggestion ?? null;
+  const memoCategoryPairs = Array.isArray(opts.memoCategoryPairs) ? opts.memoCategoryPairs : [];
+  const rawOcrText = typeof opts.rawOcrText === "string" ? opts.rawOcrText : "";
 
   if (!subscriptionActive) {
     const systemPrompt = [
@@ -771,12 +795,15 @@ function buildReceiptAiPromptBundle(opts) {
     "あなたは家計簿アプリのレシート読取AI（サブスクリプション有効ユーザー向け）です。",
     "添付画像の文字・レイアウトを最優先し、補助JSONの Textract summary/items/ocrLines を積極的に参照してください。",
     "レシートに印字された電話番号・フリーダイヤル・店舗コードは、チェーン店の正式店舗名を推定する手がかりとして活用してよい（根拠は reason に簡潔に）。",
-    "利用履歴ヒント historyHints は同一家族の過去支出（メモ・金額・日付・カテゴリ）です。画像上の店名が不完全でも、履歴と突き合わせて最も妥当な vendorName を推定してよい。",
+    "利用履歴ヒント historyHints / memoCategoryPairs は同一家族の過去支出傾向です。画像上の店名が不完全でも、最も妥当な vendorName・categoryName を推定してよい。",
     "履歴と矛盾しない範囲で、定番チェーン店・屋号の正規化（略称→正式名称など）を行ってよい。",
-    `categoryName は次の登録済み名のいずれかに最も近い1つ: ${catList}`,
+    `categoryName は次の【登録済み支出カテゴリ名】のいずれか1つに最も近い表記: ${catList}。該当なければ null。`,
     "合計が印字不明でも、明細が読めれば足し合わせて totalAmount を埋めてよい。",
     "日付は YYYY-MM-DD。読めなければ null。",
-    "必ず1つのJSONオブジェクトのみを返す。前後に説明文やマークダウンを付けない。",
+    "厳密な1つのJSONのみを返す。前後に説明・マークダウン・コメントを付けない。",
+    "必須JSONキー（欠かさない）: vendorName, date, totalAmount, taxAmount, lineItems, categoryName, reason。",
+    "lineItems: [{ name: string, amount: number or null }] 主要品目（最大80件）。読めなければ [] または null。",
+    "taxAmount: 消費税等の合計額（円・整数）。印字がなければ null。",
   ].join("\n");
 
   const auxPayload = {
@@ -785,17 +812,23 @@ function buildReceiptAiPromptBundle(opts) {
     ocrLines,
     categoryCandidates,
     historyHints,
+    memoCategoryPairs,
+    rawOcrText: rawOcrText
+      ? rawOcrText.slice(0, 20000)
+      : "(ocrLines から補助JSON内で利用可能; ここは行連結版)",
     heuristicCategorySuggestion: heuristic,
   };
 
   const userTextPrompt = [
-    "添付レシート画像（ある場合）と、補助JSON全体（履歴・ヒューリスティック候補を含む）を踏まえて抽出・補正してください。",
-    "出力キー: vendorName, date, totalAmount, categoryName, reason",
-    "- vendorName: 店舗名（履歴ヒントで特定を強力にサポートしてよい）。困難なら null",
+    "添付レシート画像（ある場合）と、補助JSON（履歴・登録カテゴリ全件・OCR 生文字）を踏まえて抽出・補正してください。",
+    "出力は次のキーのみ: vendorName, date, totalAmount, taxAmount, lineItems, categoryName, reason",
+    "- vendorName: 店舗名。困難なら null",
     "- date: YYYY-MM-DD または null",
-    "- totalAmount: 税込合計（円）。明細からの合算可。だめなら null",
-    "- categoryName: 登録カテゴリ一覧に最も近い文字列、または null",
-    "- reason: 判断根拠を1文（日本語）。画像・履歴・補助JSONのどれを重視したか分かるように",
+    "- totalAmount: 税込合計（円・整数）",
+    "- taxAmount: 消費税等（円・整数）または null",
+    "- lineItems: 主要品目 { name, amount } の配列",
+    "- categoryName: 上記【登録済み】の1つ、または null",
+    "- reason: 判断根拠を1文",
     "",
     "補助JSON:",
     JSON.stringify(auxPayload),
@@ -824,6 +857,8 @@ export async function askBedrockReceiptAssistant(input = {}) {
     ? input.categoryCandidates.map((x) => String(x ?? "").trim()).filter(Boolean)
     : [];
   const historyHints = Array.isArray(input?.historyHints) ? input.historyHints : [];
+  const memoCategoryPairs = Array.isArray(input?.memoCategoryPairs) ? input.memoCategoryPairs : [];
+  const rawOcrText = Array.isArray(ocrLines) ? ocrLines.join("\n") : "";
   const heuristicCategorySuggestion =
     input?.heuristicCategorySuggestion &&
     typeof input.heuristicCategorySuggestion === "object"
@@ -841,6 +876,8 @@ export async function askBedrockReceiptAssistant(input = {}) {
     ocrLines,
     categoryCandidates,
     historyHints,
+    memoCategoryPairs,
+    rawOcrText,
     heuristicCategorySuggestion,
   });
 
@@ -853,7 +890,7 @@ export async function askBedrockReceiptAssistant(input = {}) {
       textPrompt: userTextPrompt,
       imageBase64,
       mediaType: imageMediaType,
-      maxTokens: 900,
+      maxTokens: 1200,
       temperature: 0.15,
     });
     if (vis.ok && vis.reply) {
@@ -893,24 +930,32 @@ export async function askBedrockReceiptAssistant(input = {}) {
  */
 export async function askBedrockHybridReceiptFromTextract(input = {}) {
   const textract = input?.textract && typeof input.textract === "object" ? input.textract : {};
+  const categoryCandidates = Array.isArray(input?.categoryCandidates)
+    ? input.categoryCandidates.map((x) => String(x ?? "").trim()).filter(Boolean)
+    : [];
+  const memoCategoryPairs = Array.isArray(input?.memoCategoryPairs) ? input.memoCategoryPairs : [];
+  const catLine =
+    categoryCandidates.length > 0
+      ? `登録済み支出カテゴリ名（品目分類の参考）: ${categoryCandidates.join("、")}。item.category は定義[食費、…、その他]のいずれか1つ。`
+      : "item.category は [食費、日用品、衣類、娯楽、医療、教育、交通費、その他] から1つ。";
   const systemPrompt = [
     "あなたはレシートOCR補助AIです。",
     "必ず JSON オブジェクトのみを返してください。説明文やMarkdownは禁止です。",
-    "JSONキーは storeName, date, totalAmount, items, mainCategory の5つのみ。",
-    "カテゴリ定義: [食費、日用品、衣類、娯楽、医療、教育、交通費、その他]。",
+    "必須キー: storeName, date, totalAmount, taxAmount, items, mainCategory。",
+    "taxAmount は内消費税・外税等の合計額（円・整数）または null。",
+    catLine,
     "items は { name, unitPrice, category } の配列とし、unitPrice は数値または null。",
-    "各 item.category は必ずカテゴリ定義から1つを選ぶ。",
     "品目名だけで曖昧な場合は storeName やレシート全体文脈から推論して分類する。",
     "mainCategory はレシート全体のメインカテゴリで、金額合計が最大のカテゴリを返す。",
   ].join("\n");
   const userPrompt = [
-    "以下のレシートデータから、【店名、日付(YYYY-MM-DD)、合計金額(数値のみ)、品目ごとの単価・名前・カテゴリ】を抽出し、JSON形式で出力してください。",
-    "印字が不鮮明な箇所は、合計額や単価から論理的に推論して補完してください。余計な解説は不要です。",
-    "カテゴリは item ごとに必ず1つ付与し、曖昧なら storeName や全体文脈も使って判定してください。",
-    "mainCategory には、item の金額合計が最も高いカテゴリを設定してください。",
-    "",
-    "入力データ(JSON):",
-    JSON.stringify(textract),
+    "下記の補足（ユーザーの店舗メモとカテゴリの傾向・OCR 生行）を参考に、店名・日付・合計・消費税・品目を厳密なJSONで返してください。",
+    JSON.stringify({
+      registeredExpenseCategoryNames: categoryCandidates,
+      memoCategoryPairs,
+      rawOcrLines: textract.ocrLines ?? [],
+      textract,
+    }),
   ].join("\n");
   const out = await invokeBedrockText({
     systemPrompt,

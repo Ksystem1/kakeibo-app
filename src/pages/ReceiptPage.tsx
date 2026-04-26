@@ -288,6 +288,8 @@ export function ReceiptPage() {
   >([]);
   const [lastParsePremium, setLastParsePremium] = useState(false);
   const [receiptDictionaryHits, setReceiptDictionaryHits] = useState(0);
+  const [storePlaceHint, setStorePlaceHint] = useState<string | null>(null);
+  const [receiptAiTaxHint, setReceiptAiTaxHint] = useState<string | null>(null);
   const showTotalCandidateChips = useMemo(
     () =>
       lastParsePremium &&
@@ -682,6 +684,8 @@ export function ReceiptPage() {
     setSuggestedCategoryLowConfidence(false);
     setSuggestedCategoryNameHint(null);
     setTotalCandidates([]);
+    setStorePlaceHint(null);
+    setReceiptAiTaxHint(null);
     setLastParsePremium(false);
     setReceiptDictionaryHits(0);
     setItems([]);
@@ -697,6 +701,26 @@ export function ReceiptPage() {
         debugForceReceiptTier: receiptDebugTier,
       });
       setTotalCandidates(Array.isArray(r.totalCandidates) ? r.totalCandidates : []);
+      {
+        const sp = r.storePlaceResolution;
+        if (sp && sp.displayName) {
+          setStorePlaceHint(
+            sp.formattedAddress
+              ? `${sp.displayName} / ${sp.formattedAddress}${sp.fromCache ? "（履歴名寄せ）" : ""}`
+              : sp.displayName,
+          );
+        } else {
+          setStorePlaceHint(null);
+        }
+        const rd = r.receiptAiDetail;
+        if (rd && rd.taxAmount != null && Number.isFinite(rd.taxAmount)) {
+          setReceiptAiTaxHint(
+            `AI 推定: 内消費税等 約 ¥${Number(rd.taxAmount).toLocaleString("ja-JP")}（要確認）`,
+          );
+        } else {
+          setReceiptAiTaxHint(null);
+        }
+      }
       setLastParsePremium(r.subscriptionActive === true);
       setReceiptDictionaryHits(
         typeof r.receiptGlobalDictionaryHitCount === "number"
@@ -804,6 +828,8 @@ export function ReceiptPage() {
       setNotice(e instanceof Error ? e.message : String(e));
       setItems([]);
       setReceiptMainCategory(null);
+      setStorePlaceHint(null);
+      setReceiptAiTaxHint(null);
       setLastParsePremium(false);
       setReceiptDictionaryHits(0);
       setReceiptFieldConfidence(null);
@@ -1130,6 +1156,11 @@ export function ReceiptPage() {
             お支払い金額（税込合計）を合わせてください。
           </p>
         ) : null}
+        {storePlaceHint ? (
+          <p className={styles.receiptSummaryHint} style={{ gridColumn: "1 / -1" }}>
+            店名の名寄せ（Google Places）: {storePlaceHint}
+          </p>
+        ) : null}
         <div className={`${styles.field} ${styles.receiptFieldKind}`}>
           <label htmlFor={kindFieldId}>種別</label>
           <select id={kindFieldId} value="expense" disabled aria-readonly>
@@ -1204,6 +1235,11 @@ export function ReceiptPage() {
             onChange={(e) => setDraftTotal(e.target.value)}
             disabled={loading}
           />
+          {receiptAiTaxHint ? (
+            <p className={styles.receiptCategoryHint} style={{ marginTop: "0.35rem" }}>
+              {receiptAiTaxHint}
+            </p>
+          ) : null}
         </div>
         {showTotalCandidateChips ? (
           <div

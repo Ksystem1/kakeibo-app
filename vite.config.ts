@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
   const pwaIcon = "/kakeibo/brand-kakeibo-2.png";
 
   return {
+    optimizeDeps: {
+      /* OpenCV.wasm: Vite 事前束ねで Module 系が壊れやすい */
+      exclude: ["@techstark/opencv-js"],
+    },
     // 本番: https://ksystemapp.com/kakeibo/（CloudFront+S3）。ローカルは http://localhost:5173/kakeibo/
     base: "/kakeibo/",
     plugins: [
@@ -25,6 +29,8 @@ export default defineConfig(({ mode }) => {
          */
         registerType: "autoUpdate",
         workbox: {
+          /* OpenCV.wasm 動的チャンク（~11MB）を precache に含める */
+          maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
           clientsClaim: true,
           skipWaiting: true,
           cleanupOutdatedCaches: true,

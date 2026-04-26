@@ -39,6 +39,7 @@ import {
   askBedrockReceiptAssistant,
   inferReceiptImageMediaTypeFromBuffer,
 } from "./ai-advisor-service.mjs";
+import { ocrVendorFingerprintHex, placesTextSearchOne } from "./google-places.mjs";
 import {
   deriveSubscriptionStatusFromDbRow,
   getEffectiveSubscriptionStatus,
@@ -1697,6 +1698,99 @@ async function fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere, limit
     categoryName:
       r.category_name != null ? String(r.category_name).trim().slice(0, 100) : null,
   }));
+}
+
+/**
+ * よく使う店名メモ（memo）とカテゴリの頻出ペア — LLM のカテゴリ文脈用
+ */
+async function fetchTopMemoCategoryPairs(pool, userId, txWhere, txWhereParams, limit = 40) {
+  const lim = Math.min(60, Math.max(5, Number(limit) || 40));
+  const p =
+    Array.isArray(txWhereParams) && txWhereParams.length > 0 ? txWhereParams : [userId, userId];
+  const [rows] = await pool.query(
+    `SELECT t.memo, c.name AS category_name, COUNT(*) AS cnt
+     FROM transactions t
+     INNER JOIN categories c ON c.id = t.category_id
+     WHERE ${txWhere}
+       AND t.kind = 'expense'
+       AND TRIM(COALESCE(t.memo, '')) <> ''
+     GROUP BY t.memo, c.id, c.name
+     ORDER BY cnt DESC
+     LIMIT ?`,
+    [...p, lim],
+  );
+  if (!Array.isArray(rows)) return [];
+  return rows.map((r) => ({
+    memo: r.memo != null ? String(r.memo).trim().slice(0, 200) : "",
+    categoryName: r.category_name != null ? String(r.category_name).trim().slice(0, 100) : "",
+    count: Math.min(100000, Number(r.cnt) || 0),
+  }));
+}
+
+/**
+ * Google Places で店名名寄せし user_store_places に保存
+ * @returns {Promise<null | { fromCache: boolean, placeId: string, displayName: string, formattedAddress: string, saved?: boolean }>}
+ */
+async function resolveUserStorePlaceFromOcrVendor(pool, userId, ocrVendorName) {
+  const v = String(ocrVendorName ?? "").trim();
+  if (v.length < 2) return null;
+  const k = ocrVendorFingerprintHex(v);
+  const rowSelect = () =>
+    pool.query(
+      `SELECT place_id, display_name, formatted_address
+       FROM user_store_places
+       WHERE user_id = ? AND ocr_vendor_key = ?
+       LIMIT 1`,
+      [userId, k],
+    );
+  try {
+    const [ex] = await rowSelect();
+    if (Array.isArray(ex) && ex[0]) {
+      return {
+        fromCache: true,
+        placeId: ex[0].place_id != null ? String(ex[0].place_id) : "",
+        displayName: ex[0].display_name != null ? String(ex[0].display_name) : "",
+        formattedAddress: ex[0].formatted_address != null ? String(ex[0].formatted_address) : "",
+      };
+    }
+  } catch (e) {
+    const c = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+    if (c !== "ER_NO_SUCH_TABLE") throw e;
+  }
+  const found = await placesTextSearchOne(`${v} 日本`);
+  if (!found) return null;
+  try {
+    await pool.query(
+      `INSERT INTO user_store_places
+        (user_id, ocr_vendor_key, place_id, display_name, formatted_address)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         place_id = VALUES(place_id),
+         display_name = VALUES(display_name),
+         formatted_address = VALUES(formatted_address),
+         updated_at = CURRENT_TIMESTAMP`,
+      [userId, k, found.placeId, found.displayName, found.formattedAddress],
+    );
+  } catch (e) {
+    const c = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+    if (c === "ER_NO_SUCH_TABLE") {
+      return {
+        fromCache: false,
+        saved: false,
+        placeId: found.placeId,
+        displayName: found.displayName,
+        formattedAddress: found.formattedAddress,
+      };
+    }
+    return null;
+  }
+  return {
+    fromCache: false,
+    saved: true,
+    placeId: found.placeId,
+    displayName: found.displayName,
+    formattedAddress: found.formattedAddress,
+  };
 }
 
 function tokenizeMemo(text) {
@@ -6218,6 +6312,20 @@ export async function handleApiRequest(req, options = {}) {
         try {
           const buf = decodeImageBuffer(b.imageBase64);
           const result = await analyzeReceiptImageBytes(buf, { logError });
+          const [expenseCats] = await pool.query(
+            `SELECT c.id, c.name
+             FROM categories c
+             WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense'
+             ORDER BY c.sort_order, c.id`,
+            [userId, userId],
+          );
+          const expenseCatRows = Array.isArray(expenseCats) ? expenseCats : [];
+          let memoCategoryPairs = [];
+          try {
+            memoCategoryPairs = await fetchTopMemoCategoryPairs(pool, userId, txWhere, txP2, 40);
+          } catch (eMc) {
+            logError("receipts.parse.memo_category_pairs", eMc);
+          }
           let hybridReceipt = null;
           try {
             hybridReceipt = await askBedrockHybridReceiptFromTextract({
@@ -6227,18 +6335,12 @@ export async function handleApiRequest(req, options = {}) {
                 ocrLines: result?.ocrLines ?? [],
                 textractRaw: result?.textractRaw ?? {},
               },
+              categoryCandidates: expenseCatRows.map((c) => c.name),
+              memoCategoryPairs,
             });
           } catch (e) {
             logError("receipts.parse.hybrid_ocr", e);
           }
-          const [expenseCats] = await pool.query(
-            `SELECT c.id, c.name
-             FROM categories c
-             WHERE ${catWhere} AND c.is_archived = 0 AND c.kind = 'expense'
-             ORDER BY c.sort_order, c.id`,
-            [userId, userId],
-          );
-          const expenseCatRows = Array.isArray(expenseCats) ? expenseCats : [];
           const subRow = await loadUserSubscriptionRowFull(pool, userId);
           let subscriptionActive = userHasPremiumSubscriptionAccess(subRow, userId);
           let debugReceiptTierOverride = null;
@@ -6287,6 +6389,7 @@ export async function handleApiRequest(req, options = {}) {
               aiReceipt = await askBedrockReceiptAssistant({
                 subscriptionActive,
                 historyHints,
+                memoCategoryPairs,
                 heuristicCategorySuggestion: suggestedCategory
                   ? {
                       name: suggestedCategory.name,
@@ -6306,6 +6409,7 @@ export async function handleApiRequest(req, options = {}) {
           }
 
           let adjustedSummary = { ...(result?.summary ?? {}) };
+          let receiptAiLineItems = null;
           if (hybridReceipt?.ok && hybridReceipt.data) {
             const hs = hybridReceipt.data;
             if (hs.storeName && String(hs.storeName).trim()) {
@@ -6316,6 +6420,9 @@ export async function handleApiRequest(req, options = {}) {
             }
             if (Number.isFinite(Number(hs.totalAmount)) && Number(hs.totalAmount) > 0) {
               adjustedSummary.totalAmount = Math.round(Number(hs.totalAmount));
+            }
+            if (Number.isFinite(Number(hs.taxAmount)) && Number(hs.taxAmount) >= 0) {
+              adjustedSummary.taxAmount = Math.round(Number(hs.taxAmount));
             }
             if (Array.isArray(hs.items) && hs.items.length > 0) {
               const hasTextractAmounts = Array.isArray(result?.items)
@@ -6366,6 +6473,12 @@ export async function handleApiRequest(req, options = {}) {
                 adjustedSummary.totalAmount = Math.round(aiTotal);
               }
             }
+            if (Number.isFinite(Number(d.taxAmount)) && Number(d.taxAmount) >= 0) {
+              adjustedSummary.taxAmount = Math.round(Number(d.taxAmount));
+            }
+            if (Array.isArray(d.lineItems) && d.lineItems.length > 0) {
+              receiptAiLineItems = d.lineItems.slice(0, 80);
+            }
             if (subscriptionActive && aiCat) {
               aiCategoryId = pickCategoryIdByAiName(aiCat, expenseCatRows);
               if (aiCategoryId != null) {
@@ -6387,6 +6500,19 @@ export async function handleApiRequest(req, options = {}) {
               ) {
                 adjustedSummary.vendorName = null;
               }
+            }
+          }
+
+          let storePlaceResolution = null;
+          if (subscriptionActive && String(adjustedSummary?.vendorName ?? "").trim().length >= 2) {
+            try {
+              storePlaceResolution = await resolveUserStorePlaceFromOcrVendor(
+                pool,
+                userId,
+                adjustedSummary.vendorName,
+              );
+            } catch (ePl) {
+              logError("receipts.parse.store_place", ePl);
             }
           }
 
@@ -6626,6 +6752,17 @@ export async function handleApiRequest(req, options = {}) {
             receiptAdvancedParsingMessages,
             totalCandidates,
             receiptGlobalDictionaryHitCount: subscriptionActive ? receiptGlobalDictionaryHitCount : 0,
+            storePlaceResolution,
+            receiptAiDetail: subscriptionActive
+              ? {
+                  taxAmount:
+                    adjustedSummary.taxAmount != null &&
+                    Number.isFinite(Number(adjustedSummary.taxAmount))
+                      ? Math.round(Number(adjustedSummary.taxAmount))
+                      : null,
+                  lineItems: receiptAiLineItems,
+                }
+              : null,
           };
           if (learnCorrectionHit && learnedMemoPresent) {
             body.suggestedMemo = learnedMemoValue;

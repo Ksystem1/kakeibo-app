@@ -133,8 +133,8 @@ export function ReceiptRegionRescanPanel({ imageObjectUrl, busy, onCroppedFile }
           top: box.top,
           width: box.w,
           height: box.h,
-          border: "2px solid rgba(250, 200, 80, 0.95)",
-          background: "color-mix(in srgb, rgba(250, 200, 80) 20%, transparent)",
+          border: "2px solid rgba(232, 93, 42, 0.9)",
+          background: "color-mix(in srgb, rgba(232, 93, 42) 16%, transparent)",
           pointerEvents: "none" as const,
         };
         return s;

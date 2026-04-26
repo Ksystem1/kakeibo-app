@@ -1346,6 +1346,17 @@ export async function parseReceiptImage(
         receiptAdvancedParsingMessages?: string[];
         totalCandidates?: Array<{ total: number; label: string; source: string }>;
         receiptGlobalDictionaryHitCount?: number;
+        storePlaceResolution?: {
+          fromCache: boolean;
+          placeId: string;
+          displayName: string;
+          formattedAddress: string;
+          saved?: boolean;
+        } | null;
+        receiptAiDetail?: {
+          taxAmount: number | null;
+          lineItems: Array<{ name: string; amount: number | null }> | null;
+        } | null;
       }>(res);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

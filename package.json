@@ -41,6 +41,7 @@
     "db:migrate-v34": "npm run db:migrate-v34 --prefix backend",
     "db:migrate-v35": "npm run db:migrate-v35 --prefix backend",
     "db:migrate-v36": "npm run db:migrate-v36 --prefix backend",
+    "db:migrate-v40": "npm run db:migrate-v40 --prefix backend",
     "verify:stripe-config": "node scripts/verify-stripe-config.mjs",
     "verify:frontend-api": "node scripts/verify-frontend-api-fetch.mjs",
     "backup:release": "node scripts/backup-release.mjs"
@@ -48,6 +49,7 @@
   "dependencies": {
     "@simplewebauthn/browser": "^13.3.0",
     "@tanstack/react-query": "^5.100.5",
+    "@techstark/opencv-js": "^4.12.0-release.1",
     "canvas-confetti": "^1.9.4",
     "fuse.js": "^7.3.0",
     "lucide-react": "^1.7.0",

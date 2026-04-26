@@ -61,6 +61,15 @@ function applyOcrPreprocessToCanvas(
   ctx.putImageData(imageData, 0, 0);
 }
 
+async function tryOpenCvPipeline(canvas: HTMLCanvasElement) {
+  try {
+    const { runOpenCvReceiptPreprocess } = await import("./receiptOpenCvPreprocess");
+    return await runOpenCvReceiptPreprocess(canvas);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * レシート画像を API 送信用の base64（生データ、data URL プレフィックスなし）にする。
  */
@@ -105,7 +114,10 @@ export async function prepareReceiptImageForApi(file: File): Promise<string> {
       throw new Error("画像処理に失敗しました。");
     }
     ctx.drawImage(bitmap, 0, 0, width, height);
-    applyOcrPreprocessToCanvas(ctx, width, height);
+    const openCvOk = await tryOpenCvPipeline(canvas);
+    if (!openCvOk) {
+      applyOcrPreprocessToCanvas(ctx, width, height);
+    }
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob((b) => resolve(b), "image/jpeg", JPEG_QUALITY),
