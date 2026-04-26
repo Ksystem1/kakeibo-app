@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import confetti from "canvas-confetti";
 import {
-  BookCheck,
+  ArrowRight,
   BookOpen,
   ClipboardCheck,
-  Cpu,
+  FolderSync,
   Lightbulb,
   LayoutDashboard,
   Rocket,
@@ -11,10 +12,11 @@ import {
   Settings2,
   Shield,
   Sparkles,
-  Users,
+  Target,
+  WalletCards,
   Wallet,
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { getVisibleMainNavItems } from "../config/mainNavItems";
 import "./AppLayout.glassNav.css";
 
@@ -27,6 +29,7 @@ type Props = {
  * フローティング「ガラス」ピル型メイン導航（PC: 上中央 / スマホ: 下・セーフエリア内）
  */
 export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
+  const navigate = useNavigate();
   const FEATURE_MODAL_LAST_SEEN_KEY = "kakeibo:features-modal-last-seen";
   const FEATURE_MODAL_COOLDOWN_MS = 1000 * 60 * 60 * 24 * 14; // 14 days
   const items = getVisibleMainNavItems({ isAdmin: isAdminUser });
@@ -182,19 +185,53 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
               </button>
             </div>
             <ul className="app-glass-nav-panel__list">
-              <li className="app-glass-nav-panel__item">
-                <Sparkles className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
-                接続元アイコン列（PC/スマホ/タブレット/不明）を追加
-              </li>
-              <li className="app-glass-nav-panel__item">
-                <Lightbulb className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
-                売上分析に予測シミュレーションとセグメント切替を追加
-              </li>
-              <li className="app-glass-nav-panel__item">
-                <BookCheck className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
-                日次・累積・予測の可視化を強化（目標・ツールチップ対応）
+              <li className="app-glass-nav-panel__catch">
+                あなたの家計管理を、もっとスマートに、もっと楽しく。
               </li>
             </ul>
+            <div className="app-glass-nav-feature-grid">
+              <article className="app-glass-nav-feature-card">
+                <span className="app-glass-nav-feature-card__icon" aria-hidden>
+                  <FolderSync strokeWidth={1.95} />
+                </span>
+                <h4 className="app-glass-nav-feature-card__title">全自動取込</h4>
+                <p className="app-glass-nav-feature-card__desc">
+                  「おまかせ取込」で銀行やカードの明細を自動連携。入力の手間をゼロに。
+                </p>
+              </article>
+              <article className="app-glass-nav-feature-card">
+                <span className="app-glass-nav-feature-card__icon" aria-hidden>
+                  <Target strokeWidth={1.95} />
+                </span>
+                <h4 className="app-glass-nav-feature-card__title">未来予測</h4>
+                <p className="app-glass-nav-feature-card__desc">
+                  AIが翌月の支出をシミュレーション。貯金の目標達成をしっかりサポート。
+                </p>
+              </article>
+              <article className="app-glass-nav-feature-card">
+                <span className="app-glass-nav-feature-card__icon" aria-hidden>
+                  <Sparkles strokeWidth={1.95} />
+                </span>
+                <h4 className="app-glass-nav-feature-card__title">高度な分析</h4>
+                <p className="app-glass-nav-feature-card__desc">
+                  カテゴリ別の支出を美しいグラフで可視化。無駄遣いポイントも一目瞭然。
+                </p>
+              </article>
+            </div>
+            <div className="app-glass-nav-panel__media-placeholder">ここにチュートリアルGIF / 動画を追加できます</div>
+            <div className="app-glass-nav-panel__actions">
+              <button
+                type="button"
+                className="app-glass-nav-cta"
+                onClick={() => {
+                  setShowFeatures(false);
+                  void navigate("/dashboard");
+                }}
+              >
+                さっそく使ってみる
+                <ArrowRight className="app-glass-nav-cta__icon" strokeWidth={2.1} />
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -216,20 +253,60 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                 閉じる
               </button>
             </div>
-            <ul className="app-glass-nav-panel__list">
-              <li className="app-glass-nav-panel__item">
-                <Users className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
-                「<span className="app-glass-nav-panel__hl">役割</span>」列のプルダウンで、家族ごとの権限を変更できます。
-              </li>
-              <li className="app-glass-nav-panel__item">
-                <ClipboardCheck className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
-                変更後は右側の「<span className="app-glass-nav-panel__hl">保存</span>」ボタンを押すことで反映されます。
-              </li>
-              <li className="app-glass-nav-panel__item">
-                <Cpu className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
-                「接続」列のアイコンにマウスを合わせると、詳細な「<span className="app-glass-nav-panel__hl">OS情報</span>」を確認できます。
-              </li>
-            </ul>
+            <div className="app-glass-nav-steps">
+              <section className="app-glass-nav-step">
+                <div className="app-glass-nav-step__badge">Step 01</div>
+                <div className="app-glass-nav-step__body">
+                  <h4 className="app-glass-nav-step__title">
+                    <WalletCards className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
+                    連携する
+                  </h4>
+                  <p className="app-glass-nav-step__desc">「おまかせ取込」から銀行口座やカードを登録しましょう。</p>
+                </div>
+              </section>
+              <div className="app-glass-nav-step__divider" aria-hidden />
+              <section className="app-glass-nav-step">
+                <div className="app-glass-nav-step__badge">Step 02</div>
+                <div className="app-glass-nav-step__body">
+                  <h4 className="app-glass-nav-step__title">
+                    <ClipboardCheck className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
+                    確認する
+                  </h4>
+                  <p className="app-glass-nav-step__desc">「家計簿」タブで、自動で分類された支出をチェック。</p>
+                </div>
+              </section>
+              <div className="app-glass-nav-step__divider" aria-hidden />
+              <section className="app-glass-nav-step">
+                <div className="app-glass-nav-step__badge">Step 03</div>
+                <div className="app-glass-nav-step__body">
+                  <h4 className="app-glass-nav-step__title">
+                    <LayoutDashboard className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
+                    振り返る
+                  </h4>
+                  <p className="app-glass-nav-step__desc">「ダッシュボード」で今月の予算残高を確認して、賢く節約！</p>
+                </div>
+              </section>
+            </div>
+            <div className="app-glass-nav-panel__media-placeholder">ここに操作GIF / ミニ動画を挿入できます</div>
+            <div className="app-glass-nav-panel__actions">
+              <button
+                type="button"
+                className="app-glass-nav-cta"
+                onClick={() => {
+                  confetti({
+                    particleCount: 90,
+                    spread: 78,
+                    startVelocity: 34,
+                    origin: { y: 0.68 },
+                  });
+                  setShowHowTo(false);
+                  void navigate("/");
+                }}
+              >
+                さっそく使ってみる
+                <ArrowRight className="app-glass-nav-cta__icon" strokeWidth={2.1} />
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
