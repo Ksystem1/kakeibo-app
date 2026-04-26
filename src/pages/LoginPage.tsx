@@ -1,7 +1,8 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { AuthHeroAside } from "../components/AuthHeroAside";
+import { useLoginHeroLiveCount } from "../hooks/useLoginHeroLiveCount";
 import {
   getChildProfiles,
   loginRequest,
@@ -27,6 +28,11 @@ export function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { display: liveUserCount, target: liveTarget, avatarLetters, avatarJiggle } = useLoginHeroLiveCount();
+  const liveUserFormatted = useMemo(() => {
+    if (liveTarget == null) return "—";
+    return `+${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(liveUserCount)}`;
+  }, [liveTarget, liveUserCount]);
 
   useEffect(() => {
     if (token) navigate("/", { replace: true });
@@ -107,13 +113,33 @@ export function LoginPage() {
           </span>
           デモを見る
         </Link>
-        <div className={styles.heroSocialProof} aria-label="現在利用中ユーザー">
-          <div className={styles.heroAvatars} aria-hidden>
-            <span className={styles.heroAvatar}>A</span>
-            <span className={styles.heroAvatar}>K</span>
-            <span className={styles.heroAvatar}>M</span>
+        <div
+          className={styles.heroSocialProof}
+          aria-label="ライブ風表示：人数は目安（デモ用の変動を含みます）"
+        >
+          <div
+            className={styles.heroAvatars}
+            aria-hidden
+            data-refresh={avatarJiggle}
+          >
+            {avatarLetters.map((ch, i) => (
+              <span key={i} className={styles.heroAvatar}>
+                {ch}
+              </span>
+            ))}
           </div>
-          <span className={styles.heroSocialText}>+2,300人が現在利用中</span>
+          <div className={styles.heroLiveRow}>
+            <span className={styles.heroLiveIndicator}>
+              <span className={styles.heroLiveDot} />
+              ライブ
+            </span>
+            <p className={styles.heroLiveCopy}>
+              <span className={styles.heroLiveCount} aria-live="polite" aria-atomic>
+                {liveUserFormatted}
+              </span>
+              <span className={styles.heroLiveSuffix}>人が現在利用中</span>
+            </p>
+          </div>
         </div>
         <p className={styles.heroMicroCopy}>登録不要で30秒で体験できます</p>
       </AuthHeroAside>
