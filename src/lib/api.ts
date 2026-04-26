@@ -1284,6 +1284,72 @@ export async function downloadAdminSalesCsv(params?: { from?: string; to?: strin
 
 export type ParseReceiptDebugTier = "server" | "free" | "subscribed";
 
+/** `POST /receipts/parse` および非同期ジョブ完了時の `result` と同形 */
+export type ParseReceiptResult = {
+  ok: boolean;
+  demo?: boolean;
+  summary?: {
+    vendorName: string | null;
+    totalAmount: number | null;
+    date: string | null;
+    fieldConfidence?: Record<string, number | null | undefined>;
+  };
+  items?: Array<{
+    name: string;
+    amount: number | null;
+    confidence?: number;
+    category?: string | null;
+  }>;
+  mainCategory?: string | null;
+  notice?: string | null;
+  expenseIndex?: number | null;
+  suggestedCategoryId?: number | null;
+  suggestedCategoryName?: string | null;
+  suggestedCategorySource?:
+    | "history"
+    | "keywords"
+    | "global_master"
+    | "chain_catalog"
+    | "line_items"
+    | "correction"
+    | "vendor_key_learn"
+    | "ai"
+    | null;
+  suggestedCategoryLowConfidence?: boolean;
+  learnCorrectionHit?: boolean;
+  suggestedMemo?: string;
+  duplicateWarning?: string | null;
+  subscriptionActive?: boolean;
+  receiptAiTier?: "free" | "subscribed" | null;
+  debugReceiptTierOverride?: "free" | "subscribed" | null;
+  subscriptionMockedByEnv?: boolean;
+  receiptAdvancedParsingApplied?: boolean;
+  receiptAdvancedParsingBanner?: string | null;
+  receiptAdvancedParsingMessages?: string[];
+  totalCandidates?: Array<{ total: number; label: string; source: string }>;
+  receiptGlobalDictionaryHitCount?: number;
+  suggestedVendor?: {
+    fromCache?: boolean;
+    deferred?: boolean;
+    ocrVendorKey: string;
+    placeId?: string;
+    suggestedStoreName?: string;
+    locationHint?: string;
+    rawVendorName?: string;
+    preferredCategoryId?: number | null;
+    suggestedExpenseCategoryName?: string | null;
+    saved?: boolean;
+    inferenceConfidence?: number;
+    inferenceLowConfidence?: boolean;
+  } | null;
+  receiptAiDetail?: {
+    taxAmount: number | null;
+    lineItems: Array<{ name: string; amount: number | null }> | null;
+  } | null;
+};
+
+export type ReceiptAsyncJobStatus = "pending" | "processing" | "completed" | "failed";
+
 /** レシート解析 API 送信中の進捗（アップロード完了後は server フェーズ） */
 export type ParseReceiptImageProgress = {
   phase: "upload" | "server";
@@ -1379,68 +1445,7 @@ export async function parseReceiptImage(
             },
             RECEIPT_PARSE_TIMEOUT_MS,
           );
-      return parse<{
-        ok: boolean;
-        demo?: boolean;
-        summary?: {
-          vendorName: string | null;
-          totalAmount: number | null;
-          date: string | null;
-          fieldConfidence?: Record<string, number | null | undefined>;
-        };
-        items: Array<{
-          name: string;
-          amount: number | null;
-          confidence?: number;
-          category?: string | null;
-        }>;
-        mainCategory?: string | null;
-        notice?: string | null;
-        expenseIndex?: number | null;
-        suggestedCategoryId?: number | null;
-        suggestedCategoryName?: string | null;
-        suggestedCategorySource?:
-          | "history"
-          | "keywords"
-          | "global_master"
-          | "chain_catalog"
-          | "line_items"
-          | "correction"
-          | "vendor_key_learn"
-          | "ai"
-          | null;
-        suggestedCategoryLowConfidence?: boolean;
-        learnCorrectionHit?: boolean;
-        suggestedMemo?: string;
-        duplicateWarning?: string | null;
-        subscriptionActive?: boolean;
-        receiptAiTier?: "free" | "subscribed" | null;
-        debugReceiptTierOverride?: "free" | "subscribed" | null;
-        subscriptionMockedByEnv?: boolean;
-        receiptAdvancedParsingApplied?: boolean;
-        receiptAdvancedParsingBanner?: string | null;
-        receiptAdvancedParsingMessages?: string[];
-        totalCandidates?: Array<{ total: number; label: string; source: string }>;
-        receiptGlobalDictionaryHitCount?: number;
-        suggestedVendor?: {
-          fromCache?: boolean;
-          deferred?: boolean;
-          ocrVendorKey: string;
-          placeId?: string;
-          suggestedStoreName?: string;
-          locationHint?: string;
-          rawVendorName?: string;
-          preferredCategoryId?: number | null;
-          suggestedExpenseCategoryName?: string | null;
-          saved?: boolean;
-          inferenceConfidence?: number;
-          inferenceLowConfidence?: boolean;
-        } | null;
-        receiptAiDetail?: {
-          taxAmount: number | null;
-          lineItems: Array<{ name: string; amount: number | null }> | null;
-        } | null;
-      }>(res);
+      return parse<ParseReceiptResult>(res);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const retryable = isRetryableNetworkMessage(msg);
@@ -1451,6 +1456,46 @@ export async function parseReceiptImage(
   throw new Error(
     "ネットワーク接続を5回再試行しましたが失敗しました。通信環境を確認して再度お試しください。",
   );
+}
+
+/**
+ * 非同期レシート解析: 直ちに job_id のみ返す（202）。完了は `getReceiptJobStatus` でポーリング。
+ */
+export async function uploadReceiptForAsyncJob(
+  imageBase64: string,
+  options?: { debugForceReceiptTier?: ParseReceiptDebugTier },
+) {
+  const tier = options?.debugForceReceiptTier ?? "server";
+  const body: Record<string, unknown> = { imageBase64 };
+  if (tier === "free" || tier === "subscribed") {
+    body.debugForceReceiptTier = tier;
+  }
+  const res = await apiFetch(
+    `${BASE}/receipts/upload`,
+    {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify(body),
+    },
+    RECEIPT_PARSE_TIMEOUT_MS,
+  );
+  return parse<{ ok: boolean; jobId: string; status: string }>(res);
+}
+
+export async function getReceiptJobStatus(jobId: string) {
+  const res = await apiFetch(
+    `${BASE}/receipts/job-status/${encodeURIComponent(jobId)}`,
+    { headers: buildHeaders(), cache: "no-store" },
+    FETCH_TIMEOUT_MS,
+  );
+  return parse<{
+    jobId: string;
+    status: ReceiptAsyncJobStatus;
+    result: ParseReceiptResult | null;
+    errorMessage: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>(res);
 }
 
 /** 解析後、店名名寄せ（Amazon Bedrock・バックグラウンド用。メイン解析をブロックしない） */

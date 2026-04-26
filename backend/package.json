@@ -57,7 +57,8 @@
     "db:migrate-v39": "node scripts/run-migration-v39.mjs",
     "db:migrate-v40": "node scripts/run-migration-v40.mjs",
     "db:migrate-v41": "node scripts/run-migration-v41.mjs",
-    "db:migrate-v42": "node scripts/run-migration-v42.mjs"
+    "db:migrate-v42": "node scripts/run-migration-v42.mjs",
+    "db:migrate-v43": "node scripts/run-migration-v43.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1026.0",

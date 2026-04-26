@@ -2487,6 +2487,60 @@ export async function handleApiRequest(req, options = {}) {
       /^\/admin\/support\/chat\/messages\/(\d+)$/.exec(normPath);
     const supportChatMessageOneMatch = /^\/support\/chat\/messages\/(\d+)$/.exec(normPath);
     const familyChatMessageOneMatch = /^\/family\/chat\/messages\/(\d+)$/.exec(normPath);
+    const receiptJobStatusMatch = /^\/receipts\/job-status\/([^/]+)$/.exec(normPath);
+
+    if (receiptJobStatusMatch && method === "GET") {
+      const jobId = String(receiptJobStatusMatch[1] || "").trim();
+      if (!jobId) {
+        return json(400, { error: "InvalidRequest", detail: "job_id が空です" }, hdrs, skipCors);
+      }
+      try {
+        const [rows] = await pool.query(
+          `SELECT job_id, user_id, status, result_data, error_message, created_at, updated_at
+           FROM receipt_processing_jobs
+           WHERE job_id = ? AND user_id = ?
+           LIMIT 1`,
+          [jobId, userId],
+        );
+        if (!Array.isArray(rows) || !rows[0]) {
+          return json(404, { error: "NotFound", detail: "ジョブが見つかりません" }, hdrs, skipCors);
+        }
+        const j = rows[0];
+        let result = null;
+        if (j.result_data != null) {
+          result =
+            typeof j.result_data === "string" ? JSON.parse(j.result_data) : j.result_data;
+        }
+        return json(
+          200,
+          {
+            jobId: String(j.job_id),
+            status: j.status,
+            result,
+            errorMessage: j.error_message != null ? String(j.error_message) : null,
+            createdAt: j.created_at,
+            updatedAt: j.updated_at,
+          },
+          hdrs,
+          skipCors,
+        );
+      } catch (e) {
+        if (e && typeof e === "object" && e.code === "ER_NO_SUCH_TABLE") {
+          return json(
+            503,
+            {
+              error: "ReceiptJobUnavailable",
+              detail:
+                "receipt_processing_jobs がありません。db/migration_v43_receipt_processing_jobs.sql を実行してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        logError("receipts.job_status", e, { userId, jobId });
+        return json(500, { error: "JobStatusError", detail: "ジョブの取得に失敗しました" }, hdrs, skipCors);
+      }
+    }
 
     if (txOneMatch && method === "PATCH") {
       const txId = Number(txOneMatch[1], 10);
@@ -6267,6 +6321,56 @@ export async function handleApiRequest(req, options = {}) {
         }
       }
 
+      case "POST /receipts/upload": {
+        const b = JSON.parse(req.body || "{}");
+        const subRejU = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (subRejU) return subRejU;
+        if (b.imageBase64 == null || typeof b.imageBase64 !== "string") {
+          return json(
+            400,
+            {
+              error: "InvalidRequest",
+              detail: "imageBase64（JPEG/PNG 等の base64、または data URL）が必要です。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        const jobId = crypto.randomUUID();
+        const requestPayload = { imageBase64: b.imageBase64 };
+        if (b.debugForceReceiptTier != null) {
+          requestPayload.debugForceReceiptTier = b.debugForceReceiptTier;
+        }
+        const requestJson = JSON.stringify(requestPayload);
+        try {
+          await pool.query(
+            `INSERT INTO receipt_processing_jobs (job_id, user_id, status, request_json)
+             VALUES (?, ?, 'pending', ?)`,
+            [jobId, userId, requestJson],
+          );
+        } catch (e) {
+          if (e && typeof e === "object" && e.code === "ER_NO_SUCH_TABLE") {
+            return json(
+              503,
+              {
+                error: "ReceiptJobUnavailable",
+                detail:
+                  "receipt_processing_jobs がありません。db/migration_v43_receipt_processing_jobs.sql を実行してください。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          logError("receipts.upload.insert_job", e);
+          return json(500, { error: "JobEnqueueError", detail: "ジョブの受付に失敗しました" }, hdrs, skipCors);
+        }
+        const fwd = pickAuthHeadersForInternalParse(hdrs);
+        setImmediate(() => {
+          void runReceiptJobAfterUpload(pool, jobId, userId, fwd);
+        });
+        return json(202, { ok: true, jobId, status: "pending" }, hdrs, skipCors);
+      }
+
       case "POST /receipts/parse": {
         const b = JSON.parse(req.body || "{}");
         const subRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
@@ -7167,6 +7271,102 @@ export async function handleApiRequest(req, options = {}) {
       hdrs,
       skipCors,
     );
+  }
+}
+
+/**
+ * 内部: /receipts/parse 再呼び出し用（Bearer / X-User-Id だけ引き回す）
+ */
+function pickAuthHeadersForInternalParse(src) {
+  if (!src || typeof src !== "object") return {};
+  const auth = src.authorization ?? src.Authorization;
+  const xu = src["x-user-id"] ?? src["X-User-Id"];
+  const out = {};
+  if (auth) out.authorization = String(auth);
+  if (xu != null && String(xu) !== "") out["x-user-id"] = String(xu);
+  return out;
+}
+
+/**
+ * 受付直後: DB の pending ジョブに対し、同ユーザーの /receipts/parse 相当を実行して結果を保存する。
+ * （Fargate 等の常駐プロセスで有効。Lambda ではレスポンス後の実行が途切れる場合がある。）
+ */
+async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
+  try {
+    const [u] = await pool.query(
+      `UPDATE receipt_processing_jobs SET status = 'processing', updated_at = NOW()
+       WHERE job_id = ? AND user_id = ? AND status = 'pending'`,
+      [jobId, userId],
+    );
+    if (!u?.affectedRows) {
+      return;
+    }
+    const [[row]] = await pool.query(
+      `SELECT request_json FROM receipt_processing_jobs WHERE job_id = ? AND user_id = ? LIMIT 1`,
+      [jobId, userId],
+    );
+    if (!row?.request_json) {
+      await pool.query(
+        `UPDATE receipt_processing_jobs SET status = 'failed', error_message = 'missing request_json', updated_at = NOW() WHERE job_id = ?`,
+        [jobId],
+      );
+      return;
+    }
+    const out = await handleApiRequest(
+      {
+        method: "POST",
+        path: "/receipts/parse",
+        body: String(row.request_json),
+        headers: forwardHeaders,
+      },
+      { skipCors: true },
+    );
+    const statusCode = Number(out.statusCode ?? 500) || 500;
+    const raw = typeof out.body === "string" ? out.body : JSON.stringify(out.body ?? "");
+    let parsed = {};
+    try {
+      parsed = raw ? JSON.parse(raw) : {};
+    } catch {
+      parsed = { _parseError: true, raw: raw ? raw.slice(0, 500) : "" };
+    }
+    if (statusCode >= 200 && statusCode < 300) {
+      let toStore;
+      try {
+        toStore = raw ? JSON.parse(raw) : null;
+      } catch {
+        toStore = { _raw: raw };
+      }
+      await pool.query(
+        `UPDATE receipt_processing_jobs
+         SET status = 'completed', result_data = ?, error_message = NULL, updated_at = NOW()
+         WHERE job_id = ?`,
+        [toStore == null ? null : toStore, jobId],
+      );
+    } else {
+      const detail =
+        parsed && typeof parsed === "object" && (parsed.detail || parsed.error)
+          ? String(parsed.detail || parsed.error)
+          : `HTTP ${statusCode}`;
+      await pool.query(
+        `UPDATE receipt_processing_jobs
+         SET status = 'failed', result_data = NULL, error_message = ?, updated_at = NOW()
+         WHERE job_id = ?`,
+        [detail.slice(0, 4000), jobId],
+      );
+    }
+  } catch (e) {
+    logError("receipts.job.run", e, { jobId, userId });
+    try {
+      const msg = e instanceof Error ? e.message : String(e);
+      await pool.query(
+        `UPDATE receipt_processing_jobs
+         SET status = 'failed', error_message = ?, updated_at = NOW()
+         WHERE job_id = ? AND user_id = ?`,
+        [msg.slice(0, 4000), jobId, userId],
+      );
+    } catch {
+      /* ignore */
+    }
   }
 }
 

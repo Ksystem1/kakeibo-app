@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -6,8 +6,10 @@ import {
   createTransaction,
   FEATURE_RECEIPT_AI,
   getCategories,
-  parseReceiptImage,
-  type ParseReceiptImageProgress,
+  getReceiptJobStatus,
+  type ParseReceiptResult,
+  type ReceiptAsyncJobStatus,
+  uploadReceiptForAsyncJob,
   previewPayPayCsvImport,
   savePlaceCategoryPreference,
   saveReceiptOcrCorrection,
@@ -73,6 +75,16 @@ const CATEGORY_TAGS = {
   medical: ["医療", "病院", "薬", "薬局", "ドラッグ"],
   leisure: ["娯楽", "交際", "外食", "趣味", "レジャー"],
 } as const;
+
+type ReceiptImportQueueItem = {
+  localKey: string;
+  fileName: string;
+  objectUrl: string;
+  jobId: string;
+  status: ReceiptAsyncJobStatus;
+  result?: ParseReceiptResult;
+  errorMessage?: string | null;
+};
 
 const TAG_KEYWORDS = {
   food: [
@@ -327,15 +339,17 @@ export function ReceiptPage() {
     string,
     number | null | undefined
   > | null>(null);
-  const [loading, setLoading] = useState(false);
-  /** レシート取込: 圧縮→送信→OCR+AI 待ちの体感進捗 */
-  const [receiptImportProgress, setReceiptImportProgress] = useState<{
-    text: string;
-    percent: number;
-  } | null>(null);
-  const serverProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** 非同期解析ジョブ（他の取込をブロックしない） */
+  const [receiptImportQueue, setReceiptImportQueue] = useState<ReceiptImportQueueItem[]>([]);
+  const receiptImportQueueRef = useRef<ReceiptImportQueueItem[]>([]);
+  const receiptImageObjectUrlRef = useRef<string | null>(null);
   const [registering, setRegistering] = useState(false);
-  const isBusy = loading || paypayLoading;
+  const receiptLineBusy = useMemo(
+    () =>
+      receiptImportQueue.some((j) => j.status === "pending" || j.status === "processing"),
+    [receiptImportQueue],
+  );
+  const isBusy = paypayLoading;
   const displayMainCategory = useMemo(() => {
     const score = new Map<ReceiptItemCategory, number>();
     for (const it of items) {
@@ -397,6 +411,261 @@ export function ReceiptPage() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    receiptImageObjectUrlRef.current = receiptImageObjectUrl;
+  }, [receiptImageObjectUrl]);
+
+  useEffect(() => {
+    receiptImportQueueRef.current = receiptImportQueue;
+  }, [receiptImportQueue]);
+
+  const applyServerParseResult = useCallback(
+    (r: ParseReceiptResult) => {
+      setTotalCandidates(Array.isArray(r.totalCandidates) ? r.totalCandidates : []);
+      {
+        const sp = r.suggestedVendor;
+        if (sp?.ocrVendorKey) {
+          setReceiptOcrVendorKey(sp.ocrVendorKey);
+        } else {
+          setReceiptOcrVendorKey(null);
+        }
+        if (sp && sp.suggestedStoreName) {
+          setSuggestedVendorHint(
+            sp.locationHint
+              ? `${sp.suggestedStoreName} / ${sp.locationHint}${sp.fromCache ? "（履歴名寄せ）" : ""}`
+              : sp.suggestedStoreName,
+          );
+        } else {
+          setSuggestedVendorHint(null);
+        }
+        if (sp && !sp.deferred && sp.inferenceLowConfidence === true) {
+          setReceiptBedrockVendorLow(true);
+        } else if (sp && !sp.deferred) {
+          setReceiptBedrockVendorLow(false);
+        }
+        if (sp?.deferred && sp.rawVendorName) {
+          const rawV = String(sp.rawVendorName).trim();
+          void (async () => {
+            try {
+              const res = await resolveReceiptSuggestedVendor({ vendorName: rawV });
+              if (res.vendorResolveSkipped && res.userHint) {
+                const u = String(res.userHint);
+                setNotice((prev) => (prev ? `${u} ${prev}` : u));
+              }
+              if (!res.found || !res.suggestedVendor) {
+                if (res.vendorResolveSkipped) {
+                  setReceiptBedrockVendorLow(false);
+                }
+                return;
+              }
+              const spr = res.suggestedVendor;
+              if (spr.ocrVendorKey) {
+                setReceiptOcrVendorKey(spr.ocrVendorKey);
+              }
+              if (spr.suggestedStoreName) {
+                setSuggestedVendorHint(
+                  spr.locationHint
+                    ? `${spr.suggestedStoreName} / ${spr.locationHint}${spr.fromCache ? "（履歴名寄せ）" : ""}`
+                    : spr.suggestedStoreName,
+                );
+                if (!memoTouchedByUserRef.current) {
+                  setDraftMemo(spr.suggestedStoreName);
+                }
+              }
+              if (spr.inferenceLowConfidence === true) {
+                setReceiptBedrockVendorLow(true);
+              } else {
+                setReceiptBedrockVendorLow(false);
+              }
+            } catch {
+              setNotice("解析中ですが、店名推論に接続できませんでした。手入力のまま登録できます。");
+            }
+          })();
+        }
+        const rd = r.receiptAiDetail;
+        if (rd && rd.taxAmount != null && Number.isFinite(rd.taxAmount)) {
+          setReceiptAiTaxHint(
+            `AI 推定: 内消費税等 約 ¥${Number(rd.taxAmount).toLocaleString("ja-JP")}（要確認）`,
+          );
+        } else {
+          setReceiptAiTaxHint(null);
+        }
+      }
+      setLastParsePremium(r.subscriptionActive === true);
+      setReceiptDictionaryHits(
+        typeof r.receiptGlobalDictionaryHitCount === "number" ? r.receiptGlobalDictionaryHitCount : 0,
+      );
+      setItems(
+        (r.items ?? []).map((it) => ({
+          ...it,
+          category: RECEIPT_ITEM_CATEGORIES.includes((it.category ?? "その他") as ReceiptItemCategory)
+            ? ((it.category ?? "その他") as ReceiptItemCategory)
+            : "その他",
+        })),
+      );
+      setReceiptMainCategory(
+        RECEIPT_ITEM_CATEGORIES.includes((r.mainCategory ?? "") as ReceiptItemCategory)
+          ? ((r.mainCategory ?? "") as ReceiptItemCategory)
+          : null,
+      );
+      const s = r.summary;
+      if (s && typeof s === "object" && s.fieldConfidence && typeof s.fieldConfidence === "object") {
+        setReceiptFieldConfidence(s.fieldConfidence as Record<string, number | null | undefined>);
+      } else {
+        setReceiptFieldConfidence(null);
+      }
+      if (s && typeof s === "object") {
+        setLastOcrForLearn({
+          summary: s as Record<string, unknown>,
+          items: r.items ?? [],
+        });
+      } else {
+        setLastOcrForLearn(null);
+      }
+      const vendorTrim = s?.vendorName?.trim() ?? "";
+      setOcrVendor(vendorTrim);
+      const spNow = r.suggestedVendor;
+      if (r.learnCorrectionHit && r.suggestedMemo !== undefined) {
+        setDraftMemo(r.suggestedMemo);
+      } else if (
+        spNow &&
+        !spNow.deferred &&
+        spNow.suggestedStoreName != null &&
+        String(spNow.suggestedStoreName).trim() !== ""
+      ) {
+        setDraftMemo(String(spNow.suggestedStoreName).trim());
+      } else {
+        setDraftMemo(vendorTrim);
+      }
+      setDraftTotal(
+        s?.totalAmount != null && Number.isFinite(Number(s.totalAmount)) ? String(s.totalAmount) : "",
+      );
+      {
+        const raw = s?.date?.trim() ?? "";
+        const ymd = normalizeReceiptDateToYmd(raw) ?? raw;
+        const dm = dateFieldMode(ymd);
+        if (dm.kind === "iso" && dm.value) {
+          setDraftDate(dm.value);
+        } else {
+          setDraftDate(todayYmd());
+          setNotice("日付を読み取れなかったため、本日の日付を仮入力しました。必要なら変更してください。");
+        }
+      }
+      const localSuggested = suggestExpenseCategoryId(
+        categories,
+        s?.vendorName?.trim() ?? "",
+        r.items ?? [],
+      );
+      const aiNameMatchedId =
+        r.suggestedCategoryId == null
+          ? pickCategoryIdByName(categories, r.suggestedCategoryName)
+          : null;
+      const initialCategoryId = normalizeReceiptCategoryId(
+        r.suggestedCategoryId ?? aiNameMatchedId ?? localSuggested,
+      );
+      setDraftCategoryId(initialCategoryId);
+      setSuggestedCategoryLowConfidence(Boolean(r.suggestedCategoryLowConfidence));
+      setSuggestedCategoryNameHint(
+        r.suggestedCategoryName != null ? String(r.suggestedCategoryName).trim() : null,
+      );
+      setCategorySuggestSource(
+        r.suggestedCategorySource ??
+          (r.suggestedCategoryId == null && aiNameMatchedId == null && localSuggested != null
+            ? "keywords"
+            : null),
+      );
+      const initialMemo =
+        r.learnCorrectionHit && r.suggestedMemo !== undefined
+          ? String(r.suggestedMemo).trim()
+          : r.suggestedVendor &&
+              !r.suggestedVendor.deferred &&
+              r.suggestedVendor.suggestedStoreName != null &&
+              String(r.suggestedVendor.suggestedStoreName).trim() !== ""
+            ? String(r.suggestedVendor.suggestedStoreName).trim()
+            : vendorTrim;
+      setLoadedReceiptBaseline({
+        memo: initialMemo,
+        categoryId: initialCategoryId,
+        totalAmount:
+          s?.totalAmount != null && Number.isFinite(Number(s.totalAmount))
+            ? Math.round(Number(s.totalAmount))
+            : null,
+      });
+      {
+        const parts: string[] = [];
+        if (r.receiptAdvancedParsingBanner) parts.push(r.receiptAdvancedParsingBanner);
+        if (r.receiptAdvancedParsingMessages?.length) {
+          parts.push(r.receiptAdvancedParsingMessages.join(" "));
+        }
+        if (r.duplicateWarning) parts.push(r.duplicateWarning);
+        if (r.notice) parts.push(r.notice);
+        setNotice(parts.length ? parts.join(" ") : null);
+      }
+    },
+    [categories],
+  );
+
+  const receiptPollApplyOnceRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const pending = receiptImportQueueRef.current.filter(
+        (x) => x.status === "pending" || x.status === "processing",
+      );
+      for (const q of pending) {
+        void (async () => {
+          let st: Awaited<ReturnType<typeof getReceiptJobStatus>>;
+          try {
+            st = await getReceiptJobStatus(q.jobId);
+          } catch {
+            return;
+          }
+          setReceiptImportQueue((prev) => {
+            const p = prev.find((x) => x.localKey === q.localKey);
+            if (!p) return prev;
+            return prev.map((x) =>
+              x.localKey === q.localKey
+                ? {
+                    ...x,
+                    status: st.status,
+                    result: st.result ?? x.result,
+                    errorMessage: st.errorMessage ?? undefined,
+                  }
+                : x,
+            );
+          });
+          if (st.status === "failed") {
+            receiptPollApplyOnceRef.current.delete(q.jobId);
+            return;
+          }
+          if (st.status === "completed" && st.result) {
+            if (!receiptPollApplyOnceRef.current.has(q.jobId)) {
+              receiptPollApplyOnceRef.current.add(q.jobId);
+              if (q.objectUrl === receiptImageObjectUrlRef.current) {
+                applyServerParseResult(st.result);
+              }
+              if (
+                typeof document !== "undefined" &&
+                document.visibilityState === "hidden" &&
+                typeof Notification !== "undefined" &&
+                Notification.permission === "granted"
+              ) {
+                try {
+                  new Notification("レシートの解析が完了しました", {
+                    body: "取込内容をご確認ください。",
+                  });
+                } catch {
+                  /* ignore */
+                }
+              }
+            }
+          }
+        })();
+      }
+    }, 1600);
+    return () => clearInterval(t);
+  }, [applyServerParseResult]);
 
   useEffect(() => {
     if (draftCategoryId != null) return;
@@ -611,7 +880,7 @@ export function ReceiptPage() {
   }
 
   async function onFile(f: File | null) {
-    if (!f || isBusy) return;
+    if (!f || paypayLoading) return;
 
     async function loadPayPayFromText(csvText: string, label: string) {
       if (!looksLikePayPayCsv(csvText)) {
@@ -684,18 +953,13 @@ export function ReceiptPage() {
       setNotice("画像（JPEG/PNG 等）か、PayPay 取引明細の .csv / .txt を選び直してください。");
       return;
     }
-    setLoading(true);
-    if (serverProgressTimerRef.current) {
-      clearInterval(serverProgressTimerRef.current);
-      serverProgressTimerRef.current = null;
-    }
-    setReceiptImportProgress({ text: "画像を準備中…", percent: 2 });
     setNotice(null);
     clearPayPayImport();
     setUnifiedMode("receipt");
+    const newObjectUrl = URL.createObjectURL(f);
     setReceiptImageObjectUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(f);
+      return newObjectUrl;
     });
     setOcrVendor("");
     setDraftMemo("");
@@ -720,239 +984,19 @@ export function ReceiptPage() {
     categoryTouchedByUserRef.current = false;
     setUserEditedCategory(false);
     setReceiptFieldConfidence(null);
-    const startServerProgressSimulation = () => {
-      if (serverProgressTimerRef.current) return;
-      let v = 40;
-      serverProgressTimerRef.current = setInterval(() => {
-        v = Math.min(90, v + 2.2);
-        setReceiptImportProgress((prev) =>
-          prev
-            ? {
-                text: "サーバーで解析中（OCR + AI。完了までしばらくお待ちください）…",
-                percent: Math.min(90, Math.max(prev.percent, v)),
-              }
-            : null,
-        );
-      }, 420);
-    };
     try {
       const b64 = await prepareReceiptImageForApi(f);
-      setReceiptImportProgress({ text: "送信中…", percent: 8 });
-      const r = await parseReceiptImage(b64, {
-        debugForceReceiptTier: receiptDebugTier,
-        onProgress: (p: ParseReceiptImageProgress) => {
-          if (p.phase === "server") {
-            startServerProgressSimulation();
-            setReceiptImportProgress((prev) => ({
-              text: "サーバーで解析中（OCR + AI）…",
-              percent: Math.max(40, p.percent, prev?.percent ?? 0),
-            }));
-          } else {
-            setReceiptImportProgress({ text: "送信中…", percent: p.percent });
-          }
+      const u = await uploadReceiptForAsyncJob(b64, { debugForceReceiptTier: receiptDebugTier });
+      setReceiptImportQueue((prev) => [
+        ...prev,
+        {
+          localKey: crypto.randomUUID(),
+          fileName: f.name,
+          objectUrl: newObjectUrl,
+          jobId: u.jobId,
+          status: (u.status as ReceiptAsyncJobStatus) || "pending",
         },
-      });
-      setTotalCandidates(Array.isArray(r.totalCandidates) ? r.totalCandidates : []);
-      {
-        const sp = r.suggestedVendor;
-        if (sp?.ocrVendorKey) {
-          setReceiptOcrVendorKey(sp.ocrVendorKey);
-        } else {
-          setReceiptOcrVendorKey(null);
-        }
-        if (sp && sp.suggestedStoreName) {
-          setSuggestedVendorHint(
-            sp.locationHint
-              ? `${sp.suggestedStoreName} / ${sp.locationHint}${sp.fromCache ? "（履歴名寄せ）" : ""}`
-              : sp.suggestedStoreName,
-          );
-        } else {
-          setSuggestedVendorHint(null);
-        }
-        if (sp && !sp.deferred && sp.inferenceLowConfidence === true) {
-          setReceiptBedrockVendorLow(true);
-        } else if (sp && !sp.deferred) {
-          setReceiptBedrockVendorLow(false);
-        }
-        if (sp?.deferred && sp.rawVendorName) {
-          const rawV = String(sp.rawVendorName).trim();
-          void (async () => {
-            try {
-              const res = await resolveReceiptSuggestedVendor({ vendorName: rawV });
-              if (res.vendorResolveSkipped && res.userHint) {
-                const u = String(res.userHint);
-                setNotice((prev) => (prev ? `${u} ${prev}` : u));
-              }
-              if (!res.found || !res.suggestedVendor) {
-                if (res.vendorResolveSkipped) {
-                  setReceiptBedrockVendorLow(false);
-                }
-                return;
-              }
-              const spr = res.suggestedVendor;
-              if (spr.ocrVendorKey) {
-                setReceiptOcrVendorKey(spr.ocrVendorKey);
-              }
-              if (spr.suggestedStoreName) {
-                setSuggestedVendorHint(
-                  spr.locationHint
-                    ? `${spr.suggestedStoreName} / ${spr.locationHint}${spr.fromCache ? "（履歴名寄せ）" : ""}`
-                    : spr.suggestedStoreName,
-                );
-                if (!memoTouchedByUserRef.current) {
-                  setDraftMemo(spr.suggestedStoreName);
-                }
-              }
-              if (spr.inferenceLowConfidence === true) {
-                setReceiptBedrockVendorLow(true);
-              } else {
-                setReceiptBedrockVendorLow(false);
-              }
-            } catch {
-              setNotice("解析中ですが、店名推論に接続できませんでした。手入力のまま登録できます。");
-            }
-          })();
-        }
-        const rd = r.receiptAiDetail;
-        if (rd && rd.taxAmount != null && Number.isFinite(rd.taxAmount)) {
-          setReceiptAiTaxHint(
-            `AI 推定: 内消費税等 約 ¥${Number(rd.taxAmount).toLocaleString("ja-JP")}（要確認）`,
-          );
-        } else {
-          setReceiptAiTaxHint(null);
-        }
-      }
-      setLastParsePremium(r.subscriptionActive === true);
-      setReceiptDictionaryHits(
-        typeof r.receiptGlobalDictionaryHitCount === "number"
-          ? r.receiptGlobalDictionaryHitCount
-          : 0,
-      );
-      setItems(
-        (r.items ?? []).map((it) => ({
-          ...it,
-          category: RECEIPT_ITEM_CATEGORIES.includes((it.category ?? "その他") as ReceiptItemCategory)
-            ? ((it.category ?? "その他") as ReceiptItemCategory)
-            : "その他",
-        })),
-      );
-      setReceiptMainCategory(
-        RECEIPT_ITEM_CATEGORIES.includes((r.mainCategory ?? "") as ReceiptItemCategory)
-          ? ((r.mainCategory ?? "") as ReceiptItemCategory)
-          : null,
-      );
-      const s = r.summary;
-      if (s && typeof s === "object" && s.fieldConfidence && typeof s.fieldConfidence === "object") {
-        setReceiptFieldConfidence(
-          s.fieldConfidence as Record<string, number | null | undefined>,
-        );
-      } else {
-        setReceiptFieldConfidence(null);
-      }
-      if (s && typeof s === "object") {
-        setLastOcrForLearn({
-          summary: s as Record<string, unknown>,
-          items: r.items ?? [],
-        });
-      } else {
-        setLastOcrForLearn(null);
-      }
-      const vendorTrim = s?.vendorName?.trim() ?? "";
-      setOcrVendor(vendorTrim);
-      const spNow = r.suggestedVendor;
-      if (r.learnCorrectionHit && r.suggestedMemo !== undefined) {
-        setDraftMemo(r.suggestedMemo);
-      } else if (
-        spNow &&
-        !spNow.deferred &&
-        spNow.suggestedStoreName != null &&
-        String(spNow.suggestedStoreName).trim() !== ""
-      ) {
-        setDraftMemo(String(spNow.suggestedStoreName).trim());
-      } else {
-        setDraftMemo(vendorTrim);
-      }
-      setDraftTotal(
-        s?.totalAmount != null && Number.isFinite(Number(s.totalAmount))
-          ? String(s.totalAmount)
-          : "",
-      );
-      {
-        const raw = s?.date?.trim() ?? "";
-        const ymd = normalizeReceiptDateToYmd(raw) ?? raw;
-        const dm = dateFieldMode(ymd);
-        if (dm.kind === "iso" && dm.value) {
-          setDraftDate(dm.value);
-        } else {
-          setDraftDate(todayYmd());
-          setNotice("日付を読み取れなかったため、本日の日付を仮入力しました。必要なら変更してください。");
-        }
-      }
-      const localSuggested = suggestExpenseCategoryId(
-        categories,
-        s?.vendorName?.trim() ?? "",
-        r.items ?? [],
-      );
-      const aiNameMatchedId =
-        r.suggestedCategoryId == null
-          ? pickCategoryIdByName(categories, r.suggestedCategoryName)
-          : null;
-      const initialCategoryId = normalizeReceiptCategoryId(
-        r.suggestedCategoryId ?? aiNameMatchedId ?? localSuggested,
-      );
-      setDraftCategoryId(initialCategoryId);
-      setSuggestedCategoryLowConfidence(Boolean(r.suggestedCategoryLowConfidence));
-      setSuggestedCategoryNameHint(
-        r.suggestedCategoryName != null ? String(r.suggestedCategoryName).trim() : null,
-      );
-      setCategorySuggestSource(
-        r.suggestedCategorySource ??
-          (r.suggestedCategoryId == null && aiNameMatchedId == null && localSuggested != null
-            ? "keywords"
-            : null),
-      );
-      const initialMemo =
-        r.learnCorrectionHit && r.suggestedMemo !== undefined
-          ? String(r.suggestedMemo).trim()
-          : r.suggestedVendor &&
-              !r.suggestedVendor.deferred &&
-              r.suggestedVendor.suggestedStoreName != null &&
-              String(r.suggestedVendor.suggestedStoreName).trim() !== ""
-            ? String(r.suggestedVendor.suggestedStoreName).trim()
-            : vendorTrim;
-      setLoadedReceiptBaseline({
-        memo: initialMemo,
-        categoryId: initialCategoryId,
-        totalAmount:
-          s?.totalAmount != null && Number.isFinite(Number(s.totalAmount))
-            ? Math.round(Number(s.totalAmount))
-            : null,
-      });
-      {
-        const parts: string[] = [];
-        if (r.receiptAdvancedParsingBanner) parts.push(r.receiptAdvancedParsingBanner);
-        if (r.receiptAdvancedParsingMessages?.length) {
-          parts.push(r.receiptAdvancedParsingMessages.join(" "));
-        }
-        if (r.duplicateWarning) parts.push(r.duplicateWarning);
-        if (r.notice) parts.push(r.notice);
-        setNotice(parts.length ? parts.join(" ") : null);
-      }
-      setReceiptImportProgress((prev) => (prev ? { text: "完了", percent: 100 } : null));
-      if (
-        typeof document !== "undefined" &&
-        document.visibilityState === "hidden" &&
-        typeof Notification !== "undefined" &&
-        Notification.permission === "granted"
-      ) {
-        try {
-          new Notification("レシートの解析が完了しました", {
-            body: "取込内容をご確認ください。",
-          });
-        } catch {
-          /* ignore */
-        }
-      }
+      ]);
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
       setItems([]);
@@ -963,13 +1007,6 @@ export function ReceiptPage() {
       setLastParsePremium(false);
       setReceiptDictionaryHits(0);
       setReceiptFieldConfidence(null);
-    } finally {
-      if (serverProgressTimerRef.current) {
-        clearInterval(serverProgressTimerRef.current);
-        serverProgressTimerRef.current = null;
-      }
-      setReceiptImportProgress(null);
-      setLoading(false);
     }
   }
 
@@ -1008,26 +1045,7 @@ export function ReceiptPage() {
   const memoFieldLowConfidence = lowOcrFieldConf("vendorName") || receiptBedrockVendorLow;
   const fieldTooltip = (low: boolean) => (low ? RECEIPT_AI_INFERENCE_HINT : undefined);
 
-  const busyLabel = receiptImportProgress
-    ? `${receiptImportProgress.text}（${Math.min(100, Math.round(receiptImportProgress.percent))}%）`
-    : loading
-      ? "解析中…"
-      : "明細を処理中…";
-  const loadingBarPct = receiptImportProgress
-    ? Math.min(100, Math.max(0, Math.round(receiptImportProgress.percent)))
-    : 0;
-  const progressBlock =
-    receiptImportProgress != null ? (
-      <div
-        className={styles.receiptProgressBar}
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={loadingBarPct}
-      >
-        <div className={styles.receiptProgressBarFill} style={{ width: `${loadingBarPct}%` }} />
-      </div>
-    ) : null;
+  const busyLabel = "明細を処理中…";
   const loadingUi = (
     <>
       {touchUi ? (
@@ -1040,7 +1058,6 @@ export function ReceiptPage() {
           <div className={styles.receiptLoadingOverlayInner}>
             <span className={styles.receiptSpinner} aria-hidden />
             <p className={styles.receiptLoadingOverlayText}>{busyLabel}</p>
-            {progressBlock}
           </div>
         </div>
       ) : (
@@ -1051,10 +1068,7 @@ export function ReceiptPage() {
           aria-busy="true"
         >
           <span className={styles.receiptSpinner} aria-hidden />
-          <div className={styles.receiptLoadingPanelTextCol}>
-            <span>{busyLabel}</span>
-            {progressBlock}
-          </div>
+          <span>{busyLabel}</span>
         </div>
       )}
     </>
@@ -1064,6 +1078,46 @@ export function ReceiptPage() {
     <div className={`${styles.wrap} ${styles.receiptImportWrap}`}>
       {isBusy ? loadingUi : null}
       <h1 className={styles.title}>レシート・明細取込</h1>
+      {receiptImportQueue.length > 0 ? (
+        <ul
+          className={styles.receiptImportQueueList}
+          aria-label="取込中のレシート（解析状況）"
+        >
+          {receiptImportQueue.map((row) => {
+            const busy = row.status === "pending" || row.status === "processing";
+            return (
+              <li key={row.localKey} className={styles.receiptImportQueueItem}>
+                <img
+                  className={styles.receiptImportQueueThumb}
+                  src={row.objectUrl}
+                  alt=""
+                />
+                <div className={styles.receiptImportQueueBody}>
+                  <span className={styles.receiptImportQueueFileName}>{row.fileName}</span>
+                  {busy ? (
+                    <div
+                      className={styles.receiptImportQueueRowBusy}
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <span className={styles.receiptImportQueueSkeletonBar} />
+                      <span>AIが解析しています…</span>
+                    </div>
+                  ) : row.status === "failed" ? (
+                    <span className={styles.receiptImportQueueError}>
+                      {row.errorMessage ?? "解析に失敗しました。"}
+                    </span>
+                  ) : (
+                    <span className={styles.receiptImportQueueOk}>
+                      解析が完了しました（下のプレビューに反映）
+                    </span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
       {receiptDebugTier !== "server" ? (
         <p
           className={styles.infoText}
@@ -1266,7 +1320,7 @@ export function ReceiptPage() {
             <aside className={styles.receiptReviewImageCol} aria-label="元のレシート画像">
               <ReceiptRegionRescanPanel
                 imageObjectUrl={receiptImageObjectUrl}
-                busy={loading}
+                busy={receiptLineBusy}
                 onCroppedFile={(f) => {
                   void onFile(f);
                 }}
@@ -1350,7 +1404,6 @@ export function ReceiptPage() {
                 e.target.value ? normalizeReceiptCategoryId(Number(e.target.value)) : null,
               );
             }}
-            disabled={loading}
           >
             <option value="">なし</option>
             {categories.map((c) => (
@@ -1374,7 +1427,6 @@ export function ReceiptPage() {
               value={dateField.value}
               title={fieldTooltip(dateFieldLowConfidence)}
               onChange={(e) => setDraftDate(e.target.value)}
-              disabled={loading}
             />
           ) : (
             <input
@@ -1385,7 +1437,6 @@ export function ReceiptPage() {
               value={dateField.value}
               title={fieldTooltip(dateFieldLowConfidence)}
               onChange={(e) => setDraftDate(e.target.value)}
-              disabled={loading}
             />
           )}
         </div>
@@ -1403,7 +1454,6 @@ export function ReceiptPage() {
             value={draftTotal}
             title={fieldTooltip(amountFieldLowConfidence)}
             onChange={(e) => setDraftTotal(e.target.value)}
-            disabled={loading}
           />
           {receiptAiTaxHint ? (
             <p className={styles.receiptCategoryHint} style={{ marginTop: "0.35rem" }}>
@@ -1430,7 +1480,6 @@ export function ReceiptPage() {
                   key={`${c.source}-${c.total}-${idx}`}
                   type="button"
                   className={styles.btn}
-                  disabled={loading}
                   onClick={() => setDraftTotal(String(c.total))}
                   title={c.label}
                 >
@@ -1472,7 +1521,6 @@ export function ReceiptPage() {
               memoTouchedByUserRef.current = true;
               setDraftMemo(e.target.value);
             }}
-            disabled={loading}
           />
         </div>
         {items.length > 0 ? (
@@ -1513,7 +1561,6 @@ export function ReceiptPage() {
                         prev.map((row, i) => (i === idx ? { ...row, category: next } : row)),
                       );
                     }}
-                    disabled={loading}
                   >
                     {RECEIPT_ITEM_CATEGORIES.map((cat) => (
                       <option key={cat} value={cat}>
@@ -1531,7 +1578,6 @@ export function ReceiptPage() {
           type="button"
           className={`${styles.btn} ${styles.btnPrimary} ${styles.receiptFormSubmit}`}
           disabled={
-            loading ||
             registering ||
             !draftTotal.trim() ||
             dateField.kind !== "iso"
