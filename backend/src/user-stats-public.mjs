@@ -1,5 +1,9 @@
 /**
- * 公開 GET /user-stats 用: 登録ユーザー数と直近7日に API を利用したユーザー数（last_accessed_at 利用）。
+ * 公開 GET /user-stats
+ * - registeredUserCount: `users` 全行（本アプリの会員。一般的な「profiles」相当の別テーブルは未分離）
+ * - onlineUserCount5m: `last_accessed_at` が直近5分以内の行数（「現在オンライン」指標。Supabase Realtime / Firebase presence の代替）
+ * - activeUserCount7d: 参考（7日）
+ * - count: 旧クライアント向け。未指定時は onlineUserCount5m が取れなければ registered
  */
 
 function isBadFieldError(e) {
@@ -9,16 +13,27 @@ function isBadFieldError(e) {
 
 /**
  * @param {import("mysql2/promise").Pool} pool
- * @returns {Promise<{
- *   count: number,
- *   registeredUserCount: number,
- *   activeUserCount7d: number | null,
- *   asOf: string
- * }>}
  */
 export async function getPublicUserStatsPayload(pool) {
   const [[regRow]] = await pool.query(`SELECT COUNT(*) AS c FROM users`);
   const registeredUserCount = Math.max(0, Math.floor(Number(regRow?.c ?? 0)));
+
+  let onlineUserCount5m = null;
+  try {
+    const [[oRow]] = await pool.query(
+      `SELECT COUNT(*) AS c FROM users
+       WHERE last_accessed_at IS NOT NULL
+         AND last_accessed_at >= (NOW() - INTERVAL 5 MINUTE)`,
+    );
+    onlineUserCount5m = Math.max(0, Math.floor(Number(oRow?.c ?? 0)));
+  } catch (e) {
+    if (isBadFieldError(e)) {
+      onlineUserCount5m = null;
+    } else {
+      throw e;
+    }
+  }
+
   let activeUserCount7d = null;
   try {
     const [[aRow]] = await pool.query(
@@ -34,16 +49,19 @@ export async function getPublicUserStatsPayload(pool) {
       throw e;
     }
   }
-  let count;
-  if (activeUserCount7d != null) {
-    count = activeUserCount7d > 0 ? activeUserCount7d : registeredUserCount;
-  } else {
-    count = registeredUserCount;
-  }
+
+  const count =
+    onlineUserCount5m != null
+      ? onlineUserCount5m
+      : activeUserCount7d != null && activeUserCount7d > 0
+        ? activeUserCount7d
+        : registeredUserCount;
+
   return {
-    count,
     registeredUserCount,
+    onlineUserCount5m,
     activeUserCount7d: activeUserCount7d,
+    count,
     asOf: new Date().toISOString(),
   };
 }

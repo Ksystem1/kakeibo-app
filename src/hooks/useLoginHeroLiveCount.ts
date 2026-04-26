@@ -1,27 +1,20 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useCountUpFirst } from "./useCountUpFirst";
 import {
   fetchPublicUserStats,
   HERO_LIVE_USER_FALLBACK,
-  randomAvatarLetters,
+  pickAvatarLetters,
 } from "../lib/heroActiveUsers";
 
-const REFETCH_MS = 3 * 60 * 1000;
-const STALE_MS = 2 * 60 * 1000;
-
-function pickDisplayCount(data: { count: number } | undefined): number {
-  if (data && Number.isFinite(data.count)) {
-    return Math.max(0, Math.floor(data.count));
-  }
-  return HERO_LIVE_USER_FALLBACK;
-}
+const REFETCH_MS = 60_000;
+const STALE_MS = 30_000;
 
 /**
- * ログイン英雄部の利用者数（GET /user-stats + 数分間隔の再取得）とアバター装飾。
- * 数値は API の実数をそのまま表示（チック更新はせず、HeroRollingCount は文字列が変わったときだけ回転）。
+ * ログイン英雄: GET /user-stats、登録のカウントアップ＋オンラインの参照。
  */
 export function useLoginHeroLiveCount() {
-  const { data, isFetching, isError, error } = useQuery({
+  const { data, isError, isFetching, error } = useQuery({
     queryKey: ["public", "user-stats"] as const,
     queryFn: fetchPublicUserStats,
     refetchInterval: REFETCH_MS,
@@ -31,41 +24,69 @@ export function useLoginHeroLiveCount() {
     refetchOnWindowFocus: false,
   });
 
-  const display = pickDisplayCount(data);
-  const target = display;
+  const isProvisional = data == null && isFetching;
+
+  const regTarget = useMemo(() => {
+    if (data != null && Number.isFinite(data.registeredUserCount)) {
+      return Math.max(0, Math.floor(data.registeredUserCount));
+    }
+    if (isError) return HERO_LIVE_USER_FALLBACK;
+    return null;
+  }, [data, isError]);
+
+  const registeredDisplay = useCountUpFirst(regTarget, {
+    durationMs: 1050,
+    instant: Boolean(
+      isError && (data == null || !Number.isFinite(data?.registeredUserCount as number)),
+    ),
+  });
+
   const [avatarLetters, setAvatarLetters] = useState<string[]>(["A", "K", "M"]);
   const [avatarJiggle, setAvatarJiggle] = useState(0);
-  const lastServerCount = useRef<number | null>(null);
+  const lastOnline = useRef<number | null>(null);
 
-  /** 初回取得前のみ。再取得中は data が保たれフォールバック同幅のまま。 */
-  const isProvisional = data == null && isFetching;
+  useEffect(() => {
+    if (data == null) return;
+    if (data.onlineUserCount5m == null) {
+      setAvatarLetters(["A", "K", "M"]);
+      return;
+    }
+    const o = data.onlineUserCount5m;
+    if (lastOnline.current == null) {
+      setAvatarLetters(pickAvatarLetters(o));
+    } else if (o !== lastOnline.current) {
+      setAvatarJiggle((k) => k + 1);
+      setAvatarLetters(pickAvatarLetters(o));
+    }
+    lastOnline.current = o;
+  }, [data]);
 
   useEffect(() => {
     if (isError && data == null) {
       if (import.meta.env.DEV && error) {
         // eslint-disable-next-line no-console
-        console.warn("[user-stats] using fallback", error);
+        console.warn("[user-stats]", error);
       }
     }
   }, [isError, data, error]);
 
-  useEffect(() => {
-    if (data == null || !Number.isFinite(data.count)) return;
-    if (lastServerCount.current !== null && data.count !== lastServerCount.current) {
-      setAvatarJiggle((k) => k + 1);
-      setAvatarLetters((cur) => {
-        const { next } = randomAvatarLetters(cur, true);
-        return next;
-      });
-    }
-    lastServerCount.current = data.count;
-  }, [data?.count, data]);
+  const onlineFormatted = useMemo(() => {
+    if (data == null) return "0";
+    if (data.onlineUserCount5m == null) return "—";
+    return new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(
+      data.onlineUserCount5m,
+    );
+  }, [data]);
 
   return {
-    display,
-    target,
+    registeredDisplay,
+    isProvisional,
+    isError,
+    hasOnlineColumn: data != null && data.onlineUserCount5m != null,
+    onlineFormatted,
+    onlineApi: data?.onlineUserCount5m ?? null,
+    asOf: data?.asOf,
     avatarLetters,
     avatarJiggle,
-    isProvisional,
   };
 }

@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { AuthHeroAside } from "../components/AuthHeroAside";
 import { HeroRollingCount } from "../components/HeroRollingCount";
-import { LoginHeroPreview } from "../components/LoginHeroPreview";
 import { useLoginHeroLiveCount } from "../hooks/useLoginHeroLiveCount";
 import {
   getChildProfiles,
@@ -32,15 +31,17 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [demoExiting, setDemoExiting] = useState(false);
   const {
-    display: liveUserCount,
+    registeredDisplay,
     avatarLetters,
     avatarJiggle,
     isProvisional,
+    onlineFormatted,
+    hasOnlineColumn,
   } = useLoginHeroLiveCount();
-  const liveUserFormatted = useMemo(
+  const registeredLabel = useMemo(
     () =>
-      `+${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(liveUserCount)}`,
-    [liveUserCount],
+      `+${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(registeredDisplay)}`,
+    [registeredDisplay],
   );
 
   useEffect(() => {
@@ -110,70 +111,89 @@ export function LoginPage() {
             <h1 className={styles.heroTitle}>みんなの家計簿</h1>
             <p className={styles.heroDesc}>
               家計簿を共有できます。医療費控除の集計・固定費・おまかせ取込のイメージは
-              「デモを見る」で体験できます。
-              <span className={styles.heroDescMuted}>（DB 非接続）</span>
+              <strong className={styles.heroDescCtaEm}>「デモを見る」</strong>
+              で体験できます。
             </p>
           </section>
-          <section className={styles.heroPreviewColumn} aria-label="家計簿デモのスケルトン画面">
-            <LoginHeroPreview />
-          </section>
         </div>
-        <Link
-          to="/demo-dashboard"
-          className={styles.demoCta}
-          onClick={(e) => {
-            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-            e.preventDefault();
-            if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) {
-              navigate("/demo-dashboard");
-              return;
-            }
-            setDemoExiting(true);
-          }}
-        >
-          <span className={styles.demoCtaIconBubble} aria-hidden>
-            🎬
-          </span>
-          デモを見る
-        </Link>
-        <div
-          className={styles.heroSocialProof}
-          aria-label="利用中の目安人数（7日以内に利用があった会員、または会員数。サーバー集計。数分ごとに更新）"
-        >
-          <div
-            className={styles.heroAvatars}
-            aria-hidden
-            data-refresh={avatarJiggle}
+        <div className={styles.heroCtaBlock}>
+          <Link
+            to="/demo-dashboard"
+            className={styles.demoCta}
+            onClick={(e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+                navigate("/demo-dashboard");
+                return;
+              }
+              setDemoExiting(true);
+            }}
           >
-            {avatarLetters.map((ch, i) => (
-              <span key={i} className={styles.heroAvatar}>
-                {ch}
-              </span>
-            ))}
-          </div>
-          <div className={styles.heroLiveRow}>
-            <span className={styles.heroLiveIndicator}>
-              <span className={styles.heroLiveDotRings} aria-hidden>
-                <span className={styles.heroLiveRippleRing} />
-                <span className={`${styles.heroLiveRippleRing} ${styles.heroLiveRippleRingDelay}`} />
-              </span>
-              <span className={styles.heroLiveDot} />
-              ライブ
+            <span className={styles.demoCtaIconBubble} aria-hidden>
+              🎬
             </span>
-            <p className={styles.heroLiveCopy}>
-              <HeroRollingCount
-                className={`${styles.heroLiveCount}${isProvisional ? ` ${styles.heroLiveCountProvisional}` : ""}`}
-                value={liveUserFormatted}
+            デモを見る
+          </Link>
+          <p className={styles.heroMicroCopy}>登録不要で30秒で体験できます</p>
+        </div>
+        <div
+          className={styles.heroStatsBar}
+          aria-label="会員数と直近5分のオンライン想定。サーバーの集計。約1分ごとに再取得"
+        >
+          <div className={styles.heroStatReg}>
+            <p className={styles.heroStatLine}>
+              累計{" "}
+              <span
+                className={`${styles.heroStatRegNum}${
+                  isProvisional ? ` ${styles.heroStatRegNumProvisional}` : ""
+                }`}
                 aria-live="polite"
-                aria-atomic
                 data-provisional={isProvisional ? "true" : undefined}
                 aria-busy={isProvisional || undefined}
-              />
-              <span className={styles.heroLiveSuffix}>人が現在利用中</span>
+              >
+                {registeredLabel}
+              </span>{" "}
+              名が登録済み
+            </p>
+          </div>
+          <div className={styles.heroStatsDivider} aria-hidden />
+          <div className={styles.heroStatOn}>
+            <div
+              className={styles.heroAvatars}
+              aria-hidden
+              data-refresh={avatarJiggle}
+            >
+              {avatarLetters.map((ch, i) => (
+                <span key={i} className={styles.heroAvatar}>
+                  {ch}
+                </span>
+              ))}
+            </div>
+            <p className={styles.heroStatLine}>
+              <span className={styles.heroOnDotWrap} aria-hidden>
+                <span className={styles.heroOnDot} />
+              </span>
+              <span className={styles.heroOnBody}>
+                <HeroRollingCount
+                  className={[
+                    styles.heroOnNum,
+                    isProvisional && styles.heroOnNumProvisional,
+                    !hasOnlineColumn && styles.heroOnNumUnknown,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  value={onlineFormatted}
+                  aria-live="polite"
+                  aria-atomic
+                  data-provisional={isProvisional ? "true" : undefined}
+                  aria-busy={isProvisional || undefined}
+                />
+                <span className={styles.heroOnSuffix}>名が現在オンライン</span>
+              </span>
             </p>
           </div>
         </div>
-        <p className={styles.heroMicroCopy}>登録不要で30秒で体験できます</p>
       </AuthHeroAside>
       <main className={styles.panel}>
         <div className={styles.card}>
