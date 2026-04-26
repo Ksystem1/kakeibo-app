@@ -1,4 +1,4 @@
--- レシート店名（OCR 生）に対する Google Places 名寄せのキャッシュ（ユーザー別）
+-- レシート店名（OCR 生）キーに対する名寄せキャッシュ（ユーザー別・v42 で Bedrock 前提のコメントを整理）
 -- 実行: cd backend && npm run db:migrate-v40
 SET NAMES utf8mb4;
 

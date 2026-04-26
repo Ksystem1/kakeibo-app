@@ -10,7 +10,7 @@ import {
   previewPayPayCsvImport,
   savePlaceCategoryPreference,
   saveReceiptOcrCorrection,
-  resolveReceiptStorePlace,
+  resolveReceiptSuggestedVendor,
   type PayPayImportResult,
 } from "../lib/api";
 import { FeatureGate } from "../components/FeatureGate";
@@ -279,7 +279,7 @@ export function ReceiptPage() {
     | "chain_catalog"
     | "line_items"
     | "correction"
-    | "place_learn"
+    | "vendor_key_learn"
     | "ai"
     | null
   >(null);
@@ -291,7 +291,7 @@ export function ReceiptPage() {
   >([]);
   const [lastParsePremium, setLastParsePremium] = useState(false);
   const [receiptDictionaryHits, setReceiptDictionaryHits] = useState(0);
-  const [storePlaceHint, setStorePlaceHint] = useState<string | null>(null);
+  const [suggestedVendorHint, setSuggestedVendorHint] = useState<string | null>(null);
   const [receiptOcrVendorKey, setReceiptOcrVendorKey] = useState<string | null>(null);
   const memoTouchedByUserRef = useRef(false);
   const [receiptAiTaxHint, setReceiptAiTaxHint] = useState<string | null>(null);
@@ -689,7 +689,7 @@ export function ReceiptPage() {
     setSuggestedCategoryLowConfidence(false);
     setSuggestedCategoryNameHint(null);
     setTotalCandidates([]);
-    setStorePlaceHint(null);
+    setSuggestedVendorHint(null);
     setReceiptAiTaxHint(null);
     setLastParsePremium(false);
     setReceiptDictionaryHits(0);
@@ -709,39 +709,39 @@ export function ReceiptPage() {
       });
       setTotalCandidates(Array.isArray(r.totalCandidates) ? r.totalCandidates : []);
       {
-        const sp = r.storePlaceResolution;
+        const sp = r.suggestedVendor;
         if (sp?.ocrVendorKey) {
           setReceiptOcrVendorKey(sp.ocrVendorKey);
         } else {
           setReceiptOcrVendorKey(null);
         }
-        if (sp && sp.displayName) {
-          setStorePlaceHint(
-            sp.formattedAddress
-              ? `${sp.displayName} / ${sp.formattedAddress}${sp.fromCache ? "（履歴名寄せ）" : ""}`
-              : sp.displayName,
+        if (sp && sp.suggestedStoreName) {
+          setSuggestedVendorHint(
+            sp.locationHint
+              ? `${sp.suggestedStoreName} / ${sp.locationHint}${sp.fromCache ? "（履歴名寄せ）" : ""}`
+              : sp.suggestedStoreName,
           );
         } else {
-          setStorePlaceHint(null);
+          setSuggestedVendorHint(null);
         }
         if (sp?.deferred && sp.rawVendorName) {
           const rawV = String(sp.rawVendorName).trim();
           void (async () => {
             try {
-              const res = await resolveReceiptStorePlace({ vendorName: rawV });
-              if (!res.found || !res.storePlaceResolution) return;
-              const spr = res.storePlaceResolution;
+              const res = await resolveReceiptSuggestedVendor({ vendorName: rawV });
+              if (!res.found || !res.suggestedVendor) return;
+              const spr = res.suggestedVendor;
               if (spr.ocrVendorKey) {
                 setReceiptOcrVendorKey(spr.ocrVendorKey);
               }
-              if (spr.displayName) {
-                setStorePlaceHint(
-                  spr.formattedAddress
-                    ? `${spr.displayName} / ${spr.formattedAddress}${spr.fromCache ? "（履歴名寄せ）" : ""}`
-                    : spr.displayName,
+              if (spr.suggestedStoreName) {
+                setSuggestedVendorHint(
+                  spr.locationHint
+                    ? `${spr.suggestedStoreName} / ${spr.locationHint}${spr.fromCache ? "（履歴名寄せ）" : ""}`
+                    : spr.suggestedStoreName,
                 );
                 if (!memoTouchedByUserRef.current) {
-                  setDraftMemo(spr.displayName);
+                  setDraftMemo(spr.suggestedStoreName);
                 }
               }
             } catch {
@@ -795,16 +795,16 @@ export function ReceiptPage() {
       }
       const vendorTrim = s?.vendorName?.trim() ?? "";
       setOcrVendor(vendorTrim);
-      const spNow = r.storePlaceResolution;
+      const spNow = r.suggestedVendor;
       if (r.learnCorrectionHit && r.suggestedMemo !== undefined) {
         setDraftMemo(r.suggestedMemo);
       } else if (
         spNow &&
         !spNow.deferred &&
-        spNow.displayName != null &&
-        String(spNow.displayName).trim() !== ""
+        spNow.suggestedStoreName != null &&
+        String(spNow.suggestedStoreName).trim() !== ""
       ) {
-        setDraftMemo(String(spNow.displayName).trim());
+        setDraftMemo(String(spNow.suggestedStoreName).trim());
       } else {
         setDraftMemo(vendorTrim);
       }
@@ -850,11 +850,11 @@ export function ReceiptPage() {
       const initialMemo =
         r.learnCorrectionHit && r.suggestedMemo !== undefined
           ? String(r.suggestedMemo).trim()
-          : r.storePlaceResolution &&
-              !r.storePlaceResolution.deferred &&
-              r.storePlaceResolution.displayName != null &&
-              String(r.storePlaceResolution.displayName).trim() !== ""
-            ? String(r.storePlaceResolution.displayName).trim()
+          : r.suggestedVendor &&
+              !r.suggestedVendor.deferred &&
+              r.suggestedVendor.suggestedStoreName != null &&
+              String(r.suggestedVendor.suggestedStoreName).trim() !== ""
+            ? String(r.suggestedVendor.suggestedStoreName).trim()
             : vendorTrim;
       setLoadedReceiptBaseline({
         memo: initialMemo,
@@ -878,7 +878,7 @@ export function ReceiptPage() {
       setNotice(e instanceof Error ? e.message : String(e));
       setItems([]);
       setReceiptMainCategory(null);
-      setStorePlaceHint(null);
+      setSuggestedVendorHint(null);
       setReceiptOcrVendorKey(null);
       setReceiptAiTaxHint(null);
       setLastParsePremium(false);
@@ -1186,8 +1186,8 @@ export function ReceiptPage() {
               ? "過去履歴から自動反映しました（必要なら変更できます）。"
               : categorySuggestSource === "correction"
                 ? "過去の補正内容を反映しました（必要なら変更できます）。"
-                : categorySuggestSource === "place_learn"
-                  ? "同じ店名（名寄せ）に対して以前選んだカテゴリを優先しました（必要なら変更できます）。"
+                : categorySuggestSource === "vendor_key_learn"
+                  ? "同じ店名（OCRキー名寄せ）に対して以前選んだカテゴリを優先しました（必要なら変更できます）。"
                 : categorySuggestSource === "global_master"
                   ? "全体の統計辞書からカテゴリを推測しました（必要なら変更できます）。"
                 : categorySuggestSource === "ai"
@@ -1209,13 +1209,13 @@ export function ReceiptPage() {
             お支払い金額（税込合計）を合わせてください。
           </p>
         ) : null}
-        {storePlaceHint ? (
+        {suggestedVendorHint ? (
           <p
             className={styles.receiptSummaryHint}
             style={{ gridColumn: "1 / -1" }}
-            title="OCRの生表記を推定店名（AI）に揃えた結果です。メモ欄のツールチップでも確認できます。"
+            title="OCRの生表記を推定店名（Amazon Bedrock）に揃えた結果です。メモ欄のツールチップでも確認できます。"
           >
-            店名の名寄せ（推定）: {storePlaceHint}
+            推定店名: {suggestedVendorHint}
           </p>
         ) : null}
         <div className={`${styles.field} ${styles.receiptFieldKind}`}>
@@ -1345,7 +1345,7 @@ export function ReceiptPage() {
             placeholder="内容"
             value={draftMemo}
             title={
-              storePlaceHint
+              suggestedVendorHint
                 ? "名寄せ済み: 推定店名をメモに入れています。編集すると上書きされます。"
                 : undefined
             }

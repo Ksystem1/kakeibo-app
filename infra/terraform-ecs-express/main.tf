@@ -274,7 +274,8 @@ resource "aws_iam_role_policy_attachment" "task_textract_full" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonTextractFullAccess"
 }
 
-# AI 家計アドバイザー（POST /ai/advisor）・レシート補助で Bedrock Runtime を使用。
+# AI 家計アドバイザー・レシート名寄せ等で Bedrock Runtime を使用。
+# AmazonBedrockFullAccess 相当の包括ポリシーは付与せず、Invoke/Converse と foundation-model/* + 当アカウント inference-profile/* に最小付与（ECS タスクロール）。
 # foundation-model: arn:aws:bedrock:<region>::foundation-model/<model-id>
 # inference-profile: arn:aws:bedrock:<region>:<account>:inference-profile/<id>（us.xxx 等）
 data "aws_iam_policy_document" "task_bedrock" {

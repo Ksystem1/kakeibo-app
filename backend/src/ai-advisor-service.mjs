@@ -49,6 +49,18 @@ function geoInferencePrefixForRegion(region) {
  * 上から順に試行。各モデルは global → 地域推論プロファイル → 基盤 ID。
  * @see https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
  */
+/** レシート店名名寄せ（Claude 3.5 Sonnet のみ試行: v2 優先 → v1） */
+function claude35SonnetModelCandidates(region) {
+  const geo = geoInferencePrefixForRegion(region);
+  return [
+    `global.${BEDROCK_MODEL_ID_SONNET_3_5_V2}`,
+    `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V2}`,
+    BEDROCK_MODEL_ID_SONNET_3_5_V2,
+    `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V1}`,
+    BEDROCK_MODEL_ID_SONNET_3_5_V1,
+  ].filter((x, i, arr) => arr.indexOf(x) === i);
+}
+
 function defaultBedrockModelCandidates(region) {
   const geo = geoInferencePrefixForRegion(region);
   return [
@@ -541,9 +553,18 @@ async function invokeOneModel(client, modelId, systemPrompt, userPrompt, maxToke
   }
 }
 
-async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, temperature = 0.4 }) {
-  const { region, modelId, candidates } = getBedrockConfig();
-  if (!modelId || candidates.length === 0) {
+async function invokeBedrockText({
+  systemPrompt,
+  userPrompt,
+  maxTokens = 300,
+  temperature = 0.4,
+  modelCandidates: modelCandidatesOverride = null,
+} = {}) {
+  const { region, modelId, candidates: defaultCandidates } = getBedrockConfig();
+  const candidates = Array.isArray(modelCandidatesOverride) && modelCandidatesOverride.length > 0
+    ? modelCandidatesOverride
+    : defaultCandidates;
+  if (!candidates || candidates.length === 0) {
     return {
       ok: false,
       code: "NoModelConfig",
@@ -601,7 +622,7 @@ async function invokeBedrockText({ systemPrompt, userPrompt, maxTokens = 300, te
   return {
     ok: false,
     ...mapAwsError(lastErr),
-    modelId,
+    modelId: modelId || candidates[0],
     attemptsLog: allAttempts,
   };
 }
@@ -626,32 +647,60 @@ function parseJsonBlock(raw) {
 const BEDROCK_VENDOR_RESOLVE_MAX = 200;
 
 /**
- * レシートOCR等の生テキストから、看板に近い店名と（任意）粗い地域ヒントを推定。Amazon Bedrock のみ。外部地図APIは使わない。
+ * レシートOCR から推定店名・粗い地域・（任意）家計の支出カテゴリ名を 1 回の Bedrock 呼び出しで得る。
+ * 支出カテゴリ名は `expenseCategoryNames` を UI（例: 設定画面のカテゴリ一覧・image_8c1cba.png 相当）と同じ集合として渡す。
+ * モデルは **Claude 3.5 Sonnet** 系 ID のみを順に試行。外部地図 API は使わない。
  * @param {string} ocrText
+ * @param {{ expenseCategoryNames?: string[] }} [options]
  * @returns {Promise<
- *   | { ok: true; displayName: string; formattedAddress: string }
+ *   | {
+ *       ok: true;
+ *       suggestedStoreName: string;
+ *       locationHint: string;
+ *       suggestedExpenseCategoryName: string | null;
+ *     }
  *   | { ok: false; code?: string }
  * >}
  */
-export async function bedrockResolveVendorDisplayName(ocrText) {
+export async function bedrockResolveSuggestedVendor(ocrText, options = {}) {
   const raw = String(ocrText ?? "").trim();
   if (raw.length < 2) return { ok: false, code: "InputTooShort" };
+  const catList = Array.isArray(options?.expenseCategoryNames)
+    ? options.expenseCategoryNames
+        .map((n) => String(n ?? "").trim())
+        .filter((n) => n.length > 0)
+    : [];
+  const catListDeduped = catList.filter((n, i, a) => a.indexOf(n) === i);
+  const catBlock =
+    catListDeduped.length > 0
+      ? [
+          "The user's expense category labels (use EXACTLY one string from this list for expenseCategoryName, or null if none fits):",
+          JSON.stringify(catListDeduped),
+          "expenseCategoryName must be null or byte-for-byte equal to one list entry. If unsure, use null.",
+        ].join("\n")
+      : "expenseCategoryName must be null (no category list was provided).";
+
   const systemPrompt = [
-    "You infer likely Japanese business names from noisy receipt OCR: abbreviations, katakana fragments, misread kanji, register tape noise.",
-    "Output one JSON object only, no code fences, no other text.",
-    "Keys: displayName (string), locationHint (string or null).",
-    "displayName: natural Japanese store or chain name people would use, at most 120 characters. Not a product line unless that is the only business label.",
-    "locationHint: Japanese prefecture or city only if you can do so plausibly without a map API; else null. Never invent a street address.",
-  ].join(" ");
-  const userPrompt = [
-    "OCR/店名テキスト:",
-    raw.slice(0, BEDROCK_VENDOR_RESOLVE_MAX),
+    "You analyze noisy Japanese receipt OCR to infer: (1) a natural, official-style store/brand name, (2) an optional region hint, (3) the best-matching spending category from the user-provided list if any.",
+    "Answer with ONE JSON object only. No markdown fences, no other text, no explanation.",
+    "JSON keys in this exact order of requirement:",
+    "  suggestedStoreName: string, natural Japanese, max 120 characters.",
+    "  locationHint: string (prefecture or city in Japan) or null. Never invent a full street address.",
+    "  expenseCategoryName: string (exactly one from the list) or null.",
+    catBlock,
   ].join("\n");
+
+  const userPrompt = ["OCR / raw merchant text (Japanese):", raw.slice(0, BEDROCK_VENDOR_RESOLVE_MAX)].join("\n");
+  const region = String(
+    process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION,
+  ).trim() || DEFAULT_REGION;
+  const modelCandidates = claude35SonnetModelCandidates(region);
   const out = await invokeBedrockText({
     systemPrompt,
     userPrompt,
-    maxTokens: 400,
-    temperature: 0.1,
+    maxTokens: 500,
+    temperature: 0.05,
+    modelCandidates,
   });
   if (!out?.ok || !out.reply) {
     return { ok: false, code: out?.code || "BedrockError" };
@@ -660,14 +709,25 @@ export async function bedrockResolveVendorDisplayName(ocrText) {
   if (!parsed || typeof parsed !== "object") {
     return { ok: false, code: "InvalidModelJson" };
   }
-  let displayName = parsed.displayName != null ? String(parsed.displayName).trim() : "";
-  if (!displayName || /^(不明|unknown|N\/?A)$/i.test(displayName)) {
-    return { ok: false, code: "NoDisplayName" };
+  let name =
+    parsed.suggestedStoreName != null
+      ? String(parsed.suggestedStoreName).trim()
+      : parsed.displayName != null
+        ? String(parsed.displayName).trim()
+        : "";
+  if (!name || /^(不明|unknown|N\/?A)$/i.test(name)) {
+    return { ok: false, code: "NoStoreName" };
   }
-  displayName = displayName.slice(0, 500);
-  let loc = parsed.locationHint;
-  const locStr = loc == null || String(loc).trim() === "" ? "" : String(loc).trim().slice(0, 200);
-  return { ok: true, displayName, formattedAddress: locStr };
+  name = name.slice(0, 500);
+  const locRaw = parsed.locationHint != null ? String(parsed.locationHint).trim() : "";
+  const locationHint = locRaw ? locRaw.slice(0, 200) : "";
+  const catFromModel = parsed.expenseCategoryName != null ? String(parsed.expenseCategoryName).trim() : "";
+  let suggestedExpenseCategoryName = null;
+  if (catListDeduped.length > 0 && catFromModel) {
+    const match = catListDeduped.find((c) => c === catFromModel);
+    suggestedExpenseCategoryName = match ?? null;
+  }
+  return { ok: true, suggestedStoreName: name, locationHint, suggestedExpenseCategoryName };
 }
 
 function normalizeReceiptAiPayload(data) {

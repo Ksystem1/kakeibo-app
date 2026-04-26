@@ -6442,7 +6442,7 @@ export async function handleApiRequest(req, options = {}) {
             }
           }
 
-          let storePlaceResolution = null;
+          let suggestedVendor = null;
           if (subscriptionActive && String(adjustedSummary?.vendorName ?? "").trim().length >= 2) {
             try {
               const cached = await getUserStorePlaceCached(
@@ -6451,24 +6451,24 @@ export async function handleApiRequest(req, options = {}) {
                 String(adjustedSummary.vendorName).trim(),
               );
               if (cached) {
-                storePlaceResolution = {
+                suggestedVendor = {
                   fromCache: true,
                   placeId: cached.placeId,
-                  displayName: cached.displayName,
-                  formattedAddress: cached.formattedAddress,
+                  suggestedStoreName: cached.suggestedStoreName,
+                  locationHint: cached.locationHint,
                   preferredCategoryId: cached.preferredCategoryId,
                   ocrVendorKey: cached.ocrVendorKey,
                 };
               } else {
                 const vn = String(adjustedSummary.vendorName).trim();
-                storePlaceResolution = {
+                suggestedVendor = {
                   deferred: true,
                   ocrVendorKey: ocrVendorFingerprintHex(vn),
                   rawVendorName: vn.slice(0, 200),
                 };
               }
             } catch (ePl) {
-              logError("receipts.parse.store_place", ePl);
+              logError("receipts.parse.suggested_vendor", ePl);
             }
           }
 
@@ -6580,11 +6580,11 @@ export async function handleApiRequest(req, options = {}) {
           let placePreferredCategoryId = null;
           let placePreferredCategoryName = null;
           if (
-            storePlaceResolution &&
-            !storePlaceResolution.deferred &&
-            storePlaceResolution.preferredCategoryId != null
+            suggestedVendor &&
+            !suggestedVendor.deferred &&
+            suggestedVendor.preferredCategoryId != null
           ) {
-            const ppn = Number(storePlaceResolution.preferredCategoryId);
+            const ppn = Number(suggestedVendor.preferredCategoryId);
             if (Number.isFinite(ppn) && ppn > 0) {
               const pHit = expenseCatRows.find((x) => Number(x.id) === ppn);
               if (pHit) {
@@ -6614,7 +6614,7 @@ export async function handleApiRequest(req, options = {}) {
             learnCorrectionHit && (learnedCategoryId != null || learnedMemoPresent)
               ? "correction"
               : placePreferredCategoryId != null
-                ? "place_learn"
+                ? "vendor_key_learn"
                 : predicted.source;
           const suggestedCategoryLowConfidence =
             learnedCategoryId != null || placePreferredCategoryId != null
@@ -6735,7 +6735,7 @@ export async function handleApiRequest(req, options = {}) {
             receiptAdvancedParsingMessages,
             totalCandidates,
             receiptGlobalDictionaryHitCount: subscriptionActive ? receiptGlobalDictionaryHitCount : 0,
-            storePlaceResolution,
+            suggestedVendor,
             receiptAiDetail: subscriptionActive
               ? {
                   taxAmount:
@@ -6810,7 +6810,8 @@ export async function handleApiRequest(req, options = {}) {
         }
       }
 
-      case "POST /receipts/resolve-store-place": {
+      case "POST /receipts/resolve-store-place":
+      case "POST /receipts/resolve-suggested-vendor": {
         const b = JSON.parse(req.body || "{}");
         const resSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
         if (resSubRej) return resSubRej;
@@ -6820,7 +6821,7 @@ export async function handleApiRequest(req, options = {}) {
             403,
             {
               error: "SubscriptionRequired",
-              detail: "店名の名寄せ（高度AI）はプレミアム機能です。",
+              detail: "店名の名寄せ（Amazon Bedrock）はプレミアム機能です。",
             },
             hdrs,
             skipCors,
@@ -6848,11 +6849,12 @@ export async function handleApiRequest(req, options = {}) {
             {
               ok: true,
               found: true,
-              storePlaceResolution: {
+              suggestedVendor: {
                 fromCache: res.fromCache,
                 placeId: res.placeId,
-                displayName: res.displayName,
-                formattedAddress: res.formattedAddress,
+                suggestedStoreName: res.suggestedStoreName,
+                locationHint: res.locationHint,
+                suggestedExpenseCategoryName: res.suggestedExpenseCategoryName ?? null,
                 saved: res.saved,
                 ocrVendorKey: res.ocrVendorKey,
               },
@@ -6861,10 +6863,10 @@ export async function handleApiRequest(req, options = {}) {
             skipCors,
           );
         } catch (e) {
-          logError("receipts.resolve_store_place", e);
+          logError("receipts.resolve_suggested_vendor", e);
           return json(
             500,
-            { error: "ResolveStorePlaceError", detail: "店名の名寄せに失敗しました。" },
+            { error: "ResolveVendorError", detail: "店名の名寄せ（Bedrock）に失敗しました。" },
             hdrs,
             skipCors,
           );

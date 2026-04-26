@@ -1,14 +1,37 @@
 /**
- * user_store_places: 高速キャッシュ取得・店名名寄せ（Bedrock）の永続化・学習カテゴリ
+ * user_store_places: 高速キャッシュ取得・店名名寄せ（Amazon Bedrock）の永続化・学習カテゴリ
  */
-import { bedrockResolveVendorDisplayName } from "./ai-advisor-service.mjs";
+import { bedrockResolveSuggestedVendor } from "./ai-advisor-service.mjs";
 import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
+
+/** `app-core` の `catWhere` と同一（家族/本人の支出カテゴリ名の取得用） */
+const CAT_WHERE_FOR_USER = `(c.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (c.family_id IS NULL AND c.user_id = ?))`;
+
+/**
+ * 家計簿の支出カテゴリ名（UI のカテゴリ一覧 image_8c1cba.png と同じ DB 集合）
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {number|string} userId
+ * @returns {Promise<string[]>}
+ */
+export async function loadUserExpenseCategoryNameList(pool, userId) {
+  const [rows] = await pool.query(
+    `SELECT c.name
+     FROM categories c
+     WHERE ${CAT_WHERE_FOR_USER} AND c.is_archived = 0 AND c.kind = 'expense'
+     ORDER BY c.sort_order, c.id`,
+    [userId, userId],
+  );
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((r) => (r && r.name != null ? String(r.name).trim() : ""))
+    .filter((n) => n.length > 0);
+}
 
 /**
  * @param {import("mysql2/promise").Pool} pool
  * @param {number|string} userId
  * @param {string} vendorName
- * @returns {Promise<null | { ocrVendorKey: string, placeId: string, displayName: string, formattedAddress: string, preferredCategoryId: number | null }>}
+ * @returns {Promise<null | { ocrVendorKey: string, placeId: string, suggestedStoreName: string, locationHint: string, preferredCategoryId: number | null }>}
  */
 export async function getUserStorePlaceCached(pool, userId, vendorName) {
   const v = String(vendorName ?? "").trim();
@@ -27,8 +50,8 @@ export async function getUserStorePlaceCached(pool, userId, vendorName) {
     return {
       ocrVendorKey,
       placeId: r.place_id != null ? String(r.place_id) : "",
-      displayName: r.display_name != null ? String(r.display_name) : "",
-      formattedAddress: r.formatted_address != null ? String(r.formatted_address) : "",
+      suggestedStoreName: r.display_name != null ? String(r.display_name) : "",
+      locationHint: r.formatted_address != null ? String(r.formatted_address) : "",
       preferredCategoryId:
         r.preferred_category_id != null && r.preferred_category_id !== ""
           ? Number(r.preferred_category_id)
@@ -59,15 +82,23 @@ async function getUserStorePlaceCachedLegacyNoPrefColumn(pool, userId, ocrVendor
   return {
     ocrVendorKey,
     placeId: r.place_id != null ? String(r.place_id) : "",
-    displayName: r.display_name != null ? String(r.display_name) : "",
-    formattedAddress: r.formatted_address != null ? String(r.formatted_address) : "",
+    suggestedStoreName: r.display_name != null ? String(r.display_name) : "",
+    locationHint: r.formatted_address != null ? String(r.formatted_address) : "",
     preferredCategoryId: null,
   };
 }
 
 /**
- * Bedrock 名寄せ → INSERT（解析本体とは別リクエスト用。外部地図APIは使わない。）
- * @returns {Promise<null | { fromCache: boolean, saved: boolean, placeId: string, displayName: string, formattedAddress: string, ocrVendorKey: string }>}
+ * Bedrock 名寄せ → INSERT（解析本体とは別リクエスト用。外部地図 API は使わない。）
+ * @returns {Promise<null | {
+ *   fromCache: boolean,
+ *   saved: boolean,
+ *   placeId: string,
+ *   suggestedStoreName: string,
+ *   locationHint: string,
+ *   suggestedExpenseCategoryName: string | null,
+ *   ocrVendorKey: string
+ * }>}
  */
 export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) {
   const v = String(vendorName ?? "").trim();
@@ -80,13 +111,16 @@ export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) 
       saved: true,
       ocrVendorKey: cached.ocrVendorKey,
       placeId: cached.placeId,
-      displayName: cached.displayName,
-      formattedAddress: cached.formattedAddress,
+      suggestedStoreName: cached.suggestedStoreName,
+      locationHint: cached.locationHint,
+      suggestedExpenseCategoryName: null,
     };
   }
-  const br = await bedrockResolveVendorDisplayName(v);
+  const expenseCategoryNames = await loadUserExpenseCategoryNameList(pool, userId);
+  const br = await bedrockResolveSuggestedVendor(v, { expenseCategoryNames });
   if (!br.ok) return null;
   const placeId = "";
+  const rowHint = br.locationHint || null;
   try {
     await pool.query(
       `INSERT INTO user_store_places
@@ -97,7 +131,7 @@ export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) 
          display_name = VALUES(display_name),
          formatted_address = VALUES(formatted_address),
          updated_at = CURRENT_TIMESTAMP`,
-      [userId, ocrVendorKey, br.displayName, br.formattedAddress || null],
+      [userId, ocrVendorKey, br.suggestedStoreName, rowHint],
     );
   } catch (e) {
     const c = e && typeof e === "object" && "code" in e ? String(e.code) : "";
@@ -107,8 +141,9 @@ export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) 
         saved: false,
         ocrVendorKey,
         placeId,
-        displayName: br.displayName,
-        formattedAddress: br.formattedAddress,
+        suggestedStoreName: br.suggestedStoreName,
+        locationHint: br.locationHint,
+        suggestedExpenseCategoryName: br.suggestedExpenseCategoryName,
       };
     }
     return null;
@@ -118,8 +153,9 @@ export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) 
     saved: true,
     ocrVendorKey,
     placeId,
-    displayName: br.displayName,
-    formattedAddress: br.formattedAddress,
+    suggestedStoreName: br.suggestedStoreName,
+    locationHint: br.locationHint,
+    suggestedExpenseCategoryName: br.suggestedExpenseCategoryName,
   };
 }
 
@@ -141,7 +177,7 @@ export async function setUserStorePlacePreferredCategory(
 }
 
 /**
- * 行がなければ最小行を INSERT し、Places 解決前でも「店名キー×カテゴリ」を学習できる。
+ * 行がなければ最小行を INSERT し、名寄せ前でも「店名キー×カテゴリ」を学習できる。
  * v41 未適用時は ER_BAD_FIELD_ERROR で失わずに false を返す（呼び出し側で無視可）。
  * @param {string | null} vendorNameForResolve 行がなく、名寄せ（Bedrock）も走らせる場合に渡す
  */

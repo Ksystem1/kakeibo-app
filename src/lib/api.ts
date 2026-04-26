@@ -1331,7 +1331,7 @@ export async function parseReceiptImage(
           | "chain_catalog"
           | "line_items"
           | "correction"
-          | "place_learn"
+          | "vendor_key_learn"
           | "ai"
           | null;
         suggestedCategoryLowConfidence?: boolean;
@@ -1347,15 +1347,16 @@ export async function parseReceiptImage(
         receiptAdvancedParsingMessages?: string[];
         totalCandidates?: Array<{ total: number; label: string; source: string }>;
         receiptGlobalDictionaryHitCount?: number;
-        storePlaceResolution?: {
+        suggestedVendor?: {
           fromCache?: boolean;
           deferred?: boolean;
           ocrVendorKey: string;
           placeId?: string;
-          displayName?: string;
-          formattedAddress?: string;
+          suggestedStoreName?: string;
+          locationHint?: string;
           rawVendorName?: string;
           preferredCategoryId?: number | null;
+          suggestedExpenseCategoryName?: string | null;
           saved?: boolean;
         } | null;
         receiptAiDetail?: {
@@ -1375,9 +1376,9 @@ export async function parseReceiptImage(
   );
 }
 
-/** 解析後、店名名寄せ（Bedrock・バックグラウンド用・メイン解析をブロックしない） */
-export async function resolveReceiptStorePlace(body: { vendorName: string }) {
-  const res = await apiFetch(`${BASE}/receipts/resolve-store-place`, {
+/** 解析後、店名名寄せ（Amazon Bedrock・バックグラウンド用。メイン解析をブロックしない） */
+export async function resolveReceiptSuggestedVendor(body: { vendorName: string }) {
+  const res = await apiFetch(`${BASE}/receipts/resolve-suggested-vendor`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify({ vendorName: body.vendorName }),
@@ -1385,11 +1386,12 @@ export async function resolveReceiptStorePlace(body: { vendorName: string }) {
   return parse<{
     ok: boolean;
     found: boolean;
-    storePlaceResolution?: {
+    suggestedVendor?: {
       fromCache: boolean;
       placeId: string;
-      displayName: string;
-      formattedAddress: string;
+      suggestedStoreName: string;
+      locationHint: string;
+      suggestedExpenseCategoryName: string | null;
       saved?: boolean;
       ocrVendorKey: string;
     };
@@ -1400,7 +1402,7 @@ export async function resolveReceiptStorePlace(body: { vendorName: string }) {
 export async function savePlaceCategoryPreference(body: {
   ocrVendorKey: string;
   categoryId: number | null;
-  /** 行が未作成のとき Places 名寄せに使う生の店名表記 */
+  /** 行が未作成のとき Bedrock 名寄せに使う生の店名表記 */
   vendorName?: string;
 }) {
   const res = await apiFetch(`${BASE}/receipts/place-category-preference`, {
