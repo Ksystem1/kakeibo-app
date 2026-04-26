@@ -951,6 +951,7 @@ function buildReceiptAiPromptBundle(opts) {
       "一般知識・履歴・推測で店名やカテゴリを補完しないでください。",
       "補助JSONには ocrLines のみ含まれます。Textract の構造化 summary/items は渡しません。",
       "必ず1つのJSONオブジェクトのみを返す。前後に説明文やマークダウンを付けない。",
+      "1文字目は { で始まること。Here is the JSON / 説明文 / コードブロック(```) / 箇条書きは出さない。",
     ].join("\n");
 
     const auxPayload = {
@@ -990,6 +991,7 @@ function buildReceiptAiPromptBundle(opts) {
 
   const systemPrompt = [
     "家計レシート抽出。出力は1つの厳密なJSONだけ。前後の説明・```・マークダウン禁止。",
+    "1文字目は必ず { 。先頭に Here is / 以下のJSON などのテキストを一切付けない。",
     "画像＞補助JSON（Textract summary / items / ocrLines / 履歴）。純度の高いJSONのみ。",
     catLine,
     vHint,
@@ -1141,7 +1143,7 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
         )}`
       : "item.category: [食費、日用品、衣類、娯楽、医療、教育、交通費、その他] のいずれか1つ。";
   const systemPrompt = [
-    "レシートOCR→JSON 整形。出力はJSON1件のみ。説明・```禁止。",
+    "レシートOCR→JSON 整形。出力はJSON1件のみ。先頭1文字は { 。Here is / 説明 / ``` 禁止。",
     "必須キー: storeName, date, totalAmount, taxAmount, items, mainCategory。",
     "taxAmount: 税等の合計(円) または null。",
     catLine,

@@ -3,7 +3,9 @@ import {
   getReceiptJobStatus,
   type ParseReceiptResult,
   type ReceiptAsyncJobStatus,
+  type ReceiptJobErrorPayload,
 } from "../lib/api";
+import { isSuccessfulReceiptJobApplyResult } from "../lib/receiptJobResult";
 
 const DEFAULT_POLL_MS = 1600;
 
@@ -17,7 +19,7 @@ export type ReceiptImportQueueItem = {
   objectUrl: string;
   jobId: string;
   status: ReceiptAsyncJobStatus;
-  result?: ParseReceiptResult;
+  result?: ParseReceiptResult | ReceiptJobErrorPayload;
   errorMessage?: string | null;
 };
 
@@ -60,13 +62,18 @@ export function useReceiptJob(
           setQueue((prev) => {
             const p = prev.find((x) => x.localKey === q.localKey);
             if (!p) return prev;
+            const badCompleted =
+              st.status === "completed" &&
+              st.result != null &&
+              !isSuccessfulReceiptJobApplyResult(st.result);
+            const coerced: ReceiptAsyncJobStatus = badCompleted ? "failed" : st.status;
             return prev.map((x) =>
               x.localKey === q.localKey
                 ? {
                     ...x,
-                    status: st.status,
+                    status: coerced,
                     result: st.result ?? x.result,
-                    errorMessage: st.errorMessage ?? undefined,
+                    errorMessage: st.errorMessage ?? x.errorMessage ?? undefined,
                   }
                 : x,
             );
@@ -75,7 +82,7 @@ export function useReceiptJob(
             applyOncePerJobIdRef.current.delete(q.jobId);
             return;
           }
-          if (st.status === "completed" && st.result) {
+          if (st.status === "completed" && isSuccessfulReceiptJobApplyResult(st.result)) {
             if (!applyOncePerJobIdRef.current.has(q.jobId)) {
               applyOncePerJobIdRef.current.add(q.jobId);
               if (q.objectUrl === previewRef.current) {

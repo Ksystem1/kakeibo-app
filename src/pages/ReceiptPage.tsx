@@ -24,6 +24,7 @@ import { getReceiptDebugTier } from "../lib/receiptDebugTier";
 import { looksLikePayPayCsv } from "../lib/paypayCsv";
 import { UNIFIED_IMPORT_ACCEPT, isCsvFileName, isReceiptImageFile, isTxtFileName } from "../lib/importFileKind";
 import { useReceiptJob, type ReceiptImportQueueItem } from "../hooks/useReceiptJob";
+import { formatReceiptQueueFailureMessage } from "../lib/receiptJobResult";
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
 
@@ -1072,9 +1073,22 @@ export function ReceiptPage() {
                       <span>AIが解析しています…</span>
                     </div>
                   ) : row.status === "failed" ? (
-                    <span className={styles.receiptImportQueueError}>
-                      {row.errorMessage ?? "解析に失敗しました。"}
-                    </span>
+                    <div className={styles.receiptImportQueueError} style={{ display: "grid", gap: "0.45rem" }}>
+                      <span>
+                        {formatReceiptQueueFailureMessage(row.errorMessage, row.result)}
+                      </span>
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnSm}`}
+                        disabled={isBusy}
+                        onClick={() => {
+                          setNotice(null);
+                          galleryInputRef.current?.click();
+                        }}
+                      >
+                        写真を選び直す
+                      </button>
+                    </div>
                   ) : (
                     <span className={styles.receiptImportQueueOk}>
                       解析が完了しました（下のプレビューに反映）

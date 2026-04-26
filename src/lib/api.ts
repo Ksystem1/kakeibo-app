@@ -1368,6 +1368,17 @@ export type ParseReceiptResult = {
 
 export type ReceiptAsyncJobStatus = "pending" | "processing" | "completed" | "failed";
 
+/** 非同期ジョブの `result_data` に入るエラー形（スキーマ `receipt_job_v1`） */
+export type ReceiptJobErrorPayload = {
+  _schema?: "receipt_job_v1";
+  error?: string;
+  message?: string;
+  rawText?: string;
+  httpStatus?: number | null;
+  apiCode?: string | null;
+  apiDetail?: string | null;
+};
+
 /** レシート解析 API 送信中の進捗（アップロード完了後は server フェーズ） */
 export type ParseReceiptImageProgress = {
   phase: "upload" | "server";
@@ -1532,7 +1543,7 @@ export async function getReceiptJobStatus(jobId: string) {
   return parse<{
     jobId: string;
     status: ReceiptAsyncJobStatus;
-    result: ParseReceiptResult | null;
+    result: ParseReceiptResult | ReceiptJobErrorPayload | null;
     errorMessage: string | null;
     createdAt: string;
     updatedAt: string;

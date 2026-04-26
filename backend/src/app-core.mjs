@@ -39,6 +39,11 @@ import {
   askBedrockReceiptAssistant,
   inferReceiptImageMediaTypeFromBuffer,
 } from "./ai-advisor-service.mjs";
+import {
+  buildAsyncReceiptJobResultFromHttpBody,
+  buildReceiptJobErrorData,
+  receiptJobResultDataForMysqlBinding,
+} from "./receipt-job-result.mjs";
 import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
 import {
   getUserStorePlaceCached,
@@ -2508,8 +2513,15 @@ export async function handleApiRequest(req, options = {}) {
         const j = rows[0];
         let result = null;
         if (j.result_data != null) {
-          result =
-            typeof j.result_data === "string" ? JSON.parse(j.result_data) : j.result_data;
+          try {
+            result = typeof j.result_data === "string" ? JSON.parse(j.result_data) : j.result_data;
+          } catch (e) {
+            result = {
+              _schema: "receipt_job_v1",
+              error: "result_data_parse_failed",
+              message: e instanceof Error ? e.message : String(e),
+            };
+          }
         }
         return json(
           200,
@@ -7335,9 +7347,15 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
       [jobId, userId],
     );
     if (!row?.request_json) {
+      const errD = buildReceiptJobErrorData({
+        kind: "missing_request",
+        message: "リクエスト本文がジョブに含まれていません。",
+        rawText: "",
+      });
       await pool.query(
-        `UPDATE receipt_processing_jobs SET status = 'failed', error_message = 'missing request_json', updated_at = NOW() WHERE job_id = ?`,
-        [jobId],
+        `UPDATE receipt_processing_jobs
+         SET status = 'failed', result_data = ?, error_message = ?, updated_at = NOW() WHERE job_id = ?`,
+        [receiptJobResultDataForMysqlBinding(errD), "missing request_json", jobId],
       );
       return;
     }
@@ -7352,46 +7370,66 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     );
     const statusCode = Number(out.statusCode ?? 500) || 500;
     const raw = typeof out.body === "string" ? out.body : JSON.stringify(out.body ?? "");
+
+    if (statusCode >= 200 && statusCode < 300) {
+      const { status, resultData } = buildAsyncReceiptJobResultFromHttpBody(raw);
+      const em =
+        status === "failed" && resultData && typeof resultData === "object"
+          ? String(
+              resultData.message != null
+                ? resultData.message
+                : resultData.error != null
+                  ? resultData.error
+                  : "レシート解析の結果をJSONとして保存できませんでした。",
+            ).slice(0, 4000)
+          : null;
+      await pool.query(
+        `UPDATE receipt_processing_jobs
+         SET status = ?, result_data = ?, error_message = ?, updated_at = NOW()
+         WHERE job_id = ?`,
+        [status, receiptJobResultDataForMysqlBinding(/** @type {Record<string, unknown>} */(resultData)), em, jobId],
+      );
+      return;
+    }
+
     let parsed = {};
     try {
       parsed = raw ? JSON.parse(raw) : {};
     } catch {
-      parsed = { _parseError: true, raw: raw ? raw.slice(0, 500) : "" };
+      parsed = {};
     }
-    if (statusCode >= 200 && statusCode < 300) {
-      let toStore;
-      try {
-        toStore = raw ? JSON.parse(raw) : null;
-      } catch {
-        toStore = { _raw: raw };
-      }
-      await pool.query(
-        `UPDATE receipt_processing_jobs
-         SET status = 'completed', result_data = ?, error_message = NULL, updated_at = NOW()
-         WHERE job_id = ?`,
-        [toStore == null ? null : toStore, jobId],
-      );
-    } else {
-      const detail =
-        parsed && typeof parsed === "object" && (parsed.detail || parsed.error)
-          ? String(parsed.detail || parsed.error)
-          : `HTTP ${statusCode}`;
-      await pool.query(
-        `UPDATE receipt_processing_jobs
-         SET status = 'failed', result_data = NULL, error_message = ?, updated_at = NOW()
-         WHERE job_id = ?`,
-        [detail.slice(0, 4000), jobId],
-      );
-    }
+    const detail =
+      parsed && typeof parsed === "object" && (parsed.detail || parsed.error)
+        ? String(parsed.detail || parsed.error)
+        : `HTTP ${statusCode}`;
+    const errD = buildReceiptJobErrorData({
+      kind: "parse_http_error",
+      message: detail.slice(0, 2000),
+      rawText: raw,
+      httpStatus: statusCode,
+      apiCode: typeof parsed === "object" && parsed && "error" in parsed ? String(parsed.error) : null,
+      apiDetail: detail,
+    });
+    await pool.query(
+      `UPDATE receipt_processing_jobs
+       SET status = 'failed', result_data = ?, error_message = ?, updated_at = NOW()
+       WHERE job_id = ?`,
+      [receiptJobResultDataForMysqlBinding(errD), detail.slice(0, 4000), jobId],
+    );
   } catch (e) {
     logError("receipts.job.run", e, { jobId, userId });
     try {
       const msg = e instanceof Error ? e.message : String(e);
+      const errD = buildReceiptJobErrorData({
+        kind: "run_exception",
+        message: msg.slice(0, 2000),
+        rawText: "",
+      });
       await pool.query(
         `UPDATE receipt_processing_jobs
-         SET status = 'failed', error_message = ?, updated_at = NOW()
+         SET status = 'failed', result_data = ?, error_message = ?, updated_at = NOW()
          WHERE job_id = ? AND user_id = ?`,
-        [msg.slice(0, 4000), jobId, userId],
+        [receiptJobResultDataForMysqlBinding(errD), msg.slice(0, 4000), jobId, userId],
       );
     } catch {
       /* ignore */
