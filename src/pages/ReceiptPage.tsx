@@ -6,7 +6,6 @@ import {
   createTransaction,
   FEATURE_RECEIPT_AI,
   getCategories,
-  getReceiptJobStatus,
   type ParseReceiptResult,
   type ReceiptAsyncJobStatus,
   uploadReceiptForAsyncJob,
@@ -24,6 +23,7 @@ import { ReceiptRegionRescanPanel } from "../components/ReceiptRegionRescanPanel
 import { getReceiptDebugTier } from "../lib/receiptDebugTier";
 import { looksLikePayPayCsv } from "../lib/paypayCsv";
 import { UNIFIED_IMPORT_ACCEPT, isCsvFileName, isReceiptImageFile, isTxtFileName } from "../lib/importFileKind";
+import { useReceiptJob, type ReceiptImportQueueItem } from "../hooks/useReceiptJob";
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
 
@@ -75,16 +75,6 @@ const CATEGORY_TAGS = {
   medical: ["医療", "病院", "薬", "薬局", "ドラッグ"],
   leisure: ["娯楽", "交際", "外食", "趣味", "レジャー"],
 } as const;
-
-type ReceiptImportQueueItem = {
-  localKey: string;
-  fileName: string;
-  objectUrl: string;
-  jobId: string;
-  status: ReceiptAsyncJobStatus;
-  result?: ParseReceiptResult;
-  errorMessage?: string | null;
-};
 
 const TAG_KEYWORDS = {
   food: [
@@ -341,8 +331,6 @@ export function ReceiptPage() {
   > | null>(null);
   /** 非同期解析ジョブ（他の取込をブロックしない） */
   const [receiptImportQueue, setReceiptImportQueue] = useState<ReceiptImportQueueItem[]>([]);
-  const receiptImportQueueRef = useRef<ReceiptImportQueueItem[]>([]);
-  const receiptImageObjectUrlRef = useRef<string | null>(null);
   const [registering, setRegistering] = useState(false);
   const receiptLineBusy = useMemo(
     () =>
@@ -411,14 +399,6 @@ export function ReceiptPage() {
       mounted = false;
     };
   }, []);
-
-  useEffect(() => {
-    receiptImageObjectUrlRef.current = receiptImageObjectUrl;
-  }, [receiptImageObjectUrl]);
-
-  useEffect(() => {
-    receiptImportQueueRef.current = receiptImportQueue;
-  }, [receiptImportQueue]);
 
   const applyServerParseResult = useCallback(
     (r: ParseReceiptResult) => {
@@ -606,66 +586,12 @@ export function ReceiptPage() {
     [categories],
   );
 
-  const receiptPollApplyOnceRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      const pending = receiptImportQueueRef.current.filter(
-        (x) => x.status === "pending" || x.status === "processing",
-      );
-      for (const q of pending) {
-        void (async () => {
-          let st: Awaited<ReturnType<typeof getReceiptJobStatus>>;
-          try {
-            st = await getReceiptJobStatus(q.jobId);
-          } catch {
-            return;
-          }
-          setReceiptImportQueue((prev) => {
-            const p = prev.find((x) => x.localKey === q.localKey);
-            if (!p) return prev;
-            return prev.map((x) =>
-              x.localKey === q.localKey
-                ? {
-                    ...x,
-                    status: st.status,
-                    result: st.result ?? x.result,
-                    errorMessage: st.errorMessage ?? undefined,
-                  }
-                : x,
-            );
-          });
-          if (st.status === "failed") {
-            receiptPollApplyOnceRef.current.delete(q.jobId);
-            return;
-          }
-          if (st.status === "completed" && st.result) {
-            if (!receiptPollApplyOnceRef.current.has(q.jobId)) {
-              receiptPollApplyOnceRef.current.add(q.jobId);
-              if (q.objectUrl === receiptImageObjectUrlRef.current) {
-                applyServerParseResult(st.result);
-              }
-              if (
-                typeof document !== "undefined" &&
-                document.visibilityState === "hidden" &&
-                typeof Notification !== "undefined" &&
-                Notification.permission === "granted"
-              ) {
-                try {
-                  new Notification("レシートの解析が完了しました", {
-                    body: "取込内容をご確認ください。",
-                  });
-                } catch {
-                  /* ignore */
-                }
-              }
-            }
-          }
-        })();
-      }
-    }, 1600);
-    return () => clearInterval(t);
-  }, [applyServerParseResult]);
+  useReceiptJob(
+    receiptImportQueue,
+    setReceiptImportQueue,
+    receiptImageObjectUrl,
+    applyServerParseResult,
+  );
 
   useEffect(() => {
     if (draftCategoryId != null) return;
