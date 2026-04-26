@@ -8,6 +8,7 @@
 .app-layout-surface--glass-nav {
   /* モバイル: 下ナビ分 */
   padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  overflow: visible;
 }
 
 @media (min-width: 769px) {
@@ -28,8 +29,8 @@
   z-index: 2000;
   left: 50%;
   transform: translateX(-50%);
-  width: min(100% - 1.1rem, 48rem);
-  max-width: calc(100% - 1.1rem);
+  width: fit-content;
+  max-width: 95vw;
   box-sizing: border-box;
   /* 下固定（スマホ） / 上固定はメディアクエリで上書き */
   bottom: max(0.45rem, env(safe-area-inset-bottom, 0px));
@@ -43,17 +44,52 @@
   border: 1px solid var(--app-glass-border);
   box-shadow: var(--app-glass-shadow);
   /* 下に寄せ幅いっぱいは中身で flex センタリング */
-  margin: 0;
+  margin: 0 auto;
 }
 
 /* 下バー: 小画面では横スクロールも可能に */
 @media (max-width: 768px) {
   .app-glass-nav {
-    left: 0.55rem;
-    right: 0.55rem;
-    transform: none;
-    max-width: none;
-    width: auto;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(95vw, 30rem);
+    max-width: 95vw;
+    overflow: hidden;
+    z-index: 2200;
+  }
+
+  .app-glass-nav::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 2.2rem;
+    height: 100%;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.78));
+    border-radius: 0 20px 20px 0;
+  }
+
+  .app-glass-nav::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1.2rem;
+    height: 100%;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0));
+    border-radius: 20px 0 0 20px;
+    opacity: 0.7;
+  }
+
+  :root[data-theme="dark"] .app-glass-nav::after {
+    background: linear-gradient(90deg, rgba(18, 18, 26, 0), rgba(18, 18, 26, 0.8));
+  }
+
+  :root[data-theme="dark"] .app-glass-nav::before {
+    background: linear-gradient(90deg, rgba(18, 18, 26, 0.8), rgba(18, 18, 26, 0));
   }
 }
 
@@ -61,8 +97,8 @@
   .app-glass-nav {
     top: max(0.6rem, env(safe-area-inset-top, 0px));
     bottom: auto;
-    width: auto;
-    max-width: min(100% - 1.5rem, 66rem);
+    width: fit-content;
+    max-width: 95vw;
     /* 上中央: left 50% 再適用 */
     left: 50%;
     right: auto;
@@ -102,6 +138,8 @@
   scroll-snap-type: x proximity;
   scrollbar-width: none;
   font-family: "Inter", "Noto Sans JP", system-ui, sans-serif;
+  width: 100%;
+  padding-right: 0.55rem;
 }
 
 .app-glass-nav__list::-webkit-scrollbar {
@@ -588,11 +626,16 @@
   .app-glass-nav {
     border-radius: 22px;
     padding: 0.38rem 0.48rem;
+    width: min(95vw, 52rem);
   }
 
   .app-glass-nav__list {
-    gap: 0.14rem;
+    flex-wrap: wrap;
+    overflow: visible;
+    justify-content: center;
+    gap: clamp(0.12rem, 0.5vw, 0.22rem);
     min-height: 3.28rem;
+    padding-right: 0;
   }
 
   .app-glass-nav__link {
@@ -624,21 +667,27 @@
 
   .app-glass-nav__list {
     min-height: 3.15rem;
-    justify-content: space-between;
-    gap: 0.1rem;
+    justify-content: flex-start;
+    gap: 0.16rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    padding: 0 1.85rem 0 0.2rem;
   }
 
   .app-glass-nav__li {
-    flex: 1 1 0;
+    flex: 0 0 auto;
+    scroll-snap-align: center;
   }
 
   .app-glass-nav__link {
-    width: 100%;
+    width: auto;
+    min-width: 2.95rem;
     min-height: 44px;
-    padding: 0.28rem 0.28rem 0.34rem;
+    padding: 0.3rem 0.48rem 0.34rem;
     flex-direction: column;
     gap: 0.15rem;
-    font-size: 0.64rem;
+    font-size: 0.62rem;
     letter-spacing: 0.02em;
   }
 
@@ -650,6 +699,16 @@
   .app-glass-nav__icon {
     width: 1.05rem;
     height: 1.05rem;
+  }
+
+  .app-glass-nav__text {
+    display: none;
+  }
+
+  .app-glass-nav__badge {
+    position: absolute;
+    top: 0.1rem;
+    right: 0.08rem;
   }
 
   .app-glass-nav-feature-grid {

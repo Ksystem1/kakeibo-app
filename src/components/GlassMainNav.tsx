@@ -98,6 +98,8 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
               {item.kind === "action" ? (
                 <button
                   type="button"
+                  aria-label={item.label}
+                  title={item.label}
                   className={[
                     "app-glass-nav__link",
                     "app-glass-nav__button",
@@ -130,6 +132,8 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
               ) : (
                 <NavLink
                   to={item.to ?? "/"}
+                  aria-label={item.label}
+                  title={item.label}
                   end={item.end ?? false}
                   className={({ isActive }) =>
                     [
