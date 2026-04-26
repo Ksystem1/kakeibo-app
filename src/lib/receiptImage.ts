@@ -31,6 +31,37 @@ async function legacyImageBase64(file: File): Promise<string> {
 }
 
 /**
+ * OCR 向けの軽量プリプロセス: グレースケール＋明るさの正規化（暗い室内撮影の文字コントラスト補正）。
+ * 幾何の歪み補正は OpenCV.wasm 等の追加を想定（本関数は2D API のみ）。
+ */
+function applyOcrPreprocessToCanvas(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+) {
+  const { data } = ctx.getImageData(0, 0, width, height);
+  for (let i = 0; i < data.length; i += 4) {
+    const y = 0.2126 * data[i]! + 0.7152 * data[i + 1]! + 0.0722 * data[i + 2]!;
+    data[i] = data[i + 1] = data[i + 2] = y;
+  }
+  let min = 255;
+  let max = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const y = data[i]!;
+    if (y < min) min = y;
+    if (y > max) max = y;
+  }
+  const range = max - min || 1;
+  for (let i = 0; i < data.length; i += 4) {
+    const v = ((data[i]! - min) / range) * 255;
+    const t = v < 0 ? 0 : v > 255 ? 255 : v;
+    data[i] = data[i + 1] = data[i + 2] = t;
+  }
+  const imageData = new ImageData(data, width, height);
+  ctx.putImageData(imageData, 0, 0);
+}
+
+/**
  * レシート画像を API 送信用の base64（生データ、data URL プレフィックスなし）にする。
  */
 export async function prepareReceiptImageForApi(file: File): Promise<string> {
@@ -74,6 +105,7 @@ export async function prepareReceiptImageForApi(file: File): Promise<string> {
       throw new Error("画像処理に失敗しました。");
     }
     ctx.drawImage(bitmap, 0, 0, width, height);
+    applyOcrPreprocessToCanvas(ctx, width, height);
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob((b) => resolve(b), "image/jpeg", JPEG_QUALITY),

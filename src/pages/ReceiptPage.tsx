@@ -15,6 +15,7 @@ import { FeatureGate } from "../components/FeatureGate";
 import { isReservedLedgerFixedCostCategoryName } from "../lib/transactionCategories";
 import { normalizeReceiptDateToYmd } from "../lib/receiptDate";
 import { prepareReceiptImageForApi } from "../lib/receiptImage";
+import { ReceiptRegionRescanPanel } from "../components/ReceiptRegionRescanPanel";
 import { getReceiptDebugTier } from "../lib/receiptDebugTier";
 import { looksLikePayPayCsv } from "../lib/paypayCsv";
 import { UNIFIED_IMPORT_ACCEPT, isCsvFileName, isReceiptImageFile, isTxtFileName } from "../lib/importFileKind";
@@ -307,6 +308,12 @@ export function ReceiptPage() {
   } | null>(null);
   /** true のときはカテゴリ変更をユーザー操作とみなし、baseline を自動追従しない */
   const categoryTouchedByUserRef = useRef(false);
+  /** 強調色を外す用（再レンダーが必要） */
+  const [userEditedCategory, setUserEditedCategory] = useState(false);
+  const [receiptFieldConfidence, setReceiptFieldConfidence] = useState<Record<
+    string,
+    number | null | undefined
+  > | null>(null);
   const [loading, setLoading] = useState(false);
   const [registering, setRegistering] = useState(false);
   const isBusy = loading || paypayLoading;
@@ -682,6 +689,8 @@ export function ReceiptPage() {
     setLastOcrForLearn(null);
     setLoadedReceiptBaseline(null);
     categoryTouchedByUserRef.current = false;
+    setUserEditedCategory(false);
+    setReceiptFieldConfidence(null);
     try {
       const b64 = await prepareReceiptImageForApi(f);
       const r = await parseReceiptImage(b64, {
@@ -708,6 +717,13 @@ export function ReceiptPage() {
           : null,
       );
       const s = r.summary;
+      if (s && typeof s === "object" && s.fieldConfidence && typeof s.fieldConfidence === "object") {
+        setReceiptFieldConfidence(
+          s.fieldConfidence as Record<string, number | null | undefined>,
+        );
+      } else {
+        setReceiptFieldConfidence(null);
+      }
       if (s && typeof s === "object") {
         setLastOcrForLearn({
           summary: s as Record<string, unknown>,
@@ -790,6 +806,7 @@ export function ReceiptPage() {
       setReceiptMainCategory(null);
       setLastParsePremium(false);
       setReceiptDictionaryHits(0);
+      setReceiptFieldConfidence(null);
     } finally {
       setLoading(false);
     }
@@ -803,6 +820,30 @@ export function ReceiptPage() {
   const pickDisabled = isBusy ? styles.receiptPickBtnDisabled : "";
 
   const dateField = useMemo(() => dateFieldMode(draftDate), [draftDate]);
+
+  const receiptLineSumCheck = useMemo(() => {
+    const lineSum = items.reduce((acc, it) => {
+      const n = Number(it.amount);
+      if (!Number.isFinite(n) || n <= 0) return acc;
+      return acc + n;
+    }, 0);
+    const raw = draftTotal.replace(/[, 　]/g, "");
+    const total = Number.parseFloat(raw);
+    if (items.length === 0) return { mismatch: false, lineSum, total };
+    if (!Number.isFinite(total) || total <= 0) return { mismatch: false, lineSum, total };
+    if (lineSum <= 0) return { mismatch: false, lineSum, total };
+    return { mismatch: Math.abs(lineSum - total) > 2, lineSum, total };
+  }, [items, draftTotal]);
+
+  const fc = receiptFieldConfidence;
+  const lowOcrFieldConf = (k: "date" | "totalAmount" | "vendorName") => {
+    const n = fc?.[k];
+    return typeof n === "number" && n < 0.9;
+  };
+  const categoryFieldLowConfidence = suggestedCategoryLowConfidence && !userEditedCategory;
+  const amountFieldLowConfidence =
+    receiptLineSumCheck.mismatch || lowOcrFieldConf("totalAmount");
+  const dateFieldLowConfidence = lowOcrFieldConf("date");
 
   const busyLabel = loading ? "解析中…" : "明細を処理中…";
   const loadingUi = (
@@ -893,19 +934,6 @@ export function ReceiptPage() {
           </button>
         </div>
       </FeatureGate>
-
-      {receiptImageObjectUrl && unifiedMode === "receipt" ? (
-        <div
-          className={styles.settingsPanel}
-          style={{ marginBottom: "0.75rem", padding: "0.65rem", textAlign: "center" as const }}
-        >
-          <img
-            src={receiptImageObjectUrl}
-            alt="選択したレシート画像"
-            style={{ maxWidth: "100%", maxHeight: 240, borderRadius: 8, objectFit: "contain" as const }}
-          />
-        </div>
-      ) : null}
 
       {unifiedMode === "paypay" && paypayCommitSuccess ? (
         <div
@@ -1044,6 +1072,25 @@ export function ReceiptPage() {
       ) : null}
 
       {unifiedMode === "receipt" ? (
+        <div
+          className={receiptImageObjectUrl ? styles.receiptReviewLayout : undefined}
+          style={!receiptImageObjectUrl ? ({ display: "contents" } as const) : undefined}
+        >
+          {receiptImageObjectUrl ? (
+            <aside className={styles.receiptReviewImageCol} aria-label="元のレシート画像">
+              <ReceiptRegionRescanPanel
+                imageObjectUrl={receiptImageObjectUrl}
+                busy={loading}
+                onCroppedFile={(f) => {
+                  void onFile(f);
+                }}
+              />
+            </aside>
+          ) : null}
+          <div
+            className={receiptImageObjectUrl ? styles.receiptReviewFormCol : undefined}
+            style={!receiptImageObjectUrl ? ({ display: "contents" } as const) : undefined}
+          >
         <form
         className={styles.form}
         data-receipt-form
@@ -1074,19 +1121,33 @@ export function ReceiptPage() {
             未分類（推測: {suggestedCategoryNameHint}）
           </p>
         ) : null}
+        {receiptLineSumCheck.mismatch && items.length > 0 ? (
+          <p className={styles.receiptTotalMismatch} role="status">
+            明細行の合計（¥{receiptLineSumCheck.lineSum.toLocaleString("ja-JP")}）が
+            入力中の合計
+            {Number.isFinite(receiptLineSumCheck.total) ? `（¥${receiptLineSumCheck.total.toLocaleString("ja-JP")}）` : ""}
+            と揃いません。税抜/税別・消費税行・割引行・ポイント利用のときは、合計欄に店頭の
+            お支払い金額（税込合計）を合わせてください。
+          </p>
+        ) : null}
         <div className={`${styles.field} ${styles.receiptFieldKind}`}>
           <label htmlFor={kindFieldId}>種別</label>
           <select id={kindFieldId} value="expense" disabled aria-readonly>
             <option value="expense">支出</option>
           </select>
         </div>
-        <div className={`${styles.field} ${styles.receiptFieldCategory}`}>
+        <div
+          className={`${styles.field} ${styles.receiptFieldCategory} ${
+            categoryFieldLowConfidence ? styles.receiptFieldLowConfidence : ""
+          }`}
+        >
           <label htmlFor={categoryFieldId}>カテゴリ</label>
           <select
             id={categoryFieldId}
             value={draftCategoryId ?? ""}
             onChange={(e) => {
               categoryTouchedByUserRef.current = true;
+              setUserEditedCategory(true);
               setDraftCategoryId(
                 e.target.value ? normalizeReceiptCategoryId(Number(e.target.value)) : null,
               );
@@ -1102,7 +1163,11 @@ export function ReceiptPage() {
           </select>
           {categorySuggestSource ? <small className={styles.receiptCategoryHint}>自動候補</small> : null}
         </div>
-        <div className={`${styles.field} ${styles.receiptFieldDate}`}>
+        <div
+          className={`${styles.field} ${styles.receiptFieldDate} ${
+            dateFieldLowConfidence ? styles.receiptFieldLowConfidence : ""
+          }`}
+        >
           <label htmlFor={dateFieldId}>日付</label>
           {dateField.kind === "iso" ? (
             <input
@@ -1124,7 +1189,11 @@ export function ReceiptPage() {
             />
           )}
         </div>
-        <div className={`${styles.field} ${styles.receiptFieldAmount}`}>
+        <div
+          className={`${styles.field} ${styles.receiptFieldAmount} ${
+            amountFieldLowConfidence ? styles.receiptFieldLowConfidence : ""
+          }`}
+        >
           <label htmlFor={totalFieldId}>金額</label>
           <input
             id={totalFieldId}
@@ -1198,6 +1267,11 @@ export function ReceiptPage() {
               {items.map((it, idx) => (
                 <div
                   key={`${it.name}-${idx}`}
+                  className={
+                    typeof it.confidence === "number" && it.confidence < 0.9
+                      ? styles.receiptItemRowLowConfidence
+                      : undefined
+                  }
                   style={{
                     display: "grid",
                     gridTemplateColumns: "minmax(0,1fr) auto",
@@ -1302,6 +1376,8 @@ export function ReceiptPage() {
           {registering ? "登録中…" : "登録"}
         </button>
       </form>
+          </div>
+        </div>
       ) : null}
 
       {notice ? (

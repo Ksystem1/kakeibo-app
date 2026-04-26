@@ -12,6 +12,96 @@
 .receiptImportWrap {
   min-height: 0;
 }
+
+/* レシート確認: 画像左・フォーム右（狭い幅では縦積み） */
+.receiptReviewLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 1.1rem;
+  align-items: start;
+  width: 100%;
+  max-width: min(1120px, 100%);
+  margin: 0 auto 0.5rem;
+}
+.receiptReviewImageCol {
+  position: sticky;
+  top: 0.5rem;
+  min-width: 0;
+}
+.receiptReviewFormCol {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .receiptReviewLayout {
+    grid-template-columns: 1fr;
+  }
+  .receiptReviewImageCol {
+    position: static;
+  }
+}
+.receiptFieldLowConfidence > input,
+.receiptFieldLowConfidence > select {
+  box-shadow: 0 0 0 2px color-mix(in srgb, #f0b429 70%, transparent);
+  border-color: color-mix(in srgb, #d4a01a 55%, var(--input-border));
+}
+.receiptTotalMismatch {
+  grid-column: 1 / -1;
+  margin: 0.15rem 0 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: color-mix(in srgb, #f0b429 18%, transparent);
+  border: 1px solid color-mix(in srgb, #d4a01a 40%, transparent);
+}
+.receiptItemRowLowConfidence {
+  padding: 0.25rem 0.3rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, #f0b429 12%, transparent);
+}
+.receiptRescanBlock {
+  min-width: 0;
+}
+.receiptRescanHelp {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
+.receiptRescanStage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  box-sizing: border-box;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+.receiptRescanImage {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: min(56vh, 640px);
+  object-fit: contain;
+  border-radius: 7px;
+  vertical-align: top;
+}
+.receiptRescanBox {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+}
+.receiptRescanErr {
+  font-size: 0.86rem;
+  color: #e85d5d;
+  margin: 0 0 0.4rem;
+}
+
 @media (max-width: 768px) {
   .receiptImportWrap {
     min-height: auto;
