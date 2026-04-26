@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { AuthHeroAside } from "../components/AuthHeroAside";
-import { HeroRollingCount } from "../components/HeroRollingCount";
 import { useLoginHeroLiveCount } from "../hooks/useLoginHeroLiveCount";
 import {
   getChildProfiles,
@@ -30,14 +29,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [demoExiting, setDemoExiting] = useState(false);
-  const {
-    registeredDisplay,
-    avatarLetters,
-    avatarJiggle,
-    isProvisional,
-    onlineFormatted,
-    hasOnlineColumn,
-  } = useLoginHeroLiveCount();
+  const { registeredDisplay, avatarLetters, avatarJiggle, isProvisional } = useLoginHeroLiveCount();
   const registeredLabel = useMemo(
     () =>
       `+${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(registeredDisplay)}`,
@@ -139,7 +131,7 @@ export function LoginPage() {
         </div>
         <div
           className={styles.heroStatsBlock}
-          aria-label="会員数と直近5分の稼働中ユーザー想定。サーバーの集計。約1分ごとに再取得"
+          aria-label="会員数と稼働状況。サーバーの集計。約1分ごとに再取得"
         >
           <p className={styles.heroStatLine}>
             累計{" "}
@@ -171,23 +163,7 @@ export function LoginPage() {
               <span className={styles.heroOnDotWrap} aria-hidden>
                 <span className={styles.heroOnDot} />
               </span>
-              <span className={styles.heroOnBody}>
-                <HeroRollingCount
-                  className={[
-                    styles.heroOnNum,
-                    isProvisional && styles.heroOnNumProvisional,
-                    !hasOnlineColumn && styles.heroOnNumUnknown,
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  value={onlineFormatted}
-                  aria-live="polite"
-                  aria-atomic
-                  data-provisional={isProvisional ? "true" : undefined}
-                  aria-busy={isProvisional || undefined}
-                />
-                <span className={styles.heroOnSuffix}>稼働中</span>
-              </span>
+              稼働中
             </p>
           </div>
         </div>

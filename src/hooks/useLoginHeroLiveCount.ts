@@ -70,20 +70,10 @@ export function useLoginHeroLiveCount() {
     }
   }, [isError, data, error]);
 
-  const onlineFormatted = useMemo(() => {
-    if (data == null) return "0";
-    if (data.onlineUserCount5m == null) return "—";
-    return new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(
-      data.onlineUserCount5m,
-    );
-  }, [data]);
-
   return {
     registeredDisplay,
     isProvisional,
     isError,
-    hasOnlineColumn: data != null && data.onlineUserCount5m != null,
-    onlineFormatted,
     onlineApi: data?.onlineUserCount5m ?? null,
     asOf: data?.asOf,
     avatarLetters,
