@@ -1358,6 +1358,8 @@ export async function parseReceiptImage(
           preferredCategoryId?: number | null;
           suggestedExpenseCategoryName?: string | null;
           saved?: boolean;
+          inferenceConfidence?: number;
+          inferenceLowConfidence?: boolean;
         } | null;
         receiptAiDetail?: {
           taxAmount: number | null;
@@ -1386,6 +1388,10 @@ export async function resolveReceiptSuggestedVendor(body: { vendorName: string }
   return parse<{
     ok: boolean;
     found: boolean;
+    vendorResolveSkipped?: boolean;
+    userHint?: string;
+    reasonCode?: string | null;
+    ocrVendorKey?: string;
     suggestedVendor?: {
       fromCache: boolean;
       placeId: string;
@@ -1394,6 +1400,8 @@ export async function resolveReceiptSuggestedVendor(body: { vendorName: string }
       suggestedExpenseCategoryName: string | null;
       saved?: boolean;
       ocrVendorKey: string;
+      inferenceConfidence?: number;
+      inferenceLowConfidence?: boolean;
     };
   }>(res);
 }

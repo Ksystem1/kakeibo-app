@@ -665,6 +665,41 @@ function pickCategoryIdByAiName(aiName, categoryRows) {
   return partial;
 }
 
+/**
+ * 取込画面で保存した「名寄せ店名ラベル → 支出カテゴリ」（user_store_places）を Bedrock 補助JSONへ
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {number|string} userId
+ * @returns {Promise<Array<{ storeLabel: string, categoryName: string }>>}
+ */
+async function fetchUserVendorOcrKeyCategoryHints(pool, userId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT u.display_name, c.name AS category_name
+       FROM user_store_places u
+       INNER JOIN categories c
+         ON c.id = u.preferred_category_id
+         AND c.kind = 'expense'
+         AND c.is_archived = 0
+         AND (c.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?)
+              OR (c.family_id IS NULL AND c.user_id = ?))
+       WHERE u.user_id = ? AND u.preferred_category_id IS NOT NULL
+         AND u.display_name IS NOT NULL AND TRIM(u.display_name) != ''
+       ORDER BY u.updated_at DESC
+       LIMIT 24`,
+      [userId, userId, userId],
+    );
+    const out = [];
+    for (const r of Array.isArray(rows) ? rows : []) {
+      const sl = r.display_name != null ? String(r.display_name).trim() : "";
+      const cn = r.category_name != null ? String(r.category_name).trim() : "";
+      if (sl && cn) out.push({ storeLabel: sl, categoryName: cn });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function normalizeVendorName(s) {
   return normalizeKeyword(s)
     .replace(/株式会社/g, "")
@@ -6322,6 +6357,14 @@ export async function handleApiRequest(req, options = {}) {
           const historyHints = subscriptionActive
             ? await fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere, 48, txP2)
             : [];
+          let vendorOcrKeyHints = [];
+          if (subscriptionActive) {
+            try {
+              vendorOcrKeyHints = await fetchUserVendorOcrKeyCategoryHints(pool, userId);
+            } catch (eH) {
+              logError("receipts.parse.vendor_ocr_key_hints", eH);
+            }
+          }
           let aiReceipt = null;
           if (subscriptionActive) {
             try {
@@ -6329,6 +6372,7 @@ export async function handleApiRequest(req, options = {}) {
                 subscriptionActive,
                 historyHints,
                 memoCategoryPairs,
+                vendorOcrKeyHints,
                 heuristicCategorySuggestion: suggestedCategory
                   ? {
                       name: suggestedCategory.name,
@@ -6458,6 +6502,8 @@ export async function handleApiRequest(req, options = {}) {
                   locationHint: cached.locationHint,
                   preferredCategoryId: cached.preferredCategoryId,
                   ocrVendorKey: cached.ocrVendorKey,
+                  inferenceConfidence: 1,
+                  inferenceLowConfidence: false,
                 };
               } else {
                 const vn = String(adjustedSummary.vendorName).trim();
@@ -6844,6 +6890,21 @@ export async function handleApiRequest(req, options = {}) {
           if (!res) {
             return json(200, { ok: true, found: false }, hdrs, skipCors);
           }
+          if (res.ok === false) {
+            return json(
+              200,
+              {
+                ok: true,
+                found: false,
+                vendorResolveSkipped: true,
+                userHint: res.userHint,
+                reasonCode: res.bedrockCode ?? null,
+                ocrVendorKey: res.ocrVendorKey,
+              },
+              hdrs,
+              skipCors,
+            );
+          }
           return json(
             200,
             {
@@ -6857,6 +6918,8 @@ export async function handleApiRequest(req, options = {}) {
                 suggestedExpenseCategoryName: res.suggestedExpenseCategoryName ?? null,
                 saved: res.saved,
                 ocrVendorKey: res.ocrVendorKey,
+                inferenceConfidence: res.inferenceConfidence,
+                inferenceLowConfidence: res.inferenceLowConfidence,
               },
             },
             hdrs,

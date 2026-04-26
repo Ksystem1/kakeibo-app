@@ -4,6 +4,24 @@
 import { bedrockResolveSuggestedVendor } from "./ai-advisor-service.mjs";
 import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
 
+/**
+ * @param {string} [code]
+ * @returns {string}
+ */
+function userHintForBedrockFailure(code) {
+  const c = String(code || "");
+  if (c === "AccessDeniedException" || c === "AccessDenied" || c === "UnauthorizedOperation") {
+    return "解析中ですが、店名推論をスキップしました。手入力のままご利用ください。（AI 権限・モデル利用設定のご確認が必要な場合があります）。";
+  }
+  if (c === "ThrottlingException" || c === "TooManyRequestsException" || c === "ServiceQuotaExceededException") {
+    return "解析中ですが、店名推論を一時的にスキップしました。少し時間を空けて再度お試しください。";
+  }
+  if (c === "ResourceNotFoundException" || c === "ValidationException") {
+    return "解析中ですが、店名推論をスキップしました（利用モデル設定をご確認ください）。";
+  }
+  return "解析中ですが、店名推論をスキップしました。手入力のままご利用ください。";
+}
+
 /** `app-core` の `catWhere` と同一（家族/本人の支出カテゴリ名の取得用） */
 const CAT_WHERE_FOR_USER = `(c.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?) OR (c.family_id IS NULL AND c.user_id = ?))`;
 
@@ -90,23 +108,23 @@ async function getUserStorePlaceCachedLegacyNoPrefColumn(pool, userId, ocrVendor
 
 /**
  * Bedrock 名寄せ → INSERT（解析本体とは別リクエスト用。外部地図 API は使わない。）
- * @returns {Promise<null | {
- *   fromCache: boolean,
- *   saved: boolean,
- *   placeId: string,
- *   suggestedStoreName: string,
- *   locationHint: string,
- *   suggestedExpenseCategoryName: string | null,
- *   ocrVendorKey: string
- * }>}
+ * @returns {Promise<
+ *   | null
+ *   | { ok: true, fromCache: true, saved: true, placeId: string, suggestedStoreName: string, locationHint: string, suggestedExpenseCategoryName: null, ocrVendorKey: string }
+ *   | { ok: true, fromCache: false, saved: true, placeId: string, suggestedStoreName: string, locationHint: string, suggestedExpenseCategoryName: string | null, ocrVendorKey: string, inferenceConfidence: number, inferenceLowConfidence: boolean }
+ *   | { ok: true, fromCache: false, saved: false, placeId: string, suggestedStoreName: string, locationHint: string, suggestedExpenseCategoryName: string | null, ocrVendorKey: string, inferenceConfidence: number, inferenceLowConfidence: boolean }
+ *   | { ok: false, reason: "bedrock", ocrVendorKey: string, bedrockCode?: string, userHint: string }
+ * >}
  */
 export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) {
   const v = String(vendorName ?? "").trim();
   if (v.length < 2) return null;
   const ocrVendorKey = ocrVendorFingerprintHex(v);
+  const placeId = "";
   const cached = await getUserStorePlaceCached(pool, userId, v);
   if (cached) {
     return {
+      ok: true,
       fromCache: true,
       saved: true,
       ocrVendorKey: cached.ocrVendorKey,
@@ -114,13 +132,37 @@ export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) 
       suggestedStoreName: cached.suggestedStoreName,
       locationHint: cached.locationHint,
       suggestedExpenseCategoryName: null,
+      inferenceConfidence: 1,
+      inferenceLowConfidence: false,
     };
   }
   const expenseCategoryNames = await loadUserExpenseCategoryNameList(pool, userId);
   const br = await bedrockResolveSuggestedVendor(v, { expenseCategoryNames });
-  if (!br.ok) return null;
-  const placeId = "";
+  if (!br.ok) {
+    return {
+      ok: false,
+      reason: "bedrock",
+      ocrVendorKey,
+      bedrockCode: br.code,
+      userHint: userHintForBedrockFailure(br.code),
+    };
+  }
   const rowHint = br.locationHint || null;
+  const inferenceConfidence = Number.isFinite(Number(br.inferenceConfidence))
+    ? Math.max(0, Math.min(1, Number(br.inferenceConfidence)))
+    : 0.7;
+  const inferenceLowConfidence = Boolean(br.inferenceLowConfidence);
+  const base = {
+    ok: true,
+    fromCache: false,
+    ocrVendorKey,
+    placeId,
+    suggestedStoreName: br.suggestedStoreName,
+    locationHint: br.locationHint,
+    suggestedExpenseCategoryName: br.suggestedExpenseCategoryName,
+    inferenceConfidence,
+    inferenceLowConfidence,
+  };
   try {
     await pool.query(
       `INSERT INTO user_store_places
@@ -136,27 +178,16 @@ export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) 
   } catch (e) {
     const c = e && typeof e === "object" && "code" in e ? String(e.code) : "";
     if (c === "ER_NO_SUCH_TABLE") {
-      return {
-        fromCache: false,
-        saved: false,
-        ocrVendorKey,
-        placeId,
-        suggestedStoreName: br.suggestedStoreName,
-        locationHint: br.locationHint,
-        suggestedExpenseCategoryName: br.suggestedExpenseCategoryName,
-      };
+      return { ...base, saved: false };
     }
-    return null;
+    return {
+      ok: false,
+      reason: "bedrock",
+      ocrVendorKey,
+      userHint: userHintForBedrockFailure("DBError"),
+    };
   }
-  return {
-    fromCache: false,
-    saved: true,
-    ocrVendorKey,
-    placeId,
-    suggestedStoreName: br.suggestedStoreName,
-    locationHint: br.locationHint,
-    suggestedExpenseCategoryName: br.suggestedExpenseCategoryName,
-  };
+  return { ...base, saved: true };
 }
 
 /**
@@ -228,15 +259,17 @@ export async function upsertPreferredCategoryForOcrKey(
     if (n > 0) return { ok: true, affected: n };
     const v = String(vendorNameForResolve ?? "").trim();
     if (v.length >= 2) {
-      await resolveAndPersistUserStorePlace(pool, userId, v);
-      n = await tryUpdate();
-      if (n > 0) return { ok: true, affected: n };
+      const r0 = await resolveAndPersistUserStorePlace(pool, userId, v);
+      if (r0 && "ok" in r0 && r0.ok) {
+        n = await tryUpdate();
+        if (n > 0) return { ok: true, affected: n };
+      }
     }
     const ins = await tryInsertUpsert();
     if (ins < 0) {
       if (v.length >= 2) {
         const resolved = await resolveAndPersistUserStorePlace(pool, userId, v);
-        if (resolved?.saved) {
+        if (resolved && "ok" in resolved && resolved.ok && resolved.saved) {
           n = await tryUpdate();
           if (n > 0) return { ok: true, affected: n };
         }

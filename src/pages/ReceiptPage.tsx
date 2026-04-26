@@ -24,6 +24,9 @@ import { UNIFIED_IMPORT_ACCEPT, isCsvFileName, isReceiptImageFile, isTxtFileName
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
 
+/** 取込フォーム: OCR/AI 確信度が低いセル向け（オレンジ枠＋title） */
+const RECEIPT_AI_INFERENCE_HINT = "AIによる推論です。内容を確認してください";
+
 /** 日付入力（type=date）に載せられる形へ寄せる。無理ならテキストとして扱う */
 function dateFieldMode(raw: string): { kind: "iso"; value: string } | { kind: "text"; value: string } {
   const s = raw.trim();
@@ -292,6 +295,8 @@ export function ReceiptPage() {
   const [lastParsePremium, setLastParsePremium] = useState(false);
   const [receiptDictionaryHits, setReceiptDictionaryHits] = useState(0);
   const [suggestedVendorHint, setSuggestedVendorHint] = useState<string | null>(null);
+  /** Bedrock 名寄せの確信度が低い（サーバーが inferenceLowConfidence） */
+  const [receiptBedrockVendorLow, setReceiptBedrockVendorLow] = useState(false);
   const [receiptOcrVendorKey, setReceiptOcrVendorKey] = useState<string | null>(null);
   const memoTouchedByUserRef = useRef(false);
   const [receiptAiTaxHint, setReceiptAiTaxHint] = useState<string | null>(null);
@@ -698,6 +703,7 @@ export function ReceiptPage() {
     setLastOcrForLearn(null);
     setLoadedReceiptBaseline(null);
     setReceiptOcrVendorKey(null);
+    setReceiptBedrockVendorLow(false);
     memoTouchedByUserRef.current = false;
     categoryTouchedByUserRef.current = false;
     setUserEditedCategory(false);
@@ -724,12 +730,26 @@ export function ReceiptPage() {
         } else {
           setSuggestedVendorHint(null);
         }
+        if (sp && !sp.deferred && sp.inferenceLowConfidence === true) {
+          setReceiptBedrockVendorLow(true);
+        } else if (sp && !sp.deferred) {
+          setReceiptBedrockVendorLow(false);
+        }
         if (sp?.deferred && sp.rawVendorName) {
           const rawV = String(sp.rawVendorName).trim();
           void (async () => {
             try {
               const res = await resolveReceiptSuggestedVendor({ vendorName: rawV });
-              if (!res.found || !res.suggestedVendor) return;
+              if (res.vendorResolveSkipped && res.userHint) {
+                const u = String(res.userHint);
+                setNotice((prev) => (prev ? `${u} ${prev}` : u));
+              }
+              if (!res.found || !res.suggestedVendor) {
+                if (res.vendorResolveSkipped) {
+                  setReceiptBedrockVendorLow(false);
+                }
+                return;
+              }
               const spr = res.suggestedVendor;
               if (spr.ocrVendorKey) {
                 setReceiptOcrVendorKey(spr.ocrVendorKey);
@@ -744,8 +764,13 @@ export function ReceiptPage() {
                   setDraftMemo(spr.suggestedStoreName);
                 }
               }
+              if (spr.inferenceLowConfidence === true) {
+                setReceiptBedrockVendorLow(true);
+              } else {
+                setReceiptBedrockVendorLow(false);
+              }
             } catch {
-              /* バックグラウンド失敗は握りつぶし（手入力のまま） */
+              setNotice("解析中ですが、店名推論に接続できませんでした。手入力のまま登録できます。");
             }
           })();
         }
@@ -921,6 +946,8 @@ export function ReceiptPage() {
   const amountFieldLowConfidence =
     receiptLineSumCheck.mismatch || lowOcrFieldConf("totalAmount");
   const dateFieldLowConfidence = lowOcrFieldConf("date");
+  const memoFieldLowConfidence = lowOcrFieldConf("vendorName") || receiptBedrockVendorLow;
+  const fieldTooltip = (low: boolean) => (low ? RECEIPT_AI_INFERENCE_HINT : undefined);
 
   const busyLabel = loading ? "解析中…" : "明細を処理中…";
   const loadingUi = (
@@ -1233,6 +1260,7 @@ export function ReceiptPage() {
           <select
             id={categoryFieldId}
             value={draftCategoryId ?? ""}
+            title={fieldTooltip(categoryFieldLowConfidence)}
             onChange={(e) => {
               categoryTouchedByUserRef.current = true;
               setUserEditedCategory(true);
@@ -1262,6 +1290,7 @@ export function ReceiptPage() {
               id={dateFieldId}
               type="date"
               value={dateField.value}
+              title={fieldTooltip(dateFieldLowConfidence)}
               onChange={(e) => setDraftDate(e.target.value)}
               disabled={loading}
             />
@@ -1272,6 +1301,7 @@ export function ReceiptPage() {
               inputMode="numeric"
               placeholder="YYYY-MM-DD など"
               value={dateField.value}
+              title={fieldTooltip(dateFieldLowConfidence)}
               onChange={(e) => setDraftDate(e.target.value)}
               disabled={loading}
             />
@@ -1289,6 +1319,7 @@ export function ReceiptPage() {
             inputMode="decimal"
             placeholder="1200"
             value={draftTotal}
+            title={fieldTooltip(amountFieldLowConfidence)}
             onChange={(e) => setDraftTotal(e.target.value)}
             disabled={loading}
           />
@@ -1335,7 +1366,9 @@ export function ReceiptPage() {
           </div>
         ) : null}
         <div
-          className={`${styles.field} ${styles.receiptMemoField} ${styles.receiptFieldMemo}`}
+          className={`${styles.field} ${styles.receiptMemoField} ${styles.receiptFieldMemo} ${
+            memoFieldLowConfidence ? styles.receiptFieldLowConfidence : ""
+          }`}
         >
           <label htmlFor={memoFieldId}>メモ</label>
           <input
@@ -1346,8 +1379,12 @@ export function ReceiptPage() {
             value={draftMemo}
             title={
               suggestedVendorHint
-                ? "名寄せ済み: 推定店名をメモに入れています。編集すると上書きされます。"
-                : undefined
+                ? `名寄せ済み: 推定店名をメモに入れています。編集すると上書きされます。${
+                    memoFieldLowConfidence ? ` ${RECEIPT_AI_INFERENCE_HINT}` : ""
+                  }`
+                : memoFieldLowConfidence
+                  ? RECEIPT_AI_INFERENCE_HINT
+                  : undefined
             }
             onChange={(e) => {
               memoTouchedByUserRef.current = true;

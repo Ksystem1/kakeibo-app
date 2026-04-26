@@ -340,10 +340,11 @@ async function invokeBedrockReceiptVision({
       temperature,
     );
     try {
+      const tVis = Date.now();
       logger.info("receipt_vision_try", { modelId: mid, region, b64Chars: raw.length });
       const reply = await tryInvokeModel(client, mid, body, "receipt_vision");
       if (reply && String(reply).trim()) {
-        logger.info("receipt_vision_ok", { modelId: mid });
+        logger.info("receipt_vision_ok", { modelId: mid, durationMs: Date.now() - tVis, outputChars: String(reply).length });
         return { ok: true, reply: String(reply).trim(), modelId: mid };
       }
     } catch (e) {
@@ -559,7 +560,10 @@ async function invokeBedrockText({
   maxTokens = 300,
   temperature = 0.4,
   modelCandidates: modelCandidatesOverride = null,
+  /** CloudWatch 分析用: bedrock.text / bedrock.text.vendor_resolve 等 */
+  logContext = "bedrock.text",
 } = {}) {
+  const tAll = Date.now();
   const { region, modelId, candidates: defaultCandidates } = getBedrockConfig();
   const candidates = Array.isArray(modelCandidatesOverride) && modelCandidatesOverride.length > 0
     ? modelCandidatesOverride
@@ -580,7 +584,9 @@ async function invokeBedrockText({
   const allAttempts = [];
 
   for (const mid of candidates) {
+    const t0 = Date.now();
     logger.info("try_model", {
+      logContext,
       modelId: mid,
       region,
       maxTokens,
@@ -599,37 +605,66 @@ async function invokeBedrockText({
     );
 
     if (result.attempts) allAttempts.push({ modelId: mid, attempts: result.attempts });
+    const attemptMs = Date.now() - t0;
 
     if (result.ok && result.reply) {
-      logger.info("invoke_ok", { modelId: mid, via: result.via });
-      return { ok: true, reply: result.reply, modelId: mid, via: result.via };
+      const durationMs = Date.now() - tAll;
+      logger.info("invoke_text_complete", {
+        logContext,
+        modelId: mid,
+        via: result.via,
+        lastAttemptDurationMs: attemptMs,
+        durationMs,
+        outputChars: String(result.reply).length,
+      });
+      return { ok: true, reply: result.reply, modelId: mid, via: result.via, durationMs, lastAttemptDurationMs: attemptMs };
     }
 
     lastErr = result.lastError || lastErr;
-    if (lastErr) {
-      logger.error("model_exhausted", lastErr, {
-        modelId: mid,
-        ...serializeAwsError(lastErr),
-      });
-    }
+    const errForLog = result.lastError || lastErr;
+    logger.warn("model_attempt_not_ok", {
+      logContext,
+      modelId: mid,
+      lastAttemptDurationMs: attemptMs,
+      ...serializeAwsError(errForLog),
+    });
   }
 
+  const durationMs = Date.now() - tAll;
+  const mapped = lastErr ? mapAwsError(lastErr) : {
+    code: "AllModelsFailed",
+    message: "モデル応答を得られませんでした",
+    throttled: false,
+    authFailed: false,
+    validationFailed: false,
+  };
   logger.error("all_models_failed", lastErr || new Error("unknown"), {
+    logContext,
+    durationMs,
     candidateCount: candidates.length,
+    ...mapped,
+    aws: serializeAwsError(lastErr),
     attemptsSummary: allAttempts,
   });
 
   return {
     ok: false,
-    ...mapAwsError(lastErr),
+    ...mapped,
     modelId: modelId || candidates[0],
+    durationMs,
     attemptsLog: allAttempts,
   };
 }
 
 export async function askBedrockAdvisor(message, context) {
   const { systemPrompt, userPrompt } = buildPrompt(message, context);
-  return invokeBedrockText({ systemPrompt, userPrompt, maxTokens: 320, temperature: 0.2 });
+  return invokeBedrockText({
+    systemPrompt,
+    userPrompt,
+    maxTokens: 320,
+    temperature: 0.2,
+    logContext: "bedrock.text.advisor",
+  });
 }
 
 function parseJsonBlock(raw) {
@@ -658,6 +693,8 @@ const BEDROCK_VENDOR_RESOLVE_MAX = 200;
  *       suggestedStoreName: string;
  *       locationHint: string;
  *       suggestedExpenseCategoryName: string | null;
+ *       inferenceConfidence: number;
+ *       inferenceLowConfidence: boolean;
  *     }
  *   | { ok: false; code?: string }
  * >}
@@ -681,12 +718,13 @@ export async function bedrockResolveSuggestedVendor(ocrText, options = {}) {
       : "expenseCategoryName must be null (no category list was provided).";
 
   const systemPrompt = [
-    "You analyze noisy Japanese receipt OCR to infer: (1) a natural, official-style store/brand name, (2) an optional region hint, (3) the best-matching spending category from the user-provided list if any.",
+    "You analyze noisy Japanese receipt OCR to infer: (1) a natural, official-style store/brand name, (2) an optional region hint, (3) the best-matching spending category from the user-provided list if any, (4) your confidence.",
     "Answer with ONE JSON object only. No markdown fences, no other text, no explanation.",
     "JSON keys in this exact order of requirement:",
     "  suggestedStoreName: string, natural Japanese, max 120 characters.",
     "  locationHint: string (prefecture or city in Japan) or null. Never invent a full street address.",
     "  expenseCategoryName: string (exactly one from the list) or null.",
+    "  inferenceConfidence: number from 0.0 to 1.0 only (subjective: certainty for suggestedStoreName and expenseCategoryName together; use a low value when OCR is ambiguous).",
     catBlock,
   ].join("\n");
 
@@ -701,10 +739,23 @@ export async function bedrockResolveSuggestedVendor(ocrText, options = {}) {
     maxTokens: 500,
     temperature: 0.05,
     modelCandidates,
+    logContext: "bedrock.text.vendor_resolve",
   });
   if (!out?.ok || !out.reply) {
+    logger.warn("vendor_resolve_bedrock_fail", {
+      code: out?.code,
+      durationMs: out?.durationMs,
+      authFailed: out?.authFailed,
+      throttled: out?.throttled,
+      validationFailed: out?.validationFailed,
+    });
     return { ok: false, code: out?.code || "BedrockError" };
   }
+  logger.info("vendor_resolve_bedrock_ok", {
+    modelId: out.modelId,
+    durationMs: out.durationMs,
+    via: out.via,
+  });
   const parsed = parseJsonBlock(String(out.reply));
   if (!parsed || typeof parsed !== "object") {
     return { ok: false, code: "InvalidModelJson" };
@@ -727,7 +778,18 @@ export async function bedrockResolveSuggestedVendor(ocrText, options = {}) {
     const match = catListDeduped.find((c) => c === catFromModel);
     suggestedExpenseCategoryName = match ?? null;
   }
-  return { ok: true, suggestedStoreName: name, locationHint, suggestedExpenseCategoryName };
+  let conf = parsed.inferenceConfidence != null ? Number(parsed.inferenceConfidence) : Number.NaN;
+  if (!Number.isFinite(conf)) conf = 0.55;
+  const inferenceConfidence = Math.max(0, Math.min(1, conf));
+  const inferenceLowConfidence = inferenceConfidence < 0.72;
+  return {
+    ok: true,
+    suggestedStoreName: name,
+    locationHint,
+    suggestedExpenseCategoryName,
+    inferenceConfidence,
+    inferenceLowConfidence,
+  };
 }
 
 function normalizeReceiptAiPayload(data) {
@@ -858,6 +920,7 @@ function buildReceiptAiPromptBundle(opts) {
   const historyHints = opts.historyHints;
   const heuristic = opts.heuristicCategorySuggestion ?? null;
   const memoCategoryPairs = Array.isArray(opts.memoCategoryPairs) ? opts.memoCategoryPairs : [];
+  const vendorOcrKeyHints = Array.isArray(opts.vendorOcrKeyHints) ? opts.vendorOcrKeyHints : [];
   const rawOcrText = typeof opts.rawOcrText === "string" ? opts.rawOcrText : "";
 
   if (!subscriptionActive) {
@@ -903,6 +966,11 @@ function buildReceiptAiPromptBundle(opts) {
     "添付画像の文字・レイアウトを最優先し、補助JSONの Textract summary/items/ocrLines を積極的に参照してください。",
     "レシートに印字された電話番号・フリーダイヤル・店舗コードは、チェーン店の正式店舗名を推定する手がかりとして活用してよい（根拠は reason に簡潔に）。",
     "利用履歴ヒント historyHints / memoCategoryPairs は同一家族の過去支出傾向です。画像上の店名が不完全でも、最も妥当な vendorName・categoryName を推定してよい。",
+    vendorOcrKeyHints.length > 0
+      ? `手動学習 vendorOcrKeyHints: ユーザーが同じ家計簿で「名寄せ店名ラベル→支出カテゴリ」と確定した直近の対応。レシートの表記と一致・類似なら最優先で categoryName を合わせる。: ${JSON.stringify(
+          vendorOcrKeyHints,
+        )}`
+      : "手動学習 vendorOcrKeyHints は空です。",
     "履歴と矛盾しない範囲で、定番チェーン店・屋号の正規化（略称→正式名称など）を行ってよい。",
     `categoryName は次の【登録済み支出カテゴリ名】のいずれか1つに最も近い表記: ${catList}。該当なければ null。`,
     "合計が印字不明でも、明細が読めれば足し合わせて totalAmount を埋めてよい。",
@@ -920,6 +988,7 @@ function buildReceiptAiPromptBundle(opts) {
     categoryCandidates,
     historyHints,
     memoCategoryPairs,
+    vendorOcrKeyHints,
     rawOcrText: rawOcrText
       ? rawOcrText.slice(0, 20000)
       : "(ocrLines から補助JSON内で利用可能; ここは行連結版)",
@@ -957,6 +1026,7 @@ function buildReceiptAiPromptBundle(opts) {
  * @param {string} [input.imageMediaType]
  */
 export async function askBedrockReceiptAssistant(input = {}) {
+  const t0 = Date.now();
   const summary = input?.summary && typeof input.summary === "object" ? input.summary : {};
   const items = Array.isArray(input?.items) ? input.items : [];
   const ocrLines = Array.isArray(input?.ocrLines) ? input.ocrLines : [];
@@ -965,6 +1035,7 @@ export async function askBedrockReceiptAssistant(input = {}) {
     : [];
   const historyHints = Array.isArray(input?.historyHints) ? input.historyHints : [];
   const memoCategoryPairs = Array.isArray(input?.memoCategoryPairs) ? input.memoCategoryPairs : [];
+  const vendorOcrKeyHints = Array.isArray(input?.vendorOcrKeyHints) ? input.vendorOcrKeyHints : [];
   const rawOcrText = Array.isArray(ocrLines) ? ocrLines.join("\n") : "";
   const heuristicCategorySuggestion =
     input?.heuristicCategorySuggestion &&
@@ -984,6 +1055,7 @@ export async function askBedrockReceiptAssistant(input = {}) {
     categoryCandidates,
     historyHints,
     memoCategoryPairs,
+    vendorOcrKeyHints,
     rawOcrText,
     heuristicCategorySuggestion,
   });
@@ -1017,16 +1089,31 @@ export async function askBedrockReceiptAssistant(input = {}) {
       userPrompt: textOnlyPrompt,
       maxTokens: 700,
       temperature: 0.2,
+      logContext: "bedrock.text.receipt_assist",
     });
-    if (!out?.ok) return out;
+    if (!out?.ok) {
+      logger.warn("receipt_assist_text_fail", {
+        durationMs: Date.now() - t0,
+        code: out?.code,
+        authFailed: out?.authFailed,
+        throttled: out?.throttled,
+      });
+      return out;
+    }
     rawReply = out.reply;
   }
 
   const parsed = parseJsonBlock(rawReply);
   const data = normalizeReceiptAiPayload(parsed);
   if (!data) {
+    logger.warn("receipt_assist_json_invalid", { durationMs: Date.now() - t0, receiptAiSource });
     return { ok: false, code: "InvalidModelJson", message: "Receipt AI JSON parse failed" };
   }
+  logger.info("receipt_assist_complete", {
+    durationMs: Date.now() - t0,
+    receiptAiSource,
+    receiptAiTier,
+  });
   return { ok: true, data, receiptAiSource, receiptAiTier };
 }
 
@@ -1069,6 +1156,7 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
     userPrompt,
     maxTokens: 900,
     temperature: 0.1,
+    logContext: "bedrock.text.textract_hybrid",
   });
   if (!out?.ok) return out;
   const parsed = parseJsonBlock(out.reply);
