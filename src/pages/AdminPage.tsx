@@ -129,11 +129,40 @@ type AdminUser = {
   created_at: string | null;
   updated_at: string | null;
   last_accessed_at?: string | null;
+  login_device?: string | null;
+  user_agent?: string | null;
   default_family_id: number | null;
   /** users.family_role（未対応 API では undefined） */
   familyRole?: string;
   family_peers: string | null;
 };
+
+function parseDeviceBadge(u: AdminUser): { icon: string; title: string } {
+  const raw = `${u.login_device ?? ""} ${u.user_agent ?? ""}`.toLowerCase();
+  if (!raw.trim()) return { icon: "❓", title: "不明（デバイス情報なし）" };
+
+  const isTablet = /ipad|tablet|sm-t|tab|kindle|silk/.test(raw);
+  const isMobile = !isTablet && /iphone|android|mobile|phone|pixel/.test(raw);
+  const isPc = /windows|macintosh|mac os|linux|x11|desktop/.test(raw);
+
+  const os =
+    /windows/.test(raw)
+      ? "Windows"
+      : /iphone|ipad|ios/.test(raw)
+        ? "iOS"
+        : /android/.test(raw)
+          ? "Android"
+          : /mac os|macintosh/.test(raw)
+            ? "macOS"
+            : /linux/.test(raw)
+              ? "Linux"
+              : "不明OS";
+
+  if (isTablet) return { icon: "📟", title: `タブレット (${os})` };
+  if (isMobile) return { icon: "📱", title: `スマホ (${os})` };
+  if (isPc) return { icon: "💻", title: `PC (${os})` };
+  return { icon: "❓", title: `判別不能 (${os})` };
+}
 
 type AdminFamilyGroup = {
   familyKey: string;
@@ -1932,7 +1961,7 @@ export function AdminPage() {
           style={{
             width: "100%",
             borderCollapse: "collapse",
-            minWidth: 1740,
+            minWidth: 1790,
             tableLayout: "auto",
           }}
         >
@@ -1942,6 +1971,7 @@ export function AdminPage() {
               <th style={{ ...adminTableTh, minWidth: 260 }}>メール</th>
               <th style={adminTableTh}>登録日</th>
               <th style={adminTableTh}>最終ログイン</th>
+              <th style={{ ...adminTableTh, textAlign: "center" }}>接続</th>
               <th style={{ ...adminTableTh, minWidth: "5.5rem" }}>家族ID</th>
               <th style={{ ...adminTableTh, minWidth: "7rem" }}>役割</th>
               {/* width:1% + 子の nowrap で列幅を内容に寄せ、表示名列との隙間を詰める */}
@@ -1960,7 +1990,7 @@ export function AdminPage() {
                 group.familyId != null ? `家族ID ${group.familyId}` : `未所属（ユーザー ${group.members[0]?.id ?? "—"}）`;
               const parentRow = (
                 <tr key={`family-${group.familyKey}`} style={{ borderTop: "2px solid var(--border)", background: "var(--panel-bg)" }}>
-                  <td colSpan={13} style={{ ...adminTableTd, paddingTop: "0.45rem", paddingBottom: "0.45rem" }}>
+                  <td colSpan={14} style={{ ...adminTableTd, paddingTop: "0.45rem", paddingBottom: "0.45rem" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.8rem", flexWrap: "wrap" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", flexWrap: "wrap" }}>
                         <strong>{familyTitle}</strong>
@@ -1972,7 +2002,9 @@ export function AdminPage() {
                   </td>
                 </tr>
               );
-              const memberRows = group.members.map((u) => (
+              const memberRows = group.members.map((u) => {
+                const device = parseDeviceBadge(u);
+                return (
                 <tr key={u.id} style={{ borderTop: "1px solid var(--border)" }}>
                   <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>{u.id}</td>
                   <td style={{ ...adminTableTd, minWidth: 260 }}>
@@ -2011,6 +2043,17 @@ export function AdminPage() {
                   </td>
                   <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
                     {formatDateTime(u.last_accessed_at)}
+                  </td>
+                  <td
+                    style={{
+                      ...adminTableTd,
+                      textAlign: "center",
+                      width: "2.8rem",
+                      minWidth: "2.8rem",
+                    }}
+                    title={device.title}
+                  >
+                    <span aria-label={device.title}>{device.icon}</span>
                   </td>
                   <td style={{ ...adminTableTd, whiteSpace: "nowrap" }}>
                     <input
@@ -2198,7 +2241,8 @@ export function AdminPage() {
                     </button>
                   </td>
                 </tr>
-              ));
+              );
+              });
               return [parentRow, ...memberRows];
             })}
             {!loading && items.length === 0 ? (

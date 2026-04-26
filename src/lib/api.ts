@@ -1694,6 +1694,8 @@ export async function getAdminUsers() {
       updated_at: string | null;
       last_login_at: string | null;
       last_accessed_at?: string | null;
+      login_device?: string | null;
+      user_agent?: string | null;
       default_family_id: number | null;
       familyRole?: string;
       kidTheme?: KidTheme | null;
