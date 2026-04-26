@@ -332,8 +332,6 @@ export function AdminPage() {
   const [featurePermRows, setFeaturePermRows] = useState<AdminFeaturePermissionRow[]>([]);
   const [featurePermError, setFeaturePermError] = useState<string | null>(null);
   const [featurePermSaving, setFeaturePermSaving] = useState<string | null>(null);
-  const [showAdminHowTo, setShowAdminHowTo] = useState(false);
-  const [showAdminFeatures, setShowAdminFeatures] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -398,7 +396,11 @@ export function AdminPage() {
       setFeaturePermError(null);
       try {
         const fp = await getAdminFeaturePermissions();
-        setFeaturePermRows(Array.isArray(fp.items) ? fp.items : []);
+        setFeaturePermRows(
+          (Array.isArray(fp.items) ? fp.items : []).filter(
+            (row) => String(row.feature_key).trim().toLowerCase() !== "nav_skins_premium",
+          ),
+        );
       } catch (e) {
         setFeaturePermRows([]);
         setFeaturePermError(e instanceof Error ? e.message : String(e));
@@ -1948,126 +1950,16 @@ export function AdminPage() {
           <code>db/migration_v8_users_subscription_status.sql</code> を適用すると、一覧のプルダウンから変更できます。
         </p>
       ) : null}
-      <div
-        style={{
-          marginBottom: "0.8rem",
-          display: "flex",
-          gap: "0.45rem",
-          alignItems: "center",
-          flexWrap: "wrap",
-          position: "relative",
+      <button
+        type="button"
+        onClick={() => {
+          void load();
         }}
+        disabled={loading}
+        style={{ marginBottom: "0.8rem" }}
       >
-        <button
-          type="button"
-          onClick={() => {
-            setShowAdminFeatures((v) => !v);
-          }}
-          disabled={loading}
-          style={{ height: 34 }}
-          title="直近アップデートの紹介"
-        >
-          ✨ 機能紹介
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setShowAdminHowTo(true);
-          }}
-          disabled={loading}
-          style={{ height: 34 }}
-          title="この画面の使い方を表示"
-        >
-          📖 使い方
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            void load();
-          }}
-          disabled={loading}
-          style={{ height: 34 }}
-        >
-          {loading ? "読み込み中..." : "再読み込み"}
-        </button>
-        {showAdminFeatures ? (
-          <div
-            role="dialog"
-            aria-label="機能紹介"
-            style={{
-              position: "absolute",
-              top: 40,
-              right: 0,
-              width: "min(420px, calc(100vw - 2rem))",
-              zIndex: 8,
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: "var(--bg-card)",
-              boxShadow: "0 8px 26px rgba(18, 44, 78, 0.16)",
-              padding: "0.65rem 0.75rem",
-              fontSize: "0.84rem",
-              lineHeight: 1.5,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.35rem" }}>
-              <strong>直近アップデート</strong>
-              <button
-                type="button"
-                onClick={() => setShowAdminFeatures(false)}
-                style={{ font: "inherit", fontSize: "0.78rem" }}
-              >
-                閉じる
-              </button>
-            </div>
-            <ul style={{ margin: 0, paddingLeft: "1.15rem" }}>
-              <li>接続元アイコン列（PC/スマホ/タブレット/不明）を追加</li>
-              <li>売上分析に予測シミュレーションとセグメント切替を追加</li>
-              <li>日次・累積・予測の可視化を強化（目標・ツールチップ対応）</li>
-            </ul>
-          </div>
-        ) : null}
-      </div>
-      {showAdminHowTo ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="この画面の使い方"
-          onClick={() => setShowAdminHowTo(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1000,
-            background: "rgba(10, 18, 30, 0.44)",
-            display: "grid",
-            placeItems: "center",
-            padding: "1rem",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "min(560px, 100%)",
-              borderRadius: 12,
-              border: "1px solid var(--border)",
-              background: "var(--bg-card)",
-              boxShadow: "0 16px 36px rgba(10, 30, 58, 0.26)",
-              padding: "0.9rem 1rem",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.8rem" }}>
-              <h3 style={{ margin: 0, fontSize: "1rem" }}>この画面の使い方</h3>
-              <button type="button" onClick={() => setShowAdminHowTo(false)} style={{ font: "inherit", fontSize: "0.84rem" }}>
-                閉じる
-              </button>
-            </div>
-            <ol style={{ margin: "0.6rem 0 0", paddingLeft: "1.2rem", lineHeight: 1.65, fontSize: "0.88rem" }}>
-              <li>「役割」列のプルダウンで、家族ごとの権限を変更できます。</li>
-              <li>変更後は右側の「反映」または「保存」ボタンを押すことで適用されます。</li>
-              <li>「接続」列のアイコンにマウスを合わせると、OS情報を確認できます。</li>
-            </ol>
-          </div>
-        </div>
-      ) : null}
+        {loading ? "読み込み中..." : "再読み込み"}
+      </button>
       <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12 }}>
         <table
           style={{

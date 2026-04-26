@@ -3,8 +3,10 @@
  */
 export type MainNavItem = {
   id: string;
-  to: string;
   label: string;
+  kind?: "link" | "action";
+  to?: string;
+  actionId?: "features" | "howto";
   /**
    * NavLink `end` — 例: 家計簿 `/` のみ一致
    */
@@ -17,11 +19,13 @@ export type MainNavItem = {
  * メンテナンス用の単一定数。`GlassMainNav` は `getVisibleMainNavItems` 経由で使用。
  */
 export const NAV_ITEMS: MainNavItem[] = [
-  { id: "dashboard", to: "/dashboard", label: "ダッシュボード" },
-  { id: "kakeibo", to: "/", label: "家計簿", end: true },
-  { id: "import", to: "/import", label: "おまかせ取込" },
-  { id: "settings", to: "/settings", label: "設定" },
-  { id: "admin", to: "/admin", label: "管理", adminOnly: true },
+  { id: "dashboard", to: "/dashboard", label: "ダッシュボード", kind: "link" },
+  { id: "kakeibo", to: "/", label: "家計簿", end: true, kind: "link" },
+  { id: "import", to: "/import", label: "おまかせ取込", kind: "link" },
+  { id: "settings", to: "/settings", label: "設定", kind: "link" },
+  { id: "features", label: "✨ 機能紹介", kind: "action", actionId: "features" },
+  { id: "howto", label: "📖 使い方", kind: "action", actionId: "howto" },
+  { id: "admin", to: "/admin", label: "管理", adminOnly: true, kind: "link" },
 ];
 
 /** @deprecated 以前の名。NAV_ITEMS と同一。 */
