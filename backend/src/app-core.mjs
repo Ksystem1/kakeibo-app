@@ -71,6 +71,7 @@ import {
   compareStripeSubscriptionsWithDb,
 } from "./stripe-subscription-reconcile-core.mjs";
 import { applyEstimatedFeeToLogRowForDisplay } from "./stripe-sales-fee-estimate.mjs";
+import { getPublicUserStatsPayload } from "./user-stats-public.mjs";
 import {
   evaluateAllFeaturesForUser,
   evaluateFeatureForUser,
@@ -2142,6 +2143,8 @@ export async function handleApiRequest(req, options = {}) {
             billingStripeStatus: "/billing/stripe-status",
             publicConfig: "/config",
             publicSettings: "/public/settings",
+            userStats: "/user-stats",
+            userStatsApiPrefix: "/api/user-stats",
             billingPortalSession: "/billing/portal-session",
             billingCancelSubscription: "/billing/cancel-subscription",
             announcement: "/announcement",
@@ -2308,6 +2311,20 @@ export async function handleApiRequest(req, options = {}) {
           return json(
             200,
             { is_monitor_mode: false, monitor_recruitment_text: "" },
+            hdrs,
+            skipCors,
+          );
+        }
+      }
+      if (rk === "GET /user-stats" || rk === "GET /api/user-stats") {
+        try {
+          const body = await getPublicUserStatsPayload(pool);
+          return json(200, body, hdrs, skipCors);
+        } catch (e) {
+          logError("user-stats.read", e, { method, path });
+          return json(
+            500,
+            { error: "InternalError", detail: "統計の取得に失敗しました" },
             hdrs,
             skipCors,
           );

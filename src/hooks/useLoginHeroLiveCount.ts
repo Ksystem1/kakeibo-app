@@ -1,123 +1,71 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import {
-  fetchPublicActiveUserCount,
+  fetchPublicUserStats,
   HERO_LIVE_USER_FALLBACK,
   randomAvatarLetters,
 } from "../lib/heroActiveUsers";
 
-const SIM_MIN_MS = 3_000;
-const SIM_MAX_MS = 5_500;
-const TICK_MS = 30;
+const REFETCH_MS = 3 * 60 * 1000;
+const STALE_MS = 2 * 60 * 1000;
 
-function nextSimDelay(): number {
-  return SIM_MIN_MS + Math.floor(Math.random() * (SIM_MAX_MS - SIM_MIN_MS));
+function pickDisplayCount(data: { count: number } | undefined): number {
+  if (data && Number.isFinite(data.count)) {
+    return Math.max(0, Math.floor(data.count));
+  }
+  return HERO_LIVE_USER_FALLBACK;
 }
 
-function stepDisplay(current: number, target: number): number {
-  if (current >= target) return current;
-  const diff = target - current;
-  if (diff > 400) {
-    return current + Math.max(1, Math.floor(diff / 16));
-  }
-  if (diff > 60) {
-    return current + Math.max(1, Math.floor(diff / 10));
-  }
-  if (diff > 12) {
-    return current + Math.max(1, Math.ceil(diff / 6));
-  }
-  return current + 1;
-}
-
+/**
+ * ログイン英雄部の利用者数（GET /user-stats + 数分間隔の再取得）とアバター装飾。
+ * 数値は API の実数をそのまま表示（チック更新はせず、HeroRollingCount は文字列が変わったときだけ回転）。
+ */
 export function useLoginHeroLiveCount() {
-  const [target, setTarget] = useState<number | null>(null);
-  const [display, setDisplay] = useState(0);
+  const { data, isFetching, isError, error } = useQuery({
+    queryKey: ["public", "user-stats"] as const,
+    queryFn: fetchPublicUserStats,
+    refetchInterval: REFETCH_MS,
+    staleTime: STALE_MS,
+    placeholderData: keepPreviousData,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+
+  const display = pickDisplayCount(data);
+  const target = display;
   const [avatarLetters, setAvatarLetters] = useState<string[]>(["A", "K", "M"]);
   const [avatarJiggle, setAvatarJiggle] = useState(0);
-  const targetRef = useRef(0);
-  /** ブラウザのタイマー ID（Node の `NodeJS.Timeout` との衝突を避ける） */
-  const simTimeoutRef = useRef<number | null>(null);
-  const tickIntervalRef = useRef<number | null>(null);
+  const lastServerCount = useRef<number | null>(null);
+
+  /** 初回取得前のみ。再取得中は data が保たれフォールバック同幅のまま。 */
+  const isProvisional = data == null && isFetching;
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const n = await fetchPublicActiveUserCount();
-      if (cancelled) return;
-      setTarget(n ?? HERO_LIVE_USER_FALLBACK);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (target == null) return;
-    targetRef.current = target;
-  }, [target]);
-
-  const isTargetSet = target != null;
-  // display を target に追従（0→初回値のカウントアップ＋以降の差分追従）
-  useEffect(() => {
-    if (!isTargetSet) {
-      if (tickIntervalRef.current != null) {
-        clearInterval(tickIntervalRef.current);
-        tickIntervalRef.current = null;
+    if (isError && data == null) {
+      if (import.meta.env.DEV && error) {
+        // eslint-disable-next-line no-console
+        console.warn("[user-stats] using fallback", error);
       }
-      return;
     }
-    if (tickIntervalRef.current != null) {
-      clearInterval(tickIntervalRef.current);
-    }
-    tickIntervalRef.current = window.setInterval(() => {
-      setDisplay((d) => {
-        const t = targetRef.current;
-        if (d >= t) return d;
-        return stepDisplay(d, t);
+  }, [isError, data, error]);
+
+  useEffect(() => {
+    if (data == null || !Number.isFinite(data.count)) return;
+    if (lastServerCount.current !== null && data.count !== lastServerCount.current) {
+      setAvatarJiggle((k) => k + 1);
+      setAvatarLetters((cur) => {
+        const { next } = randomAvatarLetters(cur, true);
+        return next;
       });
-    }, TICK_MS);
-    return () => {
-      if (tickIntervalRef.current != null) {
-        clearInterval(tickIntervalRef.current);
-        tickIntervalRef.current = null;
-      }
-    };
-  }, [isTargetSet]);
+    }
+    lastServerCount.current = data.count;
+  }, [data?.count, data]);
 
-  const runSimStep = useCallback(() => {
-    setTarget((prev) => {
-      if (prev == null) return prev;
-      const add = 1 + Math.floor(Math.random() * 3);
-      const n = prev + add;
-      targetRef.current = n;
-      return n;
-    });
-    setAvatarLetters((cur) => {
-      const { next, changed } = randomAvatarLetters(cur, false);
-      if (changed) {
-        setAvatarJiggle((k) => k + 1);
-      }
-      return next;
-    });
-  }, []);
-
-  // 初回に target が得られた直後の一度だけ: 数秒ランダム間隔でシミュレーター
-  const hasTarget = target != null;
-  useEffect(() => {
-    if (!hasTarget) return;
-    const schedule = () => {
-      simTimeoutRef.current = window.setTimeout(() => {
-        runSimStep();
-        schedule();
-      }, nextSimDelay());
-    };
-    schedule();
-    return () => {
-      if (simTimeoutRef.current != null) {
-        clearTimeout(simTimeoutRef.current);
-        simTimeoutRef.current = null;
-      }
-    };
-  }, [hasTarget, runSimStep]);
-
-  return { display, target, avatarLetters, avatarJiggle };
+  return {
+    display,
+    target,
+    avatarLetters,
+    avatarJiggle,
+    isProvisional,
+  };
 }

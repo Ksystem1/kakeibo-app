@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { AuthHeroAside } from "../components/AuthHeroAside";
+import { HeroRollingCount } from "../components/HeroRollingCount";
+import { LoginHeroPreview } from "../components/LoginHeroPreview";
 import { useLoginHeroLiveCount } from "../hooks/useLoginHeroLiveCount";
 import {
   getChildProfiles,
@@ -28,11 +30,29 @@ export function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { display: liveUserCount, target: liveTarget, avatarLetters, avatarJiggle } = useLoginHeroLiveCount();
-  const liveUserFormatted = useMemo(() => {
-    if (liveTarget == null) return "—";
-    return `+${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(liveUserCount)}`;
-  }, [liveTarget, liveUserCount]);
+  const [demoExiting, setDemoExiting] = useState(false);
+  const {
+    display: liveUserCount,
+    avatarLetters,
+    avatarJiggle,
+    isProvisional,
+  } = useLoginHeroLiveCount();
+  const liveUserFormatted = useMemo(
+    () =>
+      `+${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(liveUserCount)}`,
+    [liveUserCount],
+  );
+
+  useEffect(() => {
+    if (!demoExiting) return;
+    const id = window.setTimeout(() => {
+      navigate("/demo-dashboard");
+      setDemoExiting(false);
+    }, 700);
+    return () => {
+      clearTimeout(id);
+    };
+  }, [demoExiting, navigate]);
 
   useEffect(() => {
     if (token) navigate("/", { replace: true });
@@ -81,7 +101,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page}${demoExiting ? ` ${styles.pageDemoExit}` : ""}`}>
+      {demoExiting ? <div className={styles.demoExitLayer} role="status" aria-live="assertive" aria-label="デモに移行中" /> : null}
       <AuthHeroAside>
         <span className={styles.badge}>KAKEIBO ✨</span>
         <div className={styles.heroBody}>
@@ -93,21 +114,23 @@ export function LoginPage() {
               <span className={styles.heroDescMuted}>（DB 非接続）</span>
             </p>
           </section>
-          <section className={styles.heroFigure} aria-label="デモ画面イメージ">
-            <div className={styles.heroFigureTopBar}>
-              <span />
-              <span />
-              <span />
-            </div>
-            <div className={styles.heroFigureChart} />
-            <div className={styles.heroFigureRows}>
-              <span />
-              <span />
-              <span />
-            </div>
+          <section className={styles.heroPreviewColumn} aria-label="家計簿デモのスケルトン画面">
+            <LoginHeroPreview />
           </section>
         </div>
-        <Link to="/demo-dashboard" className={styles.demoCta}>
+        <Link
+          to="/demo-dashboard"
+          className={styles.demoCta}
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+              navigate("/demo-dashboard");
+              return;
+            }
+            setDemoExiting(true);
+          }}
+        >
           <span className={styles.demoCtaIconBubble} aria-hidden>
             🎬
           </span>
@@ -115,7 +138,7 @@ export function LoginPage() {
         </Link>
         <div
           className={styles.heroSocialProof}
-          aria-label="ライブ風表示：人数は目安（デモ用の変動を含みます）"
+          aria-label="利用中の目安人数（7日以内に利用があった会員、または会員数。サーバー集計。数分ごとに更新）"
         >
           <div
             className={styles.heroAvatars}
@@ -130,13 +153,22 @@ export function LoginPage() {
           </div>
           <div className={styles.heroLiveRow}>
             <span className={styles.heroLiveIndicator}>
+              <span className={styles.heroLiveDotRings} aria-hidden>
+                <span className={styles.heroLiveRippleRing} />
+                <span className={`${styles.heroLiveRippleRing} ${styles.heroLiveRippleRingDelay}`} />
+              </span>
               <span className={styles.heroLiveDot} />
               ライブ
             </span>
             <p className={styles.heroLiveCopy}>
-              <span className={styles.heroLiveCount} aria-live="polite" aria-atomic>
-                {liveUserFormatted}
-              </span>
+              <HeroRollingCount
+                className={`${styles.heroLiveCount}${isProvisional ? ` ${styles.heroLiveCountProvisional}` : ""}`}
+                value={liveUserFormatted}
+                aria-live="polite"
+                aria-atomic
+                data-provisional={isProvisional ? "true" : undefined}
+                aria-busy={isProvisional || undefined}
+              />
               <span className={styles.heroLiveSuffix}>人が現在利用中</span>
             </p>
           </div>

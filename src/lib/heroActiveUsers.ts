@@ -1,13 +1,32 @@
+import { getApiBaseUrl } from "./api";
+
 /**
- * ランディング/ログイン用の「利用中ユーザー数」等。
- * 実装時: GET /public/stats など。未接続の間は null（UIはフォールバック値を使う）。
+ * ランディング/ログイン用の利用者数（GET /user-stats、API 失敗時はフック側でフォールバック）。
  */
-export async function fetchPublicActiveUserCount(): Promise<number | null> {
-  // 将来: return fetchJson<number>(`${publicApi}/active-user-count`, ...);
-  return null;
-}
+export type PublicUserStats = {
+  count: number;
+  registeredUserCount: number;
+  activeUserCount7d: number | null;
+  asOf: string;
+};
 
 export const HERO_LIVE_USER_FALLBACK = 2_300;
+
+const USER_STATS_PATH = "/user-stats";
+
+export async function fetchPublicUserStats(): Promise<PublicUserStats> {
+  const base = getApiBaseUrl().replace(/\/$/, "");
+  const res = await fetch(`${base}${USER_STATS_PATH}`, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`user-stats: HTTP ${res.status} ${text.slice(0, 200)}`);
+  }
+  return res.json() as Promise<PublicUserStats>;
+}
 
 const AVATAR_LETTERS_POOL = ["A", "K", "M", "T", "R", "N", "S", "Y", "H", "L"];
 
