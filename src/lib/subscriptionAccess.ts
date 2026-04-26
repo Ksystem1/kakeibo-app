@@ -1,4 +1,4 @@
-/** クライアント側: プレミアムナビスキン等の利用可否（backend subscription-logic と同じ判定） */
+/** クライアント側: プレミアム機能の利用可否（backend subscription-logic と同じ判定） */
 
 export function subscriptionPeriodEndMsFromUser(user: {
   subscriptionPeriodEndAt?: string | null;
@@ -38,9 +38,3 @@ export function isSubscriptionServiceSubscribedClient(
   return false;
 }
 
-export function hasPremiumNavAccess(user: {
-  subscriptionStatus?: string;
-  subscriptionPeriodEndAt?: string | null;
-} | null): boolean {
-  return isSubscriptionServiceSubscribedClient(user);
-}

@@ -78,7 +78,7 @@ function walkPngs(dir) {
 async function main() {
   const roots = process.argv.slice(2).length
     ? process.argv.slice(2)
-    : [path.join("public", "skins", "Tmp02"), path.join("public", "skins", "Tmp03")];
+    : [];
   for (const sub of roots) {
     if (!fs.existsSync(sub) || !fs.statSync(sub).isDirectory()) {
       console.error("skip (no dir):", sub);

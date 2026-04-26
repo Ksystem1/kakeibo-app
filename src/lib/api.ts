@@ -1828,7 +1828,6 @@ export function setReconcileDismissedKeys(keys: string[]) {
 
 /** 機能キー（feature_permissions と揃える） */
 export const FEATURE_RECEIPT_AI = "receipt_ai";
-export const FEATURE_NAV_SKINS_PREMIUM = "nav_skins_premium";
 export const FEATURE_EXPORT_CSV = "export_csv";
 export const FEATURE_SUPPORT_CHAT = "support_chat";
 /** 医療費集計画面のCSVエクスポート（feature_permissions と揃える） */

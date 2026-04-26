@@ -18,7 +18,6 @@ CREATE TABLE IF NOT EXISTS feature_permissions (
 
 INSERT INTO feature_permissions (feature_key, min_plan, label_ja, sort_order) VALUES
   ('receipt_ai', 'premium', 'レシートAI', 10),
-  ('nav_skins_premium', 'premium', 'プレミアムナビスキン', 20),
   ('export_csv', 'standard', 'CSV取込・エクスポート', 30),
   ('support_chat', 'standard', 'サポートチャット', 40)
 ON DUPLICATE KEY UPDATE

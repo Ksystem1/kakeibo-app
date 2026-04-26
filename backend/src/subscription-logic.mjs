@@ -95,7 +95,7 @@ export function isSubscriptionServiceSubscribed(row, userId, nowMs = Date.now())
 }
 
 /**
- * プレミアム機能（ナビスキン・レシート AI 等）の利用可否。
+ * プレミアム機能（レシート AI 等）の利用可否。
  * active / trialing / past_due / canceled（期間内）に加え、admin_free（管理者付与）も true。
  * @param {Record<string, unknown>} row users の一部（subscription_period_end_at 任意）
  * @param {number} userId

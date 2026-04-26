@@ -8,70 +8,18 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "./AuthContext";
-import { hasPremiumNavAccess } from "../lib/subscriptionAccess";
 import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
   getFamilyFixedCosts,
   putFamilyFixedCosts,
 } from "../lib/api";
-import {
-  NAV_SKIN_TIER_CATALOG,
-  type NavIconPaths,
-  buildNavIconPaths,
-  firstAvailablePremiumVariantId,
-  getPremiumVariantLabel,
-  isKnownNavSkinId,
-  isPremiumVariantSkinId,
-  DEFAULT_NAV_SKIN_ID,
-  PREMIUM_NAV_SKIN_ID,
-  PREMIUM_VARIANT_SKIN_IDS,
-} from "../config/navSkins";
 
 const KEY = "kakeibo_font_scale";
 const MODE_KEY = "kakeibo_font_mode";
 const THEME_KEY = "kakeibo_theme_mode";
 const FIXED_COSTS_KEY = "kakeibo_fixed_costs_by_month";
 const GLOBAL_FIXED_COSTS_KEY = "__all__";
-const NAV_SKIN_KEY = "kakeibo_nav_skin_id";
-const NAV_SKIN_MANUAL_DEFAULT_KEY = "kakeibo_nav_skin_manual_default";
-const OWNED_NAV_SKINS_KEY = "kakeibo_owned_nav_skins";
-const NAV_ICON_FILE_KEYS: Array<keyof NavIconPaths> = [
-  "dashboard",
-  "kakeibo",
-  "receipt",
-  "settings",
-  "admin",
-];
-
-function readOwnedNavSkinIds(): string[] {
-  try {
-    const raw = localStorage.getItem(OWNED_NAV_SKINS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((x): x is string => typeof x === "string" && x.length > 0);
-  } catch {
-    return [];
-  }
-}
-
-function readPersistedNavSkinId(): string {
-  try {
-    const raw = localStorage.getItem(NAV_SKIN_KEY);
-    return raw && isKnownNavSkinId(raw) ? raw : DEFAULT_NAV_SKIN_ID;
-  } catch {
-    return DEFAULT_NAV_SKIN_ID;
-  }
-}
-
-function readManualDefaultSelected(): boolean {
-  try {
-    return localStorage.getItem(NAV_SKIN_MANUAL_DEFAULT_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
 
 function readLegacyFixedCostsFromLocalStorage(): FixedCostItem[] {
   try {
@@ -167,45 +115,22 @@ const FONT_MODE_SCALE: Record<FontMode, number> = {
   large: 1.12,
 };
 
-export type NavSkinOptionView = {
-  id: string;
-  label: string;
-  description?: string;
-  unlocked: boolean;
-  selected: boolean;
-};
-
 type Settings = {
   fontScale: number;
   fontMode: FontMode;
   themeMode: ThemeMode;
   fixedCostsByMonth: Record<string, FixedCostItem[]>;
-  /** 実際に表示に使うナビアイコン（未購入スキンは既定へフォールバック済み） */
-  navSkinId: string;
-  navIconPaths: NavIconPaths;
-  navSkinOptions: NavSkinOptionView[];
-  /** Tmp02〜（アセットがあるフォルダのみ）。プレミアム会員向けサブ選択 */
-  navPremiumVariantOptions: NavSkinOptionView[];
-  /** 存在確認済みのスキンID（Tmp04 追加時も自動で候補に入る） */
-  availableNavSkinIds: string[];
-  /** Stripe サブスク等でプレミアムナビスキンが選べるか */
-  premiumNavUnlocked: boolean;
   setFontScale: (n: number) => void;
   setFontMode: (m: FontMode) => void;
   setThemeMode: (m: ThemeMode) => void;
   setFixedCostsForMonth: (ym: string, items: FixedCostItem[]) => Promise<void>;
-  /** 未購入スキンは false。成功時のみ true */
-  setNavSkinId: (id: string) => boolean;
-  /** 決済・サーバ同期後に購入済み ID をマージ（localStorage にも保存） */
-  mergeOwnedNavSkinsFromServer: (ids: readonly string[]) => void;
 };
 
 const SettingsContext = createContext<Settings | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const { token, user: authUser } = useAuth();
+  const { token } = useAuth();
   const apiBase = getApiBaseUrl();
-  const premiumNavUnlocked = hasPremiumNavAccess(authUser);
 
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
     try {
@@ -235,18 +160,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       return FONT_MODE_SCALE[fontMode];
     }
   });
-  const [ownedNavSkinIds, setOwnedNavSkinIds] = useState<string[]>(() => readOwnedNavSkinIds());
-  const [availableNavSkinIds, setAvailableNavSkinIds] = useState<string[]>([DEFAULT_NAV_SKIN_ID]);
-  const [navSkinAssetsChecked, setNavSkinAssetsChecked] = useState(false);
-
-  const [navSkinId, setNavSkinIdState] = useState<string>(() => {
-    const raw = readPersistedNavSkinId();
-    return isKnownNavSkinId(raw) ? raw : DEFAULT_NAV_SKIN_ID;
-  });
-  const [manualDefaultSelected, setManualDefaultSelected] = useState<boolean>(() =>
-    readManualDefaultSelected(),
-  );
-
   const [fixedCostsByMonth, setFixedCostsByMonth] = useState<
     Record<string, FixedCostItem[]>
   >({});
@@ -279,100 +192,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
   }, [themeMode]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(OWNED_NAV_SKINS_KEY, JSON.stringify(ownedNavSkinIds));
-    } catch {
-      /* ignore */
-    }
-  }, [ownedNavSkinIds]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(NAV_SKIN_KEY, navSkinId);
-    } catch {
-      /* ignore */
-    }
-  }, [navSkinId]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        NAV_SKIN_MANUAL_DEFAULT_KEY,
-        manualDefaultSelected ? "1" : "0",
-      );
-    } catch {
-      /* ignore */
-    }
-  }, [manualDefaultSelected]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const candidates = [DEFAULT_NAV_SKIN_ID, ...PREMIUM_VARIANT_SKIN_IDS];
-    const checkSkinAssets = async (skinId: string): Promise<boolean> => {
-      const paths = buildNavIconPaths(skinId);
-      const urls = NAV_ICON_FILE_KEYS.map((k) => paths[k]);
-      try {
-        const results = await Promise.all(
-          urls.map(async (url) => {
-            const res = await fetch(url, { method: "GET", cache: "no-store" });
-            if (!res.ok) return false;
-            const contentType = String(res.headers.get("content-type") ?? "").toLowerCase();
-            // CloudFront の SPA 404 変換で HTML(200) が返るケースを除外する。
-            return contentType.startsWith("image/");
-          }),
-        );
-        return results.every(Boolean);
-      } catch {
-        return false;
-      }
-    };
-    void (async () => {
-      const checks = await Promise.all(
-        candidates.map(async (id) => ({ id, ok: await checkSkinAssets(id) })),
-      );
-      if (cancelled) return;
-      const visible = checks.filter((x) => x.ok).map((x) => x.id);
-      const normalized = visible.includes(DEFAULT_NAV_SKIN_ID) ? visible : [DEFAULT_NAV_SKIN_ID];
-      setAvailableNavSkinIds(normalized);
-      setNavSkinAssetsChecked(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!navSkinAssetsChecked) return;
-    // アセット可用性の一時失敗で選択中スキンを戻さない。
-    // 画像欠損時は表示側の onError フォールバックで吸収する。
-    if (!isKnownNavSkinId(navSkinId)) {
-      setNavSkinIdState(DEFAULT_NAV_SKIN_ID);
-    }
-  }, [navSkinAssetsChecked, navSkinId]);
-
-  /**
-   * 認証状態の遷移（ログイン直後/再ログイン直後）の揺れでスキンを戻さない。
-   * スキン変更可否は setNavSkinId 側で制御し、既存選択は保持する。
-   */
-
-  /** 契約中ユーザーの初期値はプレミアム。ただし手動で選んだ派生スキンは上書きしない。 */
-  useEffect(() => {
-    if (!navSkinAssetsChecked) return;
-    if (!premiumNavUnlocked) return;
-    if (manualDefaultSelected) return;
-    if (navSkinId !== DEFAULT_NAV_SKIN_ID) return;
-    const firstPremium = firstAvailablePremiumVariantId(availableNavSkinIds);
-    if (!firstPremium) return;
-    setNavSkinIdState(firstPremium);
-  }, [
-    availableNavSkinIds,
-    manualDefaultSelected,
-    navSkinAssetsChecked,
-    navSkinId,
-    premiumNavUnlocked,
-  ]);
 
   useEffect(() => {
     if (!apiBase || !canSendAuthenticatedRequest(token)) {
@@ -427,61 +246,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [token, apiBase]);
-
-  const setNavSkinId = useCallback(
-    (id: string) => {
-      if (!isKnownNavSkinId(id)) return false;
-      const unlocked = id === DEFAULT_NAV_SKIN_ID || premiumNavUnlocked;
-      if (!unlocked) return false;
-      setNavSkinIdState(id);
-      setManualDefaultSelected(id === DEFAULT_NAV_SKIN_ID);
-      return true;
-    },
-    [premiumNavUnlocked],
-  );
-
-  const mergeOwnedNavSkinsFromServer = useCallback((ids: readonly string[]) => {
-    if (!ids.length) return;
-    setOwnedNavSkinIds((prev) => {
-      const next = [...new Set([...prev, ...ids.filter((x) => typeof x === "string" && x.length > 0)])];
-      return next.length === prev.length && next.every((x) => prev.includes(x)) ? prev : next;
-    });
-  }, []);
-
-  const navIconPaths = useMemo(() => buildNavIconPaths(navSkinId), [navSkinId]);
-
-  const navSkinOptions = useMemo<NavSkinOptionView[]>(
-    () =>
-      NAV_SKIN_TIER_CATALOG.filter((s) => {
-        if (s.id === DEFAULT_NAV_SKIN_ID) return availableNavSkinIds.includes(DEFAULT_NAV_SKIN_ID);
-        if (s.id === PREMIUM_NAV_SKIN_ID) {
-          return true;
-        }
-        return false;
-      }).map((s) => ({
-        id: s.id,
-        label: s.label,
-        description: s.description,
-        unlocked: s.id === DEFAULT_NAV_SKIN_ID || premiumNavUnlocked,
-        selected:
-          s.id === DEFAULT_NAV_SKIN_ID
-            ? navSkinId === DEFAULT_NAV_SKIN_ID
-            : isPremiumVariantSkinId(navSkinId),
-      })),
-    [availableNavSkinIds, navSkinId, premiumNavUnlocked],
-  );
-
-  const navPremiumVariantOptions = useMemo<NavSkinOptionView[]>(
-    () =>
-      PREMIUM_VARIANT_SKIN_IDS.map((id) => ({
-        id,
-        label: getPremiumVariantLabel(id),
-        description: undefined,
-        unlocked: premiumNavUnlocked,
-        selected: navSkinId === id,
-      })),
-    [navSkinId, premiumNavUnlocked],
-  );
 
   const setFontScale = (n: number) => {
     const clamped = Math.min(1.2, Math.max(0.85, n));
@@ -540,33 +304,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       fontMode,
       themeMode,
       fixedCostsByMonth,
-      navSkinId,
-      navIconPaths,
-      navSkinOptions,
-      navPremiumVariantOptions,
-      availableNavSkinIds,
-      premiumNavUnlocked,
       setFontScale,
       setFontMode,
       setThemeMode,
       setFixedCostsForMonth,
-      setNavSkinId,
-      mergeOwnedNavSkinsFromServer,
     }),
     [
       fontScale,
       fontMode,
       themeMode,
       fixedCostsByMonth,
-      navSkinId,
-      navIconPaths,
-      navSkinOptions,
-      navPremiumVariantOptions,
-      availableNavSkinIds,
-      premiumNavUnlocked,
       setFixedCostsForMonth,
-      setNavSkinId,
-      mergeOwnedNavSkinsFromServer,
     ],
   );
 
