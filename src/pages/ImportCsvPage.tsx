@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { getTransactions, importCsvText } from "../lib/api";
+import { ensureDefaultCategories, getCategories, getTransactions, importCsvText } from "../lib/api";
 import { FEATURE_EXPORT_CSV } from "../lib/api";
 import { tryConvertBankCardCsvToKakeibo } from "../lib/bankCardCsvToKakeibo";
 import {
@@ -15,6 +15,18 @@ import { readFileTextAutoEncoding } from "../lib/fileTextDecode";
 import styles from "../components/KakeiboDashboard.module.css";
 import importStyles from "./ImportCsvPage.module.css";
 import { useFeaturePermissions } from "../context/FeaturePermissionContext";
+import { mergeWithExistingGuess, predictImportCategory } from "../lib/importCategoryPredict";
+import { recordImportCategoryRule } from "../lib/importCategoryLearner";
+
+type PreviewRow = ImportedStatementRow & {
+  include: boolean;
+  duplicate: boolean;
+  medical_checked: boolean;
+  memo: string;
+  category: string;
+  showAiBadge: boolean;
+  showLearnedBadge: boolean;
+};
 
 /**
  * 銀行・カード向けのレガシー形式 CSV（手書き行）取込。
@@ -27,17 +39,9 @@ export function ImportCsvPage() {
   const canUseStatementImport = allowedFor(FEATURE_EXPORT_CSV);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [text, setText] = useState("");
-  const [rows, setRows] = useState<
-    Array<
-      ImportedStatementRow & {
-        include: boolean;
-        duplicate: boolean;
-        medical_checked: boolean;
-        memo: string;
-        category: string;
-      }
-    >
-  >([]);
+  const [rows, setRows] = useState<PreviewRow[]>([]);
+  const [expenseCategoryOptions, setExpenseCategoryOptions] = useState<string[]>([]);
+  const [categoryPredicting, setCategoryPredicting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -90,19 +94,58 @@ export function ImportCsvPage() {
     } catch {
       // 取得失敗時も取り込み操作は止めない
     }
-    setRows(
-      nextRows.map((r) => {
-        const dup = keySet.has(duplicateKey(r.date, r.amount, r.description));
-        return {
+    const base: PreviewRow[] = nextRows.map((r) => {
+      const dup = keySet.has(duplicateKey(r.date, r.amount, r.description));
+      return {
+        ...r,
+        include: !dup,
+        duplicate: dup,
+        medical_checked: r.medicalAuto,
+        memo: r.description,
+        category: r.categoryGuess,
+        showAiBadge: false,
+        showLearnedBadge: false,
+      };
+    });
+    setRows(base);
+    setCategoryPredicting(true);
+    try {
+      let { items: catItems } = await getCategories();
+      if (catItems.length === 0) {
+        await ensureDefaultCategories();
+        const again = await getCategories();
+        catItems = again.items;
+      }
+      const names = catItems
+        .filter((c) => c.kind === "expense" && !c.is_archived)
+        .map((c) => c.name)
+        .filter(Boolean);
+      setExpenseCategoryOptions(names);
+      setRows(
+        base.map((r) => {
+          const pred = predictImportCategory({ content: r.memo, expenseNames: names });
+          const merged = mergeWithExistingGuess(pred, r.category, names);
+          return {
+            ...r,
+            category: merged.name,
+            showLearnedBadge: merged.showLearnedBadge,
+            showAiBadge: merged.showAiBadge && !merged.showLearnedBadge,
+          };
+        }),
+      );
+    } catch {
+      setExpenseCategoryOptions([]);
+      setRows(
+        base.map((r) => ({
           ...r,
-          include: !dup,
-          duplicate: dup,
-          medical_checked: r.medicalAuto,
-          memo: r.description,
-          category: r.categoryGuess,
-        };
-      }),
-    );
+          category: r.category || "未分類",
+          showAiBadge: false,
+          showLearnedBadge: false,
+        })),
+      );
+    } finally {
+      setCategoryPredicting(false);
+    }
   }
 
   async function parseFiles(files: FileList | File[]) {
@@ -451,14 +494,58 @@ export function ImportCsvPage() {
                     />
                   </td>
                   <td>
-                    <input
-                      className={styles.cellInput}
-                      type="text"
-                      value={r.category}
-                      onChange={(e) =>
-                        setRows((prev) => prev.map((x, idx) => (idx === i ? { ...x, category: e.target.value } : x)))
-                      }
-                    />
+                    {categoryPredicting ? (
+                      <div className={importStyles.categorySkeleton} aria-hidden />
+                    ) : (
+                      <div className={importStyles.categoryCell}>
+                        {(() => {
+                          const rowOptions = [...expenseCategoryOptions];
+                          if (r.category && !rowOptions.includes(r.category)) {
+                            rowOptions.push(r.category);
+                          }
+                          return (
+                            <select
+                              className={importStyles.categorySelect}
+                              value={r.category}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setRows((prev) =>
+                                  prev.map((x, idx) =>
+                                    idx === i
+                                      ? {
+                                          ...x,
+                                          category: v,
+                                          showAiBadge: false,
+                                          showLearnedBadge: false,
+                                        }
+                                      : x,
+                                  ),
+                                );
+                                recordImportCategoryRule(r.memo, v);
+                              }}
+                            >
+                              {rowOptions.map((n) => (
+                                <option key={n} value={n}>
+                                  {n}
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
+                        {r.showLearnedBadge ? (
+                          <span
+                            className={`${importStyles.badge} ${importStyles.badgeLearnt}`}
+                            title="過去の手動分類（localStorage）に基づき適用。必要なら API 永続化に拡張可能"
+                          >
+                            {"\u2728 学習"}
+                          </span>
+                        ) : r.showAiBadge ? (
+                          <span className={importStyles.badge} title="キーワード・Fuse.js 曖昧一致の候補（OpenAI 等の LLM は将来 API 経由で拡張可能）">
+                            {"\u2728 AI 予測"}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
                   </td>
                   <td>
                     <input
