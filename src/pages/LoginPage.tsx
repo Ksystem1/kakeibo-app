@@ -138,27 +138,24 @@ export function LoginPage() {
           <p className={styles.heroMicroCopy}>登録不要で30秒で体験できます</p>
         </div>
         <div
-          className={styles.heroStatsBar}
+          className={styles.heroStatsBlock}
           aria-label="会員数と直近5分の稼働中ユーザー想定。サーバーの集計。約1分ごとに再取得"
         >
-          <div className={styles.heroStatReg}>
-            <p className={styles.heroStatLine}>
-              累計{" "}
-              <span
-                className={`${styles.heroStatRegNum}${
-                  isProvisional ? ` ${styles.heroStatRegNumProvisional}` : ""
-                }`}
-                aria-live="polite"
-                data-provisional={isProvisional ? "true" : undefined}
-                aria-busy={isProvisional || undefined}
-              >
-                {registeredLabel}
-              </span>{" "}
-              名が登録済み
-            </p>
-          </div>
-          <div className={styles.heroStatsDivider} aria-hidden />
-          <div className={styles.heroStatOn}>
+          <p className={styles.heroStatLine}>
+            累計{" "}
+            <span
+              className={`${styles.heroStatRegNum}${
+                isProvisional ? ` ${styles.heroStatRegNumProvisional}` : ""
+              }`}
+              aria-live="polite"
+              data-provisional={isProvisional ? "true" : undefined}
+              aria-busy={isProvisional || undefined}
+            >
+              {registeredLabel}
+            </span>{" "}
+            名が登録済み
+          </p>
+          <div className={styles.heroStatsLiveRow}>
             <div
               className={styles.heroAvatars}
               aria-hidden

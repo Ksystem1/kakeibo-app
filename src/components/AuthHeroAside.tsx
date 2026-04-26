@@ -17,7 +17,9 @@ export function AuthHeroAside({ children }: Props) {
           decoding="async"
         />
       </div>
-      <div className={styles.heroInner}>{children}</div>
+      <div className={styles.heroInner}>
+        <div className={styles.heroContent}>{children}</div>
+      </div>
     </aside>
   );
 }
