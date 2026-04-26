@@ -1,8 +1,7 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { AuthHeroAside } from "../components/AuthHeroAside";
-import { useLoginHeroLiveCount } from "../hooks/useLoginHeroLiveCount";
+import { LoginHeroSection } from "../components/LoginHeroSection";
 import {
   getChildProfiles,
   loginRequest,
@@ -29,12 +28,6 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [demoExiting, setDemoExiting] = useState(false);
-  const { registeredDisplay, avatarLetters, avatarJiggle, isProvisional } = useLoginHeroLiveCount();
-  const registeredLabel = useMemo(
-    () =>
-      `+${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(registeredDisplay)}`,
-    [registeredDisplay],
-  );
 
   useEffect(() => {
     if (!demoExiting) return;
@@ -96,78 +89,7 @@ export function LoginPage() {
   return (
     <div className={`${styles.page}${demoExiting ? ` ${styles.pageDemoExit}` : ""}`}>
       {demoExiting ? <div className={styles.demoExitLayer} role="status" aria-live="assertive" aria-label="デモに移行中" /> : null}
-      <AuthHeroAside>
-        <span className={styles.badge}>KAKEIBO ✨</span>
-        <div className={styles.heroBody}>
-          <section className={styles.heroText}>
-            <h1 className={styles.heroTitle}>みんなの家計簿</h1>
-            <p className={styles.heroDesc}>
-              家計簿を共有できます。医療費控除の集計・固定費・おまかせ取込のイメージは
-              <strong className={styles.heroDescCtaEm}>「デモを見る」</strong>
-              で体験できます。
-            </p>
-          </section>
-        </div>
-        <div className={styles.heroCtaBlock}>
-          <Link
-            to="/demo-dashboard"
-            className={styles.demoCta}
-            onClick={(e) => {
-              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-              e.preventDefault();
-              if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) {
-                navigate("/demo-dashboard");
-                return;
-              }
-              setDemoExiting(true);
-            }}
-          >
-            <span className={styles.demoCtaIconBubble} aria-hidden>
-              🎬
-            </span>
-            デモを見る
-          </Link>
-          <p className={styles.heroMicroCopy}>登録不要で30秒で体験できます</p>
-        </div>
-        <div
-          className={styles.heroStatsBlock}
-          aria-label="会員数と稼働状況。サーバーの集計。約1分ごとに再取得"
-        >
-          <p className={styles.heroStatLine}>
-            累計{" "}
-            <span
-              className={`${styles.heroStatRegNum}${
-                isProvisional ? ` ${styles.heroStatRegNumProvisional}` : ""
-              }`}
-              aria-live="polite"
-              data-provisional={isProvisional ? "true" : undefined}
-              aria-busy={isProvisional || undefined}
-            >
-              {registeredLabel}
-            </span>{" "}
-            名が登録済み
-          </p>
-          <div className={styles.heroStatsLiveRow}>
-            <div
-              className={styles.heroAvatars}
-              aria-hidden
-              data-refresh={avatarJiggle}
-            >
-              {avatarLetters.map((ch, i) => (
-                <span key={i} className={styles.heroAvatar}>
-                  {ch}
-                </span>
-              ))}
-            </div>
-            <p className={styles.heroStatLine}>
-              <span className={styles.heroOnDotWrap} aria-hidden>
-                <span className={styles.heroOnDot} />
-              </span>
-              稼働中
-            </p>
-          </div>
-        </div>
-      </AuthHeroAside>
+      <LoginHeroSection onRequestDemoExit={() => setDemoExiting(true)} />
       <main className={styles.panel}>
         <div className={styles.card}>
           <header className={styles.cardHeader}>

@@ -203,6 +203,14 @@ export function SupportChatPage() {
       const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
       const wait = hidden ? CHAT_POLL_MS_IDLE : CHAT_POLL_MS_ACTIVE;
       timer = setTimeout(async () => {
+        if (document.visibilityState !== "visible") {
+          await loop();
+          return;
+        }
+        if (isUserTypingIntoInput()) {
+          await loop();
+          return;
+        }
         await refreshLatest();
         await loop();
       }, wait);
@@ -223,7 +231,7 @@ export function SupportChatPage() {
         window.removeEventListener("online", onFocus);
       }
     };
-  }, [refreshLatest]);
+  }, [refreshLatest, isUserTypingIntoInput]);
 
   const onSend = useCallback(async () => {
     const text = draftRef.current?.value.trim() ?? "";

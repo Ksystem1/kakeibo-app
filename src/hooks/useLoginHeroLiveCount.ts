@@ -7,8 +7,9 @@ import {
   pickAvatarLetters,
 } from "../lib/heroActiveUsers";
 
-const REFETCH_MS = 60_000;
-const STALE_MS = 30_000;
+/** 表示は LoginHero 内に閉じる。タブ非表示中は止め、復帰時に再開 */
+const REFETCH_MS = 10_000;
+const STALE_MS = 20_000;
 
 /**
  * ログイン英雄: GET /user-stats、登録のカウントアップ＋オンラインの参照。
@@ -17,11 +18,12 @@ export function useLoginHeroLiveCount() {
   const { data, isError, isFetching, error } = useQuery({
     queryKey: ["public", "user-stats"] as const,
     queryFn: fetchPublicUserStats,
-    refetchInterval: REFETCH_MS,
+    refetchInterval: () =>
+      typeof document !== "undefined" && document.visibilityState !== "visible" ? false : REFETCH_MS,
     staleTime: STALE_MS,
     placeholderData: keepPreviousData,
     retry: 1,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 
   const isProvisional = data == null && isFetching;

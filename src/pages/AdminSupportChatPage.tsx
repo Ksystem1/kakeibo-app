@@ -19,8 +19,9 @@ import {
 } from "../hooks/useAdminSupportNeedsReplyBadge";
 
 const PAGE_SIZE = 40;
-const ADMIN_CHAT_POLL_MS_ACTIVE = 3500;
-const ADMIN_CHAT_POLL_MS_IDLE = 9000;
+/** リアルタイム更新: 間隔を空け、タブ非表示・入力中はスキップ（loadFamilies は silent でローディングを出さない） */
+const ADMIN_CHAT_POLL_MS_ACTIVE = 6000;
+const ADMIN_CHAT_POLL_MS_IDLE = 12000;
 
 function formatMemberLoginLine(m: {
   display_name: string | null;
@@ -86,17 +87,24 @@ export function AdminSupportChatPage() {
       .filter((id) => Number.isFinite(id));
   }, [families, selectedFamilyId]);
 
-  const loadFamilies = useCallback(async () => {
-    setListLoading(true);
-    setListError(null);
+  const loadFamilies = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = Boolean(opts?.silent);
+    if (!silent) {
+      setListLoading(true);
+      setListError(null);
+    }
     try {
       const res = await getAdminSupportChatFamilies();
       setFamilies(Array.isArray(res.items) ? res.items : []);
     } catch (e) {
-      setListError(e instanceof Error ? e.message : "一覧の取得に失敗しました");
-      setFamilies([]);
+      if (!silent) {
+        setListError(e instanceof Error ? e.message : "一覧の取得に失敗しました");
+        setFamilies([]);
+      }
     } finally {
-      setListLoading(false);
+      if (!silent) {
+        setListLoading(false);
+      }
     }
   }, []);
 
@@ -276,19 +284,44 @@ export function AdminSupportChatPage() {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
-    const loop = async () => {
+    const runTick = async () => {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+      if (isUserTypingIntoInput()) {
+        return;
+      }
+      try {
+        await Promise.all([refreshThreadLatest(), loadFamilies({ silent: true })]);
+      } catch {
+        /* 各関数内で握る */
+      }
+    };
+    const schedule = () => {
       if (cancelled) return;
       const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
       const wait = hidden ? ADMIN_CHAT_POLL_MS_IDLE : ADMIN_CHAT_POLL_MS_ACTIVE;
-      timer = setTimeout(async () => {
-        await Promise.all([refreshThreadLatest(), loadFamilies()]);
-        await loop();
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        void (async () => {
+          await runTick();
+          if (cancelled) return;
+          schedule();
+        })();
       }, wait);
     };
-    void loop();
-    const onFocus = () => {
-      void Promise.all([refreshThreadLatest(), loadFamilies()]);
+    schedule();
+    const onBecameVisible = () => {
+      if (document.visibilityState !== "visible" || cancelled) return;
+      void runTick();
     };
+    const onFocus = () => {
+      void runTick();
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onBecameVisible);
+    }
     if (typeof window !== "undefined") {
       window.addEventListener("focus", onFocus);
       window.addEventListener("online", onFocus);
@@ -296,12 +329,15 @@ export function AdminSupportChatPage() {
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onBecameVisible);
+      }
       if (typeof window !== "undefined") {
         window.removeEventListener("focus", onFocus);
         window.removeEventListener("online", onFocus);
       }
     };
-  }, [refreshThreadLatest, loadFamilies]);
+  }, [refreshThreadLatest, loadFamilies, isUserTypingIntoInput]);
 
   const onSend = useCallback(async () => {
     if (selectedFamilyId == null) return;
@@ -321,7 +357,7 @@ export function AdminSupportChatPage() {
         if (prev.some((x) => x.id === res.message.id)) return prev;
         return [...prev, res.message];
       });
-      void loadFamilies();
+      void loadFamilies({ silent: true });
       notifyAdminSupportQueueChanged();
       requestAnimationFrame(() => {
         const box = scrollRef.current;
@@ -342,7 +378,7 @@ export function AdminSupportChatPage() {
       try {
         await deleteAdminSupportChatMessage(m.id);
         setItems((prev) => prev.filter((x) => x.id !== m.id));
-        void loadFamilies();
+        void loadFamilies({ silent: true });
         notifyAdminSupportQueueChanged();
       } catch (e) {
         setThreadError(e instanceof Error ? e.message : "削除に失敗しました");
@@ -359,7 +395,7 @@ export function AdminSupportChatPage() {
           is_important: !m.is_important,
         });
         setItems((prev) => prev.map((x) => (x.id === m.id ? res.message : x)));
-        void loadFamilies();
+        void loadFamilies({ silent: true });
         notifyAdminSupportQueueChanged();
       } catch (e) {
         setThreadError(e instanceof Error ? e.message : "更新に失敗しました");
@@ -379,7 +415,7 @@ export function AdminSupportChatPage() {
       setItems((prev) => prev.map((x) => (x.id === bodyEditId ? res.message : x)));
       setBodyEditId(null);
       setBodyEditDraft("");
-      void loadFamilies();
+      void loadFamilies({ silent: true });
       notifyAdminSupportQueueChanged();
     } catch (e) {
       setThreadError(e instanceof Error ? e.message : "本文の更新に失敗しました");
@@ -398,7 +434,7 @@ export function AdminSupportChatPage() {
         last_read_message_id: maxId,
       });
       lastPostedReadRef.current = Math.max(lastPostedReadRef.current, maxId);
-      await loadFamilies();
+      await loadFamilies({ silent: true });
       notifyAdminSupportQueueChanged();
     } catch (e) {
       setThreadError(e instanceof Error ? e.message : "既読更新に失敗しました");
