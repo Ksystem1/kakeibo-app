@@ -77,14 +77,45 @@ export function LoginPage() {
   return (
     <div className={styles.page}>
       <AuthHeroAside>
-        <span className={styles.badge}>Kakeibo ✨</span>
-        <h1 className={styles.heroTitle}>みんなの家計簿</h1>
-        <p className={styles.heroDesc}>
-          家計簿を共有できます。医療費控除の集計・固定費・おまかせ取込のイメージは「デモを見る」で体験できます（DB 非接続）。
-        </p>
+        <span className={styles.badge}>KAKEIBO ✨</span>
+        <div className={styles.heroBody}>
+          <section className={styles.heroText}>
+            <h1 className={styles.heroTitle}>みんなの家計簿</h1>
+            <p className={styles.heroDesc}>
+              家計簿を共有できます。医療費控除の集計・固定費・おまかせ取込のイメージは
+              「デモを見る」で体験できます。
+              <span className={styles.heroDescMuted}>（DB 非接続）</span>
+            </p>
+          </section>
+          <section className={styles.heroFigure} aria-label="デモ画面イメージ">
+            <div className={styles.heroFigureTopBar}>
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className={styles.heroFigureChart} />
+            <div className={styles.heroFigureRows}>
+              <span />
+              <span />
+              <span />
+            </div>
+          </section>
+        </div>
         <Link to="/demo-dashboard" className={styles.demoCta}>
-          🎬 デモを見る
+          <span className={styles.demoCtaIconBubble} aria-hidden>
+            🎬
+          </span>
+          デモを見る
         </Link>
+        <div className={styles.heroSocialProof} aria-label="現在利用中ユーザー">
+          <div className={styles.heroAvatars} aria-hidden>
+            <span className={styles.heroAvatar}>A</span>
+            <span className={styles.heroAvatar}>K</span>
+            <span className={styles.heroAvatar}>M</span>
+          </div>
+          <span className={styles.heroSocialText}>+2,300人が現在利用中</span>
+        </div>
+        <p className={styles.heroMicroCopy}>登録不要で30秒で体験できます</p>
       </AuthHeroAside>
       <main className={styles.panel}>
         <div className={styles.card}>
