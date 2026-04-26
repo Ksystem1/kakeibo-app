@@ -139,7 +139,7 @@ export function LoginPage() {
         </div>
         <div
           className={styles.heroStatsBar}
-          aria-label="会員数と直近5分のオンライン想定。サーバーの集計。約1分ごとに再取得"
+          aria-label="会員数と直近5分の稼働中ユーザー想定。サーバーの集計。約1分ごとに再取得"
         >
           <div className={styles.heroStatReg}>
             <p className={styles.heroStatLine}>
@@ -189,7 +189,7 @@ export function LoginPage() {
                   data-provisional={isProvisional ? "true" : undefined}
                   aria-busy={isProvisional || undefined}
                 />
-                <span className={styles.heroOnSuffix}>名が現在オンライン</span>
+                <span className={styles.heroOnSuffix}>稼働中</span>
               </span>
             </p>
           </div>
