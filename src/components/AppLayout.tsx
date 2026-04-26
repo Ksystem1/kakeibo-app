@@ -14,10 +14,11 @@ import {
 import { useAdminSupportNeedsReplyBadge } from "../hooks/useAdminSupportNeedsReplyBadge";
 import { useSupportChatUnreadBadge } from "../hooks/useSupportChatUnreadBadge";
 import "./AppLayout.nav.css";
-import "./AppLayout.sidebar.css";
+import "./AppLayout.glassNav.css";
 import { AdSlot } from "./AdSlot";
 import { AiAdvisorChat } from "./AiAdvisorChat";
 import { FamilyChatDock } from "./FamilyChatDock";
+import { GlassMainNav } from "./GlassMainNav";
 import { HeaderAnnouncementBar } from "./HeaderAnnouncementBar";
 import { MobileAccessQr } from "./MobileAccessQr";
 
@@ -51,9 +52,7 @@ export function AppLayout() {
   const navigate = useNavigate();
   const mobile = useIsMobile();
   const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  /** 子どもアカウント: ヘッダー・ナビを親向けから大幅に省略 */
   const isFamilyKid = normalizeFamilyRole(user?.familyRole) === "KID";
   const isParentLedger = (() => {
     const r = normalizeFamilyRole(user?.familyRole);
@@ -66,46 +65,11 @@ export function AppLayout() {
     location.pathname === "/" &&
     Boolean(ledgerKidWatchApiOptionsFromSearch(location.search));
 
-  /** 親向け（ログイン済）: 左テキストサイドバー＋幅広メイン。未ログイン / KID は 1 列。 */
-  const showSidebarShell = Boolean(token && !isFamilyKid);
+  /** 親向け: フローティングガラス本ナビ。未ログイン / KID は出さない。 */
+  const showGlassMainNav = Boolean(token && !isFamilyKid);
 
-  useEffect(() => {
-    setSidebarOpen(false);
-  }, [location.pathname]);
-
-  useEffect(() => {
-    if (!mobile || !sidebarOpen) {
-      document.body.style.overflow = "";
-      return;
-    }
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [mobile, sidebarOpen]);
-
-  useEffect(() => {
-    if (!mobile || !sidebarOpen) return;
-    const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setSidebarOpen(false);
-      }
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [mobile, sidebarOpen]);
-
-  const closeSidebar = useCallback(() => {
-    setSidebarOpen(false);
-  }, []);
-
-  const onSidebarNavLinkClick = useCallback(() => {
-    if (mobile) {
-      setSidebarOpen(false);
-    }
-  }, [mobile]);
+  const isAdminUser =
+    Boolean(user?.isAdmin) || user?.email?.toLowerCase() === "script_00123@yahoo.co.jp";
 
   useEffect(() => {
     let cancelled = false;
@@ -145,9 +109,6 @@ export function AppLayout() {
     enabled: Boolean(token && canSendAuthenticatedRequest(token)),
   });
 
-  const isAdminUser =
-    Boolean(user?.isAdmin) ||
-    user?.email?.toLowerCase() === "script_00123@yahoo.co.jp";
   const { needsReplyCount: adminSupportNeedsReply, refresh: refreshAdminSupportQueue } =
     useAdminSupportNeedsReplyBadge({
       token,
@@ -188,102 +149,22 @@ export function AppLayout() {
     return () => window.removeEventListener("kakeibo:header-announcement-updated", onUpdated);
   }, [fetchHeaderAnnouncement, isFamilyKid]);
 
-  const sidebarClass =
-    "app-sidebar" + (showSidebarShell && mobile && sidebarOpen ? " app-sidebar--open" : "");
-
   return (
     <>
-    <div
-      className={["app-layout-shell", showSidebarShell && "app-layout-shell--row"].filter(Boolean).join(" ")}
-      style={{
-        flexDirection: showSidebarShell ? "row" : "column",
-        alignItems: showSidebarShell ? "stretch" : undefined,
-      }}
-    >
-      {showSidebarShell && mobile && sidebarOpen ? (
-        <button
-          type="button"
-          className="app-sidebar-backdrop"
-          aria-label="メニューを閉じる"
-          onClick={closeSidebar}
+    <div className="app-layout-shell">
+      {showGlassMainNav ? (
+        <GlassMainNav
+          isAdminUser={isAdminUser}
+          adminSupportNeedsReply={adminSupportNeedsReply}
         />
       ) : null}
-      {showSidebarShell ? (
-        <nav className={sidebarClass} id="app-main-menu" aria-label="メインメニュー">
-          {mobile ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-              <div className="app-sidebar__head" style={{ margin: 0, paddingLeft: "0.65rem" }}>
-                メニュー
-              </div>
-              <button
-                type="button"
-                className="app-sidebar__close"
-                aria-label="メニューを閉じる"
-                onClick={closeSidebar}
-              >
-                ×
-              </button>
-            </div>
-          ) : (
-            <div className="app-sidebar__head" style={{ paddingTop: "0.6rem" }}>
-              メニュー
-            </div>
-          )}
-          <NavLink
-            to="/dashboard"
-            className={({ isActive }) => `app-sidebar__link${isActive ? " is-active" : ""}`}
-            onClick={onSidebarNavLinkClick}
-          >
-            ダッシュボード
-          </NavLink>
-          <NavLink
-            to="/"
-            className={({ isActive }) => `app-sidebar__link${isActive ? " is-active" : ""}`}
-            onClick={onSidebarNavLinkClick}
-            end
-          >
-            家計簿
-          </NavLink>
-          <NavLink
-            to="/import"
-            className={({ isActive }) => `app-sidebar__link${isActive ? " is-active" : ""}`}
-            onClick={onSidebarNavLinkClick}
-          >
-            おまかせ取込
-          </NavLink>
-          <NavLink
-            to="/settings"
-            className={({ isActive }) => `app-sidebar__link${isActive ? " is-active" : ""}`}
-            onClick={onSidebarNavLinkClick}
-          >
-            設定
-          </NavLink>
-          {user && (user.isAdmin || user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-            <NavLink
-              to="/admin"
-              className={({ isActive }) =>
-                `app-sidebar__link app-sidebar__link--admin${isActive ? " is-active" : ""}`.trim()
-              }
-              onClick={onSidebarNavLinkClick}
-              aria-label={
-                adminSupportNeedsReply > 0
-                  ? `管理（サポート要返信 ${adminSupportNeedsReply} 件）`
-                  : "管理"
-              }
-            >
-              <span>管理</span>
-              {adminSupportNeedsReply > 0 ? (
-                <span className="app-sidebar__admin-badge" title="サポート要返信">
-                  {adminSupportNeedsReply > 99 ? "99+" : String(adminSupportNeedsReply)}
-                </span>
-              ) : null}
-            </NavLink>
-          ) : null}
-        </nav>
-      ) : null}
-
       <div
-        className="app-layout-surface"
+        className={[
+          "app-layout-surface",
+          showGlassMainNav && "app-layout-surface--glass-nav",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         style={{
           minHeight: 0,
           flex: 1,
@@ -320,20 +201,6 @@ export function AppLayout() {
             minWidth: 0,
           }}
         >
-          {showSidebarShell && mobile ? (
-            <button
-              type="button"
-              className="app-header-burger"
-              onClick={() => {
-                setSidebarOpen(true);
-              }}
-              aria-label="メニューを開く"
-              aria-expanded={sidebarOpen}
-              aria-controls="app-main-menu"
-            >
-              <span />
-            </button>
-          ) : null}
           <div
             style={{
               display: "inline-flex",
@@ -440,7 +307,6 @@ export function AppLayout() {
             <HeaderAnnouncementBar text={headerAnnouncement} />
           </div>
         ) : null}
-        {/* 未ログイン: ヘッダ内テキストリンク行（KID では2段目なし） */}
         {!token ? (
           <nav
             style={{
@@ -469,7 +335,6 @@ export function AppLayout() {
           flex: 1,
           minHeight: 0,
         }}
-        aria-hidden={false}
         >
         <div style={{ display: "block", minHeight: "100%" }}>
           <Outlet />

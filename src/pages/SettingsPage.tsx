@@ -7,13 +7,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
 import {
-  DEFAULT_NAV_SKIN_ID,
-  PREMIUM_NAV_SKIN_ID,
-  buildNavIconPaths,
-  firstAvailablePremiumVariantId,
-  type NavIconPaths,
-} from "../config/navSkins";
-import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
   getPasskeyStatus,
@@ -112,12 +105,6 @@ export function SettingsPage() {
     setThemeMode,
     fixedCostsByMonth,
     setFixedCostsForMonth,
-    navSkinId,
-    navSkinOptions,
-    navPremiumVariantOptions,
-    availableNavSkinIds,
-    setNavSkinId,
-    premiumNavUnlocked,
   } = useSettings();
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassifyResult, setReclassifyResult] = useState<string | null>(null);
@@ -342,24 +329,6 @@ export function SettingsPage() {
     return `ℹ 有効期限：${end} まで`;
   }, [effectiveUser?.subscriptionPeriodEndAt]);
 
-  const navPreviewOrder: Array<keyof NavIconPaths> = [
-    "dashboard",
-    "kakeibo",
-    "receipt",
-    "settings",
-    "admin",
-  ];
-  const defaultNavPreviewIcons = useMemo(
-    () => buildNavIconPaths(DEFAULT_NAV_SKIN_ID),
-    [],
-  );
-
-  /** プレミアム枠プレビュー用（Tmp02〜のうち現在 or 先頭の利用可能フォルダ） */
-  const premiumPreviewSkinId = useMemo(() => {
-    if (navSkinId !== DEFAULT_NAV_SKIN_ID) return navSkinId;
-    return firstAvailablePremiumVariantId(availableNavSkinIds) ?? PREMIUM_NAV_SKIN_ID;
-  }, [navSkinId, availableNavSkinIds]);
-
   useEffect(() => {
     if (!premiumContractOpen || !getApiBaseUrl()) return;
     if (!canSendAuthenticatedRequest(token)) return;
@@ -497,89 +466,14 @@ export function SettingsPage() {
       </div>
 
       <div className={styles.settingsPanel} style={{ marginTop: "1.25rem", maxWidth: 820 }}>
-        <h2 className={styles.sectionTitle}>ナビアイコンのスキン</h2>
-        <div
-          className={styles.modeRow}
-          style={{ marginTop: "0.5rem", flexWrap: "wrap", gap: "0.4rem" }}
+        <h2 className={styles.sectionTitle}>メインメニュー</h2>
+        <p
+          className={styles.sub}
+          style={{ margin: "0.4rem 0 0.25rem", fontSize: "0.9rem", lineHeight: 1.65 }}
         >
-          {navSkinOptions.map((opt) => {
-            const locked = !opt.unlocked;
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                className={`${styles.btn} ${opt.selected ? styles.btnPrimary : ""}`}
-                aria-pressed={opt.selected}
-                aria-label={
-                  locked
-                    ? `${opt.label}（タップで契約・プランの案内を表示）`
-                    : opt.unlocked
-                      ? `${opt.label}に切り替え`
-                      : `${opt.label}（未購入のため選択できません）`
-                }
-                onClick={() => {
-                  if (locked && opt.id !== DEFAULT_NAV_SKIN_ID) {
-                    setPremiumContractOpen(true);
-                    setStripeCheckoutMessage(null);
-                    setPortalMessage(null);
-                    return;
-                  }
-                  if (opt.id === PREMIUM_NAV_SKIN_ID) {
-                    const first = firstAvailablePremiumVariantId(availableNavSkinIds);
-                    void setNavSkinId(first ?? PREMIUM_NAV_SKIN_ID);
-                    return;
-                  }
-                  setNavSkinId(opt.id);
-                }}
-              >
-                {opt.unlocked ? "" : "🔒 "}
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-        {premiumNavUnlocked && navPremiumVariantOptions.length > 1 ? (
-          <div
-            className={styles.modeRow}
-            style={{ marginTop: "0.35rem", flexWrap: "wrap", gap: "0.4rem" }}
-          >
-            {navPremiumVariantOptions.map((v) => {
-              const preview = buildNavIconPaths(v.id);
-              return (
-              <button
-                key={v.id}
-                type="button"
-                className={`${styles.btn} ${v.selected ? styles.btnPrimary : ""}`}
-                aria-pressed={v.selected}
-                aria-label={`${v.label}のスキンを適用`}
-                onClick={() => void setNavSkinId(v.id)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "0.35rem",
-                }}
-              >
-                <img
-                  src={preview.dashboard}
-                  alt=""
-                  aria-hidden="true"
-                  loading="lazy"
-                  width={28}
-                  height={28}
-                  style={{ width: 28, height: 28, borderRadius: 6, objectFit: "contain" }}
-                  onError={(ev) => {
-                    const img = ev.currentTarget;
-                    if (img.dataset.fallbackApplied === "1") return;
-                    img.dataset.fallbackApplied = "1";
-                    img.src = defaultNavPreviewIcons.dashboard;
-                  }}
-                />
-                {v.label}
-              </button>
-              );
-            })}
-          </div>
-        ) : null}
+          本アプリのメイン導線は、テキスト中心のガラス風ミニマルナビ（スマートフォンは画面下部、PC
+          は上部）に統一しています。従来の画像によるアイコン着せ替え（スタンダード／フルーツ等）は廃止しました。プレミアム会員向けのレシート取込等の特典は、契約状況に従い従来どおり利用できます。
+        </p>
         {token && effectiveUser ? (
           <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
             <p style={{ margin: 0, fontWeight: 600 }}>プレミアム（サブスクリプション）</p>
@@ -683,7 +577,7 @@ export function SettingsPage() {
               >
                 <p style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>プレミアム契約</p>
                 <p className={styles.reclassifyHint} style={{ margin: "0 0 0.65rem" }}>
-                  Stripe でサブスクリプションに申し込むと、プレミアムナビスキンやレシート関連の機能がご利用いただけます。解約はいつでも可能で、
+                  Stripe でサブスクリプションに申し込むと、レシート取込等のプレミアム機能をご利用いただけます。解約はいつでも可能で、
                   <strong> 請求期間の終了日までは利用を継続</strong>できます（Stripe の請求サイクルに準じます）。
                 </p>
                 {stripeCheckoutReady === null ? (
@@ -767,70 +661,6 @@ export function SettingsPage() {
                   プレミアムの案内・お申し込み（外部サイト）
                 </a>
               </p>
-            ) : null}
-            {stripeCheckoutEnabled &&
-            getApiBaseUrl() &&
-            canSendAuthenticatedRequest(token) &&
-            premiumNavUnlocked &&
-            !premiumContractOpen ? (
-              <>
-                <div className={styles.navSkinPreviewWrap}>
-                  {navSkinOptions.map((opt) => {
-                    const locked = !opt.unlocked;
-                    const iconSet = buildNavIconPaths(
-                      opt.id === DEFAULT_NAV_SKIN_ID ? DEFAULT_NAV_SKIN_ID : premiumPreviewSkinId,
-                    );
-                    return (
-                      <button
-                        key={`preview-${opt.id}`}
-                        type="button"
-                        className={`${styles.navSkinPreviewCard}${opt.selected ? ` ${styles.navSkinPreviewCardSelected}` : ""}`}
-                        aria-pressed={opt.selected}
-                        aria-label={locked ? `${opt.label}（契約案内を表示）` : `${opt.label}を適用`}
-                        onClick={() => {
-                          if (locked && opt.id !== DEFAULT_NAV_SKIN_ID) {
-                            setPremiumContractOpen(true);
-                            setStripeCheckoutMessage(null);
-                            setPortalMessage(null);
-                            return;
-                          }
-                          if (opt.id === PREMIUM_NAV_SKIN_ID) {
-                            const first = firstAvailablePremiumVariantId(availableNavSkinIds);
-                            void setNavSkinId(first ?? PREMIUM_NAV_SKIN_ID);
-                            return;
-                          }
-                          setNavSkinId(opt.id);
-                        }}
-                      >
-                        <div className={styles.navSkinPreviewTitleRow}>
-                          <span className={styles.navSkinPreviewTitle}>{opt.label}</span>
-                          <span className={styles.navSkinPreviewState}>
-                            {locked ? "🔒" : opt.selected ? "適用中" : "選択"}
-                          </span>
-                        </div>
-                        <div className={styles.navSkinPreviewIcons}>
-                          {navPreviewOrder.map((k) => (
-                            <span key={`${opt.id}-${k}`} className={styles.navSkinPreviewIconSlot}>
-                              <img
-                                src={iconSet[k]}
-                                alt=""
-                                aria-hidden="true"
-                                loading="lazy"
-                                onError={(ev) => {
-                                  const img = ev.currentTarget;
-                                  if (img.dataset.fallbackApplied === "1") return;
-                                  img.dataset.fallbackApplied = "1";
-                                  img.src = defaultNavPreviewIcons[k];
-                                }}
-                              />
-                            </span>
-                          ))}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
             ) : null}
           </div>
         ) : null}
