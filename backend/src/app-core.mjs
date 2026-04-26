@@ -39,7 +39,7 @@ import {
   askBedrockReceiptAssistant,
   inferReceiptImageMediaTypeFromBuffer,
 } from "./ai-advisor-service.mjs";
-import { ocrVendorFingerprintHex } from "./google-places.mjs";
+import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
 import {
   getUserStorePlaceCached,
   resolveAndPersistUserStorePlace,
@@ -6593,7 +6593,7 @@ export async function handleApiRequest(req, options = {}) {
               }
             }
           }
-          /* 個別辞書 > Places学習カテ > 予測/AI */
+          /* 個別辞書 > 店名キー学習 > 予測/AI */
           const finalSuggestedId =
             learnedCategoryId != null
               ? learnedCategoryId
@@ -6820,7 +6820,7 @@ export async function handleApiRequest(req, options = {}) {
             403,
             {
               error: "SubscriptionRequired",
-              detail: "店名の名寄せ（Google Places）はプレミアム機能です。",
+              detail: "店名の名寄せ（高度AI）はプレミアム機能です。",
             },
             hdrs,
             skipCors,

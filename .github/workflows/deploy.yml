@@ -1,6 +1,9 @@
 # RDS の DDL（db/migration_*.sql）はこのワークフローでは実行しません（VPC 内 RDS への到達性・責任分界のため）。
 # 本番適用: スナップショット取得のうえ、手元で `npm run db:migrate-v13`（ルート）または `rds-migrate-site-settings.yml` を手動実行。
 # global_receipt_ocr: `npm run db:migrate-v15` または `rds-migrate-global-receipt-v15.yml`。
+#
+# レシート: Amazon Textract / Bedrock は ECS タスク IAM ロール＋（任意）リージョン系の app_env_vars のみで呼び出し、
+# Google Maps/Places 等のサードパーティ API キーは不要。追加シークレット（RDS/JWT/Stripe 等）は従来どおり Terraform / Secrets。
 name: Deploy backend (ECS Fargate + Terraform)
 
 on:

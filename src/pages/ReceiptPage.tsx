@@ -1213,9 +1213,9 @@ export function ReceiptPage() {
           <p
             className={styles.receiptSummaryHint}
             style={{ gridColumn: "1 / -1" }}
-            title="OCRの生表記を Google Places の正式名称に揃えた結果です。メモ欄のツールチップでも確認できます。"
+            title="OCRの生表記を推定店名（AI）に揃えた結果です。メモ欄のツールチップでも確認できます。"
           >
-            店名の名寄せ（Google Places）: {storePlaceHint}
+            店名の名寄せ（推定）: {storePlaceHint}
           </p>
         ) : null}
         <div className={`${styles.field} ${styles.receiptFieldKind}`}>
@@ -1346,7 +1346,7 @@ export function ReceiptPage() {
             value={draftMemo}
             title={
               storePlaceHint
-                ? "名寄せ済み: 正式名称（Google Places）をメモに入れています。編集すると上書きされます。"
+                ? "名寄せ済み: 推定店名をメモに入れています。編集すると上書きされます。"
                 : undefined
             }
             onChange={(e) => {

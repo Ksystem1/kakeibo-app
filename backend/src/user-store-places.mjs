@@ -1,7 +1,8 @@
 /**
- * user_store_places: 高速キャッシュ取得・Places 名寄せ永続化・学習カテゴリ
+ * user_store_places: 高速キャッシュ取得・店名名寄せ（Bedrock）の永続化・学習カテゴリ
  */
-import { ocrVendorFingerprintHex, placesTextSearchOne } from "./google-places.mjs";
+import { bedrockResolveVendorDisplayName } from "./ai-advisor-service.mjs";
+import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
 
 /**
  * @param {import("mysql2/promise").Pool} pool
@@ -65,7 +66,7 @@ async function getUserStorePlaceCachedLegacyNoPrefColumn(pool, userId, ocrVendor
 }
 
 /**
- * Google Places 検索 → INSERT（解析本体とは別リクエスト用）
+ * Bedrock 名寄せ → INSERT（解析本体とは別リクエスト用。外部地図APIは使わない。）
  * @returns {Promise<null | { fromCache: boolean, saved: boolean, placeId: string, displayName: string, formattedAddress: string, ocrVendorKey: string }>}
  */
 export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) {
@@ -83,19 +84,20 @@ export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) 
       formattedAddress: cached.formattedAddress,
     };
   }
-  const found = await placesTextSearchOne(`${v} 日本`);
-  if (!found) return null;
+  const br = await bedrockResolveVendorDisplayName(v);
+  if (!br.ok) return null;
+  const placeId = "";
   try {
     await pool.query(
       `INSERT INTO user_store_places
         (user_id, ocr_vendor_key, place_id, display_name, formatted_address)
-       VALUES (?, ?, ?, ?, ?)
+       VALUES (?, ?, NULL, ?, ?)
        ON DUPLICATE KEY UPDATE
-         place_id = VALUES(place_id),
+         place_id = NULL,
          display_name = VALUES(display_name),
          formatted_address = VALUES(formatted_address),
          updated_at = CURRENT_TIMESTAMP`,
-      [userId, ocrVendorKey, found.placeId, found.displayName, found.formattedAddress],
+      [userId, ocrVendorKey, br.displayName, br.formattedAddress || null],
     );
   } catch (e) {
     const c = e && typeof e === "object" && "code" in e ? String(e.code) : "";
@@ -104,9 +106,9 @@ export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) 
         fromCache: false,
         saved: false,
         ocrVendorKey,
-        placeId: found.placeId,
-        displayName: found.displayName,
-        formattedAddress: found.formattedAddress,
+        placeId,
+        displayName: br.displayName,
+        formattedAddress: br.formattedAddress,
       };
     }
     return null;
@@ -115,9 +117,9 @@ export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) 
     fromCache: false,
     saved: true,
     ocrVendorKey,
-    placeId: found.placeId,
-    displayName: found.displayName,
-    formattedAddress: found.formattedAddress,
+    placeId,
+    displayName: br.displayName,
+    formattedAddress: br.formattedAddress,
   };
 }
 
@@ -141,7 +143,7 @@ export async function setUserStorePlacePreferredCategory(
 /**
  * 行がなければ最小行を INSERT し、Places 解決前でも「店名キー×カテゴリ」を学習できる。
  * v41 未適用時は ER_BAD_FIELD_ERROR で失わずに false を返す（呼び出し側で無視可）。
- * @param {string | null} vendorNameForResolve 行がなく、Google で名寄せもしたい場合に渡す
+ * @param {string | null} vendorNameForResolve 行がなく、名寄せ（Bedrock）も走らせる場合に渡す
  */
 export async function upsertPreferredCategoryForOcrKey(
   pool,

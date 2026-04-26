@@ -623,6 +623,53 @@ function parseJsonBlock(raw) {
   }
 }
 
+const BEDROCK_VENDOR_RESOLVE_MAX = 200;
+
+/**
+ * レシートOCR等の生テキストから、看板に近い店名と（任意）粗い地域ヒントを推定。Amazon Bedrock のみ。外部地図APIは使わない。
+ * @param {string} ocrText
+ * @returns {Promise<
+ *   | { ok: true; displayName: string; formattedAddress: string }
+ *   | { ok: false; code?: string }
+ * >}
+ */
+export async function bedrockResolveVendorDisplayName(ocrText) {
+  const raw = String(ocrText ?? "").trim();
+  if (raw.length < 2) return { ok: false, code: "InputTooShort" };
+  const systemPrompt = [
+    "You infer likely Japanese business names from noisy receipt OCR: abbreviations, katakana fragments, misread kanji, register tape noise.",
+    "Output one JSON object only, no code fences, no other text.",
+    "Keys: displayName (string), locationHint (string or null).",
+    "displayName: natural Japanese store or chain name people would use, at most 120 characters. Not a product line unless that is the only business label.",
+    "locationHint: Japanese prefecture or city only if you can do so plausibly without a map API; else null. Never invent a street address.",
+  ].join(" ");
+  const userPrompt = [
+    "OCR/店名テキスト:",
+    raw.slice(0, BEDROCK_VENDOR_RESOLVE_MAX),
+  ].join("\n");
+  const out = await invokeBedrockText({
+    systemPrompt,
+    userPrompt,
+    maxTokens: 400,
+    temperature: 0.1,
+  });
+  if (!out?.ok || !out.reply) {
+    return { ok: false, code: out?.code || "BedrockError" };
+  }
+  const parsed = parseJsonBlock(String(out.reply));
+  if (!parsed || typeof parsed !== "object") {
+    return { ok: false, code: "InvalidModelJson" };
+  }
+  let displayName = parsed.displayName != null ? String(parsed.displayName).trim() : "";
+  if (!displayName || /^(不明|unknown|N\/?A)$/i.test(displayName)) {
+    return { ok: false, code: "NoDisplayName" };
+  }
+  displayName = displayName.slice(0, 500);
+  let loc = parsed.locationHint;
+  const locStr = loc == null || String(loc).trim() === "" ? "" : String(loc).trim().slice(0, 200);
+  return { ok: true, displayName, formattedAddress: locStr };
+}
+
 function normalizeReceiptAiPayload(data) {
   if (!data || typeof data !== "object") return null;
   let vendorName = data.vendorName;

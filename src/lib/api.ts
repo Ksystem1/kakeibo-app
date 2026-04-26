@@ -1375,7 +1375,7 @@ export async function parseReceiptImage(
   );
 }
 
-/** 解析後、Google Places 名寄せ（バックグラウンド用・メイン解析をブロックしない） */
+/** 解析後、店名名寄せ（Bedrock・バックグラウンド用・メイン解析をブロックしない） */
 export async function resolveReceiptStorePlace(body: { vendorName: string }) {
   const res = await apiFetch(`${BASE}/receipts/resolve-store-place`, {
     method: "POST",

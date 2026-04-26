@@ -1,6 +1,6 @@
 /**
- * v40: 店名名寄せのユーザーキャッシュ（OCR キー → 表示名等。v42 で Bedrock 前提のコメント整備）
- * 実行: cd backend && npm run db:migrate-v40
+ * v42: user_store_places コメントの Bedrock 用整理
+ * 実行: cd backend && npm run db:migrate-v42
  */
 import "dotenv/config";
 import fs from "node:fs";
@@ -32,7 +32,7 @@ const migrationPath = path.resolve(
   "..",
   "..",
   "db",
-  "migration_v40_user_store_places.sql",
+  "migration_v42_user_store_places_bedrock.sql",
 );
 if (!fs.existsSync(migrationPath)) {
   console.error(`マイグレーションが見つかりません: ${migrationPath}`);
@@ -53,7 +53,7 @@ try {
   console.log(`接続: ${user}@${host}:${port}/${database}`);
   const sql = fs.readFileSync(migrationPath, "utf8");
   await conn.query(sql);
-  console.log("migration_v40_user_store_places.sql の適用が完了しました。");
+  console.log("migration_v42_user_store_places_bedrock.sql の適用が完了しました。");
 } finally {
   await conn.end().catch(() => {});
 }
