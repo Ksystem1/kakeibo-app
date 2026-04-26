@@ -67,6 +67,7 @@ export function AppLayout() {
 
   /** 親向け: フローティングガラス本ナビ。未ログイン / KID は出さない。 */
   const showGlassMainNav = Boolean(token && !isFamilyKid);
+  const routeAnimKey = `${location.pathname}${location.search}`;
 
   const isAdminUser =
     Boolean(user?.isAdmin) || user?.email?.toLowerCase() === "script_00123@yahoo.co.jp";
@@ -336,7 +337,7 @@ export function AppLayout() {
           minHeight: 0,
         }}
         >
-        <div style={{ display: "block", minHeight: "100%" }}>
+        <div key={routeAnimKey} className="app-route-fade" style={{ display: "block", minHeight: "100%" }}>
           <Outlet />
         </div>
         </main>
