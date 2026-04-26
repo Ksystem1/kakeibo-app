@@ -1,11 +1,13 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
+  Area,
   Bar,
   CartesianGrid,
   Cell,
   ComposedChart,
   Legend,
   Line,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -50,6 +52,9 @@ type ChartRow = {
   barFill: string;
   /** ツールチップ用（目標未設定は null） */
   targetY: number | null;
+  forecastCumulative: number | null;
+  forecastShade: number | null;
+  isForecastPoint?: boolean;
 };
 
 type ChartRowBase = Omit<ChartRow, "barFill" | "targetY">;
@@ -59,6 +64,8 @@ function withBarFills(rows: ChartRowBase[], targetNetY: number | null): ChartRow
   return rows.map((r) => ({
     ...r,
     targetY: t,
+    forecastCumulative: r.forecastCumulative,
+    forecastShade: r.forecastShade,
     barFill:
       t == null
         ? BAR
@@ -96,9 +103,17 @@ function buildChartRows(from: string, to: string, items: AdminSalesDailySummaryR
       salesCount,
       fee,
       gross,
+      forecastCumulative: null,
+      forecastShade: null,
     });
   }
   return out;
+}
+
+function monthEndYmd(dayKey: string): string {
+  const d = parseYmd(dayKey);
+  const eom = new Date(d.getFullYear(), d.getMonth() + 1, 0, 12, 0, 0);
+  return ymdString(eom);
 }
 
 type TooltipProps = {
@@ -161,16 +176,47 @@ type Props = {
 };
 
 export function AdminSalesCharts({ from, to, items, loading, error, targetNetY, advanced }: Props) {
+  const [mode, setMode] = useState<"daily" | "cumulative" | "forecast">("forecast");
   const data = useMemo(() => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
       return [];
     }
-    return withBarFills(buildChartRows(from, to, items), targetNetY);
-  }, [from, to, items, targetNetY]);
+    const base = buildChartRows(from, to, items);
+    if (advanced && base.length > 0) {
+      const last = base[base.length - 1];
+      const realizedNet = base.reduce((s, r) => s + r.net, 0);
+      const monthEnd = monthEndYmd(last.dayKey);
+      const remain = advanced.forecastMonthEndNet - realizedNet;
+      const forecastCum = last.cumulative + remain;
+      last.forecastCumulative = last.cumulative;
+      last.forecastShade = last.cumulative;
+      if (monthEnd > last.dayKey) {
+        const endDate = parseYmd(monthEnd);
+        base.push({
+          dayKey: monthEnd,
+          dayLabel: `${endDate.getMonth() + 1}/${endDate.getDate()}(予)`,
+          net: 0,
+          cumulative: last.cumulative,
+          salesCount: 0,
+          fee: 0,
+          gross: 0,
+          forecastCumulative: forecastCum,
+          forecastShade: forecastCum,
+          isForecastPoint: true,
+        });
+      } else {
+        last.forecastCumulative = forecastCum;
+        last.forecastShade = forecastCum;
+      }
+    }
+    return withBarFills(base, targetNetY);
+  }, [from, to, items, targetNetY, advanced]);
 
   const nTicks = data.length;
   const xInterval = nTicks > 45 ? Math.ceil(nTicks / 12) : nTicks > 20 ? 2 : 0;
   const chartWidthPx = Math.max(100, nTicks * 12);
+  const forecastStart = data.find((r) => r.forecastCumulative != null);
+  const forecastEnd = [...data].reverse().find((r) => r.isForecastPoint);
 
   if (error) {
     return (
@@ -210,25 +256,21 @@ export function AdminSalesCharts({ from, to, items, loading, error, targetNetY, 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
             gap: "0.45rem",
             marginBottom: "0.45rem",
           }}
         >
-          <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.5rem" }}>
-            <div style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>直近3か月平均純利益</div>
-            <strong>¥{Math.round(advanced.trailing3MonthAverageNet).toLocaleString("ja-JP")}</strong>
-          </div>
-          <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.5rem" }}>
-            <div style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>今月末着地予想</div>
+          <div style={{ border: "1px solid rgba(255,255,255,0.35)", borderRadius: 12, padding: "0.45rem 0.6rem", background: "rgba(255,255,255,0.52)", backdropFilter: "blur(8px)" }}>
+            <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>【予測】今月の着地予想</div>
             <strong>¥{Math.round(advanced.forecastMonthEndNet).toLocaleString("ja-JP")}</strong>
           </div>
-          <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.5rem" }}>
-            <div style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>1年後の累積純利益予測</div>
-            <strong>¥{Math.round(advanced.oneYearProjectedCumulativeNet).toLocaleString("ja-JP")}</strong>
+          <div style={{ border: "1px solid rgba(255,255,255,0.35)", borderRadius: 12, padding: "0.45rem 0.6rem", background: "rgba(255,255,255,0.52)", backdropFilter: "blur(8px)" }}>
+            <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>【効率】1取引あたりの純利益</div>
+            <strong>¥{Math.round(advanced.netPerTransaction).toLocaleString("ja-JP")}</strong>
           </div>
-          <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.5rem" }}>
-            <div style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>前月比</div>
+          <div style={{ border: "1px solid rgba(255,255,255,0.35)", borderRadius: 12, padding: "0.45rem 0.6rem", background: "rgba(255,255,255,0.52)", backdropFilter: "blur(8px)" }}>
+            <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>【成長】前月比</div>
             <strong>
               {advanced.monthOverMonthPercent == null
                 ? "—"
@@ -237,6 +279,31 @@ export function AdminSalesCharts({ from, to, items, loading, error, targetNetY, 
           </div>
         </div>
       ) : null}
+      <div style={{ display: "inline-flex", gap: 4, marginBottom: "0.45rem", border: "1px solid var(--border)", borderRadius: 999, padding: 3, background: "var(--bg-card)" }}>
+        {[
+          { id: "daily", label: "日次利益" },
+          { id: "cumulative", label: "累積利益" },
+          { id: "forecast", label: "予測シミュレーション" },
+        ].map((x) => (
+          <button
+            key={x.id}
+            type="button"
+            onClick={() => setMode(x.id as "daily" | "cumulative" | "forecast")}
+            style={{
+              border: "none",
+              borderRadius: 999,
+              padding: "0.2rem 0.55rem",
+              fontSize: "0.78rem",
+              background: mode === x.id ? "color-mix(in srgb, #4A90E2 20%, var(--bg-card))" : "transparent",
+              color: mode === x.id ? "#2d6ab8" : "var(--text-muted)",
+              cursor: "pointer",
+              transition: "all .2s ease",
+            }}
+          >
+            {x.label}
+          </button>
+        ))}
+      </div>
       {advanced && advanced.userContribution.length > 0 ? (
         <div style={{ marginBottom: "0.45rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
           ユーザー別利益貢献:
@@ -257,6 +324,12 @@ export function AdminSalesCharts({ from, to, items, loading, error, targetNetY, 
         <div style={{ minWidth: chartWidthPx, width: "100%", height: 300, minHeight: 280 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+            <defs>
+              <linearGradient id="forecastFill" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#4A90E2" stopOpacity={0.14} />
+                <stop offset="100%" stopColor="#4A90E2" stopOpacity={0.03} />
+              </linearGradient>
+            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="color-mix(in srgb, var(--text, #888) 20%, transparent)" />
             <XAxis
               dataKey="dayLabel"
@@ -288,27 +361,67 @@ export function AdminSalesCharts({ from, to, items, loading, error, targetNetY, 
                 label={{ value: "目標", position: "insideTopRight", fill: "#b42318", fontSize: 10 }}
               />
             ) : null}
-            <Bar
-              yAxisId="left"
-              dataKey="net"
-              name="日次純利益"
-              maxBarSize={32}
-              radius={[2, 2, 0, 0]}
-              activeBar={{ opacity: 0.9, stroke: "rgba(15, 50, 90, 0.45)", strokeWidth: 0.5 }}
-            >
-              {data.map((entry) => (
-                <Cell key={entry.dayKey} fill={entry.barFill} />
-              ))}
-            </Bar>
-            <Line
-              yAxisId="right"
-              type="monotone"
-              dataKey="cumulative"
-              name="累積純利益"
-              stroke={LINE}
-              dot={false}
-              strokeWidth={2}
-            />
+            {(mode === "forecast" || mode === "cumulative") && (
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="cumulative"
+                name="累積純利益"
+                stroke={LINE}
+                dot={false}
+                strokeWidth={2}
+                animationDuration={220}
+              />
+            )}
+            {(mode === "daily" || mode === "forecast") && (
+              <Bar
+                yAxisId="left"
+                dataKey="net"
+                name="日次純利益"
+                maxBarSize={32}
+                radius={[2, 2, 0, 0]}
+                activeBar={{ opacity: 0.9, stroke: "rgba(15, 50, 90, 0.45)", strokeWidth: 0.5 }}
+                animationDuration={220}
+              >
+                {data.map((entry) => (
+                  <Cell key={entry.dayKey} fill={entry.barFill} />
+                ))}
+              </Bar>
+            )}
+            {mode === "forecast" && forecastStart && forecastEnd ? (
+              <ReferenceArea
+                x1={forecastStart.dayLabel}
+                x2={forecastEnd.dayLabel}
+                yAxisId="right"
+                fill="url(#forecastFill)"
+                strokeOpacity={0}
+              />
+            ) : null}
+            {mode === "forecast" ? (
+              <>
+                <Area
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="forecastShade"
+                  stroke="none"
+                  fill="url(#forecastFill)"
+                  connectNulls
+                  isAnimationActive={false}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="forecastCumulative"
+                  name="今月末予測"
+                  stroke="#4A90E2"
+                  strokeDasharray="5 4"
+                  dot={false}
+                  strokeWidth={2}
+                  connectNulls
+                  animationDuration={220}
+                />
+              </>
+            ) : null}
           </ComposedChart>
         </ResponsiveContainer>
         </div>

@@ -9,6 +9,7 @@ export type AdminSalesUserContribution = {
 
 export type AdminSalesAdvancedAnalysis = {
   forecastMonthEndNet: number;
+  netPerTransaction: number;
   trailing3MonthAverageNet: number;
   oneYearProjectedCumulativeNet: number;
   currentCumulativeNet: number;
@@ -83,6 +84,8 @@ export function buildAdminSalesAdvancedAnalysis(params: {
   const oneYearProjectedCumulativeNet = currentCumulativeNet + forecastMonthEndNet * 12;
 
   const byUser = new Map<string, { userId: number | null; userLabel: string; net: number }>();
+  let totalLogNet = 0;
+  let totalLogCount = 0;
   for (const r of params.salesLogs) {
     const id = r.user_id != null && Number.isFinite(Number(r.user_id)) ? Number(r.user_id) : null;
     const label =
@@ -91,7 +94,10 @@ export function buildAdminSalesAdvancedAnalysis(params: {
         : String(r.family_name ?? "").trim() || "不明ユーザー";
     const key = id != null ? `u:${id}` : `x:${label}`;
     const prev = byUser.get(key) ?? { userId: id, userLabel: label, net: 0 };
-    prev.net += Number(r.net_amount ?? 0);
+    const net = Number(r.net_amount ?? 0);
+    prev.net += net;
+    totalLogNet += net;
+    totalLogCount += 1;
     byUser.set(key, prev);
   }
   const totalUserNet = Array.from(byUser.values()).reduce((s, x) => s + x.net, 0);
@@ -106,6 +112,7 @@ export function buildAdminSalesAdvancedAnalysis(params: {
 
   return {
     forecastMonthEndNet,
+    netPerTransaction: totalLogCount > 0 ? totalLogNet / totalLogCount : 0,
     trailing3MonthAverageNet,
     oneYearProjectedCumulativeNet,
     currentCumulativeNet,
