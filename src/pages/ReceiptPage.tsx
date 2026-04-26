@@ -7,6 +7,7 @@ import {
   FEATURE_RECEIPT_AI,
   getCategories,
   parseReceiptImage,
+  type ParseReceiptImageProgress,
   previewPayPayCsvImport,
   savePlaceCategoryPreference,
   saveReceiptOcrCorrection,
@@ -327,6 +328,12 @@ export function ReceiptPage() {
     number | null | undefined
   > | null>(null);
   const [loading, setLoading] = useState(false);
+  /** レシート取込: 圧縮→送信→OCR+AI 待ちの体感進捗 */
+  const [receiptImportProgress, setReceiptImportProgress] = useState<{
+    text: string;
+    percent: number;
+  } | null>(null);
+  const serverProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [registering, setRegistering] = useState(false);
   const isBusy = loading || paypayLoading;
   const displayMainCategory = useMemo(() => {
@@ -678,6 +685,11 @@ export function ReceiptPage() {
       return;
     }
     setLoading(true);
+    if (serverProgressTimerRef.current) {
+      clearInterval(serverProgressTimerRef.current);
+      serverProgressTimerRef.current = null;
+    }
+    setReceiptImportProgress({ text: "画像を準備中…", percent: 2 });
     setNotice(null);
     clearPayPayImport();
     setUnifiedMode("receipt");
@@ -708,10 +720,37 @@ export function ReceiptPage() {
     categoryTouchedByUserRef.current = false;
     setUserEditedCategory(false);
     setReceiptFieldConfidence(null);
+    const startServerProgressSimulation = () => {
+      if (serverProgressTimerRef.current) return;
+      let v = 40;
+      serverProgressTimerRef.current = setInterval(() => {
+        v = Math.min(90, v + 2.2);
+        setReceiptImportProgress((prev) =>
+          prev
+            ? {
+                text: "サーバーで解析中（OCR + AI。完了までしばらくお待ちください）…",
+                percent: Math.min(90, Math.max(prev.percent, v)),
+              }
+            : null,
+        );
+      }, 420);
+    };
     try {
       const b64 = await prepareReceiptImageForApi(f);
+      setReceiptImportProgress({ text: "送信中…", percent: 8 });
       const r = await parseReceiptImage(b64, {
         debugForceReceiptTier: receiptDebugTier,
+        onProgress: (p: ParseReceiptImageProgress) => {
+          if (p.phase === "server") {
+            startServerProgressSimulation();
+            setReceiptImportProgress((prev) => ({
+              text: "サーバーで解析中（OCR + AI）…",
+              percent: Math.max(40, p.percent, prev?.percent ?? 0),
+            }));
+          } else {
+            setReceiptImportProgress({ text: "送信中…", percent: p.percent });
+          }
+        },
       });
       setTotalCandidates(Array.isArray(r.totalCandidates) ? r.totalCandidates : []);
       {
@@ -899,6 +938,21 @@ export function ReceiptPage() {
         if (r.notice) parts.push(r.notice);
         setNotice(parts.length ? parts.join(" ") : null);
       }
+      setReceiptImportProgress((prev) => (prev ? { text: "完了", percent: 100 } : null));
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState === "hidden" &&
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        try {
+          new Notification("レシートの解析が完了しました", {
+            body: "取込内容をご確認ください。",
+          });
+        } catch {
+          /* ignore */
+        }
+      }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : String(e));
       setItems([]);
@@ -910,6 +964,11 @@ export function ReceiptPage() {
       setReceiptDictionaryHits(0);
       setReceiptFieldConfidence(null);
     } finally {
+      if (serverProgressTimerRef.current) {
+        clearInterval(serverProgressTimerRef.current);
+        serverProgressTimerRef.current = null;
+      }
+      setReceiptImportProgress(null);
       setLoading(false);
     }
   }
@@ -949,7 +1008,26 @@ export function ReceiptPage() {
   const memoFieldLowConfidence = lowOcrFieldConf("vendorName") || receiptBedrockVendorLow;
   const fieldTooltip = (low: boolean) => (low ? RECEIPT_AI_INFERENCE_HINT : undefined);
 
-  const busyLabel = loading ? "解析中…" : "明細を処理中…";
+  const busyLabel = receiptImportProgress
+    ? `${receiptImportProgress.text}（${Math.min(100, Math.round(receiptImportProgress.percent))}%）`
+    : loading
+      ? "解析中…"
+      : "明細を処理中…";
+  const loadingBarPct = receiptImportProgress
+    ? Math.min(100, Math.max(0, Math.round(receiptImportProgress.percent)))
+    : 0;
+  const progressBlock =
+    receiptImportProgress != null ? (
+      <div
+        className={styles.receiptProgressBar}
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={loadingBarPct}
+      >
+        <div className={styles.receiptProgressBarFill} style={{ width: `${loadingBarPct}%` }} />
+      </div>
+    ) : null;
   const loadingUi = (
     <>
       {touchUi ? (
@@ -962,6 +1040,7 @@ export function ReceiptPage() {
           <div className={styles.receiptLoadingOverlayInner}>
             <span className={styles.receiptSpinner} aria-hidden />
             <p className={styles.receiptLoadingOverlayText}>{busyLabel}</p>
+            {progressBlock}
           </div>
         </div>
       ) : (
@@ -972,7 +1051,10 @@ export function ReceiptPage() {
           aria-busy="true"
         >
           <span className={styles.receiptSpinner} aria-hidden />
-          <span>{busyLabel}</span>
+          <div className={styles.receiptLoadingPanelTextCol}>
+            <span>{busyLabel}</span>
+            {progressBlock}
+          </div>
         </div>
       )}
     </>

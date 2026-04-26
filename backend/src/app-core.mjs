@@ -6300,21 +6300,6 @@ export async function handleApiRequest(req, options = {}) {
           } catch (eMc) {
             logError("receipts.parse.memo_category_pairs", eMc);
           }
-          let hybridReceipt = null;
-          try {
-            hybridReceipt = await askBedrockHybridReceiptFromTextract({
-              textract: {
-                summary: result?.summary ?? {},
-                items: result?.items ?? [],
-                ocrLines: result?.ocrLines ?? [],
-                textractRaw: result?.textractRaw ?? {},
-              },
-              categoryCandidates: expenseCatRows.map((c) => c.name),
-              memoCategoryPairs,
-            });
-          } catch (e) {
-            logError("receipts.parse.hybrid_ocr", e);
-          }
           const subRow = await loadUserSubscriptionRowFull(pool, userId);
           let subscriptionActive = userHasPremiumSubscriptionAccess(subRow, userId);
           let debugReceiptTierOverride = null;
@@ -6344,6 +6329,10 @@ export async function handleApiRequest(req, options = {}) {
           } catch {
             /* ignore log serialization */
           }
+          const expenseCategoryIdNameRows = expenseCatRows.map((c) => ({
+            id: Number(c.id),
+            name: String(c.name),
+          }));
           const textractVendorBaseline = String(result?.summary?.vendorName ?? "").trim();
           const suggestedCategory = await suggestExpenseCategoryForReceipt(
             pool,
@@ -6365,31 +6354,52 @@ export async function handleApiRequest(req, options = {}) {
               logError("receipts.parse.vendor_ocr_key_hints", eH);
             }
           }
-          let aiReceipt = null;
-          if (subscriptionActive) {
-            try {
-              aiReceipt = await askBedrockReceiptAssistant({
-                subscriptionActive,
-                historyHints,
-                memoCategoryPairs,
-                vendorOcrKeyHints,
-                heuristicCategorySuggestion: suggestedCategory
-                  ? {
-                      name: suggestedCategory.name,
-                      source: suggestedCategory.source,
-                    }
-                  : null,
-                summary: result?.summary ?? {},
-                items: result?.items ?? [],
-                ocrLines: result?.ocrLines ?? [],
-                categoryCandidates: expenseCatRows.map((c) => c.name),
-                imageBase64: buf.toString("base64"),
-                imageMediaType: inferReceiptImageMediaTypeFromBuffer(buf),
-              });
-            } catch (e) {
-              logError("receipts.parse.ai_assist", e);
-            }
-          }
+          const hybridTextractPayload = {
+            summary: result?.summary ?? {},
+            items: result?.items ?? [],
+            ocrLines: result?.ocrLines ?? [],
+            textractRaw: result?.textractRaw ?? {},
+          };
+          const [hybridReceipt, aiReceipt] = await Promise.all([
+            (async () => {
+              try {
+                return await askBedrockHybridReceiptFromTextract({
+                  textract: hybridTextractPayload,
+                  categoryCandidates: expenseCategoryIdNameRows,
+                  memoCategoryPairs,
+                });
+              } catch (e) {
+                logError("receipts.parse.hybrid_ocr", e);
+                return null;
+              }
+            })(),
+            (async () => {
+              if (!subscriptionActive) return null;
+              try {
+                return await askBedrockReceiptAssistant({
+                  subscriptionActive,
+                  historyHints,
+                  memoCategoryPairs,
+                  vendorOcrKeyHints,
+                  heuristicCategorySuggestion: suggestedCategory
+                    ? {
+                        name: suggestedCategory.name,
+                        source: suggestedCategory.source,
+                      }
+                    : null,
+                  summary: result?.summary ?? {},
+                  items: result?.items ?? [],
+                  ocrLines: result?.ocrLines ?? [],
+                  categoryCandidates: expenseCategoryIdNameRows,
+                  imageBase64: buf.toString("base64"),
+                  imageMediaType: inferReceiptImageMediaTypeFromBuffer(buf),
+                });
+              } catch (e) {
+                logError("receipts.parse.ai_assist", e);
+                return null;
+              }
+            })(),
+          ]);
 
           let adjustedSummary = { ...(result?.summary ?? {}) };
           let receiptAiLineItems = null;

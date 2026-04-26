@@ -911,12 +911,30 @@ function inferMainCategoryFromItems(items) {
  * @param {object[]} opts.historyHints
  * @param {object|null} [opts.heuristicCategorySuggestion]
  */
+/** 支出カテゴリを {id, name} または 文字列 から、トークン節約用の [id, 名前][] に正規化 */
+function buildExpenseCategoryTuplesForPrompt(categoryCandidates) {
+  const tuples = [];
+  for (const x of Array.isArray(categoryCandidates) ? categoryCandidates : []) {
+    if (x != null && typeof x === "object" && x.name != null) {
+      const name = String(x.name ?? "").trim();
+      if (!name) continue;
+      const idNum = x.id != null && Number.isFinite(Number(x.id)) ? Number(x.id) : null;
+      tuples.push(idNum == null ? [null, name] : [idNum, name]);
+    } else {
+      const name = String(x ?? "").trim();
+      if (name) tuples.push([null, name]);
+    }
+  }
+  return tuples;
+}
+
 function buildReceiptAiPromptBundle(opts) {
   const subscriptionActive = Boolean(opts.subscriptionActive);
   const summary = opts.summary;
   const items = opts.items;
   const ocrLines = opts.ocrLines;
   const categoryCandidates = opts.categoryCandidates;
+  const expenseCategoryTuples = buildExpenseCategoryTuplesForPrompt(categoryCandidates);
   const historyHints = opts.historyHints;
   const heuristic = opts.heuristicCategorySuggestion ?? null;
   const memoCategoryPairs = Array.isArray(opts.memoCategoryPairs) ? opts.memoCategoryPairs : [];
@@ -956,55 +974,46 @@ function buildReceiptAiPromptBundle(opts) {
     return { systemPrompt, userTextPrompt, receiptAiTier: "free" };
   }
 
-  const catList =
-    categoryCandidates.length > 0
-      ? categoryCandidates.join("、")
-      : "（カテゴリ一覧なし。一般的な日本の家計簿名で推定）";
+  const catLine =
+    expenseCategoryTuples.length > 0
+      ? `【支出カテゴリ】expenseCategoryTuples = [id|null, 名前] の配列: ${JSON.stringify(
+          expenseCategoryTuples,
+        )}。categoryName には 名前 だけ（上記のいずれか1つ）か null。id は出さない。`
+      : "（支出カテゴリ一覧なし。一般名で null 可）";
+
+  const vHint =
+    vendorOcrKeyHints.length > 0
+      ? `vendorOcrKeyHints（学習済み 店名表記→カテゴリ）: ${JSON.stringify(
+          vendorOcrKeyHints,
+        )}。OCR 表記と合うなら categoryName を最優先で一致。`
+      : "vendorOcrKeyHints は空。";
 
   const systemPrompt = [
-    "あなたは家計簿アプリのレシート読取AI（サブスクリプション有効ユーザー向け）です。",
-    "添付画像の文字・レイアウトを最優先し、補助JSONの Textract summary/items/ocrLines を積極的に参照してください。",
-    "レシートに印字された電話番号・フリーダイヤル・店舗コードは、チェーン店の正式店舗名を推定する手がかりとして活用してよい（根拠は reason に簡潔に）。",
-    "利用履歴ヒント historyHints / memoCategoryPairs は同一家族の過去支出傾向です。画像上の店名が不完全でも、最も妥当な vendorName・categoryName を推定してよい。",
-    vendorOcrKeyHints.length > 0
-      ? `手動学習 vendorOcrKeyHints: ユーザーが同じ家計簿で「名寄せ店名ラベル→支出カテゴリ」と確定した直近の対応。レシートの表記と一致・類似なら最優先で categoryName を合わせる。: ${JSON.stringify(
-          vendorOcrKeyHints,
-        )}`
-      : "手動学習 vendorOcrKeyHints は空です。",
-    "履歴と矛盾しない範囲で、定番チェーン店・屋号の正規化（略称→正式名称など）を行ってよい。",
-    `categoryName は次の【登録済み支出カテゴリ名】のいずれか1つに最も近い表記: ${catList}。該当なければ null。`,
-    "合計が印字不明でも、明細が読めれば足し合わせて totalAmount を埋めてよい。",
-    "日付は YYYY-MM-DD。読めなければ null。",
-    "厳密な1つのJSONのみを返す。前後に説明・マークダウン・コメントを付けない。",
-    "必須JSONキー（欠かさない）: vendorName, date, totalAmount, taxAmount, lineItems, categoryName, reason。",
-    "lineItems: [{ name: string, amount: number or null }] 主要品目（最大80件）。読めなければ [] または null。",
-    "taxAmount: 消費税等の合計額（円・整数）。印字がなければ null。",
+    "家計レシート抽出。出力は1つの厳密なJSONだけ。前後の説明・```・マークダウン禁止。",
+    "画像＞補助JSON（Textract summary / items / ocrLines / 履歴）。純度の高いJSONのみ。",
+    catLine,
+    vHint,
+    "必須キー: vendorName, date, totalAmount, taxAmount, lineItems, categoryName, reason。",
+    "lineItems: [{name, amount|null}](最大80)。taxAmount: 消費税等合計(円) または null。",
   ].join("\n");
 
   const auxPayload = {
     summary,
     items,
     ocrLines,
-    categoryCandidates,
+    expenseCategoryTuples,
     historyHints,
     memoCategoryPairs,
     vendorOcrKeyHints,
     rawOcrText: rawOcrText
       ? rawOcrText.slice(0, 20000)
-      : "(ocrLines から補助JSON内で利用可能; ここは行連結版)",
+      : "(ocrLines 連結; 上記 ocrLines と重複可)",
     heuristicCategorySuggestion: heuristic,
   };
 
   const userTextPrompt = [
-    "添付レシート画像（ある場合）と、補助JSON（履歴・登録カテゴリ全件・OCR 生文字）を踏まえて抽出・補正してください。",
-    "出力は次のキーのみ: vendorName, date, totalAmount, taxAmount, lineItems, categoryName, reason",
-    "- vendorName: 店舗名。困難なら null",
-    "- date: YYYY-MM-DD または null",
-    "- totalAmount: 税込合計（円・整数）",
-    "- taxAmount: 消費税等（円・整数）または null",
-    "- lineItems: 主要品目 { name, amount } の配列",
-    "- categoryName: 上記【登録済み】の1つ、または null",
-    "- reason: 判断根拠を1文",
+    "補助JSON（履歴・カテゴリ[ id, 名前 ]・明細要約）を使い、キーを埋める。合計は印字優先、明細合算可。",
+    "出力JSONキー: vendorName, date, totalAmount, taxAmount, lineItems, categoryName, reason",
     "",
     "補助JSON:",
     JSON.stringify(auxPayload),
@@ -1030,9 +1039,7 @@ export async function askBedrockReceiptAssistant(input = {}) {
   const summary = input?.summary && typeof input.summary === "object" ? input.summary : {};
   const items = Array.isArray(input?.items) ? input.items : [];
   const ocrLines = Array.isArray(input?.ocrLines) ? input.ocrLines : [];
-  const categoryCandidates = Array.isArray(input?.categoryCandidates)
-    ? input.categoryCandidates.map((x) => String(x ?? "").trim()).filter(Boolean)
-    : [];
+  const categoryCandidates = Array.isArray(input?.categoryCandidates) ? input.categoryCandidates : [];
   const historyHints = Array.isArray(input?.historyHints) ? input.historyHints : [];
   const memoCategoryPairs = Array.isArray(input?.memoCategoryPairs) ? input.memoCategoryPairs : [];
   const vendorOcrKeyHints = Array.isArray(input?.vendorOcrKeyHints) ? input.vendorOcrKeyHints : [];
@@ -1069,7 +1076,7 @@ export async function askBedrockReceiptAssistant(input = {}) {
       textPrompt: userTextPrompt,
       imageBase64,
       mediaType: imageMediaType,
-      maxTokens: 1200,
+      maxTokens: 1000,
       temperature: 0.15,
     });
     if (vis.ok && vis.reply) {
@@ -1087,7 +1094,7 @@ export async function askBedrockReceiptAssistant(input = {}) {
     const out = await invokeBedrockText({
       systemPrompt,
       userPrompt: textOnlyPrompt,
-      maxTokens: 700,
+      maxTokens: 520,
       temperature: 0.2,
       logContext: "bedrock.text.receipt_assist",
     });
@@ -1124,28 +1131,27 @@ export async function askBedrockReceiptAssistant(input = {}) {
  */
 export async function askBedrockHybridReceiptFromTextract(input = {}) {
   const textract = input?.textract && typeof input.textract === "object" ? input.textract : {};
-  const categoryCandidates = Array.isArray(input?.categoryCandidates)
-    ? input.categoryCandidates.map((x) => String(x ?? "").trim()).filter(Boolean)
-    : [];
+  const categoryCandidates = Array.isArray(input?.categoryCandidates) ? input.categoryCandidates : [];
+  const expenseCategoryTuples = buildExpenseCategoryTuplesForPrompt(categoryCandidates);
   const memoCategoryPairs = Array.isArray(input?.memoCategoryPairs) ? input.memoCategoryPairs : [];
   const catLine =
-    categoryCandidates.length > 0
-      ? `登録済み支出カテゴリ名（品目分類の参考）: ${categoryCandidates.join("、")}。item.category は定義[食費、…、その他]のいずれか1つ。`
-      : "item.category は [食費、日用品、衣類、娯楽、医療、教育、交通費、その他] から1つ。";
+    expenseCategoryTuples.length > 0
+      ? `品目 item.category: expenseCategoryTuples の名前のいずれか1語。: ${JSON.stringify(
+          expenseCategoryTuples,
+        )}`
+      : "item.category: [食費、日用品、衣類、娯楽、医療、教育、交通費、その他] のいずれか1つ。";
   const systemPrompt = [
-    "あなたはレシートOCR補助AIです。",
-    "必ず JSON オブジェクトのみを返してください。説明文やMarkdownは禁止です。",
+    "レシートOCR→JSON 整形。出力はJSON1件のみ。説明・```禁止。",
     "必須キー: storeName, date, totalAmount, taxAmount, items, mainCategory。",
-    "taxAmount は内消費税・外税等の合計額（円・整数）または null。",
+    "taxAmount: 税等の合計(円) または null。",
     catLine,
-    "items は { name, unitPrice, category } の配列とし、unitPrice は数値または null。",
-    "品目名だけで曖昧な場合は storeName やレシート全体文脈から推論して分類する。",
-    "mainCategory はレシート全体のメインカテゴリで、金額合計が最大のカテゴリを返す。",
+    "items: {name, unitPrice, category}。unitPrice: 数値または null。",
+    "mainCategory: 金額合計最大の品目カテゴリ。",
   ].join("\n");
   const userPrompt = [
-    "下記の補足（ユーザーの店舗メモとカテゴリの傾向・OCR 生行）を参考に、店名・日付・合計・消費税・品目を厳密なJSONで返してください。",
+    "下記補足と Textract 要約を参照し、店名・日付・合計・税・品目を返す。",
     JSON.stringify({
-      registeredExpenseCategoryNames: categoryCandidates,
+      expenseCategoryTuples,
       memoCategoryPairs,
       rawOcrLines: textract.ocrLines ?? [],
       textract,
@@ -1154,7 +1160,7 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
   const out = await invokeBedrockText({
     systemPrompt,
     userPrompt,
-    maxTokens: 900,
+    maxTokens: 800,
     temperature: 0.1,
     logContext: "bedrock.text.textract_hybrid",
   });

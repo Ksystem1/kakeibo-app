@@ -1600,6 +1600,16 @@
   font-weight: 500;
 }
 
+.receiptLoadingPanelTextCol {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 28rem;
+}
+
 .receiptSpinner {
   width: 1.5rem;
   height: 1.5rem;
@@ -1652,6 +1662,22 @@
   font-weight: 600;
   color: var(--text);
   letter-spacing: 0.02em;
+}
+
+.receiptProgressBar {
+  width: 100%;
+  max-width: 18rem;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--border) 70%, var(--bg-card));
+  overflow: hidden;
+  align-self: center;
+}
+
+.receiptProgressBarFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease;
 }
 
 .settingsPanel {

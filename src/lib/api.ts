@@ -1284,26 +1284,101 @@ export async function downloadAdminSalesCsv(params?: { from?: string; to?: strin
 
 export type ParseReceiptDebugTier = "server" | "free" | "subscribed";
 
+/** レシート解析 API 送信中の進捗（アップロード完了後は server フェーズ） */
+export type ParseReceiptImageProgress = {
+  phase: "upload" | "server";
+  percent: number;
+};
+
+function postReceiptsParseWithXhr(
+  body: Record<string, unknown>,
+  onProgress: (p: ParseReceiptImageProgress) => void,
+  timeoutMs: number,
+): Promise<Response> {
+  const bodyStr = JSON.stringify(body);
+  onProgress({ phase: "upload", percent: 10 });
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE}/receipts/parse`);
+    const h = buildHeaders();
+    for (const [k, v] of Object.entries(h)) {
+      xhr.setRequestHeader(k, v);
+    }
+    xhr.timeout = timeoutMs;
+    xhr.responseType = "text";
+    xhr.upload.addEventListener("loadstart", () => {
+      onProgress({ phase: "upload", percent: 12 });
+    });
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable && e.total > 0) {
+        const pct = 12 + Math.min(25, (e.loaded / e.total) * 25);
+        onProgress({ phase: "upload", percent: Math.round(pct) });
+      }
+    });
+    xhr.addEventListener("load", () => {
+      onProgress({ phase: "server", percent: 40 });
+      const res = new Response(xhr.responseText, {
+        status: xhr.status,
+        statusText: xhr.statusText,
+        headers: { "Content-Type": "application/json" },
+      });
+      resolve(res);
+    });
+    xhr.addEventListener("error", () => {
+      reject(
+        new Error(
+          "APIに接続できません。`npm run dev`（フロントと API 同時）または本番の api ドメイン・CORS を確認してください。",
+        ),
+      );
+    });
+    xhr.addEventListener("abort", () => {
+      reject(
+        new Error(
+          "通信がタイムアウトしました。VITE_API_URL、ネットワーク、CORS を確認してください。",
+        ),
+      );
+    });
+    xhr.addEventListener("timeout", () => {
+      reject(
+        new Error(
+          "通信がタイムアウトしました。VITE_API_URL（スマホから届くアドレスか）、ネットワーク、CORS を確認してください。",
+        ),
+      );
+    });
+    xhr.send(bodyStr);
+  });
+}
+
 export async function parseReceiptImage(
   imageBase64: string,
-  options?: { debugForceReceiptTier?: ParseReceiptDebugTier },
+  options?: {
+    debugForceReceiptTier?: ParseReceiptDebugTier;
+    onProgress?: (p: ParseReceiptImageProgress) => void;
+  },
 ) {
   const tier = options?.debugForceReceiptTier ?? "server";
   const body: Record<string, unknown> = { imageBase64 };
   if (tier === "free" || tier === "subscribed") {
     body.debugForceReceiptTier = tier;
   }
+  const useXhr = typeof options?.onProgress === "function";
   for (let attempt = 1; attempt <= RECEIPT_PARSE_MAX_RETRIES; attempt += 1) {
     try {
-      const res = await apiFetch(
-        `${BASE}/receipts/parse`,
-        {
-          method: "POST",
-          headers: buildHeaders(),
-          body: JSON.stringify(body),
-        },
-        RECEIPT_PARSE_TIMEOUT_MS,
-      );
+      const res = useXhr
+        ? await postReceiptsParseWithXhr(
+            body,
+            options.onProgress!,
+            RECEIPT_PARSE_TIMEOUT_MS,
+          )
+        : await apiFetch(
+            `${BASE}/receipts/parse`,
+            {
+              method: "POST",
+              headers: buildHeaders(),
+              body: JSON.stringify(body),
+            },
+            RECEIPT_PARSE_TIMEOUT_MS,
+          );
       return parse<{
         ok: boolean;
         demo?: boolean;
