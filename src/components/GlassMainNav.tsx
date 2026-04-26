@@ -200,7 +200,7 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                 </span>
                 <h4 className="app-glass-nav-feature-card__title">全自動取込</h4>
                 <p className="app-glass-nav-feature-card__desc">
-                  「おまかせ取込」で銀行やカードの明細を自動連携。入力の手間をゼロに。
+                  口座やカード明細を自動連携。入力ゼロで記録開始。
                 </p>
               </article>
               <article className="app-glass-nav-feature-card">
@@ -209,7 +209,7 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                 </span>
                 <h4 className="app-glass-nav-feature-card__title">未来予測</h4>
                 <p className="app-glass-nav-feature-card__desc">
-                  AIが翌月の支出をシミュレーション。貯金の目標達成をしっかりサポート。
+                  AIが翌月支出を予測。目標達成の行動が見える。
                 </p>
               </article>
               <article className="app-glass-nav-feature-card">
@@ -218,11 +218,21 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                 </span>
                 <h4 className="app-glass-nav-feature-card__title">高度な分析</h4>
                 <p className="app-glass-nav-feature-card__desc">
-                  カテゴリ別の支出を美しいグラフで可視化。無駄遣いポイントも一目瞭然。
+                  美しいグラフで支出傾向を可視化。改善ポイントを即把握。
                 </p>
               </article>
             </div>
-            <div className="app-glass-nav-panel__media-placeholder">ここにチュートリアルGIF / 動画を追加できます</div>
+            <div className="app-glass-nav-media-grid" aria-hidden>
+              <div className="app-glass-nav-media-skeleton app-glass-nav-media-skeleton--wide">
+                <span />
+                <span />
+                <span />
+              </div>
+              <div className="app-glass-nav-media-skeleton">
+                <span />
+                <span />
+              </div>
+            </div>
             <div className="app-glass-nav-panel__actions">
               <button
                 type="button"
@@ -265,7 +275,7 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                     <WalletCards className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
                     連携する
                   </h4>
-                  <p className="app-glass-nav-step__desc">「おまかせ取込」から銀行口座やカードを登録しましょう。</p>
+                  <p className="app-glass-nav-step__desc">「おまかせ取込」で口座やカードを登録。</p>
                 </div>
               </section>
               <div className="app-glass-nav-step__divider" aria-hidden />
@@ -276,7 +286,7 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                     <ClipboardCheck className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
                     確認する
                   </h4>
-                  <p className="app-glass-nav-step__desc">「家計簿」タブで、自動で分類された支出をチェック。</p>
+                  <p className="app-glass-nav-step__desc">「家計簿」で自動分類された支出をチェック。</p>
                 </div>
               </section>
               <div className="app-glass-nav-step__divider" aria-hidden />
@@ -287,11 +297,21 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                     <LayoutDashboard className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
                     振り返る
                   </h4>
-                  <p className="app-glass-nav-step__desc">「ダッシュボード」で今月の予算残高を確認して、賢く節約！</p>
+                  <p className="app-glass-nav-step__desc">「ダッシュボード」で予算残高を振り返る。</p>
                 </div>
               </section>
             </div>
-            <div className="app-glass-nav-panel__media-placeholder">ここに操作GIF / ミニ動画を挿入できます</div>
+            <div className="app-glass-nav-media-grid" aria-hidden>
+              <div className="app-glass-nav-media-skeleton app-glass-nav-media-skeleton--wide">
+                <span />
+                <span />
+                <span />
+              </div>
+              <div className="app-glass-nav-media-skeleton">
+                <span />
+                <span />
+              </div>
+            </div>
             <div className="app-glass-nav-panel__actions">
               <button
                 type="button"

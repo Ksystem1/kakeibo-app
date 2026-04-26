@@ -412,8 +412,8 @@
   margin: 0.7rem 0 0;
   padding: 0;
   list-style: none;
-  line-height: 1.8;
-  font-size: 0.93rem;
+  line-height: 1.78;
+  font-size: 0.92rem;
 }
 
 .app-glass-nav-panel__catch {
@@ -459,7 +459,7 @@
   margin-top: 0.6rem;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.52rem;
+  gap: 0.58rem;
 }
 
 .app-glass-nav-feature-card {
@@ -467,6 +467,10 @@
   border: 1px solid rgba(255, 255, 255, 0.35);
   background: color-mix(in srgb, #ffffff 72%, #f2e8ff 28%);
   padding: 0.62rem 0.64rem;
+  display: grid;
+  grid-template-columns: 1.7rem 1fr;
+  align-items: start;
+  column-gap: 0.45rem;
 }
 
 .app-glass-nav-feature-card__icon {
@@ -478,6 +482,8 @@
   justify-content: center;
   background: linear-gradient(140deg, rgba(255, 79, 156, 0.16), rgba(127, 91, 255, 0.2));
   color: #8125c8;
+  box-shadow: inset 0 0 0 1px rgba(129, 37, 200, 0.08);
+  grid-row: span 2;
 }
 
 .app-glass-nav-feature-card__icon svg {
@@ -486,15 +492,16 @@
 }
 
 .app-glass-nav-feature-card__title {
-  margin: 0.45rem 0 0.26rem;
+  margin: 0.12rem 0 0.16rem;
   font-size: 0.9rem;
   font-weight: 800;
+  letter-spacing: 0.01em;
 }
 
 .app-glass-nav-feature-card__desc {
   margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.65;
+  font-size: 0.79rem;
+  line-height: 1.62;
   color: color-mix(in srgb, var(--app-ink) 80%, #4e5572 20%);
 }
 
@@ -532,13 +539,56 @@
 
 .app-glass-nav-step__desc {
   margin: 0.18rem 0 0;
-  font-size: 0.86rem;
-  line-height: 1.75;
+  font-size: 0.84rem;
+  line-height: 1.72;
 }
 
 .app-glass-nav-step__divider {
   border-top: 1px dashed rgba(146, 84, 212, 0.4);
   margin: 0.45rem 0;
+}
+
+.app-glass-nav-media-grid {
+  margin-top: 0.74rem;
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 0.56rem;
+}
+
+.app-glass-nav-media-skeleton {
+  border-radius: 12px;
+  border: 1px solid rgba(130, 63, 198, 0.28);
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.52), rgba(239, 230, 250, 0.48), rgba(255, 255, 255, 0.52));
+  min-height: 96px;
+  padding: 0.52rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.38rem;
+}
+
+.app-glass-nav-media-skeleton span {
+  display: block;
+  height: 0.54rem;
+  border-radius: 999px;
+  background: rgba(135, 124, 168, 0.2);
+}
+
+.app-glass-nav-media-skeleton span:nth-child(1) {
+  width: 78%;
+}
+
+.app-glass-nav-media-skeleton span:nth-child(2) {
+  width: 62%;
+}
+
+.app-glass-nav-media-skeleton span:nth-child(3) {
+  width: 48%;
+}
+
+.app-glass-nav-media-skeleton--wide {
+  min-height: 116px;
 }
 
 .app-glass-nav-panel__media-placeholder {
@@ -715,6 +765,10 @@
     grid-template-columns: 1fr;
   }
 
+  .app-glass-nav-feature-card {
+    grid-template-columns: 1.7rem 1fr;
+  }
+
   .app-glass-nav-step {
     grid-template-columns: 1fr;
     gap: 0.32rem;
@@ -722,6 +776,10 @@
 
   .app-glass-nav-step__divider {
     margin: 0.38rem 0 0.5rem;
+  }
+
+  .app-glass-nav-media-grid {
+    grid-template-columns: 1fr;
   }
 }
 
