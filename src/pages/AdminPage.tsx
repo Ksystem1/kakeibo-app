@@ -27,6 +27,7 @@ import {
   type AdminSalesMonthlySummaryRow,
 } from "../lib/api";
 import { AdminSalesCharts } from "../components/AdminSalesCharts";
+import { buildAdminSalesAdvancedAnalysis } from "../lib/adminSalesAdvancedAnalysis";
 import {
   ADMIN_SUBSCRIPTION_STATUSES,
   subscriptionStatusLabelJa,
@@ -485,6 +486,15 @@ export function AdminPage() {
     const n = Number(t);
     return Number.isFinite(n) ? n : null;
   }, [salesChartTarget]);
+
+  const salesAdvanced = useMemo(() => {
+    if (salesMonthlySummary.length === 0) return null;
+    return buildAdminSalesAdvancedAnalysis({
+      monthlySummary: salesMonthlySummary,
+      salesLogs,
+      selectedYm: salesFilterYm,
+    });
+  }, [salesMonthlySummary, salesLogs, salesFilterYm]);
 
   const visibleFamilyMismatches = useMemo(() => {
     if (!reconcileData) return [];
@@ -1475,6 +1485,7 @@ export function AdminPage() {
           loading={salesDailyLoading}
           error={salesDailyError}
           targetNetY={salesChartTargetNetY}
+          advanced={salesAdvanced}
         />
         <div style={{ overflowX: "auto", marginBottom: "0.8rem" }}>
           <table

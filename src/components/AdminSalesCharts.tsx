@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import type { AdminSalesDailySummaryRow } from "../lib/api";
+import type { AdminSalesAdvancedAnalysis } from "../lib/adminSalesAdvancedAnalysis";
 
 /** 目標未設定 or 従来の単色 */
 const BAR = "#4A90E2";
@@ -156,9 +157,10 @@ type Props = {
   error: string | null;
   /** 日次純利益の目標（Y 左軸）。未設定は描画しない */
   targetNetY: number | null;
+  advanced: AdminSalesAdvancedAnalysis | null;
 };
 
-export function AdminSalesCharts({ from, to, items, loading, error, targetNetY }: Props) {
+export function AdminSalesCharts({ from, to, items, loading, error, targetNetY, advanced }: Props) {
   const data = useMemo(() => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
       return [];
@@ -204,6 +206,44 @@ export function AdminSalesCharts({ from, to, items, loading, error, targetNetY }
           </span>
         ) : null}
       </div>
+      {advanced ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+            gap: "0.45rem",
+            marginBottom: "0.45rem",
+          }}
+        >
+          <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.5rem" }}>
+            <div style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>直近3か月平均純利益</div>
+            <strong>¥{Math.round(advanced.trailing3MonthAverageNet).toLocaleString("ja-JP")}</strong>
+          </div>
+          <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.5rem" }}>
+            <div style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>今月末着地予想</div>
+            <strong>¥{Math.round(advanced.forecastMonthEndNet).toLocaleString("ja-JP")}</strong>
+          </div>
+          <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.5rem" }}>
+            <div style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>1年後の累積純利益予測</div>
+            <strong>¥{Math.round(advanced.oneYearProjectedCumulativeNet).toLocaleString("ja-JP")}</strong>
+          </div>
+          <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.5rem" }}>
+            <div style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>前月比</div>
+            <strong>
+              {advanced.monthOverMonthPercent == null
+                ? "—"
+                : `${advanced.monthOverMonthPercent >= 0 ? "+" : ""}${advanced.monthOverMonthPercent.toFixed(1)}%`}
+            </strong>
+          </div>
+        </div>
+      ) : null}
+      {advanced && advanced.userContribution.length > 0 ? (
+        <div style={{ marginBottom: "0.45rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+          ユーザー別利益貢献:
+          {" "}
+          {advanced.userContribution.slice(0, 3).map((u) => `${u.userLabel} ${u.ratio.toFixed(1)}%`).join(" / ")}
+        </div>
+      ) : null}
       <div
         style={{
           width: "100%",
