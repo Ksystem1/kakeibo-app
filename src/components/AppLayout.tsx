@@ -1,15 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
-import {
-  Outlet,
-  Link,
-  NavLink,
-  matchPath,
-  useLocation,
-  useNavigate,
-} from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Outlet, Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { useSettings } from "../context/SettingsContext";
-import { buildNavIconPaths, DEFAULT_NAV_SKIN_ID, type NavIconPaths } from "../config/navSkins";
 import { useIsMobile } from "../hooks/useIsMobile";
 import {
   canSendAuthenticatedRequest,
@@ -23,6 +14,7 @@ import {
 import { useAdminSupportNeedsReplyBadge } from "../hooks/useAdminSupportNeedsReplyBadge";
 import { useSupportChatUnreadBadge } from "../hooks/useSupportChatUnreadBadge";
 import "./AppLayout.nav.css";
+import "./AppLayout.sidebar.css";
 import { AdSlot } from "./AdSlot";
 import { AiAdvisorChat } from "./AiAdvisorChat";
 import { FamilyChatDock } from "./FamilyChatDock";
@@ -48,47 +40,19 @@ function linkStyle(
       : "0 1px 4px rgba(15, 43, 71, 0.08)",
     whiteSpace: "nowrap" as const,
     minHeight: mobile ? 54 : 62,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
+    display: "inline-flex" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   };
-}
-
-function navIconLinkClassName({ isActive }: { isActive: boolean }) {
-  return `nav-icon-link${isActive ? " is-active" : ""}`;
-}
-
-/** スマホ: 対応するナビ行の直下にだけ子ルートを描画（PC は main の Outlet のみ） */
-function MobileInlineOutlet(props: {
-  path: string;
-  end?: boolean;
-  pathname: string;
-  visible: boolean;
-}) {
-  const { path, end, pathname, visible } = props;
-  if (!visible) return null;
-  if (!matchPath({ path, end: end ?? false }, pathname)) return null;
-  return (
-    <div className="app-mobile-route-panel">
-      <Outlet />
-    </div>
-  );
 }
 
 export function AppLayout() {
   const { token, user, setUser, logout } = useAuth();
-  const { navIconPaths } = useSettings();
-  const defaultNavIconPaths = buildNavIconPaths(DEFAULT_NAV_SKIN_ID);
-  const withDefaultIconFallback =
-    (key: keyof NavIconPaths) => (ev: React.SyntheticEvent<HTMLImageElement>) => {
-      const img = ev.currentTarget;
-      if (img.dataset.fallbackApplied === "1") return;
-      img.dataset.fallbackApplied = "1";
-      img.src = defaultNavIconPaths[key];
-    };
   const navigate = useNavigate();
   const mobile = useIsMobile();
   const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   /** 子どもアカウント: ヘッダー・ナビを親向けから大幅に省略 */
   const isFamilyKid = normalizeFamilyRole(user?.familyRole) === "KID";
   const isParentLedger = (() => {
@@ -101,35 +65,47 @@ export function AppLayout() {
     isParentLedger &&
     location.pathname === "/" &&
     Boolean(ledgerKidWatchApiOptionsFromSearch(location.search));
-  const [mobileMainHidden, setMobileMainHidden] = useState(false);
-  const prevPathnameRef = useRef<string | null>(null);
 
-  /** スマホで別ルートへ移ったらメインを再表示（同一ルート再タップでの閉じるはトグルで維持） */
+  /** 親向け（ログイン済）: 左テキストサイドバー＋幅広メイン。未ログイン / KID は 1 列。 */
+  const showSidebarShell = Boolean(token && !isFamilyKid);
+
   useEffect(() => {
-    if (!mobile) {
-      setMobileMainHidden(false);
-      prevPathnameRef.current = null;
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobile || !sidebarOpen) {
+      document.body.style.overflow = "";
       return;
     }
-    const prev = prevPathnameRef.current;
-    prevPathnameRef.current = location.pathname;
-    if (prev !== null && prev !== location.pathname) {
-      setMobileMainHidden(false);
-    }
-  }, [location.pathname, mobile]);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobile, sidebarOpen]);
 
-  const onMobileIconNavClick =
-    (to: string, end?: boolean) => (e: MouseEvent<HTMLAnchorElement>) => {
-      if (!mobile) return;
-      const active =
-        matchPath({ path: to, end: end ?? false }, location.pathname) != null;
-      if (active) {
+  useEffect(() => {
+    if (!mobile || !sidebarOpen) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
         e.preventDefault();
-        setMobileMainHidden((h) => !h);
-      } else {
-        setMobileMainHidden(false);
+        setSidebarOpen(false);
       }
     };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [mobile, sidebarOpen]);
+
+  const closeSidebar = useCallback(() => {
+    setSidebarOpen(false);
+  }, []);
+
+  const onSidebarNavLinkClick = useCallback(() => {
+    if (mobile) {
+      setSidebarOpen(false);
+    }
+  }, [mobile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,7 +114,6 @@ export function AppLayout() {
         cancelled = true;
       };
     }
-    // トークンがある限りサーバの /auth/me で同期（ログイン直後・リロード・DB の is_admin 変更を確実に反映）
     void getAuthMe()
       .then((res) => {
         if (cancelled || !res?.user) return;
@@ -153,17 +128,12 @@ export function AppLayout() {
         setUser(normalizedUser);
       })
       .catch(() => {
-        /* no-op: オフライン時はログイン応答の user のみ */
+        /* no-op */
       });
     return () => {
       cancelled = true;
     };
   }, [token, setUser]);
-
-  const showMobileInlineOutlet = Boolean(
-    mobile && token && !mobileMainHidden && !isFamilyKid,
-  );
-  const useMobileInlineOutlet = Boolean(mobile && token && !isFamilyKid);
 
   const supportFamilyId =
     user?.familyId != null && Number.isFinite(Number(user.familyId))
@@ -218,16 +188,110 @@ export function AppLayout() {
     return () => window.removeEventListener("kakeibo:header-announcement-updated", onUpdated);
   }, [fetchHeaderAnnouncement, isFamilyKid]);
 
+  const sidebarClass =
+    "app-sidebar" + (showSidebarShell && mobile && sidebarOpen ? " app-sidebar--open" : "");
+
   return (
     <>
     <div
+      className={["app-layout-shell", showSidebarShell && "app-layout-shell--row"].filter(Boolean).join(" ")}
       style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
+        flexDirection: showSidebarShell ? "row" : "column",
+        alignItems: showSidebarShell ? "stretch" : undefined,
       }}
     >
-      <header
+      {showSidebarShell && mobile && sidebarOpen ? (
+        <button
+          type="button"
+          className="app-sidebar-backdrop"
+          aria-label="メニューを閉じる"
+          onClick={closeSidebar}
+        />
+      ) : null}
+      {showSidebarShell ? (
+        <nav className={sidebarClass} id="app-main-menu" aria-label="メインメニュー">
+          {mobile ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+              <div className="app-sidebar__head" style={{ margin: 0, paddingLeft: "0.65rem" }}>
+                メニュー
+              </div>
+              <button
+                type="button"
+                className="app-sidebar__close"
+                aria-label="メニューを閉じる"
+                onClick={closeSidebar}
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <div className="app-sidebar__head" style={{ paddingTop: "0.6rem" }}>
+              メニュー
+            </div>
+          )}
+          <NavLink
+            to="/dashboard"
+            className={({ isActive }) => `app-sidebar__link${isActive ? " is-active" : ""}`}
+            onClick={onSidebarNavLinkClick}
+          >
+            ダッシュボード
+          </NavLink>
+          <NavLink
+            to="/"
+            className={({ isActive }) => `app-sidebar__link${isActive ? " is-active" : ""}`}
+            onClick={onSidebarNavLinkClick}
+            end
+          >
+            家計簿
+          </NavLink>
+          <NavLink
+            to="/import"
+            className={({ isActive }) => `app-sidebar__link${isActive ? " is-active" : ""}`}
+            onClick={onSidebarNavLinkClick}
+          >
+            おまかせ取込
+          </NavLink>
+          <NavLink
+            to="/settings"
+            className={({ isActive }) => `app-sidebar__link${isActive ? " is-active" : ""}`}
+            onClick={onSidebarNavLinkClick}
+          >
+            設定
+          </NavLink>
+          {user && (user.isAdmin || user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `app-sidebar__link app-sidebar__link--admin${isActive ? " is-active" : ""}`.trim()
+              }
+              onClick={onSidebarNavLinkClick}
+              aria-label={
+                adminSupportNeedsReply > 0
+                  ? `管理（サポート要返信 ${adminSupportNeedsReply} 件）`
+                  : "管理"
+              }
+            >
+              <span>管理</span>
+              {adminSupportNeedsReply > 0 ? (
+                <span className="app-sidebar__admin-badge" title="サポート要返信">
+                  {adminSupportNeedsReply > 99 ? "99+" : String(adminSupportNeedsReply)}
+                </span>
+              ) : null}
+            </NavLink>
+          ) : null}
+        </nav>
+      ) : null}
+
+      <div
+        className="app-layout-surface"
+        style={{
+          minHeight: 0,
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <header
         style={{
           borderBottom: kidWatchHeader
             ? "2px solid rgba(109, 40, 217, 0.55)"
@@ -243,10 +307,9 @@ export function AppLayout() {
           maxWidth: "100%",
           minWidth: 0,
           boxSizing: "border-box",
-          backdropFilter: "none",
+          flexShrink: 0,
         }}
       >
-        {/* 1段目: ブランド + ユーティリティ（横スクロール防止のため flex:1 スペーサーは使わない） */}
         <div
           style={{
             display: "flex",
@@ -257,6 +320,20 @@ export function AppLayout() {
             minWidth: 0,
           }}
         >
+          {showSidebarShell && mobile ? (
+            <button
+              type="button"
+              className="app-header-burger"
+              onClick={() => {
+                setSidebarOpen(true);
+              }}
+              aria-label="メニューを開く"
+              aria-expanded={sidebarOpen}
+              aria-controls="app-main-menu"
+            >
+              <span />
+            </button>
+          ) : null}
           <div
             style={{
               display: "inline-flex",
@@ -363,174 +440,41 @@ export function AppLayout() {
             <HeaderAnnouncementBar text={headerAnnouncement} />
           </div>
         ) : null}
-        {/* 2段目: ナビゲーション（KID は親向けアイコン行ごと非表示） */}
-        {token && isFamilyKid ? null : (
-        <nav
-          className={[
-            token ? "app-nav--icon-grid" : "",
-            token && mobile ? "app-nav--mobile-column" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          style={{
-            display: "flex",
-            flexWrap: "nowrap",
-            alignItems: "center",
-            gap: mobile ? "0.2rem" : "0.28rem",
-            width: "100%",
-            minWidth: 0,
-            paddingTop: "0.4rem",
-            borderTop: "1px solid var(--border)",
-            position: "relative",
-            zIndex: 30,
-            pointerEvents: "auto",
-            overflow: "visible",
-          }}
-          aria-label="メインメニュー"
-        >
-          {token ? (
-            <>
-              <NavLink
-                to="/dashboard"
-                className={navIconLinkClassName}
-                aria-label="ダッシュボード"
-                onClick={onMobileIconNavClick("/dashboard")}
-              >
-                <img
-                  className="nav-icon-img"
-                  src={navIconPaths.dashboard}
-                  alt=""
-                  aria-hidden="true"
-                  onError={withDefaultIconFallback("dashboard")}
-                />
-              </NavLink>
-              {useMobileInlineOutlet ? (
-                <MobileInlineOutlet
-                  path="/dashboard"
-                  pathname={location.pathname}
-                  visible={showMobileInlineOutlet}
-                />
-              ) : null}
-              <NavLink
-                to="/"
-                className={navIconLinkClassName}
-                end
-                aria-label="家計簿"
-                onClick={onMobileIconNavClick("/", true)}
-              >
-                <img className="nav-icon-img" src={navIconPaths.kakeibo} alt="" aria-hidden="true" onError={withDefaultIconFallback("kakeibo")} />
-              </NavLink>
-              {useMobileInlineOutlet ? (
-                <MobileInlineOutlet
-                  path="/"
-                  end
-                  pathname={location.pathname}
-                  visible={showMobileInlineOutlet}
-                />
-              ) : null}
-              <NavLink
-                to="/import"
-                className={navIconLinkClassName}
-                aria-label="おまかせ取込"
-                onClick={onMobileIconNavClick("/import")}
-              >
-                <img className="nav-icon-img" src={navIconPaths.receipt} alt="" aria-hidden="true" onError={withDefaultIconFallback("receipt")} />
-              </NavLink>
-              {useMobileInlineOutlet ? (
-                <MobileInlineOutlet
-                  path="/import"
-                  pathname={location.pathname}
-                  visible={showMobileInlineOutlet}
-                />
-              ) : null}
-              <NavLink
-                to="/settings"
-                className={navIconLinkClassName}
-                aria-label="設定"
-                onClick={onMobileIconNavClick("/settings")}
-              >
-                <img className="nav-icon-img" src={navIconPaths.settings} alt="" aria-hidden="true" onError={withDefaultIconFallback("settings")} />
-              </NavLink>
-              {useMobileInlineOutlet ? (
-                <MobileInlineOutlet
-                  path="/settings"
-                  pathname={location.pathname}
-                  visible={showMobileInlineOutlet}
-                />
-              ) : null}
-              {useMobileInlineOutlet ? (
-                <MobileInlineOutlet
-                  path="/support"
-                  pathname={location.pathname}
-                  visible={showMobileInlineOutlet}
-                />
-              ) : null}
-              {user &&
-              (user.isAdmin ||
-                user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <NavLink
-                  to="/admin"
-                  className={(p) =>
-                    `${navIconLinkClassName(p)} nav-icon-link--admin-queue`.trim()
-                  }
-                  aria-label={
-                    adminSupportNeedsReply > 0
-                      ? `管理（サポート要返信 ${adminSupportNeedsReply} 件）`
-                      : "管理"
-                  }
-                  onClick={onMobileIconNavClick("/admin")}
-                >
-                  <img className="nav-icon-img" src={navIconPaths.admin} alt="" aria-hidden="true" onError={withDefaultIconFallback("admin")} />
-                  {adminSupportNeedsReply > 0 ? (
-                    <span className="nav-admin-queue-badge" title="サポート要返信">
-                      {adminSupportNeedsReply > 99 ? "99+" : String(adminSupportNeedsReply)}
-                    </span>
-                  ) : null}
-                </NavLink>
-              ) : null}
-              {useMobileInlineOutlet &&
-              user &&
-              (user.isAdmin ||
-                user.email.toLowerCase() === "script_00123@yahoo.co.jp") ? (
-                <MobileInlineOutlet
-                  path="/admin"
-                  pathname={location.pathname}
-                  visible={showMobileInlineOutlet}
-                />
-              ) : null}
-            </>
-          ) : (
-            <>
-              <NavLink to="/login" style={(p) => linkStyle(mobile, p)}>
-                🔐 ログイン
-              </NavLink>
-              <NavLink to="/register" style={(p) => linkStyle(mobile, p)}>
-                ✨ 新規登録
-              </NavLink>
-            </>
-          )}
-        </nav>
-        )}
-        {mobile && token && !isFamilyKid && mobileMainHidden ? (
-          <div hidden aria-hidden>
-            <Outlet />
-          </div>
+        {/* 未ログイン: ヘッダ内テキストリンク行（KID では2段目なし） */}
+        {!token ? (
+          <nav
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: mobile ? "0.2rem" : "0.28rem",
+              width: "100%",
+              minWidth: 0,
+              paddingTop: "0.4rem",
+              borderTop: "1px solid var(--border)",
+            }}
+            aria-label="アカウント"
+          >
+            <NavLink to="/login" style={(p) => linkStyle(mobile, p)}>
+              🔐 ログイン
+            </NavLink>
+            <NavLink to="/register" style={(p) => linkStyle(mobile, p)}>
+              ✨ 新規登録
+            </NavLink>
+          </nav>
         ) : null}
-      </header>
-      <main
+        </header>
+        <main
         style={{
-          flex: mobile && token && !isFamilyKid ? 0 : 1,
+          flex: 1,
           minHeight: 0,
-          display: mobile && token && !isFamilyKid ? "none" : undefined,
         }}
-        aria-hidden={mobile && token && !isFamilyKid ? true : undefined}
-      >
-        {!(mobile && token && !isFamilyKid) ? (
-          <div style={{ display: "block", minHeight: "100%" }}>
-            <Outlet />
-          </div>
-        ) : null}
-      </main>
+        aria-hidden={false}
+        >
+        <div style={{ display: "block", minHeight: "100%" }}>
+          <Outlet />
+        </div>
+        </main>
       {token && shouldShowFamilyChatDock(user) ? (
         <FamilyChatDock
           title={isFamilyKid ? "かぞくチャット" : "家族チャット"}
@@ -552,6 +496,7 @@ export function AppLayout() {
           pointerEvents: "auto",
           minHeight: 44,
           overflow: "visible",
+          flexShrink: 0,
         }}
       >
         <Link
@@ -562,6 +507,7 @@ export function AppLayout() {
           特商法の表記・利用規約・取り込み方針（よくある質問）
         </Link>
       </footer>
+      </div>
     </div>
     </>
   );
