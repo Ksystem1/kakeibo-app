@@ -39,7 +39,12 @@ import {
   askBedrockReceiptAssistant,
   inferReceiptImageMediaTypeFromBuffer,
 } from "./ai-advisor-service.mjs";
-import { ocrVendorFingerprintHex, placesTextSearchOne } from "./google-places.mjs";
+import { ocrVendorFingerprintHex } from "./google-places.mjs";
+import {
+  getUserStorePlaceCached,
+  resolveAndPersistUserStorePlace,
+  upsertPreferredCategoryForOcrKey,
+} from "./user-store-places.mjs";
 import {
   deriveSubscriptionStatusFromDbRow,
   getEffectiveSubscriptionStatus,
@@ -1725,72 +1730,6 @@ async function fetchTopMemoCategoryPairs(pool, userId, txWhere, txWhereParams, l
     categoryName: r.category_name != null ? String(r.category_name).trim().slice(0, 100) : "",
     count: Math.min(100000, Number(r.cnt) || 0),
   }));
-}
-
-/**
- * Google Places で店名名寄せし user_store_places に保存
- * @returns {Promise<null | { fromCache: boolean, placeId: string, displayName: string, formattedAddress: string, saved?: boolean }>}
- */
-async function resolveUserStorePlaceFromOcrVendor(pool, userId, ocrVendorName) {
-  const v = String(ocrVendorName ?? "").trim();
-  if (v.length < 2) return null;
-  const k = ocrVendorFingerprintHex(v);
-  const rowSelect = () =>
-    pool.query(
-      `SELECT place_id, display_name, formatted_address
-       FROM user_store_places
-       WHERE user_id = ? AND ocr_vendor_key = ?
-       LIMIT 1`,
-      [userId, k],
-    );
-  try {
-    const [ex] = await rowSelect();
-    if (Array.isArray(ex) && ex[0]) {
-      return {
-        fromCache: true,
-        placeId: ex[0].place_id != null ? String(ex[0].place_id) : "",
-        displayName: ex[0].display_name != null ? String(ex[0].display_name) : "",
-        formattedAddress: ex[0].formatted_address != null ? String(ex[0].formatted_address) : "",
-      };
-    }
-  } catch (e) {
-    const c = e && typeof e === "object" && "code" in e ? String(e.code) : "";
-    if (c !== "ER_NO_SUCH_TABLE") throw e;
-  }
-  const found = await placesTextSearchOne(`${v} 日本`);
-  if (!found) return null;
-  try {
-    await pool.query(
-      `INSERT INTO user_store_places
-        (user_id, ocr_vendor_key, place_id, display_name, formatted_address)
-       VALUES (?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         place_id = VALUES(place_id),
-         display_name = VALUES(display_name),
-         formatted_address = VALUES(formatted_address),
-         updated_at = CURRENT_TIMESTAMP`,
-      [userId, k, found.placeId, found.displayName, found.formattedAddress],
-    );
-  } catch (e) {
-    const c = e && typeof e === "object" && "code" in e ? String(e.code) : "";
-    if (c === "ER_NO_SUCH_TABLE") {
-      return {
-        fromCache: false,
-        saved: false,
-        placeId: found.placeId,
-        displayName: found.displayName,
-        formattedAddress: found.formattedAddress,
-      };
-    }
-    return null;
-  }
-  return {
-    fromCache: false,
-    saved: true,
-    placeId: found.placeId,
-    displayName: found.displayName,
-    formattedAddress: found.formattedAddress,
-  };
 }
 
 function tokenizeMemo(text) {
@@ -6506,11 +6445,28 @@ export async function handleApiRequest(req, options = {}) {
           let storePlaceResolution = null;
           if (subscriptionActive && String(adjustedSummary?.vendorName ?? "").trim().length >= 2) {
             try {
-              storePlaceResolution = await resolveUserStorePlaceFromOcrVendor(
+              const cached = await getUserStorePlaceCached(
                 pool,
                 userId,
-                adjustedSummary.vendorName,
+                String(adjustedSummary.vendorName).trim(),
               );
+              if (cached) {
+                storePlaceResolution = {
+                  fromCache: true,
+                  placeId: cached.placeId,
+                  displayName: cached.displayName,
+                  formattedAddress: cached.formattedAddress,
+                  preferredCategoryId: cached.preferredCategoryId,
+                  ocrVendorKey: cached.ocrVendorKey,
+                };
+              } else {
+                const vn = String(adjustedSummary.vendorName).trim();
+                storePlaceResolution = {
+                  deferred: true,
+                  ocrVendorKey: ocrVendorFingerprintHex(vn),
+                  rawVendorName: vn.slice(0, 200),
+                };
+              }
             } catch (ePl) {
               logError("receipts.parse.store_place", ePl);
             }
@@ -6621,22 +6577,49 @@ export async function handleApiRequest(req, options = {}) {
             subscriptionActive,
             aiCategoryName,
           });
-          /* 個別辞書（learnedCategoryId）がある場合は最優先 */
+          let placePreferredCategoryId = null;
+          let placePreferredCategoryName = null;
+          if (
+            storePlaceResolution &&
+            !storePlaceResolution.deferred &&
+            storePlaceResolution.preferredCategoryId != null
+          ) {
+            const ppn = Number(storePlaceResolution.preferredCategoryId);
+            if (Number.isFinite(ppn) && ppn > 0) {
+              const pHit = expenseCatRows.find((x) => Number(x.id) === ppn);
+              if (pHit) {
+                placePreferredCategoryId = ppn;
+                placePreferredCategoryName = String(pHit.name);
+              }
+            }
+          }
+          /* 個別辞書 > Places学習カテ > 予測/AI */
           const finalSuggestedId =
-            learnedCategoryId != null ? learnedCategoryId : predicted.id != null ? predicted.id : null;
+            learnedCategoryId != null
+              ? learnedCategoryId
+              : placePreferredCategoryId != null
+                ? placePreferredCategoryId
+                : predicted.id != null
+                  ? predicted.id
+                  : null;
           const finalSuggestedName =
             learnedCategoryId != null
               ? learnedCategoryName
-              : predicted.name != null
-                ? predicted.name
-                : null;
+              : placePreferredCategoryId != null
+                ? placePreferredCategoryName
+                : predicted.name != null
+                  ? predicted.name
+                  : null;
           const finalSource =
-            learnCorrectionHit &&
-            (learnedCategoryId != null || learnedMemoPresent)
+            learnCorrectionHit && (learnedCategoryId != null || learnedMemoPresent)
               ? "correction"
-              : predicted.source;
+              : placePreferredCategoryId != null
+                ? "place_learn"
+                : predicted.source;
           const suggestedCategoryLowConfidence =
-            learnedCategoryId != null ? false : Boolean(predicted.lowConfidence);
+            learnedCategoryId != null || placePreferredCategoryId != null
+              ? false
+              : Boolean(predicted.lowConfidence);
 
           let duplicateWarning = null;
           try {
@@ -6821,6 +6804,151 @@ export async function handleApiRequest(req, options = {}) {
                     ? e
                     : "レシート解析に失敗しました。",
             },
+            hdrs,
+            skipCors,
+          );
+        }
+      }
+
+      case "POST /receipts/resolve-store-place": {
+        const b = JSON.parse(req.body || "{}");
+        const resSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (resSubRej) return resSubRej;
+        const subRowRes = await loadUserSubscriptionRowFull(pool, userId);
+        if (!userHasPremiumSubscriptionAccess(subRowRes, userId)) {
+          return json(
+            403,
+            {
+              error: "SubscriptionRequired",
+              detail: "店名の名寄せ（Google Places）はプレミアム機能です。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        const vendorName =
+          b.vendorName != null && String(b.vendorName).trim() !== ""
+            ? String(b.vendorName).trim().slice(0, 200)
+            : "";
+        if (vendorName.length < 2) {
+          return json(
+            400,
+            { error: "InvalidRequest", detail: "vendorName（店名）が必要です。" },
+            hdrs,
+            skipCors,
+          );
+        }
+        try {
+          const res = await resolveAndPersistUserStorePlace(pool, userId, vendorName);
+          if (!res) {
+            return json(200, { ok: true, found: false }, hdrs, skipCors);
+          }
+          return json(
+            200,
+            {
+              ok: true,
+              found: true,
+              storePlaceResolution: {
+                fromCache: res.fromCache,
+                placeId: res.placeId,
+                displayName: res.displayName,
+                formattedAddress: res.formattedAddress,
+                saved: res.saved,
+                ocrVendorKey: res.ocrVendorKey,
+              },
+            },
+            hdrs,
+            skipCors,
+          );
+        } catch (e) {
+          logError("receipts.resolve_store_place", e);
+          return json(
+            500,
+            { error: "ResolveStorePlaceError", detail: "店名の名寄せに失敗しました。" },
+            hdrs,
+            skipCors,
+          );
+        }
+      }
+
+      case "POST /receipts/place-category-preference": {
+        const b = JSON.parse(req.body || "{}");
+        const prefSubRej = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        if (prefSubRej) return prefSubRej;
+        const subRowPref = await loadUserSubscriptionRowFull(pool, userId);
+        if (!userHasPremiumSubscriptionAccess(subRowPref, userId)) {
+          return json(
+            403,
+            {
+              error: "SubscriptionRequired",
+              detail: "店名×カテゴリの学習はプレミアム機能です。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        const ocrKey = b.ocrVendorKey != null ? String(b.ocrVendorKey).trim() : "";
+        if (!/^[a-f0-9]{64}$/i.test(ocrKey)) {
+          return json(
+            400,
+            { error: "InvalidRequest", detail: "ocrVendorKey が不正です。" },
+            hdrs,
+            skipCors,
+          );
+        }
+        let prefCategoryId = null;
+        if (b.categoryId != null && b.categoryId !== "") {
+          const n = Number(b.categoryId);
+          if (!Number.isFinite(n) || n <= 0) {
+            return json(
+              400,
+              { error: "InvalidRequest", detail: "categoryId が不正です。" },
+              hdrs,
+              skipCors,
+            );
+          }
+          const [crows] = await pool.query(
+            `SELECT c.id FROM categories c
+             WHERE ${catWhere} AND c.id = ? AND c.is_archived = 0 AND c.kind = 'expense'
+             LIMIT 1`,
+            [userId, userId, n],
+          );
+          if (!Array.isArray(crows) || !crows[0]) {
+            return json(
+              400,
+              { error: "InvalidRequest", detail: "指定のカテゴリが利用できません。" },
+              hdrs,
+              skipCors,
+            );
+          }
+          prefCategoryId = n;
+        }
+        const vendorHint =
+          b.vendorName != null && String(b.vendorName).trim() !== ""
+            ? String(b.vendorName).trim().slice(0, 200)
+            : "";
+        try {
+          const up = await upsertPreferredCategoryForOcrKey(
+            pool,
+            userId,
+            ocrKey,
+            prefCategoryId,
+            vendorHint.length >= 2 ? vendorHint : null,
+          );
+          if (!up.ok) {
+            return json(
+              200,
+              { ok: false, skipped: true, reason: up.reason ?? "unavailable" },
+              hdrs,
+              skipCors,
+            );
+          }
+          return json(200, { ok: true, skipped: false }, hdrs, skipCors);
+        } catch (e) {
+          logError("receipts.place_category_preference", e);
+          return json(
+            500,
+            { error: "PlaceCategoryPreferenceError", detail: "学習の保存に失敗しました。" },
             hdrs,
             skipCors,
           );

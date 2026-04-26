@@ -1331,6 +1331,7 @@ export async function parseReceiptImage(
           | "chain_catalog"
           | "line_items"
           | "correction"
+          | "place_learn"
           | "ai"
           | null;
         suggestedCategoryLowConfidence?: boolean;
@@ -1347,10 +1348,14 @@ export async function parseReceiptImage(
         totalCandidates?: Array<{ total: number; label: string; source: string }>;
         receiptGlobalDictionaryHitCount?: number;
         storePlaceResolution?: {
-          fromCache: boolean;
-          placeId: string;
-          displayName: string;
-          formattedAddress: string;
+          fromCache?: boolean;
+          deferred?: boolean;
+          ocrVendorKey: string;
+          placeId?: string;
+          displayName?: string;
+          formattedAddress?: string;
+          rawVendorName?: string;
+          preferredCategoryId?: number | null;
           saved?: boolean;
         } | null;
         receiptAiDetail?: {
@@ -1368,6 +1373,50 @@ export async function parseReceiptImage(
   throw new Error(
     "ネットワーク接続を5回再試行しましたが失敗しました。通信環境を確認して再度お試しください。",
   );
+}
+
+/** 解析後、Google Places 名寄せ（バックグラウンド用・メイン解析をブロックしない） */
+export async function resolveReceiptStorePlace(body: { vendorName: string }) {
+  const res = await apiFetch(`${BASE}/receipts/resolve-store-place`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({ vendorName: body.vendorName }),
+  });
+  return parse<{
+    ok: boolean;
+    found: boolean;
+    storePlaceResolution?: {
+      fromCache: boolean;
+      placeId: string;
+      displayName: string;
+      formattedAddress: string;
+      saved?: boolean;
+      ocrVendorKey: string;
+    };
+  }>(res);
+}
+
+/** 店名（OCRキー）× 支出カテゴリを次回以降最優先する（user_store_places） */
+export async function savePlaceCategoryPreference(body: {
+  ocrVendorKey: string;
+  categoryId: number | null;
+  /** 行が未作成のとき Places 名寄せに使う生の店名表記 */
+  vendorName?: string;
+}) {
+  const res = await apiFetch(`${BASE}/receipts/place-category-preference`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({
+      ocrVendorKey: body.ocrVendorKey,
+      categoryId: body.categoryId,
+      vendorName: body.vendorName,
+    }),
+  });
+  return parse<{
+    ok: boolean;
+    skipped?: boolean;
+    reason?: string;
+  }>(res);
 }
 
 export async function saveReceiptOcrCorrection(body: {
