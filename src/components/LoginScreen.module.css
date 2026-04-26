@@ -31,9 +31,8 @@
     grid-template-columns: 1fr;
     display: flex;
     flex-direction: column;
-    min-height: 100dvh; /* ツールバー表示変化に合わせた最小高 */
     min-height: 100vh; /* 旧 */
-    /* height/max-height: 上と同様 — 1 画面内に積まず重なし防止 */
+    min-height: 100dvh; /* 必ず最後: 上の 100vh を上書きしモバイルで正しい高さに */
   }
 
   .page > .panel {
@@ -41,10 +40,11 @@
     z-index: 2; /* 装飾（ヒーロー内 -1 疑似要素）より上でログインを最前面 */
     flex: 0 0 auto;
     min-height: 0;
-    max-height: min(58dvh, 34rem, 100%);
-    /* セクション分離: 下パネル＝非ヒーロー、タップ不透明度を上げる */
+    /* 中身が伸びるが極端に奪いすぎない: 上はヒーローが main の残り＋下詰め */
+    max-height: min(56dvh, 32rem, 100%);
+    /* セクション分離: 大きい影は空白に見えやすいため弱める */
     border-top: 1px solid color-mix(in srgb, #a8b8d4 35%, white 65%);
-    box-shadow: 0 -10px 28px rgba(20, 40, 80, 0.06);
+    box-shadow: 0 -2px 14px rgba(20, 40, 80, 0.04);
   }
 
   .page > .hero {
@@ -953,11 +953,13 @@
 }
 
 @media (max-width: 900px) {
-  /* 縦1カラム: 低い vh でも CTA/ログインが出るよう、ヒーロー内を中央配分＋.heroInner で縦スクロール */
+  /* 縦1カラム: 上に伸びるフレックス＋中央寄せにしない（= 中間の見えない帯状余白の主因） */
+  /* ヒーローは下詰め: 文言ブロック → 直下にパネル。中身の縦は .heroInner だけでスクロール。 */
   .hero {
     min-height: 0;
-    justify-content: center;
-    padding: 1.15rem 1rem 0.7rem;
+    justify-content: flex-end;
+    gap: 0.3rem;
+    padding: 0.45rem 0.9rem 0.35rem;
   }
 
   .qrUnderFooter {
@@ -965,7 +967,11 @@
   }
 
   .heroInner {
-    justify-content: center;
+    flex: 0 1 auto; /* 自然高で下詰め。flex:1 ＋ center で空いた帯状余白を防ぐ */
+    max-height: 100%;
+    min-height: 0;
+    align-self: stretch;
+    justify-content: flex-start; /* 中身は上から; 枠の位置は .hero の flex-end */
     gap: 0.42rem;
     align-items: center;
     text-align: center;
@@ -1033,18 +1039,21 @@
   }
 }
 
-/* 幅が狭いスマホ: 余白/gap 最小、CTA・統計のタイポを一段小さく（上と下の重なり防止） */
+/* 幅が狭いスマホ: 余白/gap 最小、CTA・統計のタイポを一段小さく */
 @media (max-width: 640px) {
   .page > .panel {
-    max-height: min(50dvh, 30rem, 100%);
+    max-height: min(52dvh, 30rem, 100%);
   }
 
   .hero {
-    padding: 0.45rem 0.6rem 0.3rem;
-    gap: 0.3rem;
+    justify-content: flex-end; /* 下詰め（900 と同じ） */
+    padding: 0.35rem 0.55rem 0.2rem;
+    gap: 0.25rem; /* 見出し〜CTA: 極小（≈ 4 相当） */
   }
 
   .heroInner {
+    flex: 0 1 auto;
+    max-height: 100%;
     gap: 0.3rem;
   }
 
