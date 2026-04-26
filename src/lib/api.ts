@@ -198,6 +198,24 @@ function buildHeaders(extra?: Record<string, string>) {
   return h;
 }
 
+/** FormData: Content-Type は fetch が boundary 付きで付与する */
+function buildAuthOnlyHeaders(): Record<string, string> {
+  const h: Record<string, string> = {};
+  const token =
+    typeof window !== "undefined" ? getStoredToken() : null;
+  if (token) {
+    h.authorization = `Bearer ${token}`;
+    return h;
+  }
+  const uid =
+    import.meta.env.VITE_DEV_USER_ID ??
+    import.meta.env.VITE_DEFAULT_USER_ID;
+  if (uid) {
+    h["x-user-id"] = String(uid);
+  }
+  return h;
+}
+
 async function parse<T>(res: Response): Promise<T> {
   const text = await res.text();
   const data = text ? (JSON.parse(text) as T) : ({} as T);
@@ -1460,23 +1478,46 @@ export async function parseReceiptImage(
 
 /**
  * 非同期レシート解析: 直ちに job_id のみ返す（202）。完了は `getReceiptJobStatus` でポーリング。
+ * `image` が Blob / File のときは multipart（メモリ効率）・文字列のとき従来どおり JSON+base64。
  */
 export async function uploadReceiptForAsyncJob(
-  imageBase64: string,
-  options?: { debugForceReceiptTier?: ParseReceiptDebugTier },
+  image: Blob | string,
+  options?: { debugForceReceiptTier?: ParseReceiptDebugTier; fileName?: string },
 ) {
   const tier = options?.debugForceReceiptTier ?? "server";
-  const body: Record<string, unknown> = { imageBase64 };
-  if (tier === "free" || tier === "subscribed") {
-    body.debugForceReceiptTier = tier;
-  }
+  const isBlob = typeof image !== "string";
   const res = await apiFetch(
     `${BASE}/receipts/upload`,
-    {
-      method: "POST",
-      headers: buildHeaders(),
-      body: JSON.stringify(body),
-    },
+    isBlob
+      ? {
+          method: "POST",
+          headers: buildAuthOnlyHeaders(),
+          body: (() => {
+            const form = new FormData();
+            form.append(
+              "image",
+              image,
+              options?.fileName && options.fileName.trim()
+                ? options.fileName
+                : "receipt.jpg",
+            );
+            if (tier === "free" || tier === "subscribed") {
+              form.append("debugForceReceiptTier", tier);
+            }
+            return form;
+          })(),
+        }
+      : {
+          method: "POST",
+          headers: buildHeaders(),
+          body: (() => {
+            const body: Record<string, unknown> = { imageBase64: image };
+            if (tier === "free" || tier === "subscribed") {
+              body.debugForceReceiptTier = tier;
+            }
+            return JSON.stringify(body);
+          })(),
+        },
     RECEIPT_PARSE_TIMEOUT_MS,
   );
   return parse<{ ok: boolean; jobId: string; status: string }>(res);

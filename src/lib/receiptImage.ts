@@ -132,3 +132,88 @@ export async function prepareReceiptImageForApi(file: File): Promise<string> {
     bitmap.close();
   }
 }
+
+/** 非同期アップロード用: Worker と同じ長辺・品質（OCR 前処理は行わない） */
+const ASYNC_MAX_EDGE = 1280;
+const ASYNC_JPEG_QUALITY = 0.7;
+const ASYNC_MAX_INPUT_BYTES = 20 * 1024 * 1024;
+
+async function compressReceiptFileToJpegBlobOnMainThread(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    let w = bitmap.width;
+    let h = bitmap.height;
+    if (w <= 0 || h <= 0) throw new Error("画像のサイズが無効です。");
+    const longEdge = Math.max(w, h);
+    if (longEdge > ASYNC_MAX_EDGE) {
+      const s = ASYNC_MAX_EDGE / longEdge;
+      w = Math.round(w * s);
+      h = Math.round(h * s);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("画像処理に失敗しました。");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", ASYNC_JPEG_QUALITY),
+    );
+    if (!blob) throw new Error("画像の JPEG 変換に失敗しました。");
+    return blob;
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
+ * 撮影・ファイル選択直後: Web Worker でリサイズ＋JPEG 圧縮（メインをブロックしない）。
+ * 失敗時は createImageBitmap 可能ならメインで同条件にフォールバック。プレビュー用 Blob。
+ */
+export async function compressReceiptFileToJpegBlob(file: File): Promise<Blob> {
+  if (!file.size) throw new Error("空のファイルです。");
+  if (file.size > ASYNC_MAX_INPUT_BYTES) {
+    throw new Error("画像が大きすぎます（20MB以下にしてください）。");
+  }
+
+  const runWorker = (): Promise<Blob> => {
+    const w = new Worker(new URL("./receiptImageWorker.ts", import.meta.url), { type: "module" });
+    return (async () => {
+      const arrayBuffer = await file.arrayBuffer();
+      return new Promise<Blob>((resolve, reject) => {
+        w.onmessage = (
+          ev: MessageEvent<{ ok?: boolean; arrayBuffer?: ArrayBuffer; message?: string }>,
+        ) => {
+          w.terminate();
+          const d = ev.data;
+          if (d && d.ok && d.arrayBuffer) {
+            resolve(new Blob([d.arrayBuffer], { type: "image/jpeg" }));
+            return;
+          }
+          reject(new Error(d?.message || "WORKER"));
+        };
+        w.onerror = (err) => {
+          w.terminate();
+          reject(err);
+        };
+        w.postMessage(
+          { arrayBuffer, mime: file.type || "image/jpeg" },
+          [arrayBuffer],
+        );
+      });
+    })();
+  };
+
+  try {
+    return await runWorker();
+  } catch {
+    if (typeof createImageBitmap === "function") {
+      return compressReceiptFileToJpegBlobOnMainThread(file);
+    }
+    const b64 = await legacyImageBase64(file);
+    const bin = globalThis.atob(b64);
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) u8[i] = bin.charCodeAt(i) & 0xff;
+    return new Blob([u8], { type: "image/jpeg" });
+  }
+}

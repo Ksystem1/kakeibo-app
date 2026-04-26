@@ -2169,7 +2169,7 @@ function generateAdminTempPassword() {
 }
 
 /**
- * @param {{ method: string, path: string, queryStringParameters?: Record<string,string>|null, body?: string|null, headers?: Record<string, string> }} req
+ * @param {{ method: string, path: string, queryStringParameters?: Record<string,string>|null, body?: string|null, headers?: Record<string, string>, uploadReceipt?: { buffer: Buffer, mimetype?: string, originalname?: string, debugForceReceiptTier?: string|undefined }|null }} req
  * @param {{ skipCors?: boolean }} [options]
  */
 export async function handleApiRequest(req, options = {}) {
@@ -6322,22 +6322,51 @@ export async function handleApiRequest(req, options = {}) {
       }
 
       case "POST /receipts/upload": {
-        const b = JSON.parse(req.body || "{}");
-        const subRejU = rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors);
+        const up = req.uploadReceipt;
+        let b;
+        if (up && up.buffer) {
+          b = {
+            debugForceReceiptTier:
+              up.debugForceReceiptTier != null ? String(up.debugForceReceiptTier) : undefined,
+          };
+        } else {
+          b = JSON.parse(req.body || "{}");
+        }
+        const subRejU = rejectNonAdminSubscriptionBodyFields(
+          b && typeof b === "object" && b != null && !Array.isArray(b) ? b : {},
+          hdrs,
+          skipCors,
+        );
         if (subRejU) return subRejU;
-        if (b.imageBase64 == null || typeof b.imageBase64 !== "string") {
+        let imageBase64;
+        if (up && up.buffer) {
+          if (!Buffer.isBuffer(up.buffer) || up.buffer.length === 0) {
+            return json(
+              400,
+              {
+                error: "InvalidRequest",
+                detail: "image（JPEG/PNG 等のバイナリ）が空です。",
+              },
+              hdrs,
+              skipCors,
+            );
+          }
+          imageBase64 = up.buffer.toString("base64");
+        } else if (b.imageBase64 == null || typeof b.imageBase64 !== "string") {
           return json(
             400,
             {
               error: "InvalidRequest",
-              detail: "imageBase64（JPEG/PNG 等の base64、または data URL）が必要です。",
+              detail: "imageBase64（JSON）または multipart の image フィールドが必要です。",
             },
             hdrs,
             skipCors,
           );
+        } else {
+          imageBase64 = b.imageBase64;
         }
         const jobId = crypto.randomUUID();
-        const requestPayload = { imageBase64: b.imageBase64 };
+        const requestPayload = { imageBase64 };
         if (b.debugForceReceiptTier != null) {
           requestPayload.debugForceReceiptTier = b.debugForceReceiptTier;
         }

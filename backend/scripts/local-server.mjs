@@ -10,6 +10,7 @@ import "dotenv/config";
 import "../src/load-env.mjs";
 import cors from "cors";
 import express from "express";
+import multer from "multer";
 import { expressCorsOptions } from "../src/cors-config.mjs";
 import { handleApiRequest } from "../src/app-core.mjs";
 import { createLogger } from "../src/logger.mjs";
@@ -60,9 +61,89 @@ app.use(express.json({ limit: "15mb" }));
 function pathnameOnly(req) {
   const u = req.originalUrl ?? req.url ?? "/";
   const q = u.indexOf("?");
-  let p = (q >= 0 ? u.slice(0, q) : u) || "/";
-  if (!p.startsWith("/")) p = `/${p}`;
-  return p;
+  let pathPart = (q >= 0 ? u.slice(0, q) : u) || "/";
+  if (!pathPart.startsWith("/")) pathPart = `/${pathPart}`;
+  return pathPart;
+}
+
+const uploadReceipt = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+});
+
+function sendApiResponse(res, out) {
+  if (out.headers) {
+    for (const [k, v] of Object.entries(out.headers)) {
+      if (v !== undefined) res.setHeader(k, String(v));
+    }
+  }
+  res.status(out.statusCode).send(out.body ?? "");
+}
+
+const receiptUploadPaths = ["/receipts/upload", "/api/receipts/upload"];
+for (const routePath of receiptUploadPaths) {
+  /* multipart: JSON の POST とは別ルートにし、非 multipart では next("route") */
+  app.post(
+    routePath,
+    (req, res, next) => {
+      const ct = String(req.headers["content-type"] || "");
+      if (!ct.toLowerCase().includes("multipart/form-data")) {
+        return next("route");
+      }
+      return uploadReceipt.single("image")(req, res, (err) => {
+        if (err) {
+          logger.error("receipts.upload.multer", err, { path: routePath });
+          return res
+            .status(400)
+            .json({ error: "InvalidRequest", detail: "リクエスト本文（multipart）の解釈に失敗しました。" });
+        }
+        if (!req.file || !req.file.buffer) {
+          return res
+            .status(400)
+            .json({ error: "InvalidRequest", detail: "image ファイルが必要です。" });
+        }
+        return next();
+      });
+    },
+    (req, res) => {
+      (async () => {
+        const f = req.file;
+        if (!f?.buffer) {
+          return res
+            .status(400)
+            .json({ error: "InvalidRequest", detail: "image ファイルが必要です。" });
+        }
+        const out = await handleApiRequest(
+          {
+            method: "POST",
+            path: pathnameOnly(req),
+            body: null,
+            headers: req.headers,
+            uploadReceipt: {
+              buffer: f.buffer,
+              mimetype: f.mimetype,
+              originalname: f.originalname,
+              debugForceReceiptTier:
+                req.body && req.body.debugForceReceiptTier != null
+                  ? String(req.body.debugForceReceiptTier)
+                  : undefined,
+            },
+          },
+          { skipCors: true },
+        );
+        sendApiResponse(res, out);
+      })().catch((e) => {
+        logger.error("receipts.upload.multipart", e, { path: routePath });
+        res.status(500).json({ error: "InternalError" });
+      });
+    },
+  );
+  app.post(routePath, (req, res) => {
+    void dispatch(req, res).catch((e) => {
+      logger.error("receipts.upload.json", e, { path: routePath });
+      res.status(500).json({ error: "InternalError" });
+    });
+  });
 }
 
 async function dispatch(req, res) {

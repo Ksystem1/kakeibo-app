@@ -18,7 +18,7 @@ import {
 import { FeatureGate } from "../components/FeatureGate";
 import { isReservedLedgerFixedCostCategoryName } from "../lib/transactionCategories";
 import { normalizeReceiptDateToYmd } from "../lib/receiptDate";
-import { prepareReceiptImageForApi } from "../lib/receiptImage";
+import { compressReceiptFileToJpegBlob } from "../lib/receiptImage";
 import { ReceiptRegionRescanPanel } from "../components/ReceiptRegionRescanPanel";
 import { getReceiptDebugTier } from "../lib/receiptDebugTier";
 import { looksLikePayPayCsv } from "../lib/paypayCsv";
@@ -337,7 +337,9 @@ export function ReceiptPage() {
       receiptImportQueue.some((j) => j.status === "pending" || j.status === "processing"),
     [receiptImportQueue],
   );
-  const isBusy = paypayLoading;
+  /** レシート: Worker 圧縮＋非同期アップロード中（カメラ直後のフリーズ抑止用オーバーレイ） */
+  const [receiptIngestPhase, setReceiptIngestPhase] = useState<null | "compress" | "upload">(null);
+  const isBusy = paypayLoading || Boolean(receiptIngestPhase);
   const displayMainCategory = useMemo(() => {
     const score = new Map<ReceiptItemCategory, number>();
     for (const it of items) {
@@ -882,7 +884,17 @@ export function ReceiptPage() {
     setNotice(null);
     clearPayPayImport();
     setUnifiedMode("receipt");
-    const newObjectUrl = URL.createObjectURL(f);
+    setReceiptIngestPhase("compress");
+    let newObjectUrl: string | null = null;
+    let compressedBlob: Blob;
+    try {
+      compressedBlob = await compressReceiptFileToJpegBlob(f);
+    } catch (e) {
+      setReceiptIngestPhase(null);
+      setNotice(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    newObjectUrl = URL.createObjectURL(compressedBlob);
     setReceiptImageObjectUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return newObjectUrl;
@@ -911,19 +923,33 @@ export function ReceiptPage() {
     setUserEditedCategory(false);
     setReceiptFieldConfidence(null);
     try {
-      const b64 = await prepareReceiptImageForApi(f);
-      const u = await uploadReceiptForAsyncJob(b64, { debugForceReceiptTier: receiptDebugTier });
+      setReceiptIngestPhase("upload");
+      const jpgName = (() => {
+        const base = f.name || "receipt";
+        if (/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(base)) {
+          return base.replace(/\.[^.]+$/, ".jpg");
+        }
+        return `${base}.jpg`;
+      })();
+      const u = await uploadReceiptForAsyncJob(compressedBlob, {
+        debugForceReceiptTier: receiptDebugTier,
+        fileName: jpgName,
+      });
       setReceiptImportQueue((prev) => [
         ...prev,
         {
           localKey: crypto.randomUUID(),
           fileName: f.name,
-          objectUrl: newObjectUrl,
+          objectUrl: newObjectUrl!,
           jobId: u.jobId,
           status: (u.status as ReceiptAsyncJobStatus) || "pending",
         },
       ]);
     } catch (e) {
+      if (newObjectUrl) {
+        URL.revokeObjectURL(newObjectUrl);
+        setReceiptImageObjectUrl((prev) => (prev === newObjectUrl ? null : prev));
+      }
       setNotice(e instanceof Error ? e.message : String(e));
       setItems([]);
       setReceiptMainCategory(null);
@@ -933,6 +959,8 @@ export function ReceiptPage() {
       setLastParsePremium(false);
       setReceiptDictionaryHits(0);
       setReceiptFieldConfidence(null);
+    } finally {
+      setReceiptIngestPhase(null);
     }
   }
 
@@ -971,7 +999,12 @@ export function ReceiptPage() {
   const memoFieldLowConfidence = lowOcrFieldConf("vendorName") || receiptBedrockVendorLow;
   const fieldTooltip = (low: boolean) => (low ? RECEIPT_AI_INFERENCE_HINT : undefined);
 
-  const busyLabel = "明細を処理中…";
+  const busyLabel =
+    receiptIngestPhase === "compress"
+      ? "画像圧縮中…"
+      : receiptIngestPhase === "upload"
+        ? "送信中…"
+        : "明細を処理中…";
   const loadingUi = (
     <>
       {touchUi ? (
@@ -1020,7 +1053,16 @@ export function ReceiptPage() {
                 />
                 <div className={styles.receiptImportQueueBody}>
                   <span className={styles.receiptImportQueueFileName}>{row.fileName}</span>
-                  {busy ? (
+                  {busy && row.status === "pending" ? (
+                    <div
+                      className={styles.receiptImportQueueRowBusy}
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <span className={styles.receiptImportQueueSkeletonBar} />
+                      <span>アップロードを受け付けました。解析待ち…</span>
+                    </div>
+                  ) : busy && row.status === "processing" ? (
                     <div
                       className={styles.receiptImportQueueRowBusy}
                       role="status"
