@@ -101,10 +101,6 @@ function fastReceiptModelCandidates(region) {
     `global.${BEDROCK_MODEL_ID_HAIKU_3_5}`,
     `${geo}.${BEDROCK_MODEL_ID_HAIKU_3_5}`,
     BEDROCK_MODEL_ID_HAIKU_3_5,
-    `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V2}`,
-    BEDROCK_MODEL_ID_SONNET_3_5_V2,
-    `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V1}`,
-    BEDROCK_MODEL_ID_SONNET_3_5_V1,
   ].filter((x, i, arr) => arr.indexOf(x) === i);
 }
 
@@ -982,19 +978,15 @@ function buildReceiptAiPromptBundle(opts) {
   const rawOcrText = typeof opts.rawOcrText === "string" ? opts.rawOcrText : "";
 
   if (!subscriptionActive) {
-    const systemPrompt = [
-      "返答はJSONオブジェクト1件のみ。説明文・挨拶・markdown禁止。",
-      "必須キー: vendorName,date,totalAmount,categoryName,reason。",
-      "vendorNameとcategoryNameは常にnull。",
-      "dateはYYYY-MM-DDのみ。totalAmountは税込合計(円)の数値のみ。不明はnull。",
-    ].join("\n");
+    const systemPrompt =
+      'JSON {"vendorName":null,"date":"","totalAmount":0,"categoryName":null,"reason":""} のみ返す。挨拶・説明・Markdown禁止。dateはYYYY-MM-DD、不明はnull。';
 
     const auxPayload = {
       ocrLines,
       note: "ocrLines のみ（画像由来の生テキスト行）。",
     };
 
-    const userTextPrompt = ["ocrLinesのみを根拠に抽出。", JSON.stringify(auxPayload)].join("\n");
+    const userTextPrompt = JSON.stringify({ ocrLines: auxPayload.ocrLines });
 
     return { systemPrompt, userTextPrompt, receiptAiTier: "free" };
   }
@@ -1014,8 +1006,8 @@ function buildReceiptAiPromptBundle(opts) {
       : "vendorOcrKeyHints は空。";
 
   const systemPrompt = [
-    "返答はJSONオブジェクト1件のみ。説明文・挨拶・markdown禁止。",
-    "必須キー: vendorName,date,totalAmount,taxAmount,lineItems,categoryName,reason。",
+    'JSON {"vendorName":"","date":"","totalAmount":0,"taxAmount":0,"lineItems":[],"categoryName":"","reason":""} のみ返す。',
+    "挨拶・説明・Markdown禁止。dateはYYYY-MM-DD。不明はnull。",
     "lineItemsは[{name,amount|null}]。categoryNameは候補名1つまたはnull。",
     catLine,
     vHint,
@@ -1032,7 +1024,7 @@ function buildReceiptAiPromptBundle(opts) {
     heuristicCategorySuggestion: heuristic,
   };
 
-  const userTextPrompt = ["補助JSONを根拠に抽出。", JSON.stringify(auxPayload)].join("\n");
+  const userTextPrompt = JSON.stringify(auxPayload);
 
   return { systemPrompt, userTextPrompt, receiptAiTier: "subscribed" };
 }
@@ -1111,7 +1103,7 @@ export async function askBedrockReceiptAssistant(input = {}) {
     const out = await invokeBedrockText({
       systemPrompt,
       userPrompt: textOnlyPrompt,
-      maxTokens: 320,
+      maxTokens: 220,
       temperature: 0.05,
       modelCandidates: fastReceiptModelCandidates(region),
       logContext: "bedrock.text.receipt_assist",
@@ -1159,24 +1151,25 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
         )}`
       : "item.category: [食費、日用品、衣類、娯楽、医療、教育、交通費、その他] のいずれか1つ。";
   const systemPrompt = [
-    "返答はJSONオブジェクト1件のみ。説明文・挨拶・markdown禁止。",
-    "必須キー: storeName,date,totalAmount,taxAmount,items,mainCategory。",
-    "itemsは{name,unitPrice,category}。mainCategoryは最大金額カテゴリ。",
+    'JSON {"storeName":"","date":"","totalAmount":0,"taxAmount":0,"items":[],"mainCategory":""} のみ返す。',
+    "挨拶・説明・Markdown禁止。dateはYYYY-MM-DD。不明はnull。",
+    "itemsは{name,unitPrice,category}。",
     catLine,
   ].join("\n");
   const userPrompt = [
-    "下記補足と Textract 要約を参照し、店名・日付・合計・税・品目を返す。",
+    "Textract抽出テキストを根拠に抽出。",
     JSON.stringify({
+      ocrLines: Array.isArray(textract.ocrLines) ? textract.ocrLines.slice(0, 80) : [],
+      summary: textract.summary ?? {},
+      items: Array.isArray(textract.items) ? textract.items.slice(0, 80) : [],
       expenseCategoryTuples,
-      memoCategoryPairs,
-      rawOcrLines: textract.ocrLines ?? [],
-      textract,
+      memoCategoryPairs: Array.isArray(memoCategoryPairs) ? memoCategoryPairs.slice(0, 8) : [],
     }),
   ].join("\n");
   const out = await invokeBedrockText({
     systemPrompt,
     userPrompt,
-    maxTokens: 360,
+    maxTokens: 220,
     temperature: 0.05,
     modelCandidates: fastReceiptModelCandidates(
       String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() || DEFAULT_REGION,

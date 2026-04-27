@@ -946,6 +946,7 @@ export function ReceiptPage() {
           progressPct: 12,
         },
       ]);
+      setNotice("アップロード完了。解析結果は順次この画面に反映されます。");
     } catch (e) {
       if (newObjectUrl) {
         URL.revokeObjectURL(newObjectUrl);

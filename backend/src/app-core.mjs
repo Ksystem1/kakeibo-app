@@ -6498,21 +6498,31 @@ export async function handleApiRequest(req, options = {}) {
               logError("receipts.parse.vendor_ocr_key_hints", eH);
             }
           }
+          let earlyVendorCacheHit = null;
+          if (subscriptionActive && textractVendorBaseline.length >= 2) {
+            try {
+              earlyVendorCacheHit = await getUserStorePlaceCached(pool, userId, textractVendorBaseline);
+            } catch (ePl) {
+              logError("receipts.parse.vendor_cache_early", ePl);
+            }
+          }
+          const skipHybridAi = Boolean(earlyVendorCacheHit);
           const hybridTextractPayload = {
             summary: result?.summary ?? {},
             items: result?.items ?? [],
             ocrLines: result?.ocrLines ?? [],
-            textractRaw: result?.textractRaw ?? {},
           };
           let hybridReceipt = null;
-          try {
-            hybridReceipt = await askBedrockHybridReceiptFromTextract({
-              textract: hybridTextractPayload,
-              categoryCandidates: expenseCategoryIdNameRows,
-              memoCategoryPairs,
-            });
-          } catch (e) {
-            logError("receipts.parse.hybrid_ocr", e);
+          if (!skipHybridAi) {
+            try {
+              hybridReceipt = await askBedrockHybridReceiptFromTextract({
+                textract: hybridTextractPayload,
+                categoryCandidates: expenseCategoryIdNameRows,
+                memoCategoryPairs,
+              });
+            } catch (e) {
+              logError("receipts.parse.hybrid_ocr", e);
+            }
           }
           let aiReceipt = null;
           const enableSecondAiPass =
@@ -6636,13 +6646,24 @@ export async function handleApiRequest(req, options = {}) {
           }
 
           let suggestedVendor = null;
+          if (earlyVendorCacheHit) {
+            suggestedVendor = {
+              fromCache: true,
+              placeId: earlyVendorCacheHit.placeId,
+              suggestedStoreName: earlyVendorCacheHit.suggestedStoreName,
+              locationHint: earlyVendorCacheHit.locationHint,
+              preferredCategoryId: earlyVendorCacheHit.preferredCategoryId,
+              ocrVendorKey: earlyVendorCacheHit.ocrVendorKey,
+              inferenceConfidence: 1,
+              inferenceLowConfidence: false,
+            };
+          }
           if (subscriptionActive && String(adjustedSummary?.vendorName ?? "").trim().length >= 2) {
             try {
-              const cached = await getUserStorePlaceCached(
-                pool,
-                userId,
-                String(adjustedSummary.vendorName).trim(),
-              );
+              const cached =
+                suggestedVendor && suggestedVendor.fromCache
+                  ? earlyVendorCacheHit
+                  : await getUserStorePlaceCached(pool, userId, String(adjustedSummary.vendorName).trim());
               if (cached) {
                 suggestedVendor = {
                   fromCache: true,
