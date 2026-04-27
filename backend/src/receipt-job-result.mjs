@@ -7,6 +7,11 @@
 const SCHEMA = "receipt_job_v1";
 const MAX_RAW = 20_000;
 const MAX_DEPTH = 32;
+const CONTROL_CHARS_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+
+function sanitizeText(s) {
+  return String(s).replace(CONTROL_CHARS_RE, "");
+}
 
 /**
  * @param {unknown} obj
@@ -19,7 +24,10 @@ function toJsonSafeValue(obj, depth) {
   }
   if (obj === null) return null;
   const t = typeof obj;
-  if (t === "string") return String(obj).length > 50000 ? String(obj).slice(0, 50000) : obj;
+  if (t === "string") {
+    const cleaned = sanitizeText(obj);
+    return cleaned.length > 50000 ? cleaned.slice(0, 50000) : cleaned;
+  }
   if (t === "boolean") return obj;
   if (t === "number") {
     if (!Number.isFinite(obj) || Object.is(obj, -0)) return null;

@@ -2510,6 +2510,13 @@ export async function handleApiRequest(req, options = {}) {
           return json(404, { error: "NotFound", detail: "ジョブが見つかりません" }, hdrs, skipCors);
         }
         const j = rows[0];
+        const statusText = String(j.status ?? "").trim();
+        const progress =
+          statusText === "completed" || statusText === "failed"
+            ? 100
+            : statusText === "processing"
+              ? 97
+              : 10;
         let result = null;
         if (j.result_data != null) {
           try {
@@ -2526,8 +2533,12 @@ export async function handleApiRequest(req, options = {}) {
           200,
           {
             jobId: String(j.job_id),
-            status: j.status,
-            result,
+            status: statusText,
+            progress,
+            result:
+              statusText === "completed" && result && typeof result === "object" && !Array.isArray(result)
+                ? { ...result, status: "completed", progress: 100 }
+                : result,
             errorMessage: j.error_message != null ? String(j.error_message) : null,
             createdAt: j.created_at,
             updatedAt: j.updated_at,

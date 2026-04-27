@@ -1062,7 +1062,11 @@ export function ReceiptPage() {
                       aria-live="polite"
                     >
                       <span className={styles.receiptImportQueueSkeletonBar} />
-                      <span>アップロードを受け付けました。解析待ち… {Math.max(8, row.progressPct ?? 12)}%</span>
+                      <span>
+                        {Math.max(0, row.progressPct ?? 0) < 30
+                          ? "画像最適化・送信中…"
+                          : `画像最適化・送信中… ${Math.max(30, row.progressPct ?? 30)}%`}
+                      </span>
                     </div>
                   ) : busy && row.status === "processing" ? (
                     <div
@@ -1071,7 +1075,7 @@ export function ReceiptPage() {
                       aria-live="polite"
                     >
                       <span className={styles.receiptImportQueueSkeletonBar} />
-                      <span>AIが解析しています… {Math.max(45, row.progressPct ?? 45)}%</span>
+                      <span>AI解析中… {Math.max(90, row.progressPct ?? 90)}%</span>
                     </div>
                   ) : row.status === "failed" ? (
                     <div className={styles.receiptImportQueueError} style={{ display: "grid", gap: "0.45rem" }}>

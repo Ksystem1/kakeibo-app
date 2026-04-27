@@ -49,7 +49,9 @@ export function useReceiptJob(
   const intervalMs = options?.pollIntervalMs ?? DEFAULT_POLL_MS;
   const firstSeenAtRef = useRef<Map<string, number>>(new Map());
   const timeoutNotifiedRef = useRef<Set<string>>(new Set());
+  const progressStalledSinceRef = useRef<Map<string, number>>(new Map());
   const TIMEOUT_MS = 30_000;
+  const STALL_RESCUE_MS = 5_000;
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -64,13 +66,8 @@ export function useReceiptJob(
         }
         const elapsed = now - firstSeen;
         const timedOut = elapsed >= TIMEOUT_MS;
-        const estimatedBase =
-          q.status === "pending"
-            ? Math.min(45, 10 + Math.floor(elapsed / 1200))
-            : Math.min(90, 45 + Math.floor(elapsed / 1500));
-        const estimated = timedOut
-          ? Math.min(97, 90 + Math.floor((elapsed - TIMEOUT_MS) / 2500) % 8)
-          : estimatedBase;
+        const estimatedBase = q.status === "pending" ? 30 : 90;
+        const estimated = timedOut ? Math.min(97, 92 + Math.floor((elapsed - TIMEOUT_MS) / 5000)) : estimatedBase;
         if (timedOut && !timeoutNotifiedRef.current.has(q.jobId)) {
           timeoutNotifiedRef.current.add(q.jobId);
           setQueue((prev) =>
@@ -102,14 +99,34 @@ export function useReceiptJob(
               st.status === "completed" &&
               st.result != null &&
               !isSuccessfulReceiptJobApplyResult(st.result);
-            const coerced: ReceiptAsyncJobStatus = badCompleted ? "failed" : st.status;
+            const rescueCompleted =
+              st.status !== "completed" &&
+              isSuccessfulReceiptJobApplyResult(st.result) &&
+              Math.max(p.progressPct ?? 0, st.progress ?? 0, estimated) >= 95 &&
+              now - (progressStalledSinceRef.current.get(q.jobId) ?? now) >= STALL_RESCUE_MS;
+            const coerced: ReceiptAsyncJobStatus = badCompleted
+              ? "failed"
+              : rescueCompleted
+                ? "completed"
+                : st.status;
+            const nextProgress =
+              coerced === "completed"
+                ? 100
+                : coerced === "failed"
+                  ? p.progressPct ?? estimated
+                  : Math.max(p.progressPct ?? 0, estimated, st.progress ?? 0);
+            const prevProgress = p.progressPct ?? 0;
+            if (nextProgress > prevProgress) {
+              progressStalledSinceRef.current.set(q.jobId, now);
+            } else if (!progressStalledSinceRef.current.has(q.jobId)) {
+              progressStalledSinceRef.current.set(q.jobId, now);
+            }
             return prev.map((x) =>
               x.localKey === q.localKey
                 ? {
                     ...x,
                     status: coerced,
-                    progressPct:
-                      coerced === "completed" ? 100 : coerced === "failed" ? x.progressPct ?? estimated : Math.max(x.progressPct ?? 0, estimated),
+                    progressPct: nextProgress,
                     timeoutExceeded: timedOut || x.timeoutExceeded === true,
                     result: st.result ?? x.result,
                     errorMessage: st.errorMessage ?? x.errorMessage ?? undefined,
@@ -120,15 +137,24 @@ export function useReceiptJob(
           if (st.status === "failed") {
             applyOncePerJobIdRef.current.delete(q.jobId);
             firstSeenAtRef.current.delete(q.jobId);
+            progressStalledSinceRef.current.delete(q.jobId);
             return;
           }
-          if (st.status === "completed" && isSuccessfulReceiptJobApplyResult(st.result)) {
+          const stalledLong =
+            progressStalledSinceRef.current.has(q.jobId) &&
+            now - (progressStalledSinceRef.current.get(q.jobId) ?? now) >= STALL_RESCUE_MS;
+          if (
+            isSuccessfulReceiptJobApplyResult(st.result) &&
+            (st.status === "completed" || stalledLong)
+          ) {
+            const completedResult: ParseReceiptResult = st.result;
             firstSeenAtRef.current.delete(q.jobId);
             timeoutNotifiedRef.current.delete(q.jobId);
+            progressStalledSinceRef.current.delete(q.jobId);
             if (!applyOncePerJobIdRef.current.has(q.jobId)) {
               applyOncePerJobIdRef.current.add(q.jobId);
               if (q.objectUrl === previewRef.current) {
-                onApplyResultRef.current(st.result);
+                onApplyResultRef.current(completedResult);
               }
               if (
                 typeof document !== "undefined" &&

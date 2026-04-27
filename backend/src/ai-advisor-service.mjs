@@ -1084,7 +1084,7 @@ export async function askBedrockReceiptAssistant(input = {}) {
       textPrompt: userTextPrompt,
       imageBase64,
       mediaType: imageMediaType,
-      maxTokens: 1000,
+      maxTokens: 220,
       temperature: 0.15,
     });
     if (vis.ok && vis.reply) {
@@ -1155,9 +1155,15 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
     "挨拶・説明・Markdown禁止。dateはYYYY-MM-DD。不明はnull。",
     "itemsは{name,unitPrice,category}。",
     catLine,
+    "考え方や途中経過は出力しない。最終JSONのみ。",
   ].join("\n");
   const userPrompt = [
     "Textract抽出テキストを根拠に抽出。",
+    "出力例1: {\"storeName\":\"くら寿司\",\"date\":\"2026-04-25\",\"totalAmount\":5984,\"taxAmount\":443,\"items\":[],\"mainCategory\":\"外食\"}",
+    "出力例2: {\"storeName\":\"ローソン\",\"date\":\"2026-04-20\",\"totalAmount\":1280,\"taxAmount\":116,\"items\":[{\"name\":\"弁当\",\"unitPrice\":598,\"category\":\"食費\"}],\"mainCategory\":\"食費\"}",
+    "出力例3: {\"storeName\":\"不明\",\"date\":null,\"totalAmount\":null,\"taxAmount\":null,\"items\":[],\"mainCategory\":\"その他\"}",
+    "出力例4: {\"storeName\":\"マツモトキヨシ\",\"date\":\"2026-04-01\",\"totalAmount\":2480,\"taxAmount\":225,\"items\":[{\"name\":\"薬\",\"unitPrice\":1280,\"category\":\"医療\"}],\"mainCategory\":\"医療\"}",
+    "出力例5: {\"storeName\":\"セブンイレブン\",\"date\":\"2026-03-31\",\"totalAmount\":860,\"taxAmount\":78,\"items\":[{\"name\":\"コーヒー\",\"unitPrice\":120,\"category\":\"食費\"}],\"mainCategory\":\"食費\"}",
     JSON.stringify({
       ocrLines: Array.isArray(textract.ocrLines) ? textract.ocrLines.slice(0, 80) : [],
       summary: textract.summary ?? {},

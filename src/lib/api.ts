@@ -1587,6 +1587,7 @@ export async function getReceiptJobStatus(jobId: string) {
   return parse<{
     jobId: string;
     status: ReceiptAsyncJobStatus;
+    progress?: number;
     result: ParseReceiptResult | ReceiptJobErrorPayload | null;
     errorMessage: string | null;
     createdAt: string;
