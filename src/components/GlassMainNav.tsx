@@ -275,7 +275,12 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                     <WalletCards className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
                     連携する
                   </h4>
-                  <p className="app-glass-nav-step__desc">「おまかせ取込」で口座やカードを登録。</p>
+                  <p className="app-glass-nav-step__desc">「おまかせ取込」で口座やカード明細を取り込みます。</p>
+                  <ul className="app-glass-nav-step__list" aria-label="連携する手順">
+                    <li>下部メニューの「取込」を開き、「おまかせ取込」を選ぶ</li>
+                    <li>連携したい口座・カードを選択して認証を完了する</li>
+                    <li>初回取込が終わったら、画面上部の件数表示で反映を確認する</li>
+                  </ul>
                 </div>
               </section>
               <div className="app-glass-nav-step__divider" aria-hidden />
@@ -286,7 +291,12 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                     <ClipboardCheck className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
                     確認する
                   </h4>
-                  <p className="app-glass-nav-step__desc">「家計簿」で自動分類された支出をチェック。</p>
+                  <p className="app-glass-nav-step__desc">「家計簿」で自動分類された支出を確認・修正します。</p>
+                  <ul className="app-glass-nav-step__list" aria-label="確認する手順">
+                    <li>「家計簿」を開き、日付・金額・カテゴリが正しいか確認する</li>
+                    <li>気になる行は「変更」からカテゴリやメモを修正する</li>
+                    <li>重複や不要な明細は「削除」で整理する</li>
+                  </ul>
                 </div>
               </section>
               <div className="app-glass-nav-step__divider" aria-hidden />
@@ -297,7 +307,12 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                     <LayoutDashboard className="app-glass-nav-panel__item-icon" strokeWidth={1.85} />
                     振り返る
                   </h4>
-                  <p className="app-glass-nav-step__desc">「ダッシュボード」で予算残高を振り返る。</p>
+                  <p className="app-glass-nav-step__desc">「ダッシュボード」で使いすぎや改善ポイントを振り返ります。</p>
+                  <ul className="app-glass-nav-step__list" aria-label="振り返る手順">
+                    <li>今月の残り予算と前月比を見て、支出ペースを把握する</li>
+                    <li>カテゴリ別の金額を確認し、増えている項目を優先して見直す</li>
+                    <li>翌月の固定費・目標金額を設定して、次月の計画につなげる</li>
+                  </ul>
                 </div>
               </section>
             </div>

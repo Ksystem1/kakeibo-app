@@ -21,6 +21,8 @@ export type ReceiptImportQueueItem = {
   status: ReceiptAsyncJobStatus;
   result?: ParseReceiptResult | ReceiptJobErrorPayload;
   errorMessage?: string | null;
+  progressPct?: number;
+  timeoutExceeded?: boolean;
 };
 
 export function useReceiptJob(
@@ -45,6 +47,9 @@ export function useReceiptJob(
   }, [previewObjectUrl]);
 
   const intervalMs = options?.pollIntervalMs ?? DEFAULT_POLL_MS;
+  const firstSeenAtRef = useRef<Map<string, number>>(new Map());
+  const timeoutNotifiedRef = useRef<Set<string>>(new Set());
+  const TIMEOUT_MS = 30_000;
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -52,6 +57,34 @@ export function useReceiptJob(
         (x) => x.status === "pending" || x.status === "processing",
       );
       for (const q of pending) {
+        const now = Date.now();
+        const firstSeen = firstSeenAtRef.current.get(q.jobId) ?? now;
+        if (!firstSeenAtRef.current.has(q.jobId)) {
+          firstSeenAtRef.current.set(q.jobId, firstSeen);
+        }
+        const elapsed = now - firstSeen;
+        const timedOut = elapsed >= TIMEOUT_MS;
+        const estimated =
+          q.status === "pending"
+            ? Math.min(45, 10 + Math.floor(elapsed / 1200))
+            : Math.min(95, 45 + Math.floor(elapsed / 1500));
+        if (timedOut && !timeoutNotifiedRef.current.has(q.jobId)) {
+          timeoutNotifiedRef.current.add(q.jobId);
+          setQueue((prev) =>
+            prev.map((x) =>
+              x.localKey === q.localKey
+                ? {
+                    ...x,
+                    timeoutExceeded: true,
+                    progressPct: Math.max(x.progressPct ?? 0, estimated),
+                    errorMessage:
+                      x.errorMessage ??
+                      "30秒以上かかっています。自動で再試行中です。手動入力に切り替えることもできます。",
+                  }
+                : x,
+            ),
+          );
+        }
         void (async () => {
           let st: Awaited<ReturnType<typeof getReceiptJobStatus>>;
           try {
@@ -72,6 +105,9 @@ export function useReceiptJob(
                 ? {
                     ...x,
                     status: coerced,
+                    progressPct:
+                      coerced === "completed" ? 100 : coerced === "failed" ? x.progressPct ?? estimated : Math.max(x.progressPct ?? 0, estimated),
+                    timeoutExceeded: timedOut || x.timeoutExceeded === true,
                     result: st.result ?? x.result,
                     errorMessage: st.errorMessage ?? x.errorMessage ?? undefined,
                   }
@@ -80,9 +116,12 @@ export function useReceiptJob(
           });
           if (st.status === "failed") {
             applyOncePerJobIdRef.current.delete(q.jobId);
+            firstSeenAtRef.current.delete(q.jobId);
             return;
           }
           if (st.status === "completed" && isSuccessfulReceiptJobApplyResult(st.result)) {
+            firstSeenAtRef.current.delete(q.jobId);
+            timeoutNotifiedRef.current.delete(q.jobId);
             if (!applyOncePerJobIdRef.current.has(q.jobId)) {
               applyOncePerJobIdRef.current.add(q.jobId);
               if (q.objectUrl === previewRef.current) {

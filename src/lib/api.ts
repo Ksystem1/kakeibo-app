@@ -1493,10 +1493,54 @@ export async function parseReceiptImage(
  */
 export async function uploadReceiptForAsyncJob(
   image: Blob | string,
-  options?: { debugForceReceiptTier?: ParseReceiptDebugTier; fileName?: string },
+  options?: {
+    debugForceReceiptTier?: ParseReceiptDebugTier;
+    fileName?: string;
+    onProgress?: (p: ParseReceiptImageProgress) => void;
+  },
 ) {
   const tier = options?.debugForceReceiptTier ?? "server";
   const isBlob = typeof image !== "string";
+  const useXhr = isBlob && typeof options?.onProgress === "function";
+  if (useXhr) {
+    options.onProgress?.({ phase: "upload", percent: 2 });
+    const form = new FormData();
+    form.append(
+      "image",
+      image,
+      options?.fileName && options.fileName.trim() ? options.fileName : "receipt.jpg",
+    );
+    if (tier === "free" || tier === "subscribed") {
+      form.append("debugForceReceiptTier", tier);
+    }
+    const res = await new Promise<Response>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${BASE}/receipts/upload`);
+      const h = buildAuthOnlyHeaders();
+      for (const [k, v] of Object.entries(h)) xhr.setRequestHeader(k, v);
+      xhr.timeout = RECEIPT_PARSE_TIMEOUT_MS;
+      xhr.responseType = "text";
+      xhr.upload.addEventListener("progress", (e) => {
+        if (!e.lengthComputable || e.total <= 0) return;
+        const pct = Math.min(35, 2 + Math.round((e.loaded / e.total) * 33));
+        options.onProgress?.({ phase: "upload", percent: pct });
+      });
+      xhr.addEventListener("load", () => {
+        options.onProgress?.({ phase: "server", percent: 40 });
+        resolve(
+          new Response(xhr.responseText, {
+            status: xhr.status,
+            statusText: xhr.statusText,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      });
+      xhr.addEventListener("error", () => reject(new Error("アップロードに失敗しました。")));
+      xhr.addEventListener("timeout", () => reject(new Error("アップロードがタイムアウトしました。")));
+      xhr.send(form);
+    });
+    return parse<{ ok: boolean; jobId: string; status: string }>(res);
+  }
   const res = await apiFetch(
     `${BASE}/receipts/upload`,
     isBlob

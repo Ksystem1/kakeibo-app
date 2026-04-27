@@ -543,6 +543,21 @@
   line-height: 1.72;
 }
 
+.app-glass-nav-step__list {
+  margin: 0.26rem 0 0;
+  padding: 0 0 0 1.02rem;
+  list-style: disc;
+  display: grid;
+  gap: 0.14rem;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--app-ink) 82%, #4e5572 18%);
+}
+
+.app-glass-nav-step__list li::marker {
+  color: #9b4dce;
+}
+
 .app-glass-nav-step__divider {
   border-top: 1px dashed rgba(146, 84, 212, 0.4);
   margin: 0.45rem 0;

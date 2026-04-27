@@ -134,7 +134,7 @@ export async function prepareReceiptImageForApi(file: File): Promise<string> {
 }
 
 /** 非同期アップロード用: Worker と同じ長辺・品質（OCR 前処理は行わない） */
-const ASYNC_MAX_EDGE = 1280;
+const ASYNC_MAX_EDGE = 1200;
 const ASYNC_JPEG_QUALITY = 0.7;
 const ASYNC_MAX_INPUT_BYTES = 20 * 1024 * 1024;
 

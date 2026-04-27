@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { usePwaTargetDevice } from "../hooks/usePwaTargetDevice";
 import {
+  consumePwaInstallPromptReadyForSession,
+  isPwaInstallPromptCooldownActive,
   isPwaInstallBannerHidden,
+  setPwaInstallPromptCooldown,
   setPwaInstallBannerHidden,
-  subscribePwaInstallPrefs,
 } from "../lib/pwaInstallPrefs";
 import styles from "./PwaInstallBar.module.css";
 
@@ -23,22 +25,30 @@ function isIosTouch(): boolean {
   return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
 }
 
+function isAndroid(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android/i.test(navigator.userAgent);
+}
+
 export function PwaInstallBar() {
-  const { pathname, hash } = useLocation();
+  const { pathname } = useLocation();
   const pwaTarget = usePwaTargetDevice();
-  const [bannerHidden, setBannerHidden] = useState(isPwaInstallBannerHidden);
+  const [bannerHidden, setBannerHidden] = useState(isPwaInstallBannerHidden());
   const [standalone, setStandalone] = useState(isStandaloneDisplay);
+  const [readyByLoginSession, setReadyByLoginSession] = useState(false);
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
-
-  useEffect(() => subscribePwaInstallPrefs(() => setBannerHidden(isPwaInstallBannerHidden())), []);
 
   useEffect(() => {
     setStandalone(isStandaloneDisplay());
   }, [pwaTarget]);
 
   useEffect(() => {
-    if (!pwaTarget || bannerHidden || standalone) {
+    setReadyByLoginSession(consumePwaInstallPromptReadyForSession());
+  }, []);
+
+  useEffect(() => {
+    if (!pwaTarget || bannerHidden || standalone || !readyByLoginSession) {
       setDeferredPrompt(null);
       return;
     }
@@ -56,19 +66,22 @@ export function PwaInstallBar() {
       window.removeEventListener("beforeinstallprompt", onBip);
       window.removeEventListener("appinstalled", onInstalled);
     };
-  }, [pwaTarget, bannerHidden, standalone]);
+  }, [pwaTarget, bannerHidden, standalone, readyByLoginSession]);
 
   const showIosHint = isIosTouch() && !standalone;
+  const showAndroidHint = isAndroid() && !standalone;
   const showChromeInstall = deferredPrompt != null;
-  const helpHash = hash.startsWith("#") ? hash.slice(1) : hash;
-  const settingsHelpOpen = pathname === "/settings" && helpHash === "pwa-install-help";
+  const isHomeTop = pathname === "/";
+  const inCooldown = useMemo(() => isPwaInstallPromptCooldownActive(), []);
 
   const visible =
+    isHomeTop &&
     pwaTarget &&
+    readyByLoginSession &&
+    !inCooldown &&
     !bannerHidden &&
     !standalone &&
-    !settingsHelpOpen &&
-    (showChromeInstall || showIosHint);
+    (showChromeInstall || showIosHint || showAndroidHint);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -95,34 +108,49 @@ export function PwaInstallBar() {
 
   const onAlreadyHaveShortcut = useCallback(() => {
     setPwaInstallBannerHidden();
+    setBannerHidden(true);
+  }, []);
+
+  const onClose = useCallback(() => {
+    setPwaInstallPromptCooldown(7);
+    setReadyByLoginSession(false);
+    setDeferredPrompt(null);
   }, []);
 
   if (!visible) return null;
 
   return (
-    <div className={styles.bar} role="region" aria-label="アプリとして使う">
-      <div className={styles.inner}>
-        <p className={styles.text}>
-          {showChromeInstall
-            ? "ホーム画面に追加すると、次回からアプリのようにすぐ開けます。"
-            : "Safari の「共有」から「ホーム画面に追加」で、アプリのように使えます。"}
-        </p>
+    <div className={styles.backdrop} role="presentation">
+      <section className={styles.modal} role="dialog" aria-modal="true" aria-label="ホーム画面に追加">
+        <h2 className={styles.title}>アプリとして使うと便利です</h2>
+        <p className={styles.text}>ホーム画面に追加すると、次回からワンタップで家計簿を開けます。</p>
+        <ol className={styles.steps}>
+          {showIosHint ? (
+            <>
+              <li>Safari 下部の「共有（四角に矢印）」を押す</li>
+              <li>「ホーム画面に追加」を選択する</li>
+            </>
+          ) : (
+            <>
+              <li>ブラウザ右上のメニュー（︙）を開く</li>
+              <li>「アプリをインストール」または「ホーム画面に追加」を選択する</li>
+            </>
+          )}
+        </ol>
         <div className={styles.actions}>
           {showChromeInstall ? (
             <button type="button" className={styles.btnPrimary} onClick={onInstallClick}>
-              ホームに追加
+              インストールする
             </button>
           ) : null}
+          <button type="button" className={styles.btnGhost} onClick={onClose}>
+            閉じる
+          </button>
           <button type="button" className={styles.btnGhost} onClick={onAlreadyHaveShortcut}>
-            追加済み・ショートカット利用中
+            今後は表示しない
           </button>
         </div>
-      </div>
-      <div className={styles.helpRow}>
-        <Link className={styles.link} to="/settings#pwa-install-help">
-          手順を設定で開く
-        </Link>
-      </div>
+      </section>
     </div>
   );
 }

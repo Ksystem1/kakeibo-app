@@ -37,7 +37,6 @@ import {
   askBedrockAdvisor,
   askBedrockHybridReceiptFromTextract,
   askBedrockReceiptAssistant,
-  inferReceiptImageMediaTypeFromBuffer,
 } from "./ai-advisor-service.mjs";
 import {
   buildAsyncReceiptJobResultFromHttpBody,
@@ -6505,46 +6504,41 @@ export async function handleApiRequest(req, options = {}) {
             ocrLines: result?.ocrLines ?? [],
             textractRaw: result?.textractRaw ?? {},
           };
-          const [hybridReceipt, aiReceipt] = await Promise.all([
-            (async () => {
-              try {
-                return await askBedrockHybridReceiptFromTextract({
-                  textract: hybridTextractPayload,
-                  categoryCandidates: expenseCategoryIdNameRows,
-                  memoCategoryPairs,
-                });
-              } catch (e) {
-                logError("receipts.parse.hybrid_ocr", e);
-                return null;
-              }
-            })(),
-            (async () => {
-              if (!subscriptionActive) return null;
-              try {
-                return await askBedrockReceiptAssistant({
-                  subscriptionActive,
-                  historyHints,
-                  memoCategoryPairs,
-                  vendorOcrKeyHints,
-                  heuristicCategorySuggestion: suggestedCategory
-                    ? {
-                        name: suggestedCategory.name,
-                        source: suggestedCategory.source,
-                      }
-                    : null,
-                  summary: result?.summary ?? {},
-                  items: result?.items ?? [],
-                  ocrLines: result?.ocrLines ?? [],
-                  categoryCandidates: expenseCategoryIdNameRows,
-                  imageBase64: buf.toString("base64"),
-                  imageMediaType: inferReceiptImageMediaTypeFromBuffer(buf),
-                });
-              } catch (e) {
-                logError("receipts.parse.ai_assist", e);
-                return null;
-              }
-            })(),
-          ]);
+          let hybridReceipt = null;
+          try {
+            hybridReceipt = await askBedrockHybridReceiptFromTextract({
+              textract: hybridTextractPayload,
+              categoryCandidates: expenseCategoryIdNameRows,
+              memoCategoryPairs,
+            });
+          } catch (e) {
+            logError("receipts.parse.hybrid_ocr", e);
+          }
+          let aiReceipt = null;
+          const enableSecondAiPass =
+            subscriptionActive && String(process.env.RECEIPT_ENABLE_SECOND_AI_PASS ?? "0").trim() === "1";
+          if (enableSecondAiPass) {
+            try {
+              aiReceipt = await askBedrockReceiptAssistant({
+                subscriptionActive,
+                historyHints,
+                memoCategoryPairs,
+                vendorOcrKeyHints,
+                heuristicCategorySuggestion: suggestedCategory
+                  ? {
+                      name: suggestedCategory.name,
+                      source: suggestedCategory.source,
+                    }
+                  : null,
+                summary: result?.summary ?? {},
+                items: result?.items ?? [],
+                ocrLines: result?.ocrLines ?? [],
+                categoryCandidates: expenseCategoryIdNameRows,
+              });
+            } catch (e) {
+              logError("receipts.parse.ai_assist", e);
+            }
+          }
 
           let adjustedSummary = { ...(result?.summary ?? {}) };
           let receiptAiLineItems = null;

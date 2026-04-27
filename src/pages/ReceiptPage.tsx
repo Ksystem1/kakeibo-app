@@ -333,6 +333,7 @@ export function ReceiptPage() {
   /** 非同期解析ジョブ（他の取込をブロックしない） */
   const [receiptImportQueue, setReceiptImportQueue] = useState<ReceiptImportQueueItem[]>([]);
   const [registering, setRegistering] = useState(false);
+  const [receiptUploadProgress, setReceiptUploadProgress] = useState(0);
   const receiptLineBusy = useMemo(
     () =>
       receiptImportQueue.some((j) => j.status === "pending" || j.status === "processing"),
@@ -616,15 +617,6 @@ export function ReceiptPage() {
   }, [draftCategoryId]);
 
   useEffect(() => {
-    if (!touchUi || !isBusy) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [touchUi, isBusy]);
-
-  useEffect(() => {
     if (typeof navigator === "undefined") return;
     const ua = navigator.userAgent.toLowerCase();
     setIsIOS(/iphone|ipad|ipod/.test(ua));
@@ -886,10 +878,12 @@ export function ReceiptPage() {
     clearPayPayImport();
     setUnifiedMode("receipt");
     setReceiptIngestPhase("compress");
+    setReceiptUploadProgress(5);
     let newObjectUrl: string | null = null;
     let compressedBlob: Blob;
     try {
       compressedBlob = await compressReceiptFileToJpegBlob(f);
+      setReceiptUploadProgress(30);
     } catch (e) {
       setReceiptIngestPhase(null);
       setNotice(e instanceof Error ? e.message : String(e));
@@ -925,6 +919,7 @@ export function ReceiptPage() {
     setReceiptFieldConfidence(null);
     try {
       setReceiptIngestPhase("upload");
+      setReceiptUploadProgress(38);
       const jpgName = (() => {
         const base = f.name || "receipt";
         if (/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(base)) {
@@ -935,7 +930,11 @@ export function ReceiptPage() {
       const u = await uploadReceiptForAsyncJob(compressedBlob, {
         debugForceReceiptTier: receiptDebugTier,
         fileName: jpgName,
+        onProgress: (p) => {
+          setReceiptUploadProgress((prev) => Math.max(prev, Math.min(60, p.percent)));
+        },
       });
+      setReceiptUploadProgress(62);
       setReceiptImportQueue((prev) => [
         ...prev,
         {
@@ -944,6 +943,7 @@ export function ReceiptPage() {
           objectUrl: newObjectUrl!,
           jobId: u.jobId,
           status: (u.status as ReceiptAsyncJobStatus) || "pending",
+          progressPct: 12,
         },
       ]);
     } catch (e) {
@@ -962,6 +962,7 @@ export function ReceiptPage() {
       setReceiptFieldConfidence(null);
     } finally {
       setReceiptIngestPhase(null);
+      setReceiptUploadProgress(0);
     }
   }
 
@@ -1009,15 +1010,11 @@ export function ReceiptPage() {
   const loadingUi = (
     <>
       {touchUi ? (
-        <div
-          className={styles.receiptLoadingOverlay}
-          role="status"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <div className={styles.receiptLoadingOverlayInner}>
-            <span className={styles.receiptSpinner} aria-hidden />
-            <p className={styles.receiptLoadingOverlayText}>{busyLabel}</p>
+        <div className={styles.receiptLoadingPanel} role="status" aria-live="polite" aria-busy="true">
+          <span className={styles.receiptSpinner} aria-hidden />
+          <span>{busyLabel}</span>
+          <div className={styles.receiptProgressBar} aria-hidden>
+            <div className={styles.receiptProgressBarFill} style={{ width: `${receiptUploadProgress}%` }} />
           </div>
         </div>
       ) : (
@@ -1029,6 +1026,9 @@ export function ReceiptPage() {
         >
           <span className={styles.receiptSpinner} aria-hidden />
           <span>{busyLabel}</span>
+          <div className={styles.receiptProgressBar} aria-hidden>
+            <div className={styles.receiptProgressBarFill} style={{ width: `${receiptUploadProgress}%` }} />
+          </div>
         </div>
       )}
     </>
@@ -1036,7 +1036,7 @@ export function ReceiptPage() {
 
   return (
     <div className={`${styles.wrap} ${styles.receiptImportWrap}`}>
-      {isBusy ? loadingUi : null}
+      {Boolean(receiptIngestPhase) ? loadingUi : null}
       <h1 className={styles.title}>レシート・明細取込</h1>
       {receiptImportQueue.length > 0 ? (
         <ul
@@ -1061,7 +1061,7 @@ export function ReceiptPage() {
                       aria-live="polite"
                     >
                       <span className={styles.receiptImportQueueSkeletonBar} />
-                      <span>アップロードを受け付けました。解析待ち…</span>
+                      <span>アップロードを受け付けました。解析待ち… {Math.max(8, row.progressPct ?? 12)}%</span>
                     </div>
                   ) : busy && row.status === "processing" ? (
                     <div
@@ -1070,7 +1070,7 @@ export function ReceiptPage() {
                       aria-live="polite"
                     >
                       <span className={styles.receiptImportQueueSkeletonBar} />
-                      <span>AIが解析しています…</span>
+                      <span>AIが解析しています… {Math.max(45, row.progressPct ?? 45)}%</span>
                     </div>
                   ) : row.status === "failed" ? (
                     <div className={styles.receiptImportQueueError} style={{ display: "grid", gap: "0.45rem" }}>
@@ -1094,6 +1094,29 @@ export function ReceiptPage() {
                       解析が完了しました（下のプレビューに反映）
                     </span>
                   )}
+                  {busy && row.timeoutExceeded ? (
+                    <div className={styles.modeRow} style={{ gap: "0.4rem", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnSm}`}
+                        onClick={() => {
+                          setUnifiedMode("receipt");
+                          setNotice("解析待ちが長いため、手動入力に切り替えました。");
+                        }}
+                      >
+                        スキップして手動入力
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnSm}`}
+                        onClick={() => {
+                          setNotice("自動再試行中です。しばらくしても完了しない場合は手動入力をご利用ください。");
+                        }}
+                      >
+                        自動再試行中
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </li>
             );

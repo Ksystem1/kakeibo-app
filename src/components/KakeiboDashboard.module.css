@@ -1071,6 +1071,21 @@
     padding: 0.35rem 0.4rem;
   }
 
+  .table.txTable .mobileTxViewRow > td:first-child {
+    width: 2rem;
+    min-width: 2rem;
+    padding: 0.38rem 0.2rem 0 0.35rem;
+    vertical-align: top;
+    box-sizing: border-box;
+  }
+
+  .table.txTable .mobileTxViewRow > td:first-child input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    margin: 0.03rem 0 0;
+    display: block;
+  }
+
   .mobileTxViewRow .mobileTxViewCell {
     padding: 0.26rem 0.32rem;
     vertical-align: top;
@@ -2158,10 +2173,16 @@
   .medicalDeductionRow {
     flex-direction: column;
     align-items: stretch;
+    gap: 0.35rem;
+  }
+
+  .medicalDeductionRow .sub {
+    flex: 0 1 auto;
   }
 
   .medicalDeductionButtonWrap {
     margin-left: 0;
+    margin-top: 0.1rem;
   }
 
   .medicalDeductionButtonWrap a {
@@ -2248,13 +2269,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.75rem;
+  padding: max(0.75rem, env(safe-area-inset-top, 0px)) 0.75rem
+    max(0.75rem, env(safe-area-inset-bottom, 0px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .categoryDetailDialog {
   max-width: min(100%, 640px);
   width: 100%;
-  max-height: min(90vh, 720px);
+  max-height: min(calc(100dvh - 1.5rem), 720px);
   display: flex;
   flex-direction: column;
   padding: 1rem 1.05rem 1rem;
@@ -2269,6 +2294,21 @@
   flex: 1;
   min-height: 0;
   margin-top: 0.5rem;
+}
+
+@media (max-width: 768px) {
+  .categoryDetailBackdrop {
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: max(0.55rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(5.5rem, calc(env(safe-area-inset-bottom, 0px) + 4.75rem));
+  }
+
+  .categoryDetailDialog {
+    max-width: 100%;
+    max-height: calc(100dvh - 0.75rem);
+    border-radius: 12px;
+  }
 }
 
 .categoryDetailHeader {

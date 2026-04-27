@@ -9,6 +9,7 @@ import {
   normalizeFamilyRole,
   toFriendlyLoginErrorMessage,
 } from "../lib/api";
+import { markPwaInstallPromptReadyForSession } from "../lib/pwaInstallPrefs";
 import styles from "../components/LoginScreen.module.css";
 import { MobileAccessQr } from "../components/MobileAccessQr";
 
@@ -51,6 +52,7 @@ export function LoginPage() {
       console.info("[kakeibo:auth] login normalized user", normalizedUser);
     }
     setSession(tokenValue, normalizedUser);
+    markPwaInstallPromptReadyForSession();
     const role = normalizeFamilyRole(normalizedUser.familyRole);
     const canPickChildProfile = role === "ADMIN" || role === "MEMBER";
     if (canPickChildProfile) {

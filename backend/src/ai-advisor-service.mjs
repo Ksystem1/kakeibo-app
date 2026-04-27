@@ -23,6 +23,7 @@ const BEDROCK_MODEL_ID_SONNET_3_7 = "anthropic.claude-3-7-sonnet-20250219-v1:0";
 /** レガシー v1 — リージョンによっては EOL（ResourceNotFound）のため v2 を優先 */
 const BEDROCK_MODEL_ID_SONNET_3_5_V2 = "anthropic.claude-3-5-sonnet-20241022-v2:0";
 const BEDROCK_MODEL_ID_SONNET_3_5_V1 = "anthropic.claude-3-5-sonnet-20240620-v1:0";
+const BEDROCK_MODEL_ID_HAIKU_3_5 = "anthropic.claude-3-5-haiku-20241022-v1:0";
 
 /** Bedrock コンソールのモデル ID と完全一致させる（余計な空白・囲みクォートは除去） */
 function sanitizeBedrockModelId(raw) {
@@ -69,6 +70,19 @@ function defaultBedrockModelCandidates(region) {
     BEDROCK_MODEL_ID_SONNET_4_6,
     `${geo}.${BEDROCK_MODEL_ID_SONNET_3_7}`,
     BEDROCK_MODEL_ID_SONNET_3_7,
+    `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V2}`,
+    BEDROCK_MODEL_ID_SONNET_3_5_V2,
+    `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V1}`,
+    BEDROCK_MODEL_ID_SONNET_3_5_V1,
+  ].filter((x, i, arr) => arr.indexOf(x) === i);
+}
+
+function fastReceiptModelCandidates(region) {
+  const geo = geoInferencePrefixForRegion(region);
+  return [
+    `global.${BEDROCK_MODEL_ID_HAIKU_3_5}`,
+    `${geo}.${BEDROCK_MODEL_ID_HAIKU_3_5}`,
+    BEDROCK_MODEL_ID_HAIKU_3_5,
     `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V2}`,
     BEDROCK_MODEL_ID_SONNET_3_5_V2,
     `${geo}.${BEDROCK_MODEL_ID_SONNET_3_5_V1}`,
@@ -943,15 +957,10 @@ function buildReceiptAiPromptBundle(opts) {
 
   if (!subscriptionActive) {
     const systemPrompt = [
-      "あなたは家計簿アプリのレシート読取AI（無料プラン用）です。",
-      "無料プランでは日付（date）と税込合計（totalAmount）の抽出に専念してください。",
-      "vendorName と categoryName は常に null を返してください（店名・カテゴリ推定は行わない）。",
-      "totalAmount と date は、添付画像に写っている文字、または補助JSONの ocrLines に読み取り根拠がある場合に限り出力してください。",
-      "合計はレシートに印字された「合計」「お支払額」等に対応する数値のみ。明細行の足し合わせは、画像または ocrLines に明細金額が列挙されているときに限り可。",
-      "一般知識・履歴・推測で店名やカテゴリを補完しないでください。",
-      "補助JSONには ocrLines のみ含まれます。Textract の構造化 summary/items は渡しません。",
-      "必ず1つのJSONオブジェクトのみを返す。前後に説明文やマークダウンを付けない。",
-      "1文字目は { で始まること。Here is the JSON / 説明文 / コードブロック(```) / 箇条書きは出さない。",
+      "返答はJSONオブジェクト1件のみ。説明文・挨拶・markdown禁止。",
+      "必須キー: vendorName,date,totalAmount,categoryName,reason。",
+      "vendorNameとcategoryNameは常にnull。",
+      "dateはYYYY-MM-DDのみ。totalAmountは税込合計(円)の数値のみ。不明はnull。",
     ].join("\n");
 
     const auxPayload = {
@@ -959,18 +968,7 @@ function buildReceiptAiPromptBundle(opts) {
       note: "ocrLines のみ（画像由来の生テキスト行）。",
     };
 
-    const userTextPrompt = [
-      "無料プラン: 画像と ocrLines の根拠のみで、date と totalAmount を埋めてください。",
-      "出力キー: vendorName, date, totalAmount, categoryName, reason（キーはすべて必須）",
-      "- vendorName: 必ず null",
-      "- date: YYYY-MM-DD、根拠なしなら null",
-      "- totalAmount: 根拠ある税込合計（円の数値）、なければ null",
-      "- categoryName: 必ず null",
-      "- reason: 日付・合計をどの文字から読んだか1文（日本語）",
-      "",
-      "補助JSON:",
-      JSON.stringify(auxPayload),
-    ].join("\n");
+    const userTextPrompt = ["ocrLinesのみを根拠に抽出。", JSON.stringify(auxPayload)].join("\n");
 
     return { systemPrompt, userTextPrompt, receiptAiTier: "free" };
   }
@@ -990,36 +988,25 @@ function buildReceiptAiPromptBundle(opts) {
       : "vendorOcrKeyHints は空。";
 
   const systemPrompt = [
-    "家計レシート抽出。出力は1つの厳密なJSONだけ。前後の説明・```・マークダウン禁止。",
-    "1文字目は必ず { 。先頭に Here is / 以下のJSON などのテキストを一切付けない。",
-    "画像＞補助JSON（Textract summary / items / ocrLines / 履歴）。純度の高いJSONのみ。",
+    "返答はJSONオブジェクト1件のみ。説明文・挨拶・markdown禁止。",
+    "必須キー: vendorName,date,totalAmount,taxAmount,lineItems,categoryName,reason。",
+    "lineItemsは[{name,amount|null}]。categoryNameは候補名1つまたはnull。",
     catLine,
     vHint,
-    "必須キー: vendorName, date, totalAmount, taxAmount, lineItems, categoryName, reason。",
-    "lineItems: [{name, amount|null}](最大80)。taxAmount: 消費税等合計(円) または null。",
   ].join("\n");
 
   const auxPayload = {
     summary,
     items,
-    ocrLines,
+    ocrLines: Array.isArray(ocrLines) ? ocrLines.slice(0, 80) : [],
     expenseCategoryTuples,
-    historyHints,
-    memoCategoryPairs,
-    vendorOcrKeyHints,
-    rawOcrText: rawOcrText
-      ? rawOcrText.slice(0, 20000)
-      : "(ocrLines 連結; 上記 ocrLines と重複可)",
+    historyHints: Array.isArray(historyHints) ? historyHints.slice(0, 12) : [],
+    memoCategoryPairs: Array.isArray(memoCategoryPairs) ? memoCategoryPairs.slice(0, 12) : [],
+    vendorOcrKeyHints: Array.isArray(vendorOcrKeyHints) ? vendorOcrKeyHints.slice(0, 12) : [],
     heuristicCategorySuggestion: heuristic,
   };
 
-  const userTextPrompt = [
-    "補助JSON（履歴・カテゴリ[ id, 名前 ]・明細要約）を使い、キーを埋める。合計は印字優先、明細合算可。",
-    "出力JSONキー: vendorName, date, totalAmount, taxAmount, lineItems, categoryName, reason",
-    "",
-    "補助JSON:",
-    JSON.stringify(auxPayload),
-  ].join("\n");
+  const userTextPrompt = ["補助JSONを根拠に抽出。", JSON.stringify(auxPayload)].join("\n");
 
   return { systemPrompt, userTextPrompt, receiptAiTier: "subscribed" };
 }
@@ -1072,7 +1059,8 @@ export async function askBedrockReceiptAssistant(input = {}) {
   let rawReply = "";
   let receiptAiSource = "text";
 
-  if (imageBase64 && imageBase64.trim()) {
+  const receiptVisionEnabled = String(process.env.RECEIPT_BEDROCK_VISION_ENABLED ?? "0").trim() === "1";
+  if (receiptVisionEnabled && imageBase64 && imageBase64.trim()) {
     const vis = await invokeBedrockReceiptVision({
       systemPrompt,
       textPrompt: userTextPrompt,
@@ -1093,11 +1081,13 @@ export async function askBedrockReceiptAssistant(input = {}) {
       "",
       "※画像は利用できないため、次のテキスト情報のみから推定してください。",
     ].join("\n");
+    const region = String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() || DEFAULT_REGION;
     const out = await invokeBedrockText({
       systemPrompt,
       userPrompt: textOnlyPrompt,
-      maxTokens: 520,
-      temperature: 0.2,
+      maxTokens: 320,
+      temperature: 0.05,
+      modelCandidates: fastReceiptModelCandidates(region),
       logContext: "bedrock.text.receipt_assist",
     });
     if (!out?.ok) {
@@ -1143,12 +1133,10 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
         )}`
       : "item.category: [食費、日用品、衣類、娯楽、医療、教育、交通費、その他] のいずれか1つ。";
   const systemPrompt = [
-    "レシートOCR→JSON 整形。出力はJSON1件のみ。先頭1文字は { 。Here is / 説明 / ``` 禁止。",
-    "必須キー: storeName, date, totalAmount, taxAmount, items, mainCategory。",
-    "taxAmount: 税等の合計(円) または null。",
+    "返答はJSONオブジェクト1件のみ。説明文・挨拶・markdown禁止。",
+    "必須キー: storeName,date,totalAmount,taxAmount,items,mainCategory。",
+    "itemsは{name,unitPrice,category}。mainCategoryは最大金額カテゴリ。",
     catLine,
-    "items: {name, unitPrice, category}。unitPrice: 数値または null。",
-    "mainCategory: 金額合計最大の品目カテゴリ。",
   ].join("\n");
   const userPrompt = [
     "下記補足と Textract 要約を参照し、店名・日付・合計・税・品目を返す。",
@@ -1162,8 +1150,11 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
   const out = await invokeBedrockText({
     systemPrompt,
     userPrompt,
-    maxTokens: 800,
-    temperature: 0.1,
+    maxTokens: 360,
+    temperature: 0.05,
+    modelCandidates: fastReceiptModelCandidates(
+      String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() || DEFAULT_REGION,
+    ),
     logContext: "bedrock.text.textract_hybrid",
   });
   if (!out?.ok) return out;
