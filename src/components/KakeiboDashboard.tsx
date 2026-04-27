@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Plus } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -2127,7 +2128,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         ) : null}
       </div>
     </div>
-    {expenseCategoryModal ? (
+    {expenseCategoryModal && typeof document !== "undefined" ? createPortal(
       <div
         className={styles.categoryDetailBackdrop}
         role="presentation"
@@ -2604,7 +2605,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           </div>
         </div>
       </div>
-    ) : null}
+    , document.body) : null}
     </>
   );
 }

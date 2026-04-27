@@ -215,6 +215,14 @@
   padding-bottom: 0.24rem;
 }
 
+.categoryMedicalPatient.categoryMedicalPatientMobile {
+  min-height: 2.15rem !important;
+  height: 2.15rem !important;
+  padding-top: 0.18rem !important;
+  padding-bottom: 0.18rem !important;
+  line-height: 1.2;
+}
+
 .categoryRowMobileActions {
   display: flex;
   flex-direction: row;

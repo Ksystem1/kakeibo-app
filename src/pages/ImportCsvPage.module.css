@@ -12,6 +12,34 @@
   margin-bottom: 0.75rem;
 }
 
+.previewTableWrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.previewTable {
+  min-width: 820px;
+}
+
+.previewMemoCol,
+.previewMemoCell {
+  min-width: 230px;
+}
+
+.previewAmountCol,
+.previewAmountCell {
+  min-width: 110px;
+}
+
+.previewMemoInput {
+  min-width: 220px;
+}
+
+.previewAmountInput {
+  min-width: 96px;
+}
+
 .textarea::placeholder {
   color: var(--text-muted);
   opacity: 1;

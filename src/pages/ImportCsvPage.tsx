@@ -435,14 +435,14 @@ export function ImportCsvPage() {
         </button>
       </form>
       {rows.length > 0 ? (
-        <div className={styles.tableWrap} style={{ marginTop: "1rem" }}>
-          <table className={styles.table}>
+        <div className={`${styles.tableWrap} ${importStyles.previewTableWrap}`} style={{ marginTop: "1rem" }}>
+          <table className={`${styles.table} ${importStyles.previewTable}`}>
             <thead>
               <tr>
                 <th>取込</th>
                 <th>日付</th>
-                <th>内容</th>
-                <th>金額</th>
+                <th className={importStyles.previewMemoCol}>内容</th>
+                <th className={importStyles.previewAmountCol}>金額</th>
                 <th>カテゴリ</th>
                 <th>医療費</th>
                 <th>状態</th>
@@ -470,9 +470,9 @@ export function ImportCsvPage() {
                       }
                     />
                   </td>
-                  <td>
+                  <td className={importStyles.previewMemoCell}>
                     <input
-                      className={styles.cellInput}
+                      className={`${styles.cellInput} ${importStyles.previewMemoInput}`}
                       type="text"
                       value={r.memo}
                       onChange={(e) =>
@@ -480,9 +480,9 @@ export function ImportCsvPage() {
                       }
                     />
                   </td>
-                  <td>
+                  <td className={importStyles.previewAmountCell}>
                     <input
-                      className={styles.cellInput}
+                      className={`${styles.cellInput} ${importStyles.previewAmountInput}`}
                       type="number"
                       min={1}
                       value={r.amount}

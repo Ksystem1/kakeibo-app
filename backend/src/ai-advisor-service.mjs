@@ -8,6 +8,24 @@ import { createLogger } from "./logger.mjs";
 const logger = createLogger("bedrock");
 
 const DEFAULT_REGION = "ap-northeast-1";
+const BEDROCK_SEND_TIMEOUT_MS = Math.max(
+  8_000,
+  Number.parseInt(String(process.env.BEDROCK_SEND_TIMEOUT_MS ?? "16000"), 10) || 16_000,
+);
+
+async function withTimeout(promise, ms, label) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timeout (${ms}ms)`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 /**
  * Bedrock 公式のモデル ID（model-ids / コンソールのプロバイダー詳細の表記に準拠）。
@@ -416,7 +434,11 @@ async function tryInvokeModel(client, modelId, body, label) {
       accept: "application/json",
       body,
     });
-    const res = await client.send(cmd);
+    const res = await withTimeout(
+      client.send(cmd),
+      BEDROCK_SEND_TIMEOUT_MS,
+      "Bedrock invoke",
+    );
     const httpStatusCode = res.$metadata?.httpStatusCode;
     const raw = Buffer.from(res.body ?? new Uint8Array()).toString("utf-8");
     const data = JSON.parse(raw || "{}");
@@ -465,7 +487,11 @@ async function tryConverse(client, modelId, systemPrompt, userPrompt, maxTokens,
         temperature,
       },
     });
-    const res = await client.send(cmd);
+    const res = await withTimeout(
+      client.send(cmd),
+      BEDROCK_SEND_TIMEOUT_MS,
+      "Bedrock converse",
+    );
     const httpStatusCode = res.$metadata?.httpStatusCode;
     const replyText = parseConverseAssistantText(res);
     logger.info("bedrock_converse_response", {

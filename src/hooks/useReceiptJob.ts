@@ -64,10 +64,13 @@ export function useReceiptJob(
         }
         const elapsed = now - firstSeen;
         const timedOut = elapsed >= TIMEOUT_MS;
-        const estimated =
+        const estimatedBase =
           q.status === "pending"
             ? Math.min(45, 10 + Math.floor(elapsed / 1200))
-            : Math.min(95, 45 + Math.floor(elapsed / 1500));
+            : Math.min(90, 45 + Math.floor(elapsed / 1500));
+        const estimated = timedOut
+          ? Math.min(97, 90 + Math.floor((elapsed - TIMEOUT_MS) / 2500) % 8)
+          : estimatedBase;
         if (timedOut && !timeoutNotifiedRef.current.has(q.jobId)) {
           timeoutNotifiedRef.current.add(q.jobId);
           setQueue((prev) =>

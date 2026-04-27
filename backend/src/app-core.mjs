@@ -7327,6 +7327,10 @@ function pickAuthHeadersForInternalParse(src) {
  * （Fargate 等の常駐プロセスで有効。Lambda ではレスポンス後の実行が途切れる場合がある。）
  */
 async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
+  const JOB_PARSE_TIMEOUT_MS = Math.max(
+    10_000,
+    Number.parseInt(String(process.env.RECEIPT_JOB_PARSE_TIMEOUT_MS ?? "35000"), 10) || 35_000,
+  );
   try {
     const [u] = await pool.query(
       `UPDATE receipt_processing_jobs SET status = 'processing', updated_at = NOW()
@@ -7353,15 +7357,20 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
       );
       return;
     }
-    const out = await handleApiRequest(
-      {
-        method: "POST",
-        path: "/receipts/parse",
-        body: String(row.request_json),
-        headers: forwardHeaders,
-      },
-      { skipCors: true },
-    );
+    const out = await Promise.race([
+      handleApiRequest(
+        {
+          method: "POST",
+          path: "/receipts/parse",
+          body: String(row.request_json),
+          headers: forwardHeaders,
+        },
+        { skipCors: true },
+      ),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`receipt parse timed out (${JOB_PARSE_TIMEOUT_MS}ms)`)), JOB_PARSE_TIMEOUT_MS);
+      }),
+    ]);
     const statusCode = Number(out.statusCode ?? 500) || 500;
     const raw = typeof out.body === "string" ? out.body : JSON.stringify(out.body ?? "");
 
