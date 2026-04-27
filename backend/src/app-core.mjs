@@ -2511,7 +2511,7 @@ export async function handleApiRequest(req, options = {}) {
           return json(404, { error: "NotFound", detail: "ジョブが見つかりません" }, hdrs, skipCors);
         }
         const j = rows[0];
-        const statusText = String(j.status ?? "").trim();
+        let statusText = String(j.status ?? "").trim();
         const progress =
           statusText === "completed" || statusText === "failed"
             ? 100
@@ -2530,12 +2530,54 @@ export async function handleApiRequest(req, options = {}) {
             };
           }
         }
+        const staleMs = Math.max(
+          20_000,
+          Number.parseInt(String(process.env.RECEIPT_JOB_STALE_TIMEOUT_MS ?? "70000"), 10) || 70_000,
+        );
+        const updatedAtMs = j.updated_at ? Date.parse(String(j.updated_at)) : NaN;
+        const isStaleProcessing =
+          statusText === "processing" &&
+          Number.isFinite(updatedAtMs) &&
+          Date.now() - Number(updatedAtMs) >= staleMs;
+        if (statusText === "processing" && result && typeof result === "object" && !Array.isArray(result)) {
+          statusText = "completed";
+        } else if (isStaleProcessing) {
+          statusText = "failed";
+          if (!result || typeof result !== "object" || Array.isArray(result)) {
+            result = {
+              _schema: "receipt_job_v1",
+              error: "stale_processing_timeout",
+              message: "処理が一定時間進行しなかったため、手動入力へ切り替えてください。",
+            };
+          }
+          if (!j.error_message) {
+            await pool.query(
+              `UPDATE receipt_processing_jobs
+               SET status = 'failed', result_data = ?, error_message = ?, updated_at = NOW()
+               WHERE job_id = ? AND user_id = ? AND status = 'processing'`,
+              [
+                receiptJobResultDataForMysqlBinding(
+                  /** @type {Record<string, unknown>} */ (result),
+                ),
+                "stale processing timeout",
+                jobId,
+                userId,
+              ],
+            );
+          }
+        }
+        const responseProgress =
+          statusText === "completed" || statusText === "failed"
+            ? 100
+            : statusText === "processing"
+              ? 97
+              : progress;
         return json(
           200,
           {
             jobId: String(j.job_id),
             status: statusText,
-            progress,
+            progress: responseProgress,
             result:
               statusText === "completed" && result && typeof result === "object" && !Array.isArray(result)
                 ? { ...result, status: "completed", progress: 100 }

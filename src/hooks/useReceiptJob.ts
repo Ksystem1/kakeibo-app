@@ -137,6 +137,26 @@ export function useReceiptJob(
               /* keep previous status */
             }
           }
+          const stalledHardFail =
+            stalledLongBefore &&
+            st.status !== "completed" &&
+            !isSuccessfulReceiptJobApplyResult(st.result);
+          if (stalledHardFail) {
+            st = {
+              ...st,
+              status: "failed",
+              errorMessage:
+                st.errorMessage ??
+                "97%で停止したため解析を中断しました。スキップして手動入力をご利用ください。",
+              result:
+                st.result ??
+                ({
+                  _schema: "receipt_job_v1",
+                  error: "stalled_after_90pct",
+                  message: "90%以上で10秒以上進捗が止まったため中断しました。",
+                } satisfies ReceiptJobErrorPayload),
+            };
+          }
           setQueue((prev) => {
             const p = prev.find((x) => x.localKey === q.localKey);
             if (!p) return prev;
