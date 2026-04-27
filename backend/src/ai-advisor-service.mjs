@@ -979,7 +979,7 @@ function buildReceiptAiPromptBundle(opts) {
 
   if (!subscriptionActive) {
     const systemPrompt =
-      'JSON {"vendorName":null,"date":"","totalAmount":0,"categoryName":null,"reason":""} のみ返す。挨拶・説明・Markdown禁止。dateはYYYY-MM-DD、不明はnull。';
+      'JSON {"vendorName":null,"date":"","totalAmount":0,"categoryName":null,"reason":""} のみ返す。JSON以外のテキストは1文字も出力するな。挨拶・説明・Markdown禁止。dateはYYYY-MM-DD、不明はnull。';
 
     const auxPayload = {
       ocrLines,
@@ -1007,6 +1007,7 @@ function buildReceiptAiPromptBundle(opts) {
 
   const systemPrompt = [
     'JSON {"vendorName":"","date":"","totalAmount":0,"taxAmount":0,"lineItems":[],"categoryName":"","reason":""} のみ返す。',
+    "JSON以外のテキストは1文字も出力するな。",
     "挨拶・説明・Markdown禁止。dateはYYYY-MM-DD。不明はnull。",
     "lineItemsは[{name,amount|null}]。categoryNameは候補名1つまたはnull。",
     catLine,
@@ -1152,6 +1153,7 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
       : "item.category: [食費、日用品、衣類、娯楽、医療、教育、交通費、その他] のいずれか1つ。";
   const systemPrompt = [
     'JSON {"storeName":"","date":"","totalAmount":0,"taxAmount":0,"items":[],"mainCategory":""} のみ返す。',
+    "JSON以外のテキストは1文字も出力するな。",
     "挨拶・説明・Markdown禁止。dateはYYYY-MM-DD。不明はnull。",
     "itemsは{name,unitPrice,category}。",
     catLine,

@@ -14,6 +14,28 @@ function sanitizeText(s) {
 }
 
 /**
+ * Bedrock/HTTP 応答に混じる markdown fence や前置きを落として
+ * JSON.parse 可能性を上げる。
+ * @param {string} raw
+ * @returns {string}
+ */
+export function sanitizeReceiptJsonLikeRaw(raw) {
+  let s = sanitizeText(raw ?? "").trim();
+  s = s.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+  const firstObj = s.indexOf("{");
+  const lastObj = s.lastIndexOf("}");
+  if (firstObj >= 0 && lastObj > firstObj) {
+    return s.slice(firstObj, lastObj + 1).trim();
+  }
+  const firstArr = s.indexOf("[");
+  const lastArr = s.lastIndexOf("]");
+  if (firstArr >= 0 && lastArr > firstArr) {
+    return s.slice(firstArr, lastArr + 1).trim();
+  }
+  return s;
+}
+
+/**
  * @param {unknown} obj
  * @param {number} depth
  * @returns {unknown}
@@ -78,7 +100,7 @@ function finalJsonObject(obj) {
  * @returns {{ status: 'completed' | 'failed', resultData: Record<string, unknown> }}
  */
 export function buildAsyncReceiptJobResultFromHttpBody(rawBody) {
-  const raw = String(rawBody ?? "");
+  const raw = sanitizeReceiptJsonLikeRaw(rawBody);
   if (!raw.trim()) {
     return {
       status: "failed",

@@ -1085,6 +1085,16 @@ export function ReceiptPage() {
                       <button
                         type="button"
                         className={`${styles.btn} ${styles.btnSm}`}
+                        onClick={() => {
+                          setUnifiedMode("receipt");
+                          setNotice("解析に失敗したため、手動入力に切り替えました。");
+                        }}
+                      >
+                        スキップして手動入力
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnSm}`}
                         disabled={isBusy}
                         onClick={() => {
                           setNotice(null);

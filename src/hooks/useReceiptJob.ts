@@ -51,7 +51,7 @@ export function useReceiptJob(
   const timeoutNotifiedRef = useRef<Set<string>>(new Set());
   const progressStalledSinceRef = useRef<Map<string, number>>(new Map());
   const TIMEOUT_MS = 30_000;
-  const STALL_RESCUE_MS = 5_000;
+  const STALL_RESCUE_MS = 10_000;
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -89,8 +89,53 @@ export function useReceiptJob(
           let st: Awaited<ReturnType<typeof getReceiptJobStatus>>;
           try {
             st = await getReceiptJobStatus(q.jobId);
-          } catch {
+            if (typeof console !== "undefined" && console.log) {
+              console.log("[receipt-job] polled status", {
+                jobId: q.jobId,
+                status: st.status,
+                progress: st.progress ?? null,
+                hasResult: st.result != null,
+              });
+            }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            setQueue((prev) =>
+              prev.map((x) =>
+                x.localKey === q.localKey
+                  ? {
+                      ...x,
+                      status: "failed",
+                      timeoutExceeded: true,
+                      errorMessage:
+                        "解析データの受信に失敗しました（JSONエラー）。スキップして手動入力をご利用ください。",
+                      result: {
+                        _schema: "receipt_job_v1",
+                        error: "job_status_fetch_failed",
+                        message: msg,
+                      } as ReceiptJobErrorPayload,
+                    }
+                  : x,
+              ),
+            );
+            progressStalledSinceRef.current.delete(q.jobId);
             return;
+          }
+          const stalledLongBefore =
+            progressStalledSinceRef.current.has(q.jobId) &&
+            now - (progressStalledSinceRef.current.get(q.jobId) ?? now) >= STALL_RESCUE_MS &&
+            Math.max(q.progressPct ?? 0, st.progress ?? 0, estimated) >= 90;
+          if (stalledLongBefore && st.status !== "completed") {
+            try {
+              const forced = await getReceiptJobStatus(q.jobId);
+              if (
+                forced.status === "completed" ||
+                (forced.result != null && isSuccessfulReceiptJobApplyResult(forced.result))
+              ) {
+                st = forced;
+              }
+            } catch {
+              /* keep previous status */
+            }
           }
           setQueue((prev) => {
             const p = prev.find((x) => x.localKey === q.localKey);
@@ -102,7 +147,7 @@ export function useReceiptJob(
             const rescueCompleted =
               st.status !== "completed" &&
               isSuccessfulReceiptJobApplyResult(st.result) &&
-              Math.max(p.progressPct ?? 0, st.progress ?? 0, estimated) >= 95 &&
+              Math.max(p.progressPct ?? 0, st.progress ?? 0, estimated) >= 90 &&
               now - (progressStalledSinceRef.current.get(q.jobId) ?? now) >= STALL_RESCUE_MS;
             const coerced: ReceiptAsyncJobStatus = badCompleted
               ? "failed"

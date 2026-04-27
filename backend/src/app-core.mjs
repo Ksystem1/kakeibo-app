@@ -42,6 +42,7 @@ import {
   buildAsyncReceiptJobResultFromHttpBody,
   buildReceiptJobErrorData,
   receiptJobResultDataForMysqlBinding,
+  sanitizeReceiptJsonLikeRaw,
 } from "./receipt-job-result.mjs";
 import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
 import {
@@ -7405,9 +7406,10 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     ]);
     const statusCode = Number(out.statusCode ?? 500) || 500;
     const raw = typeof out.body === "string" ? out.body : JSON.stringify(out.body ?? "");
+    const cleanedRaw = sanitizeReceiptJsonLikeRaw(raw);
 
     if (statusCode >= 200 && statusCode < 300) {
-      const { status, resultData } = buildAsyncReceiptJobResultFromHttpBody(raw);
+      const { status, resultData } = buildAsyncReceiptJobResultFromHttpBody(cleanedRaw);
       const em =
         status === "failed" && resultData && typeof resultData === "object"
           ? String(
@@ -7418,6 +7420,13 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
                   : "レシート解析の結果をJSONとして保存できませんでした。",
             ).slice(0, 4000)
           : null;
+      logger.info("receipts.job.save_result_data", {
+        jobId,
+        userId,
+        status,
+        rawPreview: raw.slice(0, 500),
+        cleanedPreview: cleanedRaw.slice(0, 500),
+      });
       await pool.query(
         `UPDATE receipt_processing_jobs
          SET status = ?, result_data = ?, error_message = ?, updated_at = NOW()
@@ -7429,7 +7438,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
 
     let parsed = {};
     try {
-      parsed = raw ? JSON.parse(raw) : {};
+      parsed = cleanedRaw ? JSON.parse(cleanedRaw) : {};
     } catch {
       parsed = {};
     }
