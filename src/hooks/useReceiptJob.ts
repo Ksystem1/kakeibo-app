@@ -88,8 +88,6 @@ export function useReceiptJob(
                     ...x,
                     timeoutExceeded: true,
                     progressPct: Math.max(x.progressPct ?? 0, 97),
-                    errorMessage:
-                      "10秒を超えたため手動入力へ切替可能です。解析は継続中のため、完了時は自動反映されます。",
                   }
                 : x,
             ),
@@ -182,7 +180,10 @@ export function useReceiptJob(
                     ...x,
                     status: coerced,
                     progressPct: nextProgress,
-                    timeoutExceeded: timedOut || x.timeoutExceeded === true,
+                    timeoutExceeded:
+                      coerced === "pending" || coerced === "processing"
+                        ? timedOut || x.timeoutExceeded === true
+                        : false,
                     result: st.result ?? x.result,
                     errorMessage: st.errorMessage ?? x.errorMessage ?? undefined,
                   }
