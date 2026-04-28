@@ -1142,25 +1142,7 @@ export async function askBedrockReceiptAssistant(input = {}) {
  */
 export async function askBedrockHybridReceiptFromTextract(input = {}) {
   const textract = input?.textract && typeof input.textract === "object" ? input.textract : {};
-  const categoryCandidates = Array.isArray(input?.categoryCandidates) ? input.categoryCandidates : [];
-  const expenseCategoryTuples = buildExpenseCategoryTuplesForPrompt(categoryCandidates);
-  const memoCategoryPairs = Array.isArray(input?.memoCategoryPairs) ? input.memoCategoryPairs : [];
-  const catLine =
-    expenseCategoryTuples.length > 0
-      ? `品目 item.category: expenseCategoryTuples の名前のいずれか1語。: ${JSON.stringify(
-          expenseCategoryTuples,
-        )}`
-      : "item.category: [食費、日用品、衣類、娯楽、医療、教育、交通費、その他] のいずれか1つ。";
-  const systemPrompt = [
-    "出力は JSON のみ。JSON 以外を一切出力しないこと。",
-    'JSON {"storeName":"","date":"","totalAmount":0,"taxAmount":0,"items":[],"mainCategory":""} のみ返す。',
-    "JSON以外のテキストは1文字も出力するな。",
-    "挨拶・説明・Markdown禁止。dateはYYYY-MM-DD。不明はnull。",
-    "itemsは{name,unitPrice,category}。",
-    catLine,
-    "考え方や途中経過は出力しない。最終JSONのみ。",
-    "出力は JSON のみ。JSON 以外を一切出力しないこと。",
-  ].join("\n");
+  const systemPrompt = "レシートの合計金額、店名、日付のみをJSONで返せ。説明不要。";
   const textLines = [];
   if (Array.isArray(textract.ocrLines)) {
     for (const line of textract.ocrLines) {
@@ -1183,24 +1165,11 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
     }
   }
   const textractText = textLines.join("\n").slice(0, 12000);
-  const userPrompt = [
-    "出力は JSON のみ。",
-    "以下は Amazon Textract で抽出したレシート文字列です。",
-    "この文字列の中から、日付・店名・合計金額のみを探して JSON で返してください。",
-    "必要なら taxAmount/items/mainCategory は null や空配列で埋めてください。",
-    "出力例: {\"storeName\":\"ローソン\",\"date\":\"2026-04-20\",\"totalAmount\":1280,\"taxAmount\":null,\"items\":[],\"mainCategory\":\"その他\"}",
-    "",
-    "### TEXTRACT_TEXT_START",
-    textractText || "(empty)",
-    "### TEXTRACT_TEXT_END",
-    "",
-    "出力は JSON のみ。",
-    "返信は必ず { で始まり } で終わるJSONのみとし、余計な説明やマークダウン記法は一切含めないこと",
-  ].join("\n");
+  const userPrompt = `レシートの合計金額、店名、日付のみをJSONで返せ。説明不要。\n${textractText || "(empty)"}`;
   const out = await invokeBedrockText({
     systemPrompt,
     userPrompt,
-    maxTokens: 220,
+    maxTokens: 120,
     temperature: 0.05,
     modelCandidates: fastReceiptModelCandidates(
       String(process.env.BEDROCK_REGION || process.env.AWS_REGION || DEFAULT_REGION).trim() || DEFAULT_REGION,

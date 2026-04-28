@@ -204,18 +204,12 @@ export function useReceiptJob(
           setQueue((prev) => {
             const p = prev.find((x) => x.localKey === q.localKey);
             if (!p) return prev;
-            const badCompleted =
-              st.status === "completed" &&
-              st.result != null &&
-              !isSuccessfulReceiptJobApplyResult(st.result);
             const rescueCompleted =
               st.status !== "completed" &&
               isSuccessfulReceiptJobApplyResult(st.result) &&
               Math.max(p.progressPct ?? 0, st.progress ?? 0, estimated) >= 90 &&
               now - (progressStalledSinceRef.current.get(q.jobId) ?? now) >= STALL_RESCUE_MS;
-            const coerced: ReceiptAsyncJobStatus = badCompleted
-              ? "failed"
-              : rescueCompleted
+            const coerced: ReceiptAsyncJobStatus = rescueCompleted
                 ? "completed"
                 : st.status;
             const nextProgress =

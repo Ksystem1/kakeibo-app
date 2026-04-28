@@ -7512,34 +7512,33 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     const cleanedRaw = sanitizeReceiptJsonLikeRaw(extractedJsonRaw || trimmedRaw);
 
     if (statusCode >= 200 && statusCode < 300) {
-      let status = "failed";
+      let status = "completed";
       let resultData = buildReceiptJobErrorData({
-        kind: "parse_failed",
+        kind: "parse_error",
         message: "解析結果が JSON として解釈できませんでした。",
-        rawText: cleanedRaw,
+        rawText: raw,
       });
       if (!cleanedRaw) {
         resultData = buildReceiptJobErrorData({
-          kind: "empty_response_body",
+          kind: "parse_error",
           message: "解析応答が空でした。",
-          rawText: "",
+          rawText: raw,
         });
       } else {
         try {
           JSON.parse(cleanedRaw);
           const built = buildAsyncReceiptJobResultFromHttpBody(cleanedRaw);
-          status = built.status;
           resultData = built.resultData;
         } catch (e) {
           resultData = buildReceiptJobErrorData({
-            kind: "parse_failed",
+            kind: "parse_error",
             message: e instanceof Error ? e.message : String(e),
-            rawText: cleanedRaw,
+            rawText: raw,
           });
         }
       }
       const em =
-        status === "failed" && resultData && typeof resultData === "object"
+        resultData && typeof resultData === "object"
           ? String(
               resultData.message != null
                 ? resultData.message
@@ -7547,7 +7546,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
                   ? resultData.error
                   : "レシート解析の結果をJSONとして保存できませんでした。",
             ).slice(0, 4000)
-          : null;
+          : "parse_error";
       logger.info("receipts.job.save_result_data", {
         jobId,
         userId,
@@ -7642,17 +7641,17 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
       const cur = Array.isArray(rows) && rows[0] ? String(rows[0].status ?? "").trim() : "";
       if (cur === "processing") {
         const fallback = finalResultData ?? buildReceiptJobErrorData({
-          kind: "parse_failed",
-          message: "解析結果の確定に失敗したため failed へフォールバックしました。",
+          kind: "parse_error",
+          message: "解析結果の確定に失敗したため completed でフォールバックしました。",
           rawText: "",
         });
-        const em = finalErrorMessage ?? "parse_failed";
+        const em = finalErrorMessage ?? "parse_error";
         await pool.query(
           `UPDATE receipt_processing_jobs
            SET status = ?, result_data = ?, error_message = ?, updated_at = NOW()
            WHERE job_id = ? AND user_id = ?`,
           [
-            finalStatus === "completed" ? "completed" : "failed",
+            "completed",
             receiptJobResultDataForMysqlBinding(fallback),
             String(em).slice(0, 4000),
             jobId,
