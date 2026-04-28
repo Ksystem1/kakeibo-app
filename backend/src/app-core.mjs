@@ -6465,9 +6465,19 @@ export async function handleApiRequest(req, options = {}) {
           return json(500, { error: "JobEnqueueError", detail: "ジョブの受付に失敗しました" }, hdrs, skipCors);
         }
         const fwd = pickAuthHeadersForInternalParse(hdrs);
-        setImmediate(() => {
-          void runReceiptJobAfterUpload(pool, jobId, userId, fwd);
-        });
+        const kickReceiptJob = () => {
+          void runReceiptJobAfterUpload(pool, jobId, userId, fwd).catch((e) => {
+            console.error("[receipts.job.kick.unhandled]", { jobId, userId, message: String(e?.message ?? e) });
+          });
+        };
+        // Primary async kick right after enqueue.
+        if (typeof setImmediate === "function") {
+          setImmediate(kickReceiptJob);
+        } else {
+          setTimeout(kickReceiptJob, 0);
+        }
+        // Watchdog kick: if the first scheduling was missed, retry once.
+        setTimeout(kickReceiptJob, 1500);
         return json(202, { ok: true, jobId, status: "pending" }, hdrs, skipCors);
       }
 
@@ -7413,6 +7423,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     Number.parseInt(String(process.env.RECEIPT_JOB_PARSE_TIMEOUT_MS ?? "90000"), 10) || 90_000,
   );
   try {
+    console.error("[receipts.job.start]", { jobId, userId });
     const [u] = await pool.query(
       `UPDATE receipt_processing_jobs SET status = 'processing', updated_at = NOW()
        WHERE job_id = ? AND user_id = ? AND status = 'pending'`,
@@ -7460,7 +7471,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     if (statusCode >= 200 && statusCode < 300) {
       let status = "failed";
       let resultData = buildReceiptJobErrorData({
-        kind: "invalid_json",
+        kind: "parse_failed",
         message: "解析結果が JSON として解釈できませんでした。",
         rawText: cleanedRaw,
       });
@@ -7478,7 +7489,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
           resultData = built.resultData;
         } catch (e) {
           resultData = buildReceiptJobErrorData({
-            kind: "invalid_json",
+            kind: "parse_failed",
             message: e instanceof Error ? e.message : String(e),
             rawText: cleanedRaw,
           });
@@ -7535,6 +7546,12 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
       [receiptJobResultDataForMysqlBinding(errD), detail.slice(0, 4000), jobId],
     );
   } catch (e) {
+    console.error("[receipts.job.error]", {
+      jobId,
+      userId,
+      message: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack : undefined,
+    });
     logError("receipts.job.run", e, { jobId, userId });
     try {
       const msg = e instanceof Error ? e.message : String(e);
