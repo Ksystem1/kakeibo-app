@@ -36,12 +36,11 @@ import {
 import {
   askBedrockAdvisor,
   askBedrockHybridReceiptFromTextract,
-  askBedrockReceiptAssistant,
 } from "./ai-advisor-service.mjs";
 import {
   buildAsyncReceiptJobResultFromHttpBody,
   buildReceiptJobErrorData,
-  receiptJobResultDataForMysqlBinding,
+  receiptJobResultDataToJsonStringForMysql,
   sanitizeReceiptJsonLikeRaw,
 } from "./receipt-job-result.mjs";
 import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
@@ -2553,9 +2552,7 @@ export async function handleApiRequest(req, options = {}) {
         const progress =
           statusText === "completed" || statusText === "failed"
             ? 100
-            : statusText === "processing"
-              ? 97
-              : 10;
+            : 0;
         let result = null;
         if (j.result_data != null) {
           try {
@@ -2607,15 +2604,13 @@ export async function handleApiRequest(req, options = {}) {
               void runReceiptJobAfterUpload(pool, jobId, userId, fwd);
             }, 0);
           }
-          statusText = "processing";
+          statusText = "pending";
           result = null;
         }
         const responseProgress =
           statusText === "completed" || statusText === "failed"
             ? 100
-            : statusText === "processing"
-              ? 97
-              : progress;
+            : progress;
         return json(
           200,
           {
@@ -6595,17 +6590,6 @@ export async function handleApiRequest(req, options = {}) {
             result?.items ?? [],
             { usePersonalHistory: true, expenseCategories: expenseCatRows, txWhereParams: txP2 },
           );
-          const historyHints = subscriptionActive
-            ? await fetchReceiptSubscriptionHistoryHints(pool, userId, txWhere, 48, txP2)
-            : [];
-          let vendorOcrKeyHints = [];
-          if (subscriptionActive) {
-            try {
-              vendorOcrKeyHints = await fetchUserVendorOcrKeyCategoryHints(pool, userId);
-            } catch (eH) {
-              logError("receipts.parse.vendor_ocr_key_hints", eH);
-            }
-          }
           let earlyVendorCacheHit = null;
           if (subscriptionActive && textractVendorBaseline.length >= 2) {
             try {
@@ -6619,6 +6603,7 @@ export async function handleApiRequest(req, options = {}) {
             summary: result?.summary ?? {},
             items: result?.items ?? [],
             ocrLines: result?.ocrLines ?? [],
+            ocrTextBlocks: result?.ocrTextBlocks ?? [],
           };
           let hybridReceipt = null;
           if (!skipHybridAi) {
@@ -6632,34 +6617,7 @@ export async function handleApiRequest(req, options = {}) {
               logError("receipts.parse.hybrid_ocr", e);
             }
           }
-          let aiReceipt = null;
-          const enableSecondAiPass =
-            subscriptionActive && String(process.env.RECEIPT_ENABLE_SECOND_AI_PASS ?? "0").trim() === "1";
-          if (enableSecondAiPass) {
-            try {
-              aiReceipt = await askBedrockReceiptAssistant({
-                subscriptionActive,
-                historyHints,
-                memoCategoryPairs,
-                vendorOcrKeyHints,
-                heuristicCategorySuggestion: suggestedCategory
-                  ? {
-                      name: suggestedCategory.name,
-                      source: suggestedCategory.source,
-                    }
-                  : null,
-                summary: result?.summary ?? {},
-                items: result?.items ?? [],
-                ocrLines: result?.ocrLines ?? [],
-                categoryCandidates: expenseCategoryIdNameRows,
-              });
-            } catch (e) {
-              logError("receipts.parse.ai_assist", e);
-            }
-          }
-
           let adjustedSummary = { ...(result?.summary ?? {}) };
-          let receiptAiLineItems = null;
           if (hybridReceipt?.ok && hybridReceipt.data) {
             const hs = hybridReceipt.data;
             if (hs.storeName && String(hs.storeName).trim()) {
@@ -6699,59 +6657,7 @@ export async function handleApiRequest(req, options = {}) {
           }
           let aiCategoryId = null;
           let aiCategoryName = null;
-          if (aiReceipt?.ok && aiReceipt.data) {
-            const d = aiReceipt.data;
-            const aiVendor = String(d.vendorName ?? "").trim();
-            const aiDate = String(d.date ?? "").trim();
-            const aiTotal = Number(d.totalAmount ?? NaN);
-            const aiCat = String(d.categoryName ?? "").trim();
-            if (
-              subscriptionActive &&
-              aiVendor &&
-              (!adjustedSummary.vendorName ||
-                String(adjustedSummary.vendorName).trim().length < 2 ||
-                /^(不明|unknown|不詳)$/i.test(String(adjustedSummary.vendorName).trim()))
-            ) {
-              adjustedSummary.vendorName = aiVendor.slice(0, 120);
-            }
-            if (aiDate && /^\d{4}-\d{2}-\d{2}$/.test(aiDate) && !adjustedSummary.date) {
-              adjustedSummary.date = aiDate;
-            }
-            if (Number.isFinite(aiTotal) && aiTotal > 0) {
-              const current = Number(adjustedSummary.totalAmount ?? NaN);
-              if (!Number.isFinite(current) || current <= 0 || aiTotal > current * 1.15) {
-                adjustedSummary.totalAmount = Math.round(aiTotal);
-              }
-            }
-            if (Number.isFinite(Number(d.taxAmount)) && Number(d.taxAmount) >= 0) {
-              adjustedSummary.taxAmount = Math.round(Number(d.taxAmount));
-            }
-            if (Array.isArray(d.lineItems) && d.lineItems.length > 0) {
-              receiptAiLineItems = d.lineItems.slice(0, 80);
-            }
-            if (subscriptionActive && aiCat) {
-              aiCategoryId = pickCategoryIdByAiName(aiCat, expenseCatRows);
-              if (aiCategoryId != null) {
-                const hit = expenseCatRows.find((x) => Number(x.id) === Number(aiCategoryId));
-                aiCategoryName = hit?.name ? String(hit.name) : aiCat;
-              }
-            }
-            if (
-              subscriptionActive &&
-              aiReceipt.receiptAiSource === "vision" &&
-              (d.vendorName == null || String(d.vendorName).trim() === "")
-            ) {
-              const cur = String(adjustedSummary.vendorName ?? "").trim();
-              if (
-                !cur ||
-                cur.length < 2 ||
-                /^(不明|unknown|不詳)$/i.test(cur) ||
-                /^[-_/|\s・。]+$/.test(cur)
-              ) {
-                adjustedSummary.vendorName = null;
-              }
-            }
-          }
+          // 新アルゴリズム: Textractのテキスト抽出結果のみをClaude 3.5 Haikuへ渡して補正する。
 
           let suggestedVendor = null;
           if (earlyVendorCacheHit) {
@@ -7025,8 +6931,7 @@ export async function handleApiRequest(req, options = {}) {
 
           const receiptAdvancedParsingApplied =
             Boolean(subscriptionActive) &&
-            (Boolean(aiReceipt?.ok) ||
-              Boolean(hybridReceipt?.ok) ||
+            (Boolean(hybridReceipt?.ok) ||
               learnCorrectionHit ||
               reconcileAdjusted ||
               finalSource === "history" ||
@@ -7049,7 +6954,7 @@ export async function handleApiRequest(req, options = {}) {
             suggestedCategoryLowConfidence,
             suggestedCategoryCorrectionMode: learnedMode,
             subscriptionActive,
-            receiptAiTier: aiReceipt?.receiptAiTier ?? null,
+            receiptAiTier: hybridReceipt?.ok ? "haiku_text" : null,
             debugReceiptTierOverride,
             subscriptionMockedByEnv: isUserIdForcedPremiumByEnv(userId),
             receiptAdvancedParsingApplied,
@@ -7067,7 +6972,7 @@ export async function handleApiRequest(req, options = {}) {
                     Number.isFinite(Number(adjustedSummary.taxAmount))
                       ? Math.round(Number(adjustedSummary.taxAmount))
                       : null,
-                  lineItems: receiptAiLineItems,
+                  lineItems: null,
                 }
               : null,
           };
@@ -7486,7 +7391,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
       await pool.query(
         `UPDATE receipt_processing_jobs
          SET status = 'failed', result_data = ?, error_message = ?, updated_at = NOW() WHERE job_id = ?`,
-        [receiptJobResultDataForMysqlBinding(errD), "missing request_json", jobId],
+        [receiptJobResultDataToJsonStringForMysql(errD), "missing request_json", jobId],
       );
       return;
     }
@@ -7512,7 +7417,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     const cleanedRaw = sanitizeReceiptJsonLikeRaw(extractedJsonRaw || trimmedRaw);
 
     if (statusCode >= 200 && statusCode < 300) {
-      let status = "completed";
+      let status = "failed";
       let resultData = buildReceiptJobErrorData({
         kind: "parse_error",
         message: "解析結果が JSON として解釈できませんでした。",
@@ -7526,8 +7431,11 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
         });
       } else {
         try {
-          JSON.parse(cleanedRaw);
+          if (!cleanedRaw.trim().startsWith("{")) {
+            throw new Error("AI 応答が JSON オブジェクト形式ではありません。");
+          }
           const built = buildAsyncReceiptJobResultFromHttpBody(cleanedRaw);
+          status = built.status === "completed" ? "completed" : "failed";
           resultData = built.resultData;
         } catch (e) {
           resultData = buildReceiptJobErrorData({
@@ -7564,7 +7472,12 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
         `UPDATE receipt_processing_jobs
          SET status = ?, result_data = ?, error_message = ?, updated_at = NOW()
          WHERE job_id = ?`,
-        [status, receiptJobResultDataForMysqlBinding(/** @type {Record<string, unknown>} */(resultData)), em, jobId],
+        [
+          status,
+          receiptJobResultDataToJsonStringForMysql(/** @type {Record<string, unknown>} */ (resultData)),
+          em,
+          jobId,
+        ],
       );
       console.log("Job completed/failed:", jobId, status);
       finalStatus = status;
@@ -7601,7 +7514,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
       `UPDATE receipt_processing_jobs
        SET status = 'failed', result_data = ?, error_message = ?, updated_at = NOW()
        WHERE job_id = ?`,
-      [receiptJobResultDataForMysqlBinding(errD), detail.slice(0, 4000), jobId],
+      [receiptJobResultDataToJsonStringForMysql(errD), detail.slice(0, 4000), jobId],
     );
     console.log("Job completed/failed:", jobId, "failed");
     finalStatus = "failed";
@@ -7626,7 +7539,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
         `UPDATE receipt_processing_jobs
          SET status = 'failed', result_data = ?, error_message = ?, updated_at = NOW()
          WHERE job_id = ? AND user_id = ?`,
-        [receiptJobResultDataForMysqlBinding(errD), msg.slice(0, 4000), jobId, userId],
+        [receiptJobResultDataToJsonStringForMysql(errD), msg.slice(0, 4000), jobId, userId],
       );
       console.log("Job completed/failed:", jobId, "failed");
       finalStatus = "failed";
@@ -7656,7 +7569,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
            WHERE job_id = ? AND user_id = ?`,
           [
             resolvedStatus,
-            receiptJobResultDataForMysqlBinding(fallback),
+            receiptJobResultDataToJsonStringForMysql(fallback),
             String(em).slice(0, 4000),
             jobId,
             userId,

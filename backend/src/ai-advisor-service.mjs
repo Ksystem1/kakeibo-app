@@ -1142,9 +1142,30 @@ export async function askBedrockReceiptAssistant(input = {}) {
  */
 export async function askBedrockHybridReceiptFromTextract(input = {}) {
   const textract = input?.textract && typeof input.textract === "object" ? input.textract : {};
-  const systemPrompt = "レシートの合計金額、店名、日付のみをJSONで返せ。説明不要。";
+  const systemPrompt = [
+    "以下のレシートOCRテキストから date/store/total を抽出する。",
+    '出力は JSON {"date":"YYYY-MM-DD|null","store":"string|null","total":0} のみ。',
+    "説明文・Markdown・前置きは一切禁止。",
+    "合計が不明なら total は 0。",
+  ].join("\n");
   const textLines = [];
-  if (Array.isArray(textract.ocrLines)) {
+  if (Array.isArray(textract.ocrTextBlocks)) {
+    for (const row of textract.ocrTextBlocks) {
+      const s = String(row?.text ?? "").trim();
+      if (!s) continue;
+      const b = row?.bbox;
+      if (b && typeof b === "object") {
+        textLines.push(
+          `${s} @(${Number(b.left ?? 0).toFixed(4)},${Number(b.top ?? 0).toFixed(4)},${Number(
+            b.width ?? 0,
+          ).toFixed(4)},${Number(b.height ?? 0).toFixed(4)})`,
+        );
+      } else {
+        textLines.push(s);
+      }
+    }
+  }
+  if (textLines.length === 0 && Array.isArray(textract.ocrLines)) {
     for (const line of textract.ocrLines) {
       const s = String(line ?? "").trim();
       if (s) textLines.push(s);
@@ -1165,7 +1186,11 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
     }
   }
   const textractText = textLines.join("\n").slice(0, 12000);
-  const userPrompt = `レシートの合計金額、店名、日付のみをJSONで返せ。説明不要。\n${textractText || "(empty)"}`;
+  const userPrompt = [
+    "以下のテキストから【日付・店名・合計金額】を抽出し、JSONで返せ。",
+    "テキスト:",
+    textractText || "(empty)",
+  ].join("\n");
   const out = await invokeBedrockText({
     systemPrompt,
     userPrompt,
@@ -1178,7 +1203,15 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
   });
   if (!out?.ok) return out;
   const parsed = parseJsonBlock(out.reply);
-  const data = normalizeHybridReceiptPayload(parsed);
+  const normalizedFromPromptShape =
+    parsed && typeof parsed === "object"
+      ? {
+          storeName: parsed.store ?? parsed.vendorName ?? null,
+          date: parsed.date ?? null,
+          totalAmount: parsed.total ?? parsed.totalAmount ?? 0,
+        }
+      : parsed;
+  const data = normalizeHybridReceiptPayload(normalizedFromPromptShape);
   if (!data) {
     return { ok: false, code: "InvalidHybridJson", message: "Hybrid receipt JSON parse failed" };
   }

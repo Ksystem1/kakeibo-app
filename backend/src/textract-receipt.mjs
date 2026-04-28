@@ -590,6 +590,54 @@ function collectOcrLinesFromExpenseDoc(doc) {
   return uniq.slice(0, 180);
 }
 
+function toRounded01(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return null;
+  const clamped = Math.max(0, Math.min(1, v));
+  return Math.round(clamped * 10000) / 10000;
+}
+
+function geometryFromAny(node) {
+  const bb = node?.Geometry?.BoundingBox;
+  if (!bb || typeof bb !== "object") return null;
+  const left = toRounded01(bb.Left);
+  const top = toRounded01(bb.Top);
+  const width = toRounded01(bb.Width);
+  const height = toRounded01(bb.Height);
+  if (left == null || top == null || width == null || height == null) return null;
+  return { left, top, width, height };
+}
+
+function collectOcrTextBlocksFromExpenseDoc(doc) {
+  /** @type {Array<{ text: string; bbox: { left: number; top: number; width: number; height: number } | null }>} */
+  const out = [];
+  const pushUnique = (textRaw, geomCandidate) => {
+    const text = String(textRaw ?? "").trim();
+    if (!text) return;
+    const bbox = geometryFromAny(geomCandidate);
+    const key = `${text}#${bbox ? `${bbox.left},${bbox.top},${bbox.width},${bbox.height}` : "nogeom"}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ text, bbox });
+  };
+  const seen = new Set();
+
+  for (const f of Array.isArray(doc?.SummaryFields) ? doc.SummaryFields : []) {
+    if (f?.LabelDetection?.Text) pushUnique(f.LabelDetection.Text, f.LabelDetection);
+    if (f?.ValueDetection?.Text) pushUnique(f.ValueDetection.Text, f.ValueDetection);
+  }
+  const groups = Array.isArray(doc?.LineItemGroups) ? doc.LineItemGroups : [];
+  for (const g of groups) {
+    for (const li of Array.isArray(g?.LineItems) ? g.LineItems : []) {
+      for (const f of Array.isArray(li?.LineItemExpenseFields) ? li.LineItemExpenseFields : []) {
+        if (f?.LabelDetection?.Text) pushUnique(f.LabelDetection.Text, f.LabelDetection);
+        if (f?.ValueDetection?.Text) pushUnique(f.ValueDetection.Text, f.ValueDetection);
+      }
+    }
+  }
+  return out.slice(0, 220);
+}
+
 export function decodeImageBuffer(imageBase64) {
   let s = String(imageBase64 ?? "").trim();
   const dataUrl = /^data:image\/[a-z0-9.+-]+;base64,(.+)$/is.exec(s);
@@ -743,7 +791,8 @@ export function createReceiptAnalyzer(ctx = {}) {
     })[0];
     const summary = summaryFromFields(doc.SummaryFields);
     const items = lineItemsFromExpenseDoc(doc);
-    const ocrLines = collectOcrLinesFromExpenseDoc(doc);
+    const ocrTextBlocks = collectOcrTextBlocksFromExpenseDoc(doc);
+    const ocrLines = ocrTextBlocks.map((x) => x.text).slice(0, 180);
     let notice = null;
     let totalAmount = summary.totalAmount;
     let fieldConfidence = { ...summary.fieldConfidence };
@@ -790,6 +839,7 @@ export function createReceiptAnalyzer(ctx = {}) {
       },
       items,
       ocrLines,
+      ocrTextBlocks,
       textractRaw: {
         expenseIndex: doc.ExpenseIndex ?? null,
         summaryFields: Array.isArray(doc?.SummaryFields)

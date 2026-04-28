@@ -333,7 +333,6 @@ export function ReceiptPage() {
   /** 非同期解析ジョブ（他の取込をブロックしない） */
   const [receiptImportQueue, setReceiptImportQueue] = useState<ReceiptImportQueueItem[]>([]);
   const [registering, setRegistering] = useState(false);
-  const [receiptUploadProgress, setReceiptUploadProgress] = useState(0);
   const receiptLineBusy = useMemo(
     () =>
       receiptImportQueue.some((j) => j.status === "pending" || j.status === "processing"),
@@ -878,12 +877,10 @@ export function ReceiptPage() {
     clearPayPayImport();
     setUnifiedMode("receipt");
     setReceiptIngestPhase("compress");
-    setReceiptUploadProgress(5);
     let newObjectUrl: string | null = null;
     let compressedBlob: Blob;
     try {
       compressedBlob = await compressReceiptFileToJpegBlob(f);
-      setReceiptUploadProgress(30);
     } catch (e) {
       setReceiptIngestPhase(null);
       setNotice(e instanceof Error ? e.message : String(e));
@@ -919,7 +916,6 @@ export function ReceiptPage() {
     setReceiptFieldConfidence(null);
     try {
       setReceiptIngestPhase("upload");
-      setReceiptUploadProgress(38);
       const jpgName = (() => {
         const base = f.name || "receipt";
         if (/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(base)) {
@@ -931,10 +927,9 @@ export function ReceiptPage() {
         debugForceReceiptTier: receiptDebugTier,
         fileName: jpgName,
         onProgress: (p) => {
-          setReceiptUploadProgress((prev) => Math.max(prev, Math.min(60, p.percent)));
+          void p;
         },
       });
-      setReceiptUploadProgress(62);
       setReceiptImportQueue((prev) => [
         ...prev,
         {
@@ -943,7 +938,7 @@ export function ReceiptPage() {
           objectUrl: newObjectUrl!,
           jobId: u.jobId,
           status: (u.status as ReceiptAsyncJobStatus) || "pending",
-          progressPct: 12,
+          progressPct: 0,
         },
       ]);
       setNotice("アップロード完了。解析結果は順次この画面に反映されます。");
@@ -963,7 +958,6 @@ export function ReceiptPage() {
       setReceiptFieldConfidence(null);
     } finally {
       setReceiptIngestPhase(null);
-      setReceiptUploadProgress(0);
     }
   }
 
@@ -1014,9 +1008,6 @@ export function ReceiptPage() {
         <div className={styles.receiptLoadingPanel} role="status" aria-live="polite" aria-busy="true">
           <span className={styles.receiptSpinner} aria-hidden />
           <span>{busyLabel}</span>
-          <div className={styles.receiptProgressBar} aria-hidden>
-            <div className={styles.receiptProgressBarFill} style={{ width: `${receiptUploadProgress}%` }} />
-          </div>
         </div>
       ) : (
         <div
@@ -1027,9 +1018,6 @@ export function ReceiptPage() {
         >
           <span className={styles.receiptSpinner} aria-hidden />
           <span>{busyLabel}</span>
-          <div className={styles.receiptProgressBar} aria-hidden>
-            <div className={styles.receiptProgressBarFill} style={{ width: `${receiptUploadProgress}%` }} />
-          </div>
         </div>
       )}
     </>
@@ -1062,11 +1050,7 @@ export function ReceiptPage() {
                       aria-live="polite"
                     >
                       <span className={styles.receiptImportQueueSkeletonBar} />
-                      <span>
-                        {Math.max(0, row.progressPct ?? 0) < 30
-                          ? "画像最適化・送信中…"
-                          : `画像最適化・送信中… ${Math.max(30, row.progressPct ?? 30)}%`}
-                      </span>
+                      <span>画像最適化・送信中…</span>
                     </div>
                   ) : busy && row.status === "processing" ? (
                     <div
@@ -1075,7 +1059,7 @@ export function ReceiptPage() {
                       aria-live="polite"
                     >
                       <span className={styles.receiptImportQueueSkeletonBar} />
-                      <span>AI解析中… {Math.max(90, row.progressPct ?? 90)}%</span>
+                      <span>AI解析中…</span>
                     </div>
                   ) : row.status === "failed" ? (
                     <div className={styles.receiptImportQueueError} style={{ display: "grid", gap: "0.45rem" }}>
