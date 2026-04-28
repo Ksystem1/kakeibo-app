@@ -52,7 +52,7 @@ export function useReceiptJob(
   const pollErrorCountRef = useRef<Map<string, number>>(new Map());
   const timeoutNotifiedRef = useRef<Set<string>>(new Set());
   const progressStalledSinceRef = useRef<Map<string, number>>(new Map());
-  const TIMEOUT_MS = 20_000;
+  const TIMEOUT_MS = 30_000;
   const STALL_RESCUE_MS = 10_000;
   const MAX_CONSECUTIVE_POLL_ERRORS = 5;
 

@@ -7566,6 +7566,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
          WHERE job_id = ?`,
         [status, receiptJobResultDataForMysqlBinding(/** @type {Record<string, unknown>} */(resultData)), em, jobId],
       );
+      console.log("Job completed/failed:", jobId, status);
       finalStatus = status;
       finalResultData = /** @type {Record<string, unknown>} */(resultData);
       finalErrorMessage = em;
@@ -7602,6 +7603,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
        WHERE job_id = ?`,
       [receiptJobResultDataForMysqlBinding(errD), detail.slice(0, 4000), jobId],
     );
+    console.log("Job completed/failed:", jobId, "failed");
     finalStatus = "failed";
     finalResultData = errD;
     finalErrorMessage = detail.slice(0, 4000);
@@ -7626,6 +7628,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
          WHERE job_id = ? AND user_id = ?`,
         [receiptJobResultDataForMysqlBinding(errD), msg.slice(0, 4000), jobId, userId],
       );
+      console.log("Job completed/failed:", jobId, "failed");
       finalStatus = "failed";
       finalResultData = errD;
       finalErrorMessage = msg.slice(0, 4000);
@@ -7646,18 +7649,20 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
           rawText: "",
         });
         const em = finalErrorMessage ?? "parse_error";
+        const resolvedStatus = finalStatus === "completed" ? "completed" : "failed";
         await pool.query(
           `UPDATE receipt_processing_jobs
            SET status = ?, result_data = ?, error_message = ?, updated_at = NOW()
            WHERE job_id = ? AND user_id = ?`,
           [
-            "completed",
+            resolvedStatus,
             receiptJobResultDataForMysqlBinding(fallback),
             String(em).slice(0, 4000),
             jobId,
             userId,
           ],
         );
+        console.log("Job completed/failed:", jobId, resolvedStatus);
       }
     } catch (e) {
       logError("receipts.job.finalize_failed", e, { jobId, userId });

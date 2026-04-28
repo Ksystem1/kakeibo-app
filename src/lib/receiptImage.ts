@@ -1,9 +1,9 @@
 /** レシート用: ブラウザで JPEG に正規化し、長辺を抑えて base64 を返す */
 
 /**
- * アップロード・通信時間短縮のため長辺 800px 程度＋中品質 JPEG（Textract/ Bedrock とも可読性は維持）
+ * アップロード・通信時間短縮のため長辺 600px 程度＋中品質 JPEG（Textract/ Bedrock とも可読性は維持）
  */
-const MAX_EDGE = 800;
+const MAX_EDGE = 600;
 const JPEG_QUALITY = 0.5;
 const MAX_INPUT_BYTES = 20 * 1024 * 1024;
 
@@ -134,7 +134,7 @@ export async function prepareReceiptImageForApi(file: File): Promise<string> {
 }
 
 /** 非同期アップロード用: Worker と同じ長辺・品質（OCR 前処理は行わない） */
-const ASYNC_MAX_EDGE = 800;
+const ASYNC_MAX_EDGE = 600;
 const ASYNC_JPEG_QUALITY = 0.5;
 const ASYNC_MAX_INPUT_BYTES = 20 * 1024 * 1024;
 
