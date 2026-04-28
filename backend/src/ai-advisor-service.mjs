@@ -1152,12 +1152,14 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
         )}`
       : "item.category: [食費、日用品、衣類、娯楽、医療、教育、交通費、その他] のいずれか1つ。";
   const systemPrompt = [
+    "出力は JSON のみ。JSON 以外を一切出力しないこと。",
     'JSON {"storeName":"","date":"","totalAmount":0,"taxAmount":0,"items":[],"mainCategory":""} のみ返す。',
     "JSON以外のテキストは1文字も出力するな。",
     "挨拶・説明・Markdown禁止。dateはYYYY-MM-DD。不明はnull。",
     "itemsは{name,unitPrice,category}。",
     catLine,
     "考え方や途中経過は出力しない。最終JSONのみ。",
+    "出力は JSON のみ。JSON 以外を一切出力しないこと。",
   ].join("\n");
   const textLines = [];
   if (Array.isArray(textract.ocrLines)) {
@@ -1182,6 +1184,7 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
   }
   const textractText = textLines.join("\n").slice(0, 12000);
   const userPrompt = [
+    "出力は JSON のみ。",
     "以下は Amazon Textract で抽出したレシート文字列です。",
     "この文字列の中から、日付・店名・合計金額のみを探して JSON で返してください。",
     "必要なら taxAmount/items/mainCategory は null や空配列で埋めてください。",
@@ -1191,6 +1194,7 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
     textractText || "(empty)",
     "### TEXTRACT_TEXT_END",
     "",
+    "出力は JSON のみ。",
     "返信は必ず { で始まり } で終わるJSONのみとし、余計な説明やマークダウン記法は一切含めないこと",
   ].join("\n");
   const out = await invokeBedrockText({

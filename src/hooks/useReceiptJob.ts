@@ -52,7 +52,7 @@ export function useReceiptJob(
   const pollErrorCountRef = useRef<Map<string, number>>(new Map());
   const timeoutNotifiedRef = useRef<Set<string>>(new Set());
   const progressStalledSinceRef = useRef<Map<string, number>>(new Map());
-  const TIMEOUT_MS = 10_000;
+  const TIMEOUT_MS = 20_000;
   const STALL_RESCUE_MS = 10_000;
   const MAX_CONSECUTIVE_POLL_ERRORS = 5;
 
@@ -149,6 +149,41 @@ export function useReceiptJob(
             return;
           }
           pollErrorCountRef.current.delete(q.jobId);
+          const hasResultNow = isSuccessfulReceiptJobApplyResult(st.result);
+          if (hasResultNow && st.status !== "completed") {
+            st = { ...st, status: "completed", progress: 100 };
+          }
+          const hardTimedOut =
+            q.status === "processing" &&
+            processingSeenAtRef.current.has(q.jobId) &&
+            now - (processingSeenAtRef.current.get(q.jobId) ?? now) >= TIMEOUT_MS;
+          if (hardTimedOut && st.status !== "completed") {
+            setQueue((prev) =>
+              prev.map((x) =>
+                x.localKey === q.localKey
+                  ? {
+                      ...x,
+                      status: "failed",
+                      timeoutExceeded: true,
+                      errorMessage:
+                        "解析がタイムアウトしました。手動入力へ切り替えてください。",
+                      result: {
+                        _schema: "receipt_job_v1",
+                        error: "job_processing_timeout",
+                        message: "processing が20秒継続したためタイムアウトしました。",
+                      } as ReceiptJobErrorPayload,
+                    }
+                  : x,
+              ),
+            );
+            applyOncePerJobIdRef.current.delete(q.jobId);
+            firstSeenAtRef.current.delete(q.jobId);
+            processingSeenAtRef.current.delete(q.jobId);
+            pollErrorCountRef.current.delete(q.jobId);
+            timeoutNotifiedRef.current.delete(q.jobId);
+            progressStalledSinceRef.current.delete(q.jobId);
+            return;
+          }
           const stalledLongBefore =
             progressStalledSinceRef.current.has(q.jobId) &&
             now - (progressStalledSinceRef.current.get(q.jobId) ?? now) >= STALL_RESCUE_MS &&

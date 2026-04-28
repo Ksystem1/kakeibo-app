@@ -93,9 +93,46 @@ import {
 } from "./feature-permissions.mjs";
 
 const logger = createLogger("api");
+let receiptProcessingCleanupDone = false;
+let receiptProcessingCleanupPromise = null;
 
 function logError(event, e, extra = {}) {
   logger.error(event, e, extra);
+}
+
+async function cleanupStaleProcessingReceiptJobsOnce(pool) {
+  if (receiptProcessingCleanupDone) return;
+  if (receiptProcessingCleanupPromise) {
+    await receiptProcessingCleanupPromise;
+    return;
+  }
+  receiptProcessingCleanupPromise = (async () => {
+    try {
+      const staleMins = Math.max(
+        3,
+        Number.parseInt(String(process.env.RECEIPT_STARTUP_CLEANUP_STALE_MINUTES ?? "20"), 10) || 20,
+      );
+      const [ret] = await pool.query(
+        `UPDATE receipt_processing_jobs
+         SET status = 'failed',
+             error_message = ?,
+             updated_at = NOW()
+         WHERE status = 'processing'
+           AND updated_at < (NOW() - INTERVAL ? MINUTE)`,
+        ["startup_cleanup_stale_processing", staleMins],
+      );
+      logger.info("receipts.job.startup_cleanup", {
+        staleMins,
+        affectedRows: Number(ret?.affectedRows ?? 0),
+      });
+      receiptProcessingCleanupDone = true;
+    } catch (e) {
+      logError("receipts.job.startup_cleanup_failed", e);
+    } finally {
+      receiptProcessingCleanupPromise = null;
+    }
+  })();
+  await receiptProcessingCleanupPromise;
 }
 
 /** 一般ユーザー向け API では DB の subscription を書き換えられない（管理者 PATCH のみ可） */
@@ -2337,6 +2374,7 @@ export async function handleApiRequest(req, options = {}) {
     }
 
     const pool = getPool();
+    await cleanupStaleProcessingReceiptJobsOnce(pool);
 
     {
       const rk = routeKey(method, path);
@@ -7422,6 +7460,9 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     20_000,
     Number.parseInt(String(process.env.RECEIPT_JOB_PARSE_TIMEOUT_MS ?? "90000"), 10) || 90_000,
   );
+  let finalStatus = null;
+  let finalResultData = null;
+  let finalErrorMessage = null;
   try {
     console.error("[receipts.job.start]", { jobId, userId });
     const [u] = await pool.query(
@@ -7518,6 +7559,9 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
          WHERE job_id = ?`,
         [status, receiptJobResultDataForMysqlBinding(/** @type {Record<string, unknown>} */(resultData)), em, jobId],
       );
+      finalStatus = status;
+      finalResultData = /** @type {Record<string, unknown>} */(resultData);
+      finalErrorMessage = em;
       return;
     }
 
@@ -7545,6 +7589,9 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
        WHERE job_id = ?`,
       [receiptJobResultDataForMysqlBinding(errD), detail.slice(0, 4000), jobId],
     );
+    finalStatus = "failed";
+    finalResultData = errD;
+    finalErrorMessage = detail.slice(0, 4000);
   } catch (e) {
     console.error("[receipts.job.error]", {
       jobId,
@@ -7566,8 +7613,41 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
          WHERE job_id = ? AND user_id = ?`,
         [receiptJobResultDataForMysqlBinding(errD), msg.slice(0, 4000), jobId, userId],
       );
+      finalStatus = "failed";
+      finalResultData = errD;
+      finalErrorMessage = msg.slice(0, 4000);
     } catch {
       /* ignore */
+    }
+  } finally {
+    try {
+      const [rows] = await pool.query(
+        `SELECT status FROM receipt_processing_jobs WHERE job_id = ? AND user_id = ? LIMIT 1`,
+        [jobId, userId],
+      );
+      const cur = Array.isArray(rows) && rows[0] ? String(rows[0].status ?? "").trim() : "";
+      if (cur === "processing") {
+        const fallback = finalResultData ?? buildReceiptJobErrorData({
+          kind: "parse_failed",
+          message: "解析結果の確定に失敗したため failed へフォールバックしました。",
+          rawText: "",
+        });
+        const em = finalErrorMessage ?? "parse_failed";
+        await pool.query(
+          `UPDATE receipt_processing_jobs
+           SET status = ?, result_data = ?, error_message = ?, updated_at = NOW()
+           WHERE job_id = ? AND user_id = ?`,
+          [
+            finalStatus === "completed" ? "completed" : "failed",
+            receiptJobResultDataForMysqlBinding(fallback),
+            String(em).slice(0, 4000),
+            jobId,
+            userId,
+          ],
+        );
+      }
+    } catch (e) {
+      logError("receipts.job.finalize_failed", e, { jobId, userId });
     }
   }
 }
