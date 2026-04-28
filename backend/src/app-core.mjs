@@ -7412,9 +7412,17 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     const statusCode = Number(out.statusCode ?? 500) || 500;
     const raw = typeof out.body === "string" ? out.body : JSON.stringify(out.body ?? "");
     const trimmedRaw = String(raw ?? "").trim();
-    const objectMatch = trimmedRaw.match(/\{[^]*\}/);
-    const extractedJsonRaw = objectMatch ? objectMatch[0].trim() : "";
-    const cleanedRaw = sanitizeReceiptJsonLikeRaw(extractedJsonRaw || trimmedRaw);
+    // /receipts/parse の戻りは本来JSON文字列なので、まず素直に parse を試す。
+    // 失敗時のみ従来のサニタイズ経路へフォールバックする。
+    let cleanedRaw = trimmedRaw;
+    try {
+      const direct = JSON.parse(trimmedRaw);
+      cleanedRaw = JSON.stringify(direct);
+    } catch {
+      const objectMatch = trimmedRaw.match(/\{[^]*\}/);
+      const extractedJsonRaw = objectMatch ? objectMatch[0].trim() : "";
+      cleanedRaw = sanitizeReceiptJsonLikeRaw(extractedJsonRaw || trimmedRaw);
+    }
 
     if (statusCode >= 200 && statusCode < 300) {
       let status = "failed";
@@ -7452,9 +7460,9 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
                 ? resultData.message
                 : resultData.error != null
                   ? resultData.error
-                  : "レシート解析の結果をJSONとして保存できませんでした。",
+                  : "",
             ).slice(0, 4000)
-          : "parse_error";
+          : "";
       logger.info("receipts.job.save_result_data", {
         jobId,
         userId,
@@ -7475,14 +7483,14 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
         [
           status,
           receiptJobResultDataToJsonStringForMysql(/** @type {Record<string, unknown>} */ (resultData)),
-          em,
+          em || null,
           jobId,
         ],
       );
       console.log("Job completed/failed:", jobId, status);
       finalStatus = status;
       finalResultData = /** @type {Record<string, unknown>} */(resultData);
-      finalErrorMessage = em;
+      finalErrorMessage = em || null;
       return;
     }
 
