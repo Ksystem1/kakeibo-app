@@ -2542,29 +2542,20 @@ export async function handleApiRequest(req, options = {}) {
         if (statusText === "processing" && result && typeof result === "object" && !Array.isArray(result)) {
           statusText = "completed";
         } else if (isStaleProcessing) {
-          statusText = "failed";
-          if (!result || typeof result !== "object" || Array.isArray(result)) {
-            result = {
-              _schema: "receipt_job_v1",
-              error: "stale_processing_timeout",
-              message: "処理が一定時間進行しなかったため、手動入力へ切り替えてください。",
-            };
+          const [requeued] = await pool.query(
+            `UPDATE receipt_processing_jobs
+             SET status = 'pending', error_message = ?, updated_at = NOW()
+             WHERE job_id = ? AND user_id = ? AND status = 'processing'`,
+            ["stale processing requeued", jobId, userId],
+          );
+          if (requeued?.affectedRows) {
+            const fwd = pickAuthHeadersForInternalParse(headers);
+            setTimeout(() => {
+              void runReceiptJobAfterUpload(pool, jobId, userId, fwd);
+            }, 0);
           }
-          if (!j.error_message) {
-            await pool.query(
-              `UPDATE receipt_processing_jobs
-               SET status = 'failed', result_data = ?, error_message = ?, updated_at = NOW()
-               WHERE job_id = ? AND user_id = ? AND status = 'processing'`,
-              [
-                receiptJobResultDataForMysqlBinding(
-                  /** @type {Record<string, unknown>} */ (result),
-                ),
-                "stale processing timeout",
-                jobId,
-                userId,
-              ],
-            );
-          }
+          statusText = "processing";
+          result = null;
         }
         const responseProgress =
           statusText === "completed" || statusText === "failed"
@@ -7448,10 +7439,36 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     ]);
     const statusCode = Number(out.statusCode ?? 500) || 500;
     const raw = typeof out.body === "string" ? out.body : JSON.stringify(out.body ?? "");
-    const cleanedRaw = sanitizeReceiptJsonLikeRaw(raw);
+    const trimmedRaw = String(raw ?? "").trim();
+    const cleanedRaw = sanitizeReceiptJsonLikeRaw(trimmedRaw);
 
     if (statusCode >= 200 && statusCode < 300) {
-      const { status, resultData } = buildAsyncReceiptJobResultFromHttpBody(cleanedRaw);
+      let status = "failed";
+      let resultData = buildReceiptJobErrorData({
+        kind: "invalid_json",
+        message: "解析結果が JSON として解釈できませんでした。",
+        rawText: cleanedRaw,
+      });
+      if (!cleanedRaw) {
+        resultData = buildReceiptJobErrorData({
+          kind: "empty_response_body",
+          message: "解析応答が空でした。",
+          rawText: "",
+        });
+      } else {
+        try {
+          JSON.parse(cleanedRaw);
+          const built = buildAsyncReceiptJobResultFromHttpBody(cleanedRaw);
+          status = built.status;
+          resultData = built.resultData;
+        } catch (e) {
+          resultData = buildReceiptJobErrorData({
+            kind: "invalid_json",
+            message: e instanceof Error ? e.message : String(e),
+            rawText: cleanedRaw,
+          });
+        }
+      }
       const em =
         status === "failed" && resultData && typeof resultData === "object"
           ? String(

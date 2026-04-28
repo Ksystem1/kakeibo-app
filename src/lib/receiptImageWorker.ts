@@ -1,9 +1,9 @@
 /**
  * レシート取込: メインスレッドを止めないための画像圧縮専用 Worker
- * 長辺 800px ・ JPEG 品質 0.66（本番の async アップロード用）
+ * 長辺 800px ・ JPEG 品質 0.5（本番の async アップロード用）
  */
 export const ASYNC_MAX_EDGE = 800;
-export const ASYNC_JPEG_QUALITY = 0.66;
+export const ASYNC_JPEG_QUALITY = 0.5;
 
 type WorkerIn = { arrayBuffer: ArrayBuffer; mime: string };
 type WorkerOut =

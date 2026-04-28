@@ -1159,20 +1159,39 @@ export async function askBedrockHybridReceiptFromTextract(input = {}) {
     catLine,
     "考え方や途中経過は出力しない。最終JSONのみ。",
   ].join("\n");
+  const textLines = [];
+  if (Array.isArray(textract.ocrLines)) {
+    for (const line of textract.ocrLines) {
+      const s = String(line ?? "").trim();
+      if (s) textLines.push(s);
+    }
+  }
+  if (textLines.length === 0 && textract.summary && typeof textract.summary === "object") {
+    for (const v of Object.values(textract.summary)) {
+      const s = String(v ?? "").trim();
+      if (s) textLines.push(s);
+    }
+  }
+  if (textLines.length === 0 && Array.isArray(textract.items)) {
+    for (const row of textract.items) {
+      const name = String(row?.name ?? "").trim();
+      const amount = row?.amount != null ? String(row.amount).trim() : "";
+      const joined = [name, amount].filter(Boolean).join(" ");
+      if (joined) textLines.push(joined);
+    }
+  }
+  const textractText = textLines.join("\n").slice(0, 12000);
   const userPrompt = [
-    "Textract抽出テキストを根拠に抽出。",
-    "出力例1: {\"storeName\":\"くら寿司\",\"date\":\"2026-04-25\",\"totalAmount\":5984,\"taxAmount\":443,\"items\":[],\"mainCategory\":\"外食\"}",
-    "出力例2: {\"storeName\":\"ローソン\",\"date\":\"2026-04-20\",\"totalAmount\":1280,\"taxAmount\":116,\"items\":[{\"name\":\"弁当\",\"unitPrice\":598,\"category\":\"食費\"}],\"mainCategory\":\"食費\"}",
-    "出力例3: {\"storeName\":\"不明\",\"date\":null,\"totalAmount\":null,\"taxAmount\":null,\"items\":[],\"mainCategory\":\"その他\"}",
-    "出力例4: {\"storeName\":\"マツモトキヨシ\",\"date\":\"2026-04-01\",\"totalAmount\":2480,\"taxAmount\":225,\"items\":[{\"name\":\"薬\",\"unitPrice\":1280,\"category\":\"医療\"}],\"mainCategory\":\"医療\"}",
-    "出力例5: {\"storeName\":\"セブンイレブン\",\"date\":\"2026-03-31\",\"totalAmount\":860,\"taxAmount\":78,\"items\":[{\"name\":\"コーヒー\",\"unitPrice\":120,\"category\":\"食費\"}],\"mainCategory\":\"食費\"}",
-    JSON.stringify({
-      ocrLines: Array.isArray(textract.ocrLines) ? textract.ocrLines.slice(0, 80) : [],
-      summary: textract.summary ?? {},
-      items: Array.isArray(textract.items) ? textract.items.slice(0, 80) : [],
-      expenseCategoryTuples,
-      memoCategoryPairs: Array.isArray(memoCategoryPairs) ? memoCategoryPairs.slice(0, 8) : [],
-    }),
+    "以下は Amazon Textract で抽出したレシート文字列です。",
+    "この文字列の中から、日付・店名・合計金額のみを探して JSON で返してください。",
+    "必要なら taxAmount/items/mainCategory は null や空配列で埋めてください。",
+    "出力例: {\"storeName\":\"ローソン\",\"date\":\"2026-04-20\",\"totalAmount\":1280,\"taxAmount\":null,\"items\":[],\"mainCategory\":\"その他\"}",
+    "",
+    "### TEXTRACT_TEXT_START",
+    textractText || "(empty)",
+    "### TEXTRACT_TEXT_END",
+    "",
+    "返信は必ず { で始まり } で終わるJSONのみとし、余計な説明やマークダウン記法は一切含めないこと",
   ].join("\n");
   const out = await invokeBedrockText({
     systemPrompt,

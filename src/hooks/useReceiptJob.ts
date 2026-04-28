@@ -50,7 +50,7 @@ export function useReceiptJob(
   const firstSeenAtRef = useRef<Map<string, number>>(new Map());
   const timeoutNotifiedRef = useRef<Set<string>>(new Set());
   const progressStalledSinceRef = useRef<Map<string, number>>(new Map());
-  const TIMEOUT_MS = 30_000;
+  const TIMEOUT_MS = 10_000;
   const STALL_RESCUE_MS = 10_000;
 
   useEffect(() => {
@@ -75,15 +75,23 @@ export function useReceiptJob(
               x.localKey === q.localKey
                 ? {
                     ...x,
+                    status: "failed",
                     timeoutExceeded: true,
-                    progressPct: Math.max(x.progressPct ?? 0, estimated),
-                    errorMessage:
-                      x.errorMessage ??
-                      "30秒以上かかっています。自動で再試行中です。手動入力に切り替えることもできます。",
+                    progressPct: Math.max(x.progressPct ?? 0, 97),
+                    errorMessage: "10秒以内に解析が完了しなかったため、手動入力へ切り替えてください。",
+                    result: {
+                      _schema: "receipt_job_v1",
+                      error: "job_timeout",
+                      message: "10秒タイムアウト。手動入力へ遷移してください。",
+                    } as ReceiptJobErrorPayload,
                   }
                 : x,
             ),
           );
+          applyOncePerJobIdRef.current.delete(q.jobId);
+          firstSeenAtRef.current.delete(q.jobId);
+          progressStalledSinceRef.current.delete(q.jobId);
+          continue;
         }
         void (async () => {
           let st: Awaited<ReturnType<typeof getReceiptJobStatus>>;
@@ -136,26 +144,6 @@ export function useReceiptJob(
             } catch {
               /* keep previous status */
             }
-          }
-          const stalledHardFail =
-            stalledLongBefore &&
-            st.status !== "completed" &&
-            !isSuccessfulReceiptJobApplyResult(st.result);
-          if (stalledHardFail) {
-            st = {
-              ...st,
-              status: "failed",
-              errorMessage:
-                st.errorMessage ??
-                "97%で停止したため解析を中断しました。スキップして手動入力をご利用ください。",
-              result:
-                st.result ??
-                ({
-                  _schema: "receipt_job_v1",
-                  error: "stalled_after_90pct",
-                  message: "90%以上で10秒以上進捗が止まったため中断しました。",
-                } satisfies ReceiptJobErrorPayload),
-            };
           }
           setQueue((prev) => {
             const p = prev.find((x) => x.localKey === q.localKey);
