@@ -7507,7 +7507,9 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     const statusCode = Number(out.statusCode ?? 500) || 500;
     const raw = typeof out.body === "string" ? out.body : JSON.stringify(out.body ?? "");
     const trimmedRaw = String(raw ?? "").trim();
-    const cleanedRaw = sanitizeReceiptJsonLikeRaw(trimmedRaw);
+    const objectMatch = trimmedRaw.match(/\{[^]*\}/);
+    const extractedJsonRaw = objectMatch ? objectMatch[0].trim() : "";
+    const cleanedRaw = sanitizeReceiptJsonLikeRaw(extractedJsonRaw || trimmedRaw);
 
     if (statusCode >= 200 && statusCode < 300) {
       let status = "failed";
@@ -7553,6 +7555,12 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
         rawPreview: raw.slice(0, 500),
         cleanedPreview: cleanedRaw.slice(0, 500),
       });
+      console.log("[receipts.job.save.payload]", {
+        jobId,
+        userId,
+        status,
+        resultData,
+      });
       await pool.query(
         `UPDATE receipt_processing_jobs
          SET status = ?, result_data = ?, error_message = ?, updated_at = NOW()
@@ -7582,6 +7590,12 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
       httpStatus: statusCode,
       apiCode: typeof parsed === "object" && parsed && "error" in parsed ? String(parsed.error) : null,
       apiDetail: detail,
+    });
+    console.log("[receipts.job.save.payload]", {
+      jobId,
+      userId,
+      status: "failed",
+      resultData: errD,
     });
     await pool.query(
       `UPDATE receipt_processing_jobs

@@ -149,8 +149,8 @@ export function useReceiptJob(
             return;
           }
           pollErrorCountRef.current.delete(q.jobId);
-          const hasResultNow = isSuccessfulReceiptJobApplyResult(st.result);
-          if (hasResultNow && st.status !== "completed") {
+          const hasResultNow = st.result != null;
+          if (hasResultNow && st.status !== "completed" && st.status !== "failed") {
             st = { ...st, status: "completed", progress: 100 };
           }
           const hardTimedOut =

@@ -1078,7 +1078,7 @@ export async function askBedrockReceiptAssistant(input = {}) {
   let rawReply = "";
   let receiptAiSource = "text";
 
-  const receiptVisionEnabled = String(process.env.RECEIPT_BEDROCK_VISION_ENABLED ?? "0").trim() === "1";
+  const receiptVisionEnabled = false;
   if (receiptVisionEnabled && imageBase64 && imageBase64.trim()) {
     const vis = await invokeBedrockReceiptVision({
       systemPrompt,
