@@ -2534,13 +2534,28 @@ export async function handleApiRequest(req, options = {}) {
           20_000,
           Number.parseInt(String(process.env.RECEIPT_JOB_STALE_TIMEOUT_MS ?? "70000"), 10) || 70_000,
         );
+        const pendingKickMs = Math.max(
+          3_000,
+          Number.parseInt(String(process.env.RECEIPT_JOB_PENDING_KICK_MS ?? "8000"), 10) || 8_000,
+        );
         const updatedAtMs = j.updated_at ? Date.parse(String(j.updated_at)) : NaN;
+        const isStalePending =
+          statusText === "pending" &&
+          Number.isFinite(updatedAtMs) &&
+          Date.now() - Number(updatedAtMs) >= pendingKickMs;
         const isStaleProcessing =
           statusText === "processing" &&
           Number.isFinite(updatedAtMs) &&
           Date.now() - Number(updatedAtMs) >= staleMs;
         if (statusText === "processing" && result && typeof result === "object" && !Array.isArray(result)) {
           statusText = "completed";
+        } else if (isStalePending) {
+          const fwd = pickAuthHeadersForInternalParse(headers);
+          setTimeout(() => {
+            void runReceiptJobAfterUpload(pool, jobId, userId, fwd);
+          }, 0);
+          statusText = "pending";
+          result = null;
         } else if (isStaleProcessing) {
           const [requeued] = await pool.query(
             `UPDATE receipt_processing_jobs
