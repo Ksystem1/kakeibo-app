@@ -49,10 +49,12 @@ export function useReceiptJob(
   const intervalMs = options?.pollIntervalMs ?? DEFAULT_POLL_MS;
   const firstSeenAtRef = useRef<Map<string, number>>(new Map());
   const processingSeenAtRef = useRef<Map<string, number>>(new Map());
+  const pollErrorCountRef = useRef<Map<string, number>>(new Map());
   const timeoutNotifiedRef = useRef<Set<string>>(new Set());
   const progressStalledSinceRef = useRef<Map<string, number>>(new Map());
   const TIMEOUT_MS = 10_000;
   const STALL_RESCUE_MS = 10_000;
+  const MAX_CONSECUTIVE_POLL_ERRORS = 5;
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -107,6 +109,23 @@ export function useReceiptJob(
             }
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
+            const errCount = (pollErrorCountRef.current.get(q.jobId) ?? 0) + 1;
+            pollErrorCountRef.current.set(q.jobId, errCount);
+            if (errCount < MAX_CONSECUTIVE_POLL_ERRORS) {
+              setQueue((prev) =>
+                prev.map((x) =>
+                  x.localKey === q.localKey
+                    ? {
+                        ...x,
+                        timeoutExceeded: true,
+                        errorMessage:
+                          "解析状況の取得に一時的に失敗しています。自動再試行中です（手動入力へ切替可能）。",
+                      }
+                    : x,
+                ),
+              );
+              return;
+            }
             setQueue((prev) =>
               prev.map((x) =>
                 x.localKey === q.localKey
@@ -115,7 +134,7 @@ export function useReceiptJob(
                       status: "failed",
                       timeoutExceeded: true,
                       errorMessage:
-                        "解析データの受信に失敗しました（JSONエラー）。スキップして手動入力をご利用ください。",
+                        "解析状況の取得に繰り返し失敗したため、手動入力をご利用ください。",
                       result: {
                         _schema: "receipt_job_v1",
                         error: "job_status_fetch_failed",
@@ -125,9 +144,11 @@ export function useReceiptJob(
                   : x,
               ),
             );
+            pollErrorCountRef.current.delete(q.jobId);
             progressStalledSinceRef.current.delete(q.jobId);
             return;
           }
+          pollErrorCountRef.current.delete(q.jobId);
           const stalledLongBefore =
             progressStalledSinceRef.current.has(q.jobId) &&
             now - (progressStalledSinceRef.current.get(q.jobId) ?? now) >= STALL_RESCUE_MS &&
@@ -194,6 +215,7 @@ export function useReceiptJob(
             applyOncePerJobIdRef.current.delete(q.jobId);
             firstSeenAtRef.current.delete(q.jobId);
             processingSeenAtRef.current.delete(q.jobId);
+            pollErrorCountRef.current.delete(q.jobId);
             progressStalledSinceRef.current.delete(q.jobId);
             return;
           }
@@ -207,6 +229,7 @@ export function useReceiptJob(
             const completedResult: ParseReceiptResult = st.result;
             firstSeenAtRef.current.delete(q.jobId);
             processingSeenAtRef.current.delete(q.jobId);
+            pollErrorCountRef.current.delete(q.jobId);
             timeoutNotifiedRef.current.delete(q.jobId);
             progressStalledSinceRef.current.delete(q.jobId);
             if (!applyOncePerJobIdRef.current.has(q.jobId)) {

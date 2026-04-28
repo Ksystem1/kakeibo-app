@@ -7394,8 +7394,8 @@ function pickAuthHeadersForInternalParse(src) {
  */
 async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
   const JOB_PARSE_TIMEOUT_MS = Math.max(
-    10_000,
-    Number.parseInt(String(process.env.RECEIPT_JOB_PARSE_TIMEOUT_MS ?? "35000"), 10) || 35_000,
+    20_000,
+    Number.parseInt(String(process.env.RECEIPT_JOB_PARSE_TIMEOUT_MS ?? "90000"), 10) || 90_000,
   );
   try {
     const [u] = await pool.query(
