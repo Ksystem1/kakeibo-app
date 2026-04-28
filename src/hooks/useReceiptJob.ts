@@ -48,6 +48,7 @@ export function useReceiptJob(
 
   const intervalMs = options?.pollIntervalMs ?? DEFAULT_POLL_MS;
   const firstSeenAtRef = useRef<Map<string, number>>(new Map());
+  const processingSeenAtRef = useRef<Map<string, number>>(new Map());
   const timeoutNotifiedRef = useRef<Set<string>>(new Set());
   const progressStalledSinceRef = useRef<Map<string, number>>(new Map());
   const TIMEOUT_MS = 10_000;
@@ -64,8 +65,18 @@ export function useReceiptJob(
         if (!firstSeenAtRef.current.has(q.jobId)) {
           firstSeenAtRef.current.set(q.jobId, firstSeen);
         }
+        const processingSeen =
+          q.status === "processing"
+            ? (processingSeenAtRef.current.get(q.jobId) ?? now)
+            : now;
+        if (q.status === "processing" && !processingSeenAtRef.current.has(q.jobId)) {
+          processingSeenAtRef.current.set(q.jobId, processingSeen);
+        }
+        if (q.status !== "processing") {
+          processingSeenAtRef.current.delete(q.jobId);
+        }
         const elapsed = now - firstSeen;
-        const timedOut = elapsed >= TIMEOUT_MS;
+        const timedOut = q.status === "processing" && now - processingSeen >= TIMEOUT_MS;
         const estimatedBase = q.status === "pending" ? 30 : 90;
         const estimated = timedOut ? Math.min(97, 92 + Math.floor((elapsed - TIMEOUT_MS) / 5000)) : estimatedBase;
         if (timedOut && !timeoutNotifiedRef.current.has(q.jobId)) {
@@ -75,23 +86,14 @@ export function useReceiptJob(
               x.localKey === q.localKey
                 ? {
                     ...x,
-                    status: "failed",
                     timeoutExceeded: true,
                     progressPct: Math.max(x.progressPct ?? 0, 97),
-                    errorMessage: "10秒以内に解析が完了しなかったため、手動入力へ切り替えてください。",
-                    result: {
-                      _schema: "receipt_job_v1",
-                      error: "job_timeout",
-                      message: "10秒タイムアウト。手動入力へ遷移してください。",
-                    } as ReceiptJobErrorPayload,
+                    errorMessage:
+                      "10秒を超えたため手動入力へ切替可能です。解析は継続中のため、完了時は自動反映されます。",
                   }
                 : x,
             ),
           );
-          applyOncePerJobIdRef.current.delete(q.jobId);
-          firstSeenAtRef.current.delete(q.jobId);
-          progressStalledSinceRef.current.delete(q.jobId);
-          continue;
         }
         void (async () => {
           let st: Awaited<ReturnType<typeof getReceiptJobStatus>>;
@@ -190,6 +192,7 @@ export function useReceiptJob(
           if (st.status === "failed") {
             applyOncePerJobIdRef.current.delete(q.jobId);
             firstSeenAtRef.current.delete(q.jobId);
+            processingSeenAtRef.current.delete(q.jobId);
             progressStalledSinceRef.current.delete(q.jobId);
             return;
           }
@@ -202,6 +205,7 @@ export function useReceiptJob(
           ) {
             const completedResult: ParseReceiptResult = st.result;
             firstSeenAtRef.current.delete(q.jobId);
+            processingSeenAtRef.current.delete(q.jobId);
             timeoutNotifiedRef.current.delete(q.jobId);
             progressStalledSinceRef.current.delete(q.jobId);
             if (!applyOncePerJobIdRef.current.has(q.jobId)) {
