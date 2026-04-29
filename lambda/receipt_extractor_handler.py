@@ -56,14 +56,15 @@ def _extract_json_from_reply(reply_text: str) -> dict[str, Any]:
     if not text:
         raise ValueError("Model reply is empty")
 
-    if not text.startswith("{"):
-        start = text.find("{")
-        end = text.rfind("}")
-        if start < 0 or end <= start:
-            raise ValueError("Model reply does not contain JSON object")
-        text = text[start : end + 1]
-
-    parsed = json.loads(text)
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("Model reply does not contain JSON object")
+    # 先頭の { から「1 つ目の JSON オブジェクト」だけを取る（2 連 JSON や本文中の } 余剰で raw_decode が Extra data になるのを防ぐ）
+    dec = json.JSONDecoder()
+    try:
+        parsed, _end = dec.raw_decode(text, start)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Model reply is not valid JSON: {e}") from e
     if not isinstance(parsed, dict):
         raise ValueError("Parsed output is not a JSON object")
 
@@ -79,8 +80,9 @@ def _invoke_bedrock_with_image(image_jpeg: bytes) -> dict[str, Any]:
 
     system_prompt = "レシートから情報を抽出しJSONで返せ。挨拶や説明は不要。"
     user_prompt = (
-        "画像のレシートから date, total, shop_name を抽出して返してください。"
-        ' JSON形式: {"date":"YYYY-MM-DD","total":0,"shop_name":"文字列"}'
+        "画像のレシートから date, total, shop_name を抽出してください。"
+        " 返答は次の keys だけを持つ JSON オブジェクト 1 つ（説明文・コードブロック・追加の JSON は付けない）: "
+        '{"date":"YYYY-MM-DD","total":数値,"shop_name":"文字列"}'
     )
 
     body = {
