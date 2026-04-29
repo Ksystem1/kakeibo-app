@@ -1105,9 +1105,61 @@ export async function importCsvText(csvText: string) {
     ok: boolean;
     deleted?: number;
     inserted: number;
+    updated?: number;
     categoriesCreated?: number;
     message?: string;
   }>(res);
+}
+
+export type SharedImportFormatProfile = {
+  id: number;
+  name: string;
+  sourceHint?: string | null;
+  dateHeaders: string[];
+  descriptionHeaders: string[];
+  descriptionSecondaryHeaders?: string[];
+  amountHeaders: string[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export async function getSharedImportFormatProfiles() {
+  const res = await apiFetch(`${BASE}/settings/import-formats`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ items: SharedImportFormatProfile[] }>(res);
+}
+
+export async function createSharedImportFormatProfile(
+  payload: Omit<SharedImportFormatProfile, "id" | "createdAt" | "updatedAt">,
+) {
+  const res = await apiFetch(`${BASE}/settings/import-formats`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return parse<{ ok: boolean; id: number }>(res);
+}
+
+export async function updateSharedImportFormatProfile(
+  id: number,
+  payload: Omit<SharedImportFormatProfile, "id" | "createdAt" | "updatedAt">,
+) {
+  const res = await apiFetch(`${BASE}/settings/import-formats/${id}`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return parse<{ ok: boolean }>(res);
+}
+
+export async function deleteSharedImportFormatProfile(id: number) {
+  const res = await apiFetch(`${BASE}/settings/import-formats/${id}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+  });
+  return parse<{ ok: boolean }>(res);
 }
 
 export type PayPayImportResult = {
@@ -1936,6 +1988,29 @@ export async function getAdminMonitorRecruitmentSettings() {
     console.log("[api] GET monitor-recruitment result", data);
   }
   return data;
+}
+
+export type AdminImportFormatAuditRow = {
+  id: number;
+  profile_id: number;
+  profile_name: string | null;
+  action_type: string;
+  actor_user_id: number | null;
+  actor_email: string | null;
+  actor_display_name: string | null;
+  payload_json: unknown;
+  created_at: string;
+};
+
+export async function getAdminImportFormatAudit(params?: { limit?: number }) {
+  const sp = new URLSearchParams();
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  const q = sp.toString();
+  const res = await apiFetch(`${BASE}/admin/import-formats/audit${q ? `?${q}` : ""}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{ items: AdminImportFormatAuditRow[] }>(res);
 }
 
 export async function putAdminMonitorRecruitmentSettings(body: {

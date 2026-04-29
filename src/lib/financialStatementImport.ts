@@ -41,6 +41,15 @@ type HeaderAlias = {
   amount: string[];
 };
 
+export type ImportHeaderPattern = {
+  name?: string;
+  sourceHint?: string | null;
+  dateHeaders: string[];
+  descriptionHeaders: string[];
+  descriptionSecondaryHeaders?: string[];
+  amountHeaders: string[];
+};
+
 const KNOWN_HEADER_PATTERNS: HeaderAlias[] = [
   {
     // イオンカード CSV
@@ -83,6 +92,19 @@ const KNOWN_HEADER_PATTERNS: HeaderAlias[] = [
     amount: ["利用金額", "お支払い金額", "請求額", "利用額", "ご利用金額"],
   },
 ];
+
+function toHeaderAlias(pattern: ImportHeaderPattern): HeaderAlias | null {
+  const date = Array.isArray(pattern?.dateHeaders) ? pattern.dateHeaders.filter(Boolean) : [];
+  const description = Array.isArray(pattern?.descriptionHeaders)
+    ? pattern.descriptionHeaders.filter(Boolean)
+    : [];
+  const amount = Array.isArray(pattern?.amountHeaders) ? pattern.amountHeaders.filter(Boolean) : [];
+  const descriptionSecondary = Array.isArray(pattern?.descriptionSecondaryHeaders)
+    ? pattern.descriptionSecondaryHeaders.filter(Boolean)
+    : [];
+  if (date.length === 0 || description.length === 0 || amount.length === 0) return null;
+  return { date, description, descriptionSecondary, amount };
+}
 
 const DATE_RE = /\b(\d{4}[\/.-]\d{1,2}[\/.-]\d{1,2}|\d{8}|\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4})\b/;
 const AMOUNT_RE = /([+-]?\d[\d,]*(?:\.\d+)?)(?:\s*円)?/;
@@ -193,7 +215,7 @@ type DynamicIndices = HeaderIndices & {
   dataStart: number;
 };
 
-function inferHeaderIndices(header: string[]): HeaderIndices | null {
+function inferHeaderIndices(header: string[], customPatterns: HeaderAlias[] = []): HeaderIndices | null {
   const normalized = header.map(normalizeHeaderCell);
   // PayPay公式CSV: 取引先を内容欄の主情報にし、取引内容は補助情報として扱う。
   const iPayPayDate = findByAliases(header, ["取引日"]);
@@ -226,7 +248,8 @@ function inferHeaderIndices(header: string[]): HeaderIndices | null {
     };
   }
 
-  for (const p of KNOWN_HEADER_PATTERNS) {
+  const allPatterns = [...customPatterns, ...KNOWN_HEADER_PATTERNS];
+  for (const p of allPatterns) {
     const iDate = findByAliases(header, p.date);
     const iDesc = findByAliases(header, p.description);
     const iDesc2 = findByAliases(header, p.descriptionSecondary ?? []);
@@ -405,17 +428,22 @@ function inferMedicalType(description: string): "treatment" | "medicine" | null 
   return null;
 }
 
-export function parseFinancialCsvWithInference(csvText: string, sourceLabel = "CSV"): FinancialCsvParseResult {
+export function parseFinancialCsvWithInference(
+  csvText: string,
+  sourceLabel = "CSV",
+  customPatterns: ImportHeaderPattern[] = [],
+): FinancialCsvParseResult {
   const lines = String(csvText ?? "").split(/\r?\n/);
   if (lines.length < 2) {
     return { rows: [], needsManualMapping: true, message: "データ行が不足しています。" };
   }
 
+  const runtimePatterns = customPatterns.map(toHeaderAlias).filter((x): x is HeaderAlias => x != null);
   const rows = lines.map(parseCsvLine).filter((cells) => cells.some((c) => String(c ?? "").trim() !== ""));
   let dynamic: DynamicIndices | null = null;
   for (let i = 0; i < Math.min(80, rows.length); i++) {
     const h = rows[i];
-    const found = inferHeaderIndices(h);
+    const found = inferHeaderIndices(h, runtimePatterns);
     if (found) {
       dynamic = { ...found, dataStart: i + 1 };
       break;
@@ -481,8 +509,12 @@ export function parseFinancialCsvWithInference(csvText: string, sourceLabel = "C
   };
 }
 
-export function parseFinancialCsvText(csvText: string, sourceLabel = "CSV"): ImportedStatementRow[] {
-  return parseFinancialCsvWithInference(csvText, sourceLabel).rows;
+export function parseFinancialCsvText(
+  csvText: string,
+  sourceLabel = "CSV",
+  customPatterns: ImportHeaderPattern[] = [],
+): ImportedStatementRow[] {
+  return parseFinancialCsvWithInference(csvText, sourceLabel, customPatterns).rows;
 }
 
 function parsePdfLine(line: string): { date: string; description: string; amount: number } | null {

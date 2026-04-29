@@ -1,9 +1,17 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ensureDefaultCategories, getCategories, getTransactions, importCsvText } from "../lib/api";
+import {
+  ensureDefaultCategories,
+  getCategories,
+  getSharedImportFormatProfiles,
+  getTransactions,
+  importCsvText,
+  type SharedImportFormatProfile,
+} from "../lib/api";
 import { FEATURE_EXPORT_CSV } from "../lib/api";
 import { tryConvertBankCardCsvToKakeibo } from "../lib/bankCardCsvToKakeibo";
 import {
+  type ImportHeaderPattern,
   type ImportedStatementRow,
   duplicateKey,
   parseFinancialCsvWithInference,
@@ -48,6 +56,31 @@ export function ImportCsvPage() {
   const [loading, setLoading] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [manualMappingHint, setManualMappingHint] = useState<string | null>(null);
+  const [importHeaderPatterns, setImportHeaderPatterns] = useState<ImportHeaderPattern[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getSharedImportFormatProfiles()
+      .then((r) => {
+        if (cancelled) return;
+        const items = Array.isArray(r.items) ? r.items : [];
+        const next: ImportHeaderPattern[] = items.map((x: SharedImportFormatProfile) => ({
+          name: x.name,
+          sourceHint: x.sourceHint ?? null,
+          dateHeaders: x.dateHeaders ?? [],
+          descriptionHeaders: x.descriptionHeaders ?? [],
+          descriptionSecondaryHeaders: x.descriptionSecondaryHeaders ?? [],
+          amountHeaders: x.amountHeaders ?? [],
+        }));
+        setImportHeaderPatterns(next);
+      })
+      .catch(() => {
+        if (!cancelled) setImportHeaderPatterns([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const s = location.state;
@@ -61,12 +94,12 @@ export function ImportCsvPage() {
     const raw = (s as { paypayPrefillText?: string }).paypayPrefillText;
     if (typeof raw !== "string" || !raw.trim()) return;
     setText(raw);
-    const parsed = parseFinancialCsvText(raw, "PayPay");
+    const parsed = parseFinancialCsvText(raw, "PayPay", importHeaderPatterns);
     if (parsed.length > 0) {
       void applyDuplicateFlags(parsed);
       setMsg(`${parsed.length}件を解析しました。プレビューで確認後に保存してください。`);
     }
-  }, [location.state, navigate, location.pathname]);
+  }, [location.state, navigate, location.pathname, importHeaderPatterns]);
 
   const isDemoMode = useMemo(() => {
     const q = new URLSearchParams(location.search);
@@ -171,7 +204,7 @@ export function ImportCsvPage() {
         if (name.endsWith(".csv") || name.endsWith(".txt")) {
           const decoded = await readFileTextAutoEncoding(f);
           const raw = decoded.text;
-          const inferred = parseFinancialCsvWithInference(raw, f.name);
+          const inferred = parseFinancialCsvWithInference(raw, f.name, importHeaderPatterns);
           if (inferred.rows.length > 0) {
             collected.push(...inferred.rows);
             setText(raw);
@@ -275,7 +308,7 @@ export function ImportCsvPage() {
       if (bankConverted) {
         toSend = bankConverted.text;
       } else {
-        const inferred = parseFinancialCsvWithInference(text, "貼り付けCSV");
+        const inferred = parseFinancialCsvWithInference(text, "貼り付けCSV", importHeaderPatterns);
         if (inferred.rows.length > 0) {
           await applyDuplicateFlags(inferred.rows);
           setMsg(`${inferred.rows.length}件を解析しました。プレビューで確認後に保存してください。`);
@@ -290,10 +323,12 @@ export function ImportCsvPage() {
       const r = await importCsvText(toSend);
       const created = r.categoriesCreated ?? 0;
       const deleted = r.deleted ?? 0;
-      if (r.inserted > 0 || deleted > 0) {
+      const updated = r.updated ?? 0;
+      if (r.inserted > 0 || updated > 0 || deleted > 0) {
         const parts: string[] = [];
         if (bankConverted) parts.push(bankConverted.message);
-        parts.push(`支出を ${deleted} 件削除し、${r.inserted} 件追加しました。`);
+        parts.push(`支出を ${r.inserted} 件追加、${updated} 件上書きしました。`);
+        if (deleted > 0) parts.push(`削除 ${deleted} 件。`);
         if (created > 0) parts.push(`新規カテゴリ ${created} 件を追加しました。`);
         if (r.message) parts.push(r.message);
         setMsg(parts.join(""));

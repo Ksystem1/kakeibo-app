@@ -10,6 +10,7 @@ import {
   canSendAuthenticatedRequest,
   getApiBaseUrl,
   getPasskeyStatus,
+  getSharedImportFormatProfiles,
   getAuthMe,
   getBillingSubscriptionStatus,
   getBillingStripeStatus,
@@ -19,6 +20,10 @@ import {
   postBillingPortalSession,
   postDeleteAccount,
   reclassifyUncategorizedReceipts,
+  createSharedImportFormatProfile,
+  updateSharedImportFormatProfile,
+  deleteSharedImportFormatProfile,
+  type SharedImportFormatProfile,
 } from "../lib/api";
 import { isSubscriptionServiceSubscribedClient } from "../lib/subscriptionAccess";
 import {
@@ -140,6 +145,17 @@ export function SettingsPage() {
   const [deleteAck, setDeleteAck] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [importFormats, setImportFormats] = useState<SharedImportFormatProfile[]>([]);
+  const [importFormatsBusy, setImportFormatsBusy] = useState(false);
+  const [importFormatsMsg, setImportFormatsMsg] = useState<string | null>(null);
+  const [importFormatsErr, setImportFormatsErr] = useState<string | null>(null);
+  const [editingFormatId, setEditingFormatId] = useState<number | null>(null);
+  const [formatName, setFormatName] = useState("");
+  const [formatSourceHint, setFormatSourceHint] = useState("");
+  const [formatDateHeaders, setFormatDateHeaders] = useState("");
+  const [formatDescriptionHeaders, setFormatDescriptionHeaders] = useState("");
+  const [formatDescriptionSecondaryHeaders, setFormatDescriptionSecondaryHeaders] = useState("");
+  const [formatAmountHeaders, setFormatAmountHeaders] = useState("");
 
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
     itemsForFixedCostEditor(fixedCostsByMonth),
@@ -153,6 +169,24 @@ export function SettingsPage() {
   useEffect(() => {
     setFixedItems(itemsForFixedCostEditor(fixedCostsByMonth));
   }, [fixedCostsByMonth]);
+
+  const loadImportFormats = async () => {
+    setImportFormatsBusy(true);
+    setImportFormatsErr(null);
+    try {
+      const r = await getSharedImportFormatProfiles();
+      setImportFormats(Array.isArray(r.items) ? r.items : []);
+    } catch (e) {
+      setImportFormatsErr(e instanceof Error ? e.message : "取込フォーマットの取得に失敗しました");
+    } finally {
+      setImportFormatsBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!token) return;
+    void loadImportFormats();
+  }, [token]);
 
   useEffect(() => {
     const sp = new URLSearchParams(location.search);
@@ -356,6 +390,89 @@ export function SettingsPage() {
     };
   }, [premiumContractOpen, token]);
 
+  const parseHeaderCsvInput = (raw: string): string[] =>
+    String(raw ?? "")
+      .split(/[,\n、]/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+  const resetImportFormatForm = () => {
+    setEditingFormatId(null);
+    setFormatName("");
+    setFormatSourceHint("");
+    setFormatDateHeaders("");
+    setFormatDescriptionHeaders("");
+    setFormatDescriptionSecondaryHeaders("");
+    setFormatAmountHeaders("");
+  };
+
+  const startEditImportFormat = (row: SharedImportFormatProfile) => {
+    setEditingFormatId(Number(row.id));
+    setFormatName(String(row.name ?? ""));
+    setFormatSourceHint(String(row.sourceHint ?? ""));
+    setFormatDateHeaders((row.dateHeaders ?? []).join(", "));
+    setFormatDescriptionHeaders((row.descriptionHeaders ?? []).join(", "));
+    setFormatDescriptionSecondaryHeaders((row.descriptionSecondaryHeaders ?? []).join(", "));
+    setFormatAmountHeaders((row.amountHeaders ?? []).join(", "));
+    setImportFormatsMsg(null);
+    setImportFormatsErr(null);
+  };
+
+  const saveImportFormat = async () => {
+    setImportFormatsErr(null);
+    setImportFormatsMsg(null);
+    const payload = {
+      name: formatName.trim(),
+      sourceHint: formatSourceHint.trim() || null,
+      dateHeaders: parseHeaderCsvInput(formatDateHeaders),
+      descriptionHeaders: parseHeaderCsvInput(formatDescriptionHeaders),
+      descriptionSecondaryHeaders: parseHeaderCsvInput(formatDescriptionSecondaryHeaders),
+      amountHeaders: parseHeaderCsvInput(formatAmountHeaders),
+    };
+    if (
+      !payload.name ||
+      payload.dateHeaders.length === 0 ||
+      payload.descriptionHeaders.length === 0 ||
+      payload.amountHeaders.length === 0
+    ) {
+      setImportFormatsErr("名称・日付ヘッダ・内容ヘッダ・金額ヘッダを入力してください。");
+      return;
+    }
+    setImportFormatsBusy(true);
+    try {
+      if (editingFormatId != null) {
+        await updateSharedImportFormatProfile(editingFormatId, payload);
+        setImportFormatsMsg("フォーマットを更新しました。");
+      } else {
+        await createSharedImportFormatProfile(payload);
+        setImportFormatsMsg("フォーマットを追加しました。");
+      }
+      resetImportFormatForm();
+      await loadImportFormats();
+    } catch (e) {
+      setImportFormatsErr(e instanceof Error ? e.message : "保存に失敗しました");
+    } finally {
+      setImportFormatsBusy(false);
+    }
+  };
+
+  const removeImportFormat = async (id: number) => {
+    if (!window.confirm("この取込フォーマットを削除しますか？")) return;
+    setImportFormatsBusy(true);
+    setImportFormatsErr(null);
+    setImportFormatsMsg(null);
+    try {
+      await deleteSharedImportFormatProfile(id);
+      if (editingFormatId === id) resetImportFormatForm();
+      setImportFormatsMsg("フォーマットを削除しました。");
+      await loadImportFormats();
+    } catch (e) {
+      setImportFormatsErr(e instanceof Error ? e.message : "削除に失敗しました");
+    } finally {
+      setImportFormatsBusy(false);
+    }
+  };
+
   return (
     <div className={styles.wrap}>
       <h1 className={styles.title}>設定</h1>
@@ -463,6 +580,122 @@ export function SettingsPage() {
           onChange={(e) => setFontScale(Number.parseFloat(e.target.value))}
           className={styles.settingsRange}
         />
+      </div>
+
+      <div className={styles.settingsPanel} style={{ marginTop: "1.25rem", maxWidth: 980 }}>
+        <h2 className={styles.sectionTitle}>おまかせ取込フォーマット設定（全ユーザ共通）</h2>
+        <p className={styles.reclassifyHint} style={{ marginTop: "0.2rem" }}>
+          銀行・カード会社CSVのヘッダー名を登録できます。追加・更新は全ユーザ可能、削除は管理者のみです。
+        </p>
+        {importFormatsMsg ? (
+          <p className={styles.reclassifyHint} style={{ color: "var(--success, #166534)", marginTop: "0.45rem" }}>
+            {importFormatsMsg}
+          </p>
+        ) : null}
+        {importFormatsErr ? (
+          <p className={styles.reclassifyHint} style={{ color: "var(--danger, #b91c1c)", marginTop: "0.45rem" }}>
+            {importFormatsErr}
+          </p>
+        ) : null}
+        <div className={styles.modeRow} style={{ marginTop: "0.65rem", gap: "0.45rem", flexWrap: "wrap" }}>
+          <input
+            className={styles.cellInput}
+            placeholder="フォーマット名（例: ○○カード）"
+            value={formatName}
+            onChange={(e) => setFormatName(e.target.value)}
+            style={{ minWidth: "14rem", flex: "1 1 14rem" }}
+          />
+          <input
+            className={styles.cellInput}
+            placeholder="ソース判定キーワード（任意）"
+            value={formatSourceHint}
+            onChange={(e) => setFormatSourceHint(e.target.value)}
+            style={{ minWidth: "14rem", flex: "1 1 14rem" }}
+          />
+        </div>
+        <div className={styles.modeRow} style={{ marginTop: "0.45rem", gap: "0.45rem", flexWrap: "wrap" }}>
+          <input
+            className={styles.cellInput}
+            placeholder="日付ヘッダ（カンマ区切り）"
+            value={formatDateHeaders}
+            onChange={(e) => setFormatDateHeaders(e.target.value)}
+            style={{ minWidth: "18rem", flex: "1 1 18rem" }}
+          />
+          <input
+            className={styles.cellInput}
+            placeholder="内容ヘッダ（カンマ区切り）"
+            value={formatDescriptionHeaders}
+            onChange={(e) => setFormatDescriptionHeaders(e.target.value)}
+            style={{ minWidth: "18rem", flex: "1 1 18rem" }}
+          />
+        </div>
+        <div className={styles.modeRow} style={{ marginTop: "0.45rem", gap: "0.45rem", flexWrap: "wrap" }}>
+          <input
+            className={styles.cellInput}
+            placeholder="補助内容ヘッダ（任意）"
+            value={formatDescriptionSecondaryHeaders}
+            onChange={(e) => setFormatDescriptionSecondaryHeaders(e.target.value)}
+            style={{ minWidth: "18rem", flex: "1 1 18rem" }}
+          />
+          <input
+            className={styles.cellInput}
+            placeholder="金額ヘッダ（カンマ区切り）"
+            value={formatAmountHeaders}
+            onChange={(e) => setFormatAmountHeaders(e.target.value)}
+            style={{ minWidth: "18rem", flex: "1 1 18rem" }}
+          />
+        </div>
+        <div className={styles.modeRow} style={{ marginTop: "0.55rem", gap: "0.5rem", flexWrap: "wrap" }}>
+          <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={importFormatsBusy} onClick={() => void saveImportFormat()}>
+            {importFormatsBusy ? "保存中…" : editingFormatId != null ? "更新する" : "追加する"}
+          </button>
+          {editingFormatId != null ? (
+            <button type="button" className={styles.btn} disabled={importFormatsBusy} onClick={resetImportFormatForm}>
+              編集をキャンセル
+            </button>
+          ) : null}
+          <button type="button" className={styles.btn} disabled={importFormatsBusy} onClick={() => void loadImportFormats()}>
+            再読込
+          </button>
+        </div>
+        <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.45rem" }}>
+          {importFormats.map((f) => (
+            <div
+              key={f.id}
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: "0.55rem 0.65rem",
+                background: "var(--panel-bg)",
+              }}
+            >
+              <div className={styles.modeRow} style={{ justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                <strong>{f.name}</strong>
+                <div className={styles.modeRow} style={{ gap: "0.35rem", flexWrap: "wrap" }}>
+                  <button type="button" className={styles.btn} disabled={importFormatsBusy} onClick={() => startEditImportFormat(f)}>
+                    編集
+                  </button>
+                  {authUser?.isAdmin ? (
+                    <button
+                      type="button"
+                      className={styles.btn}
+                      disabled={importFormatsBusy}
+                      onClick={() => void removeImportFormat(f.id)}
+                    >
+                      削除
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              <p className={styles.reclassifyHint} style={{ margin: "0.3rem 0 0" }}>
+                日付: {(f.dateHeaders ?? []).join(" / ")} ｜ 内容: {(f.descriptionHeaders ?? []).join(" / ")} ｜ 金額: {(f.amountHeaders ?? []).join(" / ")}
+              </p>
+            </div>
+          ))}
+          {importFormats.length === 0 && !importFormatsBusy ? (
+            <p className={styles.reclassifyHint}>登録済フォーマットはありません。</p>
+          ) : null}
+        </div>
       </div>
 
       <div className={styles.settingsPanel} style={{ marginTop: "1.25rem", maxWidth: 820 }}>

@@ -2288,6 +2288,169 @@ async function getMonitorRecruitmentSettings(pool) {
   }
 }
 
+const SHARED_IMPORT_FORMAT_DEFAULTS = [
+  {
+    name: "PayPay履歴",
+    sourceHint: "PayPay",
+    dateHeaders: ["取引日", "日時", "利用日"],
+    descriptionHeaders: ["取引先", "支払先", "加盟店", "内容"],
+    descriptionSecondaryHeaders: ["取引内容", "種別", "取引種別"],
+    amountHeaders: ["出金金額（円）", "出金金額", "取引金額", "支払金額", "利用金額", "金額"],
+  },
+  {
+    name: "エポスカード",
+    sourceHint: "エポス",
+    dateHeaders: ["利用日", "利用年月日", "売上日", "確定日", "ご利用年月日"],
+    descriptionHeaders: ["利用店名・商品名", "ご利用店名", "加盟店名", "内容", "ご利用場所"],
+    descriptionSecondaryHeaders: ["摘要", "備考"],
+    amountHeaders: ["利用金額", "お支払い金額", "請求額", "利用額", "ご利用金額"],
+  },
+  {
+    name: "イオンカード",
+    sourceHint: "イオン",
+    dateHeaders: ["ご利用日", "利用日"],
+    descriptionHeaders: ["ご利用先", "利用先", "加盟店"],
+    descriptionSecondaryHeaders: ["備考", "支払方法", "取引内容"],
+    amountHeaders: ["ご利用金額", "利用金額", "請求額", "金額"],
+  },
+];
+
+function normalizeImportFormatHeaderList(input, maxLen = 40) {
+  const arr = Array.isArray(input) ? input : [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of arr) {
+    const v = String(raw ?? "").trim().slice(0, maxLen);
+    if (!v) continue;
+    const key = v.normalize("NFKC").toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+    if (out.length >= 30) break;
+  }
+  return out;
+}
+
+function normalizeSharedImportFormatInput(body) {
+  const name = String(body?.name ?? "").trim().slice(0, 120);
+  const sourceHintRaw = body?.sourceHint ?? body?.source_hint ?? "";
+  const sourceHint = String(sourceHintRaw ?? "").trim().slice(0, 120) || null;
+  const dateHeaders = normalizeImportFormatHeaderList(body?.dateHeaders);
+  const descriptionHeaders = normalizeImportFormatHeaderList(body?.descriptionHeaders);
+  const descriptionSecondaryHeaders = normalizeImportFormatHeaderList(body?.descriptionSecondaryHeaders);
+  const amountHeaders = normalizeImportFormatHeaderList(body?.amountHeaders);
+  if (!name) return { ok: false, error: "name は必須です" };
+  if (dateHeaders.length === 0) return { ok: false, error: "dateHeaders は1件以上必要です" };
+  if (descriptionHeaders.length === 0) {
+    return { ok: false, error: "descriptionHeaders は1件以上必要です" };
+  }
+  if (amountHeaders.length === 0) return { ok: false, error: "amountHeaders は1件以上必要です" };
+  return {
+    ok: true,
+    value: {
+      name,
+      sourceHint,
+      dateHeaders,
+      descriptionHeaders,
+      descriptionSecondaryHeaders,
+      amountHeaders,
+    },
+  };
+}
+
+async function ensureSharedImportFormatProfilesTable(pool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS shared_import_format_profiles (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      name VARCHAR(120) NOT NULL,
+      source_hint VARCHAR(120) NULL,
+      date_headers_json JSON NOT NULL,
+      description_headers_json JSON NOT NULL,
+      description_secondary_headers_json JSON NULL,
+      amount_headers_json JSON NOT NULL,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_by BIGINT NULL,
+      updated_by BIGINT NULL,
+      deleted_at DATETIME NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_shared_import_format_profiles_name (name),
+      KEY idx_shared_import_format_profiles_active (is_active, updated_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  );
+}
+
+async function ensureSharedImportFormatAuditTable(pool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS shared_import_format_profile_audit (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      profile_id BIGINT UNSIGNED NOT NULL,
+      action_type VARCHAR(16) NOT NULL,
+      actor_user_id BIGINT NULL,
+      payload_json JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_shared_import_format_profile_audit_profile (profile_id, id),
+      KEY idx_shared_import_format_profile_audit_created (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  );
+}
+
+async function writeSharedImportFormatAudit(pool, { profileId, actionType, actorUserId, payload }) {
+  await ensureSharedImportFormatAuditTable(pool);
+  await pool.query(
+    `INSERT INTO shared_import_format_profile_audit (profile_id, action_type, actor_user_id, payload_json)
+     VALUES (?, ?, ?, CAST(? AS JSON))`,
+    [
+      Number(profileId),
+      String(actionType),
+      actorUserId != null ? Number(actorUserId) : null,
+      JSON.stringify(payload ?? {}),
+    ],
+  );
+}
+
+async function seedSharedImportFormatDefaults(pool) {
+  for (const d of SHARED_IMPORT_FORMAT_DEFAULTS) {
+    await pool.query(
+      `INSERT IGNORE INTO shared_import_format_profiles
+        (name, source_hint, date_headers_json, description_headers_json, description_secondary_headers_json, amount_headers_json, is_active, created_by, updated_by)
+       VALUES (?, ?, CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), 1, NULL, NULL)`,
+      [
+        d.name,
+        d.sourceHint,
+        JSON.stringify(d.dateHeaders),
+        JSON.stringify(d.descriptionHeaders),
+        JSON.stringify(d.descriptionSecondaryHeaders ?? []),
+        JSON.stringify(d.amountHeaders),
+      ],
+    );
+  }
+}
+
+function rowToSharedImportFormatProfile(row) {
+  const parseJsonArray = (v) => {
+    try {
+      const p = typeof v === "string" ? JSON.parse(v) : v;
+      return Array.isArray(p) ? p.map((x) => String(x ?? "").trim()).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  };
+  return {
+    id: Number(row?.id),
+    name: String(row?.name ?? "").trim(),
+    sourceHint: String(row?.source_hint ?? "").trim() || null,
+    dateHeaders: parseJsonArray(row?.date_headers_json),
+    descriptionHeaders: parseJsonArray(row?.description_headers_json),
+    descriptionSecondaryHeaders: parseJsonArray(row?.description_secondary_headers_json),
+    amountHeaders: parseJsonArray(row?.amount_headers_json),
+    createdAt: row?.created_at instanceof Date ? row.created_at.toISOString() : String(row?.created_at ?? ""),
+    updatedAt: row?.updated_at instanceof Date ? row.updated_at.toISOString() : String(row?.updated_at ?? ""),
+  };
+}
+
 /**
  * モニター募集設定の保存（INSERT … ON DUPLICATE KEY UPDATE）。主キー id=1、header は触らない。
  * @param {import("mysql2/promise").Pool} pool
@@ -2366,6 +2529,7 @@ export async function handleApiRequest(req, options = {}) {
             transactions: "/transactions",
             summary: "/summary/month",
             fixedCosts: "/settings/fixed-costs",
+            importFormats: "/settings/import-formats",
             stripeWebhook: "/webhooks/stripe",
             stripeWebhookApiPrefixed: "/api/webhooks/stripe",
             billingCheckoutSession: "/billing/checkout-session",
@@ -2380,6 +2544,7 @@ export async function handleApiRequest(req, options = {}) {
             announcement: "/announcement",
             adminAnnouncement: "/admin/announcement",
             adminMonitorRecruitmentSettings: "/admin/monitor-recruitment-settings",
+            adminImportFormatAudit: "/admin/import-formats/audit",
             supportChatMessages: "/support/chat/messages",
             supportChatRead: "/support/chat/read",
             familyChatMessages: "/family/chat/messages",
@@ -2651,6 +2816,119 @@ export async function handleApiRequest(req, options = {}) {
     const supportChatMessageOneMatch = /^\/support\/chat\/messages\/(\d+)$/.exec(normPath);
     const familyChatMessageOneMatch = /^\/family\/chat\/messages\/(\d+)$/.exec(normPath);
     const receiptJobStatusMatch = /^\/receipts\/job-status\/([^/]+)$/.exec(normPath);
+    const importFormatOneMatch = /^\/settings\/import-formats\/(\d+)$/.exec(normPath);
+
+    if (importFormatOneMatch && method === "PATCH") {
+      let b;
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+      }
+      const norm = normalizeSharedImportFormatInput(b);
+      if (!norm.ok) return json(400, { error: norm.error }, hdrs, skipCors);
+      const targetId = Number(importFormatOneMatch[1], 10);
+      if (!Number.isFinite(targetId) || targetId <= 0) {
+        return json(400, { error: "id が不正です" }, hdrs, skipCors);
+      }
+      await ensureSharedImportFormatProfilesTable(pool);
+      await ensureSharedImportFormatAuditTable(pool);
+      try {
+        const [beforeRows] = await pool.query(
+          `SELECT id, name, source_hint, date_headers_json, description_headers_json,
+                  description_secondary_headers_json, amount_headers_json
+           FROM shared_import_format_profiles
+           WHERE id = ?
+           LIMIT 1`,
+          [targetId],
+        );
+        const before = Array.isArray(beforeRows) && beforeRows[0] ? rowToSharedImportFormatProfile(beforeRows[0]) : null;
+        const [res] = await pool.query(
+          `UPDATE shared_import_format_profiles
+           SET name = ?,
+               source_hint = ?,
+               date_headers_json = CAST(? AS JSON),
+               description_headers_json = CAST(? AS JSON),
+               description_secondary_headers_json = CAST(? AS JSON),
+               amount_headers_json = CAST(? AS JSON),
+               is_active = 1,
+               deleted_at = NULL,
+               updated_by = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [
+            norm.value.name,
+            norm.value.sourceHint,
+            JSON.stringify(norm.value.dateHeaders),
+            JSON.stringify(norm.value.descriptionHeaders),
+            JSON.stringify(norm.value.descriptionSecondaryHeaders ?? []),
+            JSON.stringify(norm.value.amountHeaders),
+            userId,
+            targetId,
+          ],
+        );
+        const affected = Number(res?.affectedRows ?? 0);
+        if (affected <= 0) return json(404, { error: "対象のフォーマットが見つかりません" }, hdrs, skipCors);
+        await writeSharedImportFormatAudit(pool, {
+          profileId: targetId,
+          actionType: "update",
+          actorUserId: userId,
+          payload: {
+            before,
+            after: {
+              name: norm.value.name,
+              sourceHint: norm.value.sourceHint,
+              dateHeaders: norm.value.dateHeaders,
+              descriptionHeaders: norm.value.descriptionHeaders,
+              descriptionSecondaryHeaders: norm.value.descriptionSecondaryHeaders,
+              amountHeaders: norm.value.amountHeaders,
+            },
+          },
+        });
+        return json(200, { ok: true }, hdrs, skipCors);
+      } catch (e) {
+        const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+        if (code === "ER_DUP_ENTRY") {
+          return json(409, { error: "同名のフォーマットが既に存在します" }, hdrs, skipCors);
+        }
+        throw e;
+      }
+    }
+
+    if (importFormatOneMatch && method === "DELETE") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const targetId = Number(importFormatOneMatch[1], 10);
+      if (!Number.isFinite(targetId) || targetId <= 0) {
+        return json(400, { error: "id が不正です" }, hdrs, skipCors);
+      }
+      await ensureSharedImportFormatProfilesTable(pool);
+      await ensureSharedImportFormatAuditTable(pool);
+      const [beforeRows] = await pool.query(
+        `SELECT id, name, source_hint, date_headers_json, description_headers_json,
+                description_secondary_headers_json, amount_headers_json
+         FROM shared_import_format_profiles
+         WHERE id = ?
+         LIMIT 1`,
+        [targetId],
+      );
+      const before = Array.isArray(beforeRows) && beforeRows[0] ? rowToSharedImportFormatProfile(beforeRows[0]) : null;
+      const [res] = await pool.query(
+        `UPDATE shared_import_format_profiles
+         SET is_active = 0, deleted_at = CURRENT_TIMESTAMP, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND is_active = 1`,
+        [userId, targetId],
+      );
+      const affected = Number(res?.affectedRows ?? 0);
+      if (affected <= 0) return json(404, { error: "対象のフォーマットが見つかりません" }, hdrs, skipCors);
+      await writeSharedImportFormatAudit(pool, {
+        profileId: targetId,
+        actionType: "delete",
+        actorUserId: userId,
+        payload: { before },
+      });
+      return json(200, { ok: true }, hdrs, skipCors);
+    }
 
     if (receiptJobStatusMatch && method === "GET") {
       const jobId = String(receiptJobStatusMatch[1] || "").trim();
@@ -3698,6 +3976,27 @@ export async function handleApiRequest(req, options = {}) {
         hdrs,
         skipCors,
       );
+    }
+
+    if (routeKey(method, path) === "GET /admin/import-formats/audit") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      await ensureSharedImportFormatProfilesTable(pool);
+      await ensureSharedImportFormatAuditTable(pool);
+      const limitRaw = Number.parseInt(String(q.limit ?? "200"), 10);
+      const limit = Math.max(1, Math.min(500, Number.isFinite(limitRaw) ? limitRaw : 200));
+      const [rows] = await pool.query(
+        `SELECT a.id, a.profile_id, a.action_type, a.actor_user_id, a.payload_json, a.created_at,
+                p.name AS profile_name,
+                u.email AS actor_email, u.display_name AS actor_display_name
+         FROM shared_import_format_profile_audit a
+         LEFT JOIN shared_import_format_profiles p ON p.id = a.profile_id
+         LEFT JOIN users u ON u.id = a.actor_user_id
+         ORDER BY a.id DESC
+         LIMIT ?`,
+        [limit],
+      );
+      return json(200, { items: rows }, hdrs, skipCors);
     }
 
     if (
@@ -5729,6 +6028,78 @@ export async function handleApiRequest(req, options = {}) {
           conn.release();
         }
         return json(200, { ok: true }, hdrs, skipCors);
+      }
+
+      case "GET /settings/import-formats": {
+        await ensureSharedImportFormatProfilesTable(pool);
+        await seedSharedImportFormatDefaults(pool);
+        const [rows] = await pool.query(
+          `SELECT id, name, source_hint, date_headers_json, description_headers_json,
+                  description_secondary_headers_json, amount_headers_json, created_at, updated_at
+           FROM shared_import_format_profiles
+           WHERE is_active = 1
+           ORDER BY updated_at DESC, id DESC`,
+        );
+        return json(
+          200,
+          { items: (Array.isArray(rows) ? rows : []).map(rowToSharedImportFormatProfile) },
+          hdrs,
+          skipCors,
+        );
+      }
+
+      case "POST /settings/import-formats": {
+        let b;
+        try {
+          b = JSON.parse(req.body || "{}");
+        } catch {
+          return json(400, { error: "JSON が不正です" }, hdrs, skipCors);
+        }
+        const norm = normalizeSharedImportFormatInput(b);
+        if (!norm.ok) return json(400, { error: norm.error }, hdrs, skipCors);
+        await ensureSharedImportFormatProfilesTable(pool);
+        await ensureSharedImportFormatAuditTable(pool);
+        await seedSharedImportFormatDefaults(pool);
+        try {
+          const [ins] = await pool.query(
+            `INSERT INTO shared_import_format_profiles
+              (name, source_hint, date_headers_json, description_headers_json, description_secondary_headers_json, amount_headers_json, is_active, created_by, updated_by)
+             VALUES (?, ?, CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), 1, ?, ?)`,
+            [
+              norm.value.name,
+              norm.value.sourceHint,
+              JSON.stringify(norm.value.dateHeaders),
+              JSON.stringify(norm.value.descriptionHeaders),
+              JSON.stringify(norm.value.descriptionSecondaryHeaders ?? []),
+              JSON.stringify(norm.value.amountHeaders),
+              userId,
+              userId,
+            ],
+          );
+          const newId = Number(ins?.insertId ?? 0);
+          if (newId > 0) {
+            await writeSharedImportFormatAudit(pool, {
+              profileId: newId,
+              actionType: "create",
+              actorUserId: userId,
+              payload: {
+                name: norm.value.name,
+                sourceHint: norm.value.sourceHint,
+                dateHeaders: norm.value.dateHeaders,
+                descriptionHeaders: norm.value.descriptionHeaders,
+                descriptionSecondaryHeaders: norm.value.descriptionSecondaryHeaders,
+                amountHeaders: norm.value.amountHeaders,
+              },
+            });
+          }
+          return json(200, { ok: true, id: newId }, hdrs, skipCors);
+        } catch (e) {
+          const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+          if (code === "ER_DUP_ENTRY") {
+            return json(409, { error: "同名のフォーマットが既に存在します" }, hdrs, skipCors);
+          }
+          throw e;
+        }
       }
 
       case "POST /ai/advisor": {

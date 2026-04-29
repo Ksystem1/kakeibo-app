@@ -5,6 +5,7 @@ import {
   deleteAdminUser,
   getAdminAnnouncement,
   getAdminFeaturePermissions,
+  getAdminImportFormatAudit,
   getAdminMonitorRecruitmentSettings,
   getAdminPayPayImportSummary,
   getAdminSalesLogs,
@@ -22,6 +23,7 @@ import {
   updateAdminUser,
   downloadAdminSalesCsv,
   type AdminFeaturePermissionRow,
+  type AdminImportFormatAuditRow,
   type AdminSalesDailySummaryRow,
   type AdminSalesLogRow,
   type AdminSalesMonthlySummaryRow,
@@ -332,6 +334,8 @@ export function AdminPage() {
   const [featurePermRows, setFeaturePermRows] = useState<AdminFeaturePermissionRow[]>([]);
   const [featurePermError, setFeaturePermError] = useState<string | null>(null);
   const [featurePermSaving, setFeaturePermSaving] = useState<string | null>(null);
+  const [importFormatAuditRows, setImportFormatAuditRows] = useState<AdminImportFormatAuditRow[]>([]);
+  const [importFormatAuditError, setImportFormatAuditError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -392,6 +396,11 @@ export function AdminPage() {
         setSalesError(msg && msg.trim() ? msg : "売上明細の取得に失敗しました。");
         return { items: [] as AdminSalesLogRow[] };
       });
+      const importAudit = await getAdminImportFormatAudit({ limit: 200 }).catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        setImportFormatAuditError(msg && msg.trim() ? msg : "取込フォーマット監査ログの取得に失敗しました。");
+        return { items: [] as AdminImportFormatAuditRow[] };
+      });
       const list = Array.isArray(res.items) ? res.items : [];
       setFeaturePermError(null);
       try {
@@ -412,9 +421,13 @@ export function AdminPage() {
       if (Array.isArray(monthlySales.items) && Array.isArray(sales.items)) {
         setSalesError(null);
       }
+      if (Array.isArray(importAudit.items)) {
+        setImportFormatAuditError(null);
+      }
       setPaypayImportSummary(Array.isArray(monitor.items) ? monitor.items : []);
       setSalesMonthlySummary(Array.isArray(monthlySales.items) ? monthlySales.items : []);
       setSalesLogs(Array.isArray(sales.items) ? sales.items : []);
+      setImportFormatAuditRows(Array.isArray(importAudit.items) ? importAudit.items : []);
       setSubscriptionStatusWritable(res.meta?.subscriptionStatusWritable !== false);
       setDisplayNameDrafts(
         Object.fromEntries(
@@ -1379,6 +1392,59 @@ export function AdminPage() {
           {announcementMessage ? (
             <span style={{ fontSize: "0.88rem", color: "var(--text-muted)" }}>{announcementMessage}</span>
           ) : null}
+        </div>
+      </div>
+      <div
+        style={{
+          margin: "0.8rem 0 1rem",
+          padding: "0.9rem 1rem",
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+        }}
+      >
+        <h2 style={{ margin: "0 0 0.5rem", fontSize: "1.02rem" }}>取込フォーマット変更ログ</h2>
+        <p style={{ margin: "0 0 0.65rem", fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+          おまかせ取込フォーマットの追加・更新・削除を追跡します（不正アクセス監視用）。
+        </p>
+        {importFormatAuditError ? (
+          <p style={{ margin: "0 0 0.55rem", fontSize: "0.86rem", color: "var(--danger, #c44)" }} role="alert">
+            {importFormatAuditError}
+          </p>
+        ) : null}
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 880 }}>
+            <thead>
+              <tr style={{ background: "var(--bg-card)" }}>
+                <th style={adminTableTh}>日時</th>
+                <th style={adminTableTh}>操作</th>
+                <th style={adminTableTh}>フォーマット</th>
+                <th style={adminTableTh}>実施ユーザー</th>
+              </tr>
+            </thead>
+            <tbody>
+              {importFormatAuditRows.map((r) => (
+                <tr key={`fmt-audit-${r.id}`} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={adminTableTd}>{formatDateTime(r.created_at)}</td>
+                  <td style={adminTableTd}>{String(r.action_type ?? "").toUpperCase()}</td>
+                  <td style={adminTableTd}>
+                    {r.profile_name ?? "（名称未取得）"}（ID:{r.profile_id ?? "—"}）
+                  </td>
+                  <td style={adminTableTd}>
+                    {r.actor_display_name || r.actor_email || "不明"}
+                    {r.actor_user_id != null ? `（ID:${r.actor_user_id}）` : ""}
+                  </td>
+                </tr>
+              ))}
+              {importFormatAuditRows.length === 0 ? (
+                <tr>
+                  <td style={adminTableTd} colSpan={4}>
+                    ログはまだありません。
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </div>
       <div
