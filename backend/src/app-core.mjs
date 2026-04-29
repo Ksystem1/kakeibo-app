@@ -309,6 +309,26 @@ function normalizeTxMemo(raw) {
   return s === "" ? null : s;
 }
 
+function normalizeMemoForReconcile(raw) {
+  return String(raw ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[　\-ー‐－:：()（）「」『』[\]【】]/g, "")
+    .replace(/株式会社/g, "")
+    .replace(/\(株\)/g, "")
+    .replace(/有限会社/g, "")
+    .replace(/\(有\)/g, "")
+    .trim();
+}
+
+function memosPartiallyMatch(a, b) {
+  const na = normalizeMemoForReconcile(a);
+  const nb = normalizeMemoForReconcile(b);
+  if (!na || !nb) return false;
+  return na.includes(nb) || nb.includes(na);
+}
+
 function inferMedicalByText(memo, categoryRaw) {
   const text = `${String(categoryRaw ?? "")} ${String(memo ?? "")}`.toLowerCase();
   if (!text.trim()) {
@@ -5295,21 +5315,29 @@ export async function handleApiRequest(req, options = {}) {
         const fromReceipt = b.from_receipt === true || b.from_receipt === "true";
         if (fromReceipt) {
           const [exactRows] = await pool.query(
-            `SELECT t.id FROM transactions t
+            `SELECT t.id, t.memo FROM transactions t
              WHERE t.user_id = ?
                AND t.kind = ?
-               AND t.transaction_date = ?
+               AND t.transaction_date BETWEEN DATE_SUB(?, INTERVAL 1 DAY) AND DATE_ADD(?, INTERVAL 1 DAY)
                AND t.amount = ?
-               AND (t.memo <=> ?)
-             LIMIT 1`,
-            [userId, kind, txDate, amt, memo],
+             ORDER BY ABS(DATEDIFF(t.transaction_date, ?)) ASC, t.id DESC
+             LIMIT 20`,
+            [userId, kind, txDate, txDate, amt, txDate],
           );
-          if (Array.isArray(exactRows) && exactRows.length > 0) {
+          const memoNorm = normalizeMemoForReconcile(memo);
+          const matched = Array.isArray(exactRows)
+            ? exactRows.find((r) => {
+                if (!memoNorm) return true;
+                return memosPartiallyMatch(memo, r?.memo ?? "");
+              })
+            : null;
+          if (matched) {
             return json(
               409,
               {
                 error: "AlreadyRegistered",
                 detail: "既に登録済です",
+                matchedId: Number(matched.id),
               },
               hdrs,
               skipCors,

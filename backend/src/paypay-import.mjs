@@ -313,6 +313,84 @@ function buildMemo(merchantRaw, combined) {
   return base.slice(0, 500);
 }
 
+function normalizeMemoForReconcile(raw) {
+  return String(raw ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[　\-ー‐－:：()（）「」『』[\]【】]/g, "")
+    .replace(/paypay支払い/g, "")
+    .replace(/株式会社/g, "")
+    .replace(/\(株\)/g, "")
+    .replace(/有限会社/g, "")
+    .replace(/\(有\)/g, "")
+    .trim();
+}
+
+function memosPartiallyMatch(a, b) {
+  const na = normalizeMemoForReconcile(a);
+  const nb = normalizeMemoForReconcile(b);
+  if (!na || !nb) return false;
+  return na.includes(nb) || nb.includes(na);
+}
+
+/**
+ * レシート先行登録の取引へ PayPay 明細を後から突合して上書きする。
+ * 判定: 日付±1日・金額一致・店舗名部分一致（店舗名が弱い場合は日付+金額を優先）。
+ * @returns {Promise<{ rowsToUpsert: Array<any>, reconciledCount: number }>}
+ */
+async function reconcilePayPayRowsWithExistingReceipts(pool, userId, rows, planRecords) {
+  const remaining = [];
+  let reconciledCount = 0;
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    const pr = planRecords[i];
+    const merchantRaw = pr && typeof pr.merchantRaw === "string" ? pr.merchantRaw : "";
+    const [candRows] = await pool.query(
+      `SELECT t.id, t.memo, t.transaction_date
+       FROM transactions t
+       WHERE t.user_id = ?
+         AND t.kind = 'expense'
+         AND t.amount = ?
+         AND t.external_transaction_id IS NULL
+         AND t.transaction_date BETWEEN DATE_SUB(?, INTERVAL 1 DAY) AND DATE_ADD(?, INTERVAL 1 DAY)
+       ORDER BY ABS(DATEDIFF(t.transaction_date, ?)) ASC, t.id DESC
+       LIMIT 20`,
+      [userId, row.amount, row.transactionDate, row.transactionDate, row.transactionDate],
+    );
+    const merchantNorm = normalizeMemoForReconcile(merchantRaw);
+    const matched = Array.isArray(candRows)
+      ? candRows.find((c) => {
+          if (!merchantNorm) return true;
+          return memosPartiallyMatch(merchantRaw, c?.memo ?? "");
+        })
+      : null;
+    if (!matched) {
+      remaining.push(row);
+      continue;
+    }
+    await pool.query(
+      `UPDATE transactions t
+       SET t.transaction_date = ?,
+           t.memo = ?,
+           t.category_id = COALESCE(t.category_id, ?),
+           t.external_transaction_id = ?,
+           t.updated_at = NOW()
+       WHERE t.user_id = ? AND t.id = ?`,
+      [
+        row.transactionDate,
+        row.memo,
+        row.categoryId != null && row.categoryId !== undefined ? row.categoryId : null,
+        row.externalTransactionId,
+        userId,
+        Number(matched.id),
+      ],
+    );
+    reconciledCount += 1;
+  }
+  return { rowsToUpsert: remaining, reconciledCount };
+}
+
 async function fetchExistingExternalIds(pool, userId, externalIds) {
   if (externalIds.length === 0) return new Set();
   const out = new Set();
@@ -472,13 +550,21 @@ export async function executePayPayCsvImport(pool, payload) {
     categoryId: /** @type {number | null} */ (null),
   }));
   await applyPayPayCategoryResolution(pool, userId, plan.records, rows, dryRun);
-  const extIds = rows.map((r) => r.externalTransactionId);
+  let rowsForUpsert = rows;
+  let reconciledCount = 0;
+  if (!dryRun) {
+    const rec = await reconcilePayPayRowsWithExistingReceipts(pool, userId, rows, plan.records);
+    rowsForUpsert = rec.rowsToUpsert;
+    reconciledCount = rec.reconciledCount;
+  }
+  const extIds = rowsForUpsert.map((r) => r.externalTransactionId);
   const existingIds = await fetchExistingExternalIds(pool, userId, extIds);
-  const updatedCount = rows.filter((r) => existingIds.has(r.externalTransactionId)).length;
-  const newCount = rows.length - updatedCount;
+  const updatedByExternalIdCount = rowsForUpsert.filter((r) => existingIds.has(r.externalTransactionId)).length;
+  const newCount = rowsForUpsert.length - updatedByExternalIdCount;
+  const updatedCount = updatedByExternalIdCount + reconciledCount;
 
   if (!dryRun) {
-    await bulkUpsertTransactions(pool, rows);
+    await bulkUpsertTransactions(pool, rowsForUpsert);
   }
 
   return {
