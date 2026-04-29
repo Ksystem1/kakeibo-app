@@ -7369,6 +7369,8 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
   let finalStatus = null;
   let finalResultData = null;
   let finalErrorMessage = null;
+  /** 受付直後の二重 kick（setImmediate + 1.5s watchdog）の 2 本目は affectedRows=0 で return する。finally はその return 後にも走るため、lock を取れなかった起動ではフォールバックを実行しない（進行中の本処理を上書きしない） */
+  let jobLockAcquired = false;
   try {
     console.error("[receipts.job.start]", { jobId, userId });
     const [u] = await pool.query(
@@ -7379,6 +7381,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
     if (!u?.affectedRows) {
       return;
     }
+    jobLockAcquired = true;
     const [[row]] = await pool.query(
       `SELECT request_json FROM receipt_processing_jobs WHERE job_id = ? AND user_id = ? LIMIT 1`,
       [jobId, userId],
@@ -7551,6 +7554,9 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
       /* ignore */
     }
   } finally {
+    if (!jobLockAcquired) {
+      return;
+    }
     try {
       const [rows] = await pool.query(
         `SELECT status FROM receipt_processing_jobs WHERE job_id = ? AND user_id = ? LIMIT 1`,

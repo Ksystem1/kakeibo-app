@@ -954,17 +954,20 @@ export function ReceiptPage() {
           void p;
         },
       });
-      setReceiptImportQueue((prev) => [
-        ...prev,
-        {
-          localKey: crypto.randomUUID(),
-          fileName: f.name,
-          objectUrl: newObjectUrl!,
-          jobId: u.jobId,
-          status: (u.status as ReceiptAsyncJobStatus) || "pending",
-          progressPct: 0,
-        },
-      ]);
+      setReceiptImportQueue((prev) => {
+        if (prev.some((q) => q.jobId === u.jobId)) return prev;
+        return [
+          ...prev,
+          {
+            localKey: crypto.randomUUID(),
+            fileName: f.name,
+            objectUrl: newObjectUrl!,
+            jobId: u.jobId,
+            status: (u.status as ReceiptAsyncJobStatus) || "pending",
+            progressPct: 0,
+          },
+        ];
+      });
       setNotice("アップロード完了。解析結果は順次この画面に反映されます。");
     } catch (e) {
       if (newObjectUrl) {
