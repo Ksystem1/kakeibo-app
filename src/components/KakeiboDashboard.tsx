@@ -2393,16 +2393,15 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
               <table className={styles.categoryDetailTable}>
               <thead>
                 <tr>
-                  <th>日付</th>
-                  <th>内容</th>
-                  <th>金額</th>
-                  <th className={styles.categoryDetailOpCell}> </th>
+                  <th colSpan={4} className={styles.categoryDetailTableTheadRow}>
+                    上段: 日付・金額 ／ 下段: 内容
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {expenseCategoryModalTx.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={{ padding: "0.9rem" }}>
+                    <td colSpan={4} className={styles.categoryDetailTableEmptyCell}>
                       <div className={styles.empty}>
                         該当する支出明細はありません（他画面で分類を変更した場合、一覧に合わないことがあります）。
                       </div>
@@ -2415,185 +2414,210 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                     if (isEd && m) {
                       return (
                         <tr key={t.id} className={styles.rowEditing}>
-                          <td>
-                            <input
-                              className={`${styles.cellInput} ${styles.categoryDetailDateInput}`}
-                              type="date"
-                              value={m.transaction_date}
-                              onChange={(ev) =>
-                                setModalLineEdit({ ...m, transaction_date: ev.target.value })
-                              }
-                              aria-label="日付"
-                            />
-                          </td>
-                          <td>
-                            <div className={styles.categoryDetailEditCell}>
-                              <div className={styles.categoryDetailEditKindRow}>
-                                <select
-                                  className={styles.cellInput}
-                                  value={m.kind}
-                                  onChange={(ev) =>
-                                    applyMedicalDefaultsToModalLineEdit(
-                                      m.category_id,
-                                      ev.target.value as "expense" | "income",
-                                    )
-                                  }
-                                  aria-label="種別"
+                          <td colSpan={4} className={styles.categoryDetailDesktopRowCell}>
+                            <div className={styles.categoryDetailRowBlock}>
+                              <div className={styles.categoryDetailRowLine1}>
+                                <div
+                                  className={styles.categoryDetailRowDateAmount}
+                                  role="group"
+                                  aria-label="日付と金額"
                                 >
-                                  <option value="expense">支出</option>
-                                  <option value="income">収入</option>
-                                </select>
-                                <select
-                                  className={styles.cellInput}
-                                  value={m.category_id}
-                                  onChange={(ev) =>
-                                    applyMedicalDefaultsToModalLineEdit(ev.target.value, m.kind)
-                                  }
-                                  aria-label="カテゴリ"
-                                >
-                                  <option value="">なし</option>
-                                  {modalEditCategories.map((c) => (
-                                    <option key={c.id} value={c.id}>
-                                      {c.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                  <input
+                                    className={`${styles.cellInput} ${styles.categoryDetailDateInput} ${styles.categoryDetailRowDateInput}`}
+                                    type="date"
+                                    value={m.transaction_date}
+                                    onChange={(ev) =>
+                                      setModalLineEdit({ ...m, transaction_date: ev.target.value })
+                                    }
+                                    aria-label="日付"
+                                  />
+                                  <input
+                                    className={`${styles.cellInput} ${styles.categoryDetailRowAmountInput}`}
+                                    type="number"
+                                    min={m.kind === "income" ? 0 : 1}
+                                    step={1}
+                                    value={m.amount}
+                                    onChange={(ev) => setModalLineEdit({ ...m, amount: ev.target.value })}
+                                    aria-label="金額"
+                                  />
+                                </div>
+                                <div className={styles.categoryDetailRowLine1Ops}>
+                                  <button
+                                    type="button"
+                                    className={`${styles.btn} ${styles.btnSm} ${styles.btnPrimary}`}
+                                    disabled={modalEditSaving || !base}
+                                    onClick={() => void saveModalLineEdit()}
+                                  >
+                                    {modalEditSaving ? "保存中…" : "保存"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={`${styles.btn} ${styles.btnSm}`}
+                                    disabled={modalEditSaving}
+                                    onClick={cancelModalLineEdit}
+                                  >
+                                    キャンセル
+                                  </button>
+                                </div>
                               </div>
-                              <input
-                                className={`${styles.cellInput} ${styles.categoryDetailEditMemoField}`}
-                                type="text"
-                                value={m.memo}
-                                onChange={(ev) => setModalLineEdit({ ...m, memo: ev.target.value })}
-                                placeholder="内容・メモ"
-                                aria-label="内容"
-                              />
-                              {m.kind === "expense" ? (
-                                <div className={styles.categoryDetailEditMedical}>
-                                  <label>
-                                    <input
-                                      type="checkbox"
-                                      checked={m.is_medical_expense}
-                                      onChange={(ev) =>
-                                        setModalLineEdit({
-                                          ...m,
-                                          is_medical_expense: ev.target.checked,
-                                          medical_type: ev.target.checked ? m.medical_type : "",
-                                          medical_patient_name: ev.target.checked
-                                            ? m.medical_patient_name
-                                            : "",
-                                        })
-                                      }
-                                    />{" "}
-                                    医療費控除の対象
-                                  </label>
-                                  <div className={styles.categoryDetailEditMedicalRow}>
+                              <div className={styles.categoryDetailRowLine2Edit}>
+                                <div className={styles.categoryDetailEditCell}>
+                                  <div className={styles.categoryDetailEditKindRow}>
                                     <select
                                       className={styles.cellInput}
-                                      value={m.medical_type}
+                                      value={m.kind}
                                       onChange={(ev) =>
-                                        setModalLineEdit({
-                                          ...m,
-                                          medical_type: (ev.target.value as MedicalType | "") ?? "",
-                                        })
+                                        applyMedicalDefaultsToModalLineEdit(
+                                          m.category_id,
+                                          ev.target.value as "expense" | "income",
+                                        )
                                       }
-                                      disabled={!m.is_medical_expense}
-                                      aria-label="医療費3区分"
+                                      aria-label="種別"
                                     >
-                                      <option value="">選択してください</option>
-                                      <option value="treatment">診療・治療</option>
-                                      <option value="medicine">医薬品</option>
-                                      <option value="other">その他</option>
+                                      <option value="expense">支出</option>
+                                      <option value="income">収入</option>
                                     </select>
-                                    <input
+                                    <select
                                       className={styles.cellInput}
-                                      type="text"
-                                      value={m.medical_patient_name}
+                                      value={m.category_id}
                                       onChange={(ev) =>
-                                        setModalLineEdit({ ...m, medical_patient_name: ev.target.value })
+                                        applyMedicalDefaultsToModalLineEdit(ev.target.value, m.kind)
                                       }
-                                      maxLength={120}
-                                      placeholder="対象者名"
-                                      disabled={!m.is_medical_expense}
-                                      aria-label="医療費対象者"
-                                    />
+                                      aria-label="カテゴリ"
+                                    >
+                                      <option value="">なし</option>
+                                      {modalEditCategories.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                          {c.name}
+                                        </option>
+                                      ))}
+                                    </select>
                                   </div>
+                                  <input
+                                    className={`${styles.cellInput} ${styles.categoryDetailEditMemoField}`}
+                                    type="text"
+                                    value={m.memo}
+                                    onChange={(ev) => setModalLineEdit({ ...m, memo: ev.target.value })}
+                                    placeholder="内容・メモ"
+                                    aria-label="内容"
+                                  />
+                                  {m.kind === "expense" ? (
+                                    <div className={styles.categoryDetailEditMedical}>
+                                      <label>
+                                        <input
+                                          type="checkbox"
+                                          checked={m.is_medical_expense}
+                                          onChange={(ev) =>
+                                            setModalLineEdit({
+                                              ...m,
+                                              is_medical_expense: ev.target.checked,
+                                              medical_type: ev.target.checked ? m.medical_type : "",
+                                              medical_patient_name: ev.target.checked
+                                                ? m.medical_patient_name
+                                                : "",
+                                            })
+                                          }
+                                        />{" "}
+                                        医療費控除の対象
+                                      </label>
+                                      <div className={styles.categoryDetailEditMedicalRow}>
+                                        <select
+                                          className={styles.cellInput}
+                                          value={m.medical_type}
+                                          onChange={(ev) =>
+                                            setModalLineEdit({
+                                              ...m,
+                                              medical_type: (ev.target.value as MedicalType | "") ?? "",
+                                            })
+                                          }
+                                          disabled={!m.is_medical_expense}
+                                          aria-label="医療費3区分"
+                                        >
+                                          <option value="">選択してください</option>
+                                          <option value="treatment">診療・治療</option>
+                                          <option value="medicine">医薬品</option>
+                                          <option value="other">その他</option>
+                                        </select>
+                                        <input
+                                          className={styles.cellInput}
+                                          type="text"
+                                          value={m.medical_patient_name}
+                                          onChange={(ev) =>
+                                            setModalLineEdit({ ...m, medical_patient_name: ev.target.value })
+                                          }
+                                          maxLength={120}
+                                          placeholder="対象者名"
+                                          disabled={!m.is_medical_expense}
+                                          aria-label="医療費対象者"
+                                        />
+                                      </div>
+                                    </div>
+                                  ) : null}
                                 </div>
-                              ) : null}
+                              </div>
                             </div>
-                          </td>
-                          <td>
-                            <input
-                              className={styles.cellInput}
-                              type="number"
-                              min={m.kind === "income" ? 0 : 1}
-                              step={1}
-                              value={m.amount}
-                              onChange={(ev) => setModalLineEdit({ ...m, amount: ev.target.value })}
-                              aria-label="金額"
-                            />
-                          </td>
-                          <td className={styles.categoryDetailOpCell}>
-                            <button
-                              type="button"
-                              className={`${styles.btn} ${styles.btnSm} ${styles.btnPrimary}`}
-                              disabled={modalEditSaving || !base}
-                              onClick={() => void saveModalLineEdit()}
-                            >
-                              {modalEditSaving ? "保存中…" : "保存"}
-                            </button>{" "}
-                            <button
-                              type="button"
-                              className={`${styles.btn} ${styles.btnSm}`}
-                              disabled={modalEditSaving}
-                              onClick={cancelModalLineEdit}
-                            >
-                              キャンセル
-                            </button>
                           </td>
                         </tr>
                       );
                     }
                     return (
                       <tr key={t.id}>
-                        <td title={formatTxDateYmd(t.transaction_date)}>{formatTxDateMd(t.transaction_date)}</td>
-                        <td>
-                          <span className={styles.memoText} style={{ whiteSpace: "normal" }}>
-                            {t.memo ?? ""}
-                            {t.is_medical_expense === true || Number(t.is_medical_expense) === 1 ? (
-                              <span style={{ marginLeft: 6, fontSize: "0.86em", color: "#0369a1" }}>
-                                [医療費:{" "}
-                                {t.medical_type === "treatment" ||
-                                t.medical_type === "medicine" ||
-                                t.medical_type === "other"
-                                  ? MEDICAL_TYPE_LABELS[t.medical_type]
-                                  : "未設定"}
-                                {t.medical_patient_name ? ` / ${t.medical_patient_name}` : ""}]
+                        <td colSpan={4} className={styles.categoryDetailDesktopRowCell}>
+                          <div className={styles.categoryDetailRowBlock}>
+                            <div className={styles.categoryDetailRowLine1}>
+                              <div
+                                className={styles.categoryDetailRowDateAmount}
+                                role="group"
+                                aria-label="日付と金額"
+                              >
+                                <span
+                                  className={styles.categoryDetailRowDate}
+                                  title={formatTxDateYmd(t.transaction_date)}
+                                >
+                                  {formatTxDateMd(t.transaction_date)}
+                                </span>
+                                <span className={styles.categoryDetailRowAmount}>
+                                  {yen.format(numAmount(t.amount))}
+                                </span>
+                              </div>
+                              {kidWatchOn ? null : (
+                                <div className={styles.categoryDetailRowLine1Ops}>
+                                  <button
+                                    type="button"
+                                    className={`${styles.btn} ${styles.btnSm}`}
+                                    disabled={!base}
+                                    onClick={() => beginModalLineEdit(t)}
+                                  >
+                                    編集
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={`${styles.btn} ${styles.btnSm} ${styles.btnDanger}`}
+                                    disabled={!base}
+                                    onClick={() => void removeTransaction(t.id)}
+                                  >
+                                    削除
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            <div className={styles.categoryDetailRowLine2Body}>
+                              <span className={styles.memoText} style={{ whiteSpace: "normal" }}>
+                                {t.memo ?? ""}
+                                {t.is_medical_expense === true || Number(t.is_medical_expense) === 1 ? (
+                                  <span style={{ marginLeft: 6, fontSize: "0.86em", color: "#0369a1" }}>
+                                    [医療費:{" "}
+                                    {t.medical_type === "treatment" ||
+                                    t.medical_type === "medicine" ||
+                                    t.medical_type === "other"
+                                      ? MEDICAL_TYPE_LABELS[t.medical_type]
+                                      : "未設定"}
+                                    {t.medical_patient_name ? ` / ${t.medical_patient_name}` : ""}]
+                                  </span>
+                                ) : null}
                               </span>
-                            ) : null}
-                          </span>
-                        </td>
-                        <td style={{ whiteSpace: "nowrap" }}>{yen.format(numAmount(t.amount))}</td>
-                        <td className={styles.categoryDetailOpCell}>
-                          {!kidWatchOn ? (
-                            <>
-                              <button
-                                type="button"
-                                className={`${styles.btn} ${styles.btnSm}`}
-                                disabled={!base}
-                                onClick={() => beginModalLineEdit(t)}
-                              >
-                                編集
-                              </button>{" "}
-                              <button
-                                type="button"
-                                className={`${styles.btn} ${styles.btnSm} ${styles.btnDanger}`}
-                                disabled={!base}
-                                onClick={() => void removeTransaction(t.id)}
-                              >
-                                削除
-                              </button>
-                            </>
-                          ) : null}
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     );

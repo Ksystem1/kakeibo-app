@@ -2434,7 +2434,7 @@
 
 .categoryDetailTable {
   width: 100%;
-  table-layout: auto;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.92rem;
 }
@@ -2447,66 +2447,126 @@
   vertical-align: top;
 }
 
-.categoryDetailTable th:nth-child(1),
-.categoryDetailTable td:nth-child(1) {
-  width: 7.5rem;
-}
-
-.categoryDetailTable th:nth-child(2),
-.categoryDetailTable td:nth-child(2) {
-  min-width: 0;
-  word-break: keep-all;
-  overflow-wrap: break-word;
-}
-
-.categoryDetailTable th:nth-child(3),
-.categoryDetailTable td:nth-child(3) {
-  width: 11rem;
-  min-width: 10rem;
-}
-
-.categoryDetailTable td:nth-child(3) .cellInput {
-  max-width: none;
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.categoryDetailTable th:nth-child(4),
-.categoryDetailTable td:nth-child(4) {
-  width: 7.5rem;
-}
-
 .categoryDetailTable th {
   font-weight: 700;
   background: color-mix(in srgb, var(--bg-card) 88%, #5eb6ff 12%);
-  white-space: nowrap;
 }
 
-.categoryDetailTable .categoryDetailOpCell {
+.categoryDetailTableTheadRow {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
   white-space: normal;
-  text-align: right;
+  line-height: 1.4;
+  padding: 0.4rem 0.5rem;
 }
 
-.categoryDetailTable .categoryDetailOpCell .btn {
-  display: inline-flex;
-  margin: 0.12rem 0.1rem 0.12rem 0;
+.categoryDetailTableEmptyCell {
+  padding: 0.9rem 0.55rem;
 }
 
-.categoryDetailTable tr.rowEditing .categoryDetailOpCell {
+/* PC カテゴリ明細: 上段＝日付+金額+操作、下段＝内容 */
+.categoryDetailDesktopRowCell {
+  padding: 0.55rem 0.4rem 0.65rem;
+}
+
+.categoryDetailRowBlock {
+  min-width: 0;
+}
+
+.categoryDetailRowLine1 {
   display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.85rem;
+  min-width: 0;
+  padding: 0.1rem 0.05rem 0.2rem;
+}
+
+.categoryDetailRowDateAmount {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.65rem 1.1rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.categoryDetailRowDate {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.categoryDetailRowAmount {
+  font-weight: 700;
+  font-size: 1.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.categoryDetailRowLine1Ops {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem 0.45rem;
+  flex: 0 0 auto;
+}
+
+.rowEditing .categoryDetailRowLine1Ops {
   flex-direction: column;
   align-items: stretch;
   gap: 0.35rem;
-  min-width: 7.8rem;
+  min-width: 6.75rem;
 }
 
-.categoryDetailTable tr.rowEditing .categoryDetailOpCell .btn {
+.rowEditing .categoryDetailRowLine1Ops .btn {
   width: 100%;
   justify-content: center;
   margin: 0;
+}
+
+.categoryDetailRowLine2Body,
+.categoryDetailRowLine2Edit {
+  margin-top: 0.4rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 92%, var(--text, #000) 8%);
+  min-width: 0;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-height: 1.5;
+}
+
+.categoryDetailRowLine2Edit {
+  padding-top: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.categoryDetailRowDateInput {
+  min-width: 0;
+  max-width: 12rem;
+  width: 11rem;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+}
+
+.categoryDetailRowAmountInput {
+  max-width: 9rem;
+  min-width: 5.5rem;
+  width: 7.25rem;
+  box-sizing: border-box;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
 }
 
 /* カテゴリ明細モーダル「内容」列の編集（memoCell の横 flex を使わず、セル内を縦に整列） */
@@ -2556,21 +2616,6 @@
 
 .categoryDetailTable tr.rowEditing td {
   vertical-align: top;
-}
-
-.categoryDetailTable td:nth-child(1) .categoryDetailDateInput {
-  width: auto;
-  min-width: 8.2rem;
-  max-width: 12rem;
-  box-sizing: border-box;
-}
-
-.categoryDetailTable tr.rowEditing td:nth-child(2) {
-  min-width: 21rem;
-}
-
-.categoryDetailTable tr.rowEditing td:nth-child(3) {
-  min-width: 8.5rem;
 }
 
 .categoryDetailTable .categoryDetailEditKindRow .cellInput {
@@ -2741,35 +2786,27 @@
   }
 }
 
-/* PC: カテゴリ明細の編集行 — 日付・内容（種別/メモ）・金額・操作を1段に近づける */
+/* PC: 下段（種別・カテゴリ・メモ）を横方向に展開 */
 @media (min-width: 900px) {
-  .categoryDetailTable tr.rowEditing .categoryDetailEditCell {
+  .categoryDetailRowBlock .categoryDetailRowLine2Edit .categoryDetailEditCell {
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.4rem 0.55rem;
   }
 
-  .categoryDetailTable tr.rowEditing .categoryDetailEditKindRow {
+  .categoryDetailRowBlock .categoryDetailRowLine2Edit .categoryDetailEditKindRow {
     flex: 0 0 auto;
   }
 
-  .categoryDetailTable tr.rowEditing .categoryDetailEditMemoField {
+  .categoryDetailRowBlock .categoryDetailRowLine2Edit .categoryDetailEditMemoField {
     flex: 1 1 10rem;
     min-width: 5rem;
     max-width: none;
   }
 
-  .categoryDetailTable tr.rowEditing .categoryDetailEditMedical {
+  .categoryDetailRowBlock .categoryDetailRowLine2Edit .categoryDetailEditMedical {
     flex: 1 0 100%;
     margin-top: 0.15rem;
-  }
-
-  .categoryDetailTable tr.rowEditing td {
-    vertical-align: middle;
-  }
-
-  .categoryDetailTable tr.rowEditing td:nth-child(2) {
-    vertical-align: top;
   }
 }
