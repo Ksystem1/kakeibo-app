@@ -2333,7 +2333,7 @@
 }
 
 .categoryDetailDialog {
-  max-width: min(100%, 640px);
+  max-width: min(100%, 920px);
   width: 100%;
   max-height: min(calc(100dvh - 1.5rem), 720px);
   display: flex;
@@ -2398,7 +2398,7 @@
 
 .categoryDetailTable {
   width: 100%;
-  table-layout: fixed;
+  table-layout: auto;
   border-collapse: collapse;
   font-size: 0.92rem;
 }
@@ -2440,7 +2440,7 @@
 
 .categoryDetailTable th:nth-child(4),
 .categoryDetailTable td:nth-child(4) {
-  width: 9rem;
+  width: 7.5rem;
 }
 
 .categoryDetailTable th {
@@ -2450,8 +2450,13 @@
 }
 
 .categoryDetailTable .categoryDetailOpCell {
-  white-space: nowrap;
+  white-space: normal;
   text-align: right;
+}
+
+.categoryDetailTable .categoryDetailOpCell .btn {
+  display: inline-flex;
+  margin: 0.12rem 0.1rem 0.12rem 0;
 }
 
 /* カテゴリ明細モーダル「内容」列の編集（memoCell の横 flex を使わず、セル内を縦に整列） */
@@ -2466,7 +2471,7 @@
 .categoryDetailEditKindRow {
   display: flex;
   flex-direction: row;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   min-width: 0;
@@ -2493,7 +2498,7 @@
 .categoryDetailEditMedicalRow {
   display: flex;
   flex-direction: row;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   min-width: 0;
@@ -2505,7 +2510,7 @@
 
 .categoryDetailTable td:nth-child(1) .categoryDetailDateInput {
   width: auto;
-  min-width: 9.5rem;
+  min-width: 8.2rem;
   max-width: 12rem;
   box-sizing: border-box;
 }
