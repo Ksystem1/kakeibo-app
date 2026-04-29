@@ -26,3 +26,6 @@ infra/terraform/*.tfstate.*
 .terraform.lock.hcl
 # RDS 資格情報（Terraform が Secrets Manager に書き込む値。コミット禁止）
 infra/terraform-ecs-express/rds-credentials.auto.tfvars
+
+# AWS SAM（ローカル build 成果物のみ除外）
+lambda/.aws-sam/

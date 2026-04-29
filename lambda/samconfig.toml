@@ -1,0 +1,13 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "sam-app"
+resolve_s3 = true
+s3_prefix = "sam-app"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "SourceBucketName=\"ksystemapp-web-production\" SourcePrefix=\"receipts/\" MaxImageEdge=\"1200\" JpegQuality=\"75\""
+image_repositories = []
+
+[default.global.parameters]
+region = "ap-northeast-1"
