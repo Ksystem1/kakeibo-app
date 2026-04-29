@@ -1489,6 +1489,42 @@
   flex-shrink: 0;
 }
 
+/* 取引一覧の編集行: 入力欄と操作ボタンを分離して見やすくする */
+.table.txTable tr.rowEditing td {
+  vertical-align: top;
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
+.table.txTable tr.rowEditing .memoCell {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) auto;
+  align-items: start;
+  gap: 0.45rem 0.65rem;
+}
+
+.table.txTable tr.rowEditing .memoCell > .cellInput {
+  width: 100%;
+  max-width: none;
+}
+
+.table.txTable tr.rowEditing .memoCell > .rowActions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  min-width: 7.2rem;
+}
+
+.table.txTable tr.rowEditing .memoCell > .rowActions .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.table.txTable tr.rowEditing .memoCell > div:not(.rowActions) {
+  grid-column: 1 / -1;
+}
+
 .btnSm {
   font-size: 0.82rem;
   padding: 0.38rem 0.64rem;

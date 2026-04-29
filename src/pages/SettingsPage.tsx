@@ -502,13 +502,15 @@ export function SettingsPage() {
           </div>
         </section>
       </FeatureGate>
-      <div className={styles.settingsPanel} style={{ marginTop: "0.75rem", maxWidth: 980 }}>
-        <h2 className={styles.sectionTitle}>家族・利用ユーザー</h2>
+      <details className={styles.settingsPanel} style={{ marginTop: "0.75rem", maxWidth: 980 }} open>
+        <summary className={styles.sectionTitle} style={{ cursor: "pointer" }}>
+          家族・利用ユーザー
+        </summary>
         <p className={styles.reclassifyHint}>
           子供プロフィールを親アカウント内に追加できます。メール招待は使いません。
         </p>
         <MembersPage embedded />
-      </div>
+      </details>
       <div className={styles.settingsPanel} style={{ maxWidth: 820 }}>
         <p className={styles.sub} style={{ margin: "0 0 0.5rem" }}>
           背景色（4 種）と文字サイズを変更します。
@@ -912,12 +914,15 @@ export function SettingsPage() {
         ) : null}
       </div>
 
-      <div
+      <details
         id="fixed-cost-settings"
         className={styles.settingsPanel}
         style={{ marginTop: "1.5rem", maxWidth: 720 }}
+        open
       >
-        <h2 className={styles.sectionTitle}>固定費設定（全月共通）</h2>
+        <summary className={styles.sectionTitle} style={{ cursor: "pointer" }}>
+          固定費設定（全月共通）
+        </summary>
         <p className={styles.reclassifyHint}>固定費を登録。毎月の集計に自動反映。</p>
         {!getApiBaseUrl() || !canSendAuthenticatedRequest(token) ? (
           <p className={styles.reclassifyHint}>
@@ -1008,7 +1013,7 @@ export function SettingsPage() {
           <p className={styles.infoText}>{fixedSaveMessage}</p>
         ) : null}
         <p className={styles.infoText}>固定費合計: ¥{fixedCostTotal.toLocaleString("ja-JP")}</p>
-      </div>
+      </details>
 
       <div
         id="pwa-install-help"
@@ -1067,13 +1072,15 @@ export function SettingsPage() {
         </div>
       </div>
 
-      <div className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 980 }}>
-        <h2 className={styles.sectionTitle}>カテゴリ管理</h2>
+      <details className={styles.settingsPanel} style={{ marginTop: "1.5rem", maxWidth: 980 }} open>
+        <summary className={styles.sectionTitle} style={{ cursor: "pointer" }}>
+          支出・収入（カテゴリ管理）
+        </summary>
         <p className={styles.reclassifyHint}>
           支出・収入のカテゴリを追加・変更・削除できます。
         </p>
         <CategoriesPage embedded />
-      </div>
+      </details>
 
       <div
         className={`${styles.settingsPanel} ${styles.reclassifySettingsPanel}`}

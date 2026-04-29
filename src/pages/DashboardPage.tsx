@@ -35,6 +35,11 @@ function prevYm(ym: string) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function prevYearYm(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  return `${y - 1}-${String(m).padStart(2, "0")}`;
+}
+
 function num(v: unknown) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -87,21 +92,26 @@ export function DashboardPage() {
     netMonthlyBalance?: unknown;
   } | null>(null);
   const [transactions, setTransactions] = useState<TxRow[]>([]);
+  const [previousYear, setPreviousYear] = useState<{
+    expensesByCategory: Array<{ category_name: string | null; total: unknown }>;
+  } | null>(null);
   /** 対象月の一つ前のさらに前月（トレンド用の2ヶ月窓） */
   const [previous2, setPrevious2] = useState<MonthSummaryLike | null>(null);
 
   const { from, to } = useMemo(() => ymToRange(ym), [ym]);
   const prevYmStr = useMemo(() => prevYm(ym), [ym]);
+  const prevYearYmStr = useMemo(() => prevYearYm(ym), [ym]);
   const prev2YmStr = useMemo(() => prevYm(prevYm(ym)), [ym]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [sum, prev, prev2, tx] = await Promise.all([
+      const [sum, prev, prev2, prevYear, tx] = await Promise.all([
         getMonthSummary(ym, { scope: "family" }),
         getMonthSummary(prevYmStr, { scope: "family" }),
         getMonthSummary(prev2YmStr, { scope: "family" }),
+        getMonthSummary(prevYearYmStr, { scope: "family" }),
         getTransactions(from, to, { scope: "family" }),
       ]);
       setSummary({
@@ -123,6 +133,9 @@ export function DashboardPage() {
         fixedCostFromSettings: prev2.fixedCostFromSettings,
         netMonthlyBalance: prev2.netMonthlyBalance,
       });
+      setPreviousYear({
+        expensesByCategory: prevYear.expensesByCategory ?? [],
+      });
       const monthTx = (tx.items ?? []) as TxRow[];
       setTransactions(monthTx);
     } catch (e) {
@@ -130,11 +143,12 @@ export function DashboardPage() {
       setSummary(null);
       setPrevious(null);
       setPrevious2(null);
+      setPreviousYear(null);
       setTransactions([]);
     } finally {
       setLoading(false);
     }
-  }, [from, prev2YmStr, prevYmStr, to, ym]);
+  }, [from, prev2YmStr, prevYearYmStr, prevYmStr, to, ym]);
 
   useEffect(() => {
     void load();
@@ -165,6 +179,51 @@ export function DashboardPage() {
       amount: Math.round(num(t.amount)),
       time: md(t.transaction_date),
     }));
+
+  const categoryYoYRows = useMemo(() => {
+    const thisMap = new Map<string, number>();
+    const prevMap = new Map<string, number>();
+    for (const r of summary?.expensesByCategory ?? []) {
+      const name = String(r?.category_name ?? "未分類").trim() || "未分類";
+      thisMap.set(name, Math.round(num(r?.total)));
+    }
+    for (const r of previousYear?.expensesByCategory ?? []) {
+      const name = String(r?.category_name ?? "未分類").trim() || "未分類";
+      prevMap.set(name, Math.round(num(r?.total)));
+    }
+    const names = [...new Set([...thisMap.keys(), ...prevMap.keys()])];
+    return names
+      .map((name) => {
+        const current = thisMap.get(name) ?? 0;
+        const previousValue = prevMap.get(name) ?? 0;
+        const diff = current - previousValue;
+        const pct = previousValue === 0 ? null : (diff / Math.abs(previousValue)) * 100;
+        return { name, current, previous: previousValue, diff, pct };
+      })
+      .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+      .slice(0, 10);
+  }, [summary?.expensesByCategory, previousYear?.expensesByCategory]);
+
+  const aiInsights = useMemo(() => {
+    if (categoryYoYRows.length === 0) return [];
+    const top = categoryYoYRows[0];
+    const down = categoryYoYRows.find((r) => r.diff < 0) ?? null;
+    const energy =
+      categoryYoYRows.find((r) => /電気|光熱|水道|ガス/.test(r.name)) ?? null;
+    const out: string[] = [];
+    if (energy) {
+      out.push(
+        `${energy.name} は前年同月比で ${energy.diff >= 0 ? "+" : ""}${yen(energy.diff)} の差です。`,
+      );
+    }
+    out.push(
+      `最も差が大きいのは「${top.name}」で、前年同月比 ${top.diff >= 0 ? "+" : ""}${yen(top.diff)} です。`,
+    );
+    if (down) {
+      out.push(`減少カテゴリでは「${down.name}」が ${yen(down.diff)} と改善しています。`);
+    }
+    return out;
+  }, [categoryYoYRows]);
 
   /** 子ども（KID）は家族ダッシュボードではなくお小遣い帳（ルート `/`）へ（hooks の後で判定） */
   if (normalizeFamilyRole(user?.familyRole) === "KID") {
@@ -228,6 +287,54 @@ export function DashboardPage() {
         <SpendingChart data={chartData} />
         <RecentTransactions items={recentItems} />
       </div>
+      <section className="mt-5 rounded-xl border border-slate-300/70 bg-white/80 p-3 shadow-sm">
+        <h2 className="text-base font-semibold">カテゴリ別 前年同月差異（{ym} vs {prevYearYmStr}）</h2>
+        {categoryYoYRows.length === 0 ? (
+          <p className="mt-2 text-sm text-slate-500">比較データがありません。</p>
+        ) : (
+          <div className="mt-2 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-slate-600">
+                  <th className="px-2 py-1 text-left">カテゴリ</th>
+                  <th className="px-2 py-1 text-right">{ym}</th>
+                  <th className="px-2 py-1 text-right">{prevYearYmStr}</th>
+                  <th className="px-2 py-1 text-right">差異</th>
+                  <th className="px-2 py-1 text-right">比率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categoryYoYRows.map((r) => (
+                  <tr key={r.name} className="border-t border-slate-200/80">
+                    <td className="px-2 py-1">{r.name}</td>
+                    <td className="px-2 py-1 text-right">{yen(r.current)}</td>
+                    <td className="px-2 py-1 text-right">{yen(r.previous)}</td>
+                    <td className={`px-2 py-1 text-right ${r.diff > 0 ? "text-rose-600" : r.diff < 0 ? "text-emerald-700" : "text-slate-500"}`}>
+                      {r.diff >= 0 ? "+" : ""}
+                      {yen(r.diff)}
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      {r.pct == null ? "—" : `${r.pct >= 0 ? "+" : ""}${r.pct.toFixed(1)}%`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="mt-3 rounded-lg bg-slate-50 p-2.5">
+          <p className="text-xs font-semibold tracking-wide text-slate-600">AI分析（自動）</p>
+          {aiInsights.length > 0 ? (
+            <ul className="mt-1 list-disc pl-5 text-sm text-slate-700">
+              {aiInsights.map((x) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-sm text-slate-500">分析対象データが不足しています。</p>
+          )}
+        </div>
+      </section>
     </main>
     </>
   );
