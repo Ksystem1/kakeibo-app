@@ -41,6 +41,7 @@ import {
   buildAsyncReceiptJobResultFromHttpBody,
   buildReceiptJobErrorData,
   receiptJobResultDataToJsonStringForMysql,
+  receiptJobUserFacingErrorLine,
   sanitizeReceiptJsonLikeRaw,
 } from "./receipt-job-result.mjs";
 import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
@@ -7453,16 +7454,9 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
           });
         }
       }
-      const em =
-        resultData && typeof resultData === "object"
-          ? String(
-              resultData.message != null
-                ? resultData.message
-                : resultData.error != null
-                  ? resultData.error
-                  : "",
-            ).slice(0, 4000)
-          : "";
+      const em = receiptJobUserFacingErrorLine(
+        /** @type {Record<string, unknown>|null|undefined} */ (resultData),
+      );
       logger.info("receipts.job.save_result_data", {
         jobId,
         userId,
@@ -7569,7 +7563,11 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
           message: "解析結果の確定に失敗したため completed でフォールバックしました。",
           rawText: "",
         });
-        const em = finalErrorMessage ?? "parse_error";
+        const em =
+          (finalErrorMessage && String(finalErrorMessage).trim()) ||
+          receiptJobUserFacingErrorLine(
+            /** @type {Record<string, unknown>|null|undefined} */ (fallback),
+          );
         const resolvedStatus = finalStatus === "completed" ? "completed" : "failed";
         await pool.query(
           `UPDATE receipt_processing_jobs

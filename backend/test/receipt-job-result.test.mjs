@@ -4,6 +4,7 @@ import {
   buildAsyncReceiptJobResultFromHttpBody,
   buildReceiptJobErrorData,
   receiptJobResultDataForMysqlBinding,
+  receiptJobUserFacingErrorLine,
 } from "../src/receipt-job-result.mjs";
 
 test("buildAsyncReceiptJobResultFromHttpBody: 正常なオブジェクトは completed", () => {
@@ -51,4 +52,11 @@ test("receiptJobResultDataForMysqlBinding: MySQL JSON 用に常にオブジェ�
 test("receiptJobResultDataForMysqlBinding: 生文字列は正規化される", () => {
   const b = receiptJobResultDataForMysqlBinding(/** @type {any} */("raw"));
   assert.equal(b.error, "not_object");
+});
+
+test("receiptJobUserFacingErrorLine: message 優先、空なら kind を日本語化", () => {
+  const err = buildReceiptJobErrorData({ kind: "parse_error", message: "x", rawText: "" });
+  assert.equal(receiptJobUserFacingErrorLine(err), "x");
+  assert.ok(receiptJobUserFacingErrorLine({ ...err, message: "" }).includes("1枚"));
+  assert.ok(receiptJobUserFacingErrorLine({ error: "parse_error" }).includes("1枚"));
 });

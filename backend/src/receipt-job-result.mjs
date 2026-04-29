@@ -132,7 +132,12 @@ export function buildAsyncReceiptJobResultFromHttpBody(rawBody) {
   if (parsed === null) {
     return {
       status: "failed",
-      resultData: { _schema: SCHEMA, error: "null_top_level", rawText: "" },
+      resultData: {
+        _schema: SCHEMA,
+        error: "null_top_level",
+        message: "解析 API の戻りが空でした。",
+        rawText: "",
+      },
     };
   }
 
@@ -232,6 +237,44 @@ export function buildReceiptJobErrorData(p) {
     apiCode: p.apiCode ?? null,
     apiDetail: p.apiDetail != null ? String(p.apiDetail).slice(0, 2000) : null,
   };
+}
+
+/**
+ * ジョブ行の `error_message` 用。`message` を優先し、空のときは `error` 種別から短文を出す
+ *（DB が NULL になり画面が `parse_error` だけ出すのを防ぐ）。
+ * @param {Record<string, unknown> | null | undefined} resultData
+ * @returns {string}
+ */
+export function receiptJobUserFacingErrorLine(resultData) {
+  if (resultData == null || typeof resultData !== "object" || Array.isArray(resultData)) {
+    return "解析に失敗しました。写メのやり直し、または手入力をお試しください。";
+  }
+  const m = resultData.message != null ? String(resultData.message).trim() : "";
+  if (m) return m.length > 4000 ? m.slice(0, 4000) : m;
+  const k = resultData.error != null ? String(resultData.error).trim() : "";
+  if (!k) {
+    return "解析に失敗しました。写メのやり直し、または手入力をお試しください。";
+  }
+  const map = {
+    parse_error: "解析結果の処理に失敗しました。レシートは1枚ずつ、はっきり写るように撮影して再度お試しください。",
+    parse_http_error: "解析 API がエラーを返しました。しばらくしてから再度お試しください。",
+    run_exception: "解析処理中に障害が発生しました。しばらくしてから再度お試しください。",
+    missing_request: "取込依頼の内容を読み取れませんでした。",
+    null_top_level: "解析結果の形式が正しくありません。",
+    empty_response_body: "解析応答が空でした。",
+    empty_response: "解析応答が空でした。",
+    invalid_json: "解析結果の形式が正しくありません。",
+    not_json_object: "解析結果の形式が正しくありません。",
+    unexpected_type: "解析結果の形式が正しくありません。",
+    serialize_failed: "解析結果の正規化に失敗しました。",
+    serialize_roundtrip: "解析結果の保存形式に失敗しました。",
+    serialize_error: "解析結果の保存形式に失敗しました。",
+  };
+  if (k in map) return map[k];
+  if (k.length <= 50 && /^[a-z0-9_]+$/i.test(k)) {
+    return map.parse_error;
+  }
+  return k.length > 4000 ? k.slice(0, 4000) : k;
 }
 
 /**
