@@ -42,14 +42,14 @@ function toHalfWidthComparable(text) {
 
 function normalizePayPayDateTime(raw) {
   const t = String(raw ?? "").trim().replace(/\//g, "-");
-  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/.exec(t);
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}):(\d{1,2}))?$/.exec(t);
   if (!m) return null;
   const y = Number(m[1]);
   const mo = Number(m[2]);
   const d = Number(m[3]);
-  const hh = Number(m[4]);
-  const mm = Number(m[5]);
-  const ss = Number(m[6]);
+  const hh = m[4] == null ? 0 : Number(m[4]);
+  const mm = m[5] == null ? 0 : Number(m[5]);
+  const ss = m[6] == null ? 0 : Number(m[6]);
   if (
     !Number.isFinite(y) ||
     !Number.isFinite(mo) ||
@@ -204,7 +204,7 @@ export function buildPayPayImportPlan(csvText, options = {}) {
   }
 
   const parseErrors = [];
-  /** @type {Array<{externalTransactionId: string, txDate: string, txSecond: string, merchantRaw: string, merchantNormalized: string, amount: number, sourceTxIds: string[]}>} */
+  /** @type {Array<{externalTransactionId: string, txDate: string, txSecond: string, merchantRaw: string, merchantNormalized: string, contentRaw: string, amount: number, sourceTxIds: string[]}>} */
   const paymentRows = [];
   let excludedCount = 0;
 
@@ -213,6 +213,7 @@ export function buildPayPayImportPlan(csvText, options = {}) {
     const cols = parseCsvLine(lines[i]);
     let txId = "";
     let merchantRaw = "";
+    let contentRaw = "";
     let amount = null;
     let dt = null;
     if (simpleRowsMode) {
@@ -220,6 +221,7 @@ export function buildPayPayImportPlan(csvText, options = {}) {
       dt = normalizePayPayDateTime(cols[1] ?? "");
       amount = parseAmount(cols[2] ?? "");
       merchantRaw = String(cols[4] ?? cols[3] ?? "").trim();
+      contentRaw = "";
     } else {
       const type = toHalfWidthComparable(cols[idx.type] ?? "");
       if (type !== "支払い") {
@@ -228,6 +230,7 @@ export function buildPayPayImportPlan(csvText, options = {}) {
       }
       txId = normalizeTransactionId(cols[idx.txId] ?? "");
       merchantRaw = String(cols[idx.merchant] ?? "").trim();
+      contentRaw = String(cols[idx.type] ?? "").trim();
       amount = parseAmount(cols[idx.outAmount]);
       dt = normalizePayPayDateTime(cols[idx.date] ?? "");
     }
@@ -243,18 +246,19 @@ export function buildPayPayImportPlan(csvText, options = {}) {
       txSecond: dt.second,
       merchantRaw,
       merchantNormalized,
+      contentRaw,
       amount,
       sourceTxIds: [txId],
     });
   }
 
-  /** @type {Array<{externalTransactionId: string, txDate: string, txSecond: string, merchantRaw: string, merchantNormalized: string, amount: number, sourceTxIds: string[]}>} */
+  /** @type {Array<{externalTransactionId: string, txDate: string, txSecond: string, merchantRaw: string, merchantNormalized: string, contentRaw: string, amount: number, sourceTxIds: string[]}>} */
   let records = paymentRows;
   let aggregatedCount = 0;
 
   if (combineSameTimePayments || combineSmallSameDayPayments) {
     const sortedRows = [...paymentRows].sort((a, b) => a.txSecond.localeCompare(b.txSecond));
-    /** @type {Array<{externalTransactionId: string, txDate: string, txSecond: string, merchantRaw: string, merchantNormalized: string, amount: number, sourceTxIds: string[]}>} */
+    /** @type {Array<{externalTransactionId: string, txDate: string, txSecond: string, merchantRaw: string, merchantNormalized: string, contentRaw: string, amount: number, sourceTxIds: string[]}>} */
     const merged = [];
 
     for (const row of sortedRows) {
@@ -331,15 +335,16 @@ export function buildPayPayImportPlan(csvText, options = {}) {
 }
 
 /**
- * メモは店舗名のみ（短形式）。日時・取引番号は transaction_date / external_transaction_id に保存。
+ * メモは取引内容を優先し、無い場合は店舗名を使用。
+ * @param {string} contentRaw
  * @param {string} merchantRaw
  * @param {boolean} combined 複数決済の合算行
  */
-function buildMemo(merchantRaw, combined) {
-  const m = String(merchantRaw ?? "").trim() || "（取引先なし）";
-  const base = combined
-    ? `PayPay支払い: ${m} (複数決済を合算)`
-    : `PayPay支払い: ${m}`;
+function buildMemo(contentRaw, merchantRaw, combined) {
+  const content = String(contentRaw ?? "").trim();
+  const merchant = String(merchantRaw ?? "").trim();
+  const body = content || merchant || "（取引先なし）";
+  const base = combined ? `${body} (複数決済を合算)` : body;
   return base.slice(0, 500);
 }
 
@@ -576,7 +581,7 @@ export async function executePayPayCsvImport(pool, payload) {
     externalTransactionId: r.externalTransactionId,
     amount: r.amount,
     transactionDate: r.txDate,
-    memo: buildMemo(r.merchantRaw, r.sourceTxIds.length > 1),
+    memo: buildMemo(r.contentRaw, r.merchantRaw, r.sourceTxIds.length > 1),
     categoryId: /** @type {number | null} */ (null),
   }));
   await applyPayPayCategoryResolution(pool, userId, plan.records, rows, dryRun);
