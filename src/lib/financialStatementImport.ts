@@ -185,17 +185,16 @@ function inferHeaderIndices(header: string[]): HeaderIndices | null {
   const normalized = header.map(normalizeHeaderCell);
   // PayPay公式CSV: 取引先を内容欄の主情報にし、取引内容は補助情報として扱う。
   const iPayPayDate = findByAliases(header, ["取引日"]);
-  const iPayPayOut = findByAliases(header, ["出金金額（円）", "出金金額(円)"]);
+  const iPayPayOut = findByAliases(header, ["出金金額（円）", "出金金額(円)", "出金金額円", "出金金額"]);
   const iPayPayMerchant = findByAliases(header, ["取引先"]);
-  const iPayPayContent = findByAliases(header, ["取引内容"]);
   if (iPayPayDate >= 0 && iPayPayOut >= 0 && iPayPayMerchant >= 0) {
     return {
       iDate: iPayPayDate,
       iDesc: iPayPayMerchant,
-      iDesc2: iPayPayContent,
+      iDesc2: -1,
       iAmt: iPayPayOut,
       iExpenseAmt: iPayPayOut,
-      iIncomeAmt: findByAliases(header, ["入金金額（円）", "入金金額(円)"]),
+      iIncomeAmt: findByAliases(header, ["入金金額（円）", "入金金額(円)", "入金金額円", "入金金額"]),
     };
   }
 
