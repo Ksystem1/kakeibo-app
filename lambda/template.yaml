@@ -50,17 +50,14 @@ Resources:
                 - bedrock:InvokeModel
               Resource:
                 - arn:aws:bedrock:ap-northeast-1::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0
-      Events:
-        S3UploadTrigger:
-          Type: S3
-          Properties:
-            Bucket: !Ref SourceBucketName
-            Events: s3:ObjectCreated:*
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: !Ref SourcePrefix
+  # 既存 S3 バケットはテンプレート外で管理。通知はコンソール/CLI で Lambda に紐づけ、本リソースで s3 からの invoke を許可する。
+  AllowS3ToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ReceiptExtractorFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:aws:s3:::${SourceBucketName}"
 Outputs:
   ReceiptExtractorFunctionArn:
     Description: ARN of receipt extractor Lambda
