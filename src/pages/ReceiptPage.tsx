@@ -509,8 +509,8 @@ export function ReceiptPage() {
       const vendorTrim = s?.vendorName?.trim() ?? "";
       setOcrVendor(vendorTrim);
       const spNow = r.suggestedVendor;
-      if (r.learnCorrectionHit && r.suggestedMemo !== undefined) {
-        setDraftMemo(r.suggestedMemo);
+      if (r.suggestedMemo != null && String(r.suggestedMemo).trim() !== "") {
+        setDraftMemo(String(r.suggestedMemo).trim());
       } else if (
         spNow &&
         !spNow.deferred &&
@@ -559,7 +559,7 @@ export function ReceiptPage() {
             : null),
       );
       const initialMemo =
-        r.learnCorrectionHit && r.suggestedMemo !== undefined
+        r.suggestedMemo != null && String(r.suggestedMemo).trim() !== ""
           ? String(r.suggestedMemo).trim()
           : r.suggestedVendor &&
               !r.suggestedVendor.deferred &&

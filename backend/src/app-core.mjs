@@ -926,6 +926,72 @@ function tagFromCategoryName(name) {
   return null;
 }
 
+function tagFromReceiptItemCategoryName(name) {
+  const n = normalizeKeyword(name);
+  if (!n) return null;
+  if (n.includes("食費") || n.includes("食品") || n.includes("食料")) return "food";
+  if (n.includes("日用品") || n.includes("雑貨") || n.includes("生活用品")) return "daily";
+  if (n.includes("交通")) return "transport";
+  if (n.includes("光熱") || n.includes("水道") || n.includes("電気") || n.includes("ガス") || n.includes("通信")) {
+    return "utility";
+  }
+  if (n.includes("医療") || n.includes("病院") || n.includes("薬")) return "medical";
+  if (n.includes("娯楽") || n.includes("レジャー") || n.includes("趣味")) return "leisure";
+  return null;
+}
+
+/**
+ * 明細カテゴリ（食費/日用品...）の「最頻カテゴリ」をユーザー支出カテゴリへマップする。
+ * 同数時は金額合計が大きい方を優先。
+ * @returns {{ id: number; name: string; source: "line_items" } | null}
+ */
+function suggestExpenseCategoryFromDominantItemCategory(items, userExpenseCategories) {
+  const userCats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
+  if (userCats.length === 0 || !Array.isArray(items) || items.length === 0) return null;
+  /** @type {Map<string, { count: number; amount: number }>} */
+  const stats = new Map();
+  for (const it of items) {
+    const tag = tagFromReceiptItemCategoryName(it?.category ?? "");
+    if (!tag) continue;
+    const amount = Number(it?.amount);
+    const cur = stats.get(tag) ?? { count: 0, amount: 0 };
+    cur.count += 1;
+    if (Number.isFinite(amount) && amount > 0) cur.amount += amount;
+    stats.set(tag, cur);
+  }
+  if (stats.size === 0) return null;
+  let bestTag = null;
+  let bestCount = -1;
+  let bestAmount = -1;
+  for (const [tag, st] of stats.entries()) {
+    if (st.count > bestCount || (st.count === bestCount && st.amount > bestAmount)) {
+      bestTag = tag;
+      bestCount = st.count;
+      bestAmount = st.amount;
+    }
+  }
+  if (!bestTag) return null;
+  const hit = userCats.find((c) => tagFromCategoryName(c?.name ?? "") === bestTag);
+  if (!hit?.id) return null;
+  return { id: Number(hit.id), name: String(hit.name), source: "line_items" };
+}
+
+function detectReceiptPaymentLabel(ocrLines) {
+  const text = Array.isArray(ocrLines) ? ocrLines.map((x) => String(x ?? "")).join("\n") : "";
+  if (!text) return null;
+  if (/paypay|ペイペイ/i.test(text)) return "PayPay支払い";
+  if (/クレジット|credit|visa|master|jcb|amex|diners/i.test(text)) return "クレジット払い";
+  return null;
+}
+
+function buildReceiptSuggestedMemo(vendorName, ocrLines) {
+  const vendor = String(vendorName ?? "").trim();
+  const payment = detectReceiptPaymentLabel(ocrLines);
+  if (payment && vendor) return `${payment} ${vendor}`.slice(0, 500);
+  if (payment) return payment.slice(0, 500);
+  return vendor.slice(0, 500);
+}
+
 const RECEIPT_NORMALIZED_MEMO_EXPR =
   "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(t.memo), ' ', ''), '　', ''), '株式会社', ''), '(株)', ''))";
 const RECEIPT_NORMALIZED_SNAPSHOT_VENDOR_EXPR =
@@ -6829,26 +6895,36 @@ export async function handleApiRequest(req, options = {}) {
               }
             }
           }
-          /* 個別辞書 > 店名キー学習 > 予測/AI */
+          const dominantItemCategory = suggestExpenseCategoryFromDominantItemCategory(
+            result?.items ?? [],
+            expenseCatRows,
+          );
+          /* 明細の最頻カテゴリ > 個別辞書 > 店名キー学習 > 予測/AI */
           const finalSuggestedId =
-            learnedCategoryId != null
-              ? learnedCategoryId
+            dominantItemCategory?.id != null
+              ? Number(dominantItemCategory.id)
+              : learnedCategoryId != null
+                ? learnedCategoryId
               : placePreferredCategoryId != null
                 ? placePreferredCategoryId
                 : predicted.id != null
                   ? predicted.id
                   : null;
           const finalSuggestedName =
-            learnedCategoryId != null
-              ? learnedCategoryName
+            dominantItemCategory?.name != null
+              ? String(dominantItemCategory.name)
+              : learnedCategoryId != null
+                ? learnedCategoryName
               : placePreferredCategoryId != null
                 ? placePreferredCategoryName
                 : predicted.name != null
                   ? predicted.name
                   : null;
           const finalSource =
-            learnCorrectionHit && (learnedCategoryId != null || learnedMemoPresent)
-              ? "correction"
+            dominantItemCategory?.id != null
+              ? "line_items"
+              : learnCorrectionHit && (learnedCategoryId != null || learnedMemoPresent)
+                ? "correction"
               : placePreferredCategoryId != null
                 ? "vendor_key_learn"
                 : predicted.source;
@@ -6982,8 +7058,14 @@ export async function handleApiRequest(req, options = {}) {
                 }
               : null,
           };
+          const autoSuggestedMemo = buildReceiptSuggestedMemo(
+            adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
+            result?.ocrLines ?? [],
+          );
           if (learnCorrectionHit && learnedMemoPresent) {
             body.suggestedMemo = learnedMemoValue;
+          } else if (autoSuggestedMemo) {
+            body.suggestedMemo = autoSuggestedMemo;
           }
           if (duplicateWarning) {
             body.duplicateWarning = duplicateWarning;
