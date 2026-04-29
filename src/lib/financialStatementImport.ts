@@ -128,6 +128,11 @@ function normalizeDate(raw: string): string | null {
   if (mYearKanji) {
     return `${mYearKanji[1]}-${mYearKanji[2].padStart(2, "0")}-${mYearKanji[3].padStart(2, "0")}`;
   }
+  const mShort = s.match(/^(\d{2})(\d{2})(\d{2})$/);
+  if (mShort) {
+    const year = 2000 + Number(mShort[1]);
+    return `${String(year).padStart(4, "0")}-${mShort[2]}-${mShort[3]}`;
+  }
   const m0 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (m0) return `${m0[1]}-${m0[2]}-${m0[3]}`;
   const m1 = s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);

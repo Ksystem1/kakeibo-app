@@ -281,6 +281,13 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                     <li>連携したい口座・カードを選択して認証を完了する</li>
                     <li>初回取込が終わったら、画面上部の件数表示で反映を確認する</li>
                   </ul>
+                  <p className="app-glass-nav-step__desc">おまかせ取込対応済一覧</p>
+                  <ul className="app-glass-nav-step__list" aria-label="おまかせ取込対応済一覧">
+                    <li>銀行: みずほ銀行、三井住友銀行</li>
+                    <li>地方銀行: 武蔵野銀行</li>
+                    <li>クレジット会社: イオンカード、エポスカード、Dカード</li>
+                    <li>随時、追加中</li>
+                  </ul>
                 </div>
               </section>
               <div className="app-glass-nav-step__divider" aria-hidden />

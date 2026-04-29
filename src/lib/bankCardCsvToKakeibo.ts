@@ -10,6 +10,13 @@ const MEMO_HEADER =
 function normalizeDate(raw: string): string | null {
   const s = String(raw ?? "").trim();
   if (!s) return null;
+  const m0 = s.match(/^(\d{2})(\d{2})(\d{2})$/);
+  if (m0) {
+    const y = 2000 + Number(m0[1]);
+    const mo = m0[2];
+    const d = m0[3];
+    return `${y}-${mo}-${d}`;
+  }
   const m1 = s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
   if (m1) {
     const y = m1[1];
