@@ -156,6 +156,7 @@ export function SettingsPage() {
   const [formatDescriptionHeaders, setFormatDescriptionHeaders] = useState("");
   const [formatDescriptionSecondaryHeaders, setFormatDescriptionSecondaryHeaders] = useState("");
   const [formatAmountHeaders, setFormatAmountHeaders] = useState("");
+  const [importFormatsExpanded, setImportFormatsExpanded] = useState(false);
 
   const [fixedItems, setFixedItems] = useState<FixedCostItem[]>(() =>
     itemsForFixedCostEditor(fixedCostsByMonth),
@@ -658,42 +659,54 @@ export function SettingsPage() {
             再読込
           </button>
         </div>
-        <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.45rem" }}>
-          {importFormats.map((f) => (
-            <div
-              key={f.id}
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                padding: "0.55rem 0.65rem",
-                background: "var(--panel-bg)",
-              }}
-            >
-              <div className={styles.modeRow} style={{ justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
-                <strong>{f.name}</strong>
-                <div className={styles.modeRow} style={{ gap: "0.35rem", flexWrap: "wrap" }}>
-                  <button type="button" className={styles.btn} disabled={importFormatsBusy} onClick={() => startEditImportFormat(f)}>
-                    編集
-                  </button>
-                  {authUser?.isAdmin ? (
-                    <button
-                      type="button"
-                      className={styles.btn}
-                      disabled={importFormatsBusy}
-                      onClick={() => void removeImportFormat(f.id)}
-                    >
-                      削除
-                    </button>
-                  ) : null}
+        <div style={{ marginTop: "0.75rem" }}>
+          <button
+            type="button"
+            className={styles.btn}
+            onClick={() => setImportFormatsExpanded((v) => !v)}
+            disabled={importFormatsBusy}
+          >
+            {importFormatsExpanded ? "登録済一覧を閉じる" : `登録済一覧を開く（${importFormats.length}件）`}
+          </button>
+          {importFormatsExpanded ? (
+            <div style={{ marginTop: "0.55rem", display: "grid", gap: "0.45rem" }}>
+              {importFormats.map((f) => (
+                <div
+                  key={f.id}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "0.55rem 0.65rem",
+                    background: "var(--panel-bg)",
+                  }}
+                >
+                  <div className={styles.modeRow} style={{ justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                    <strong>{f.name}</strong>
+                    <div className={styles.modeRow} style={{ gap: "0.35rem", flexWrap: "wrap" }}>
+                      <button type="button" className={styles.btn} disabled={importFormatsBusy} onClick={() => startEditImportFormat(f)}>
+                        編集
+                      </button>
+                      {authUser?.isAdmin ? (
+                        <button
+                          type="button"
+                          className={styles.btn}
+                          disabled={importFormatsBusy}
+                          onClick={() => void removeImportFormat(f.id)}
+                        >
+                          削除
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className={styles.reclassifyHint} style={{ margin: "0.3rem 0 0" }}>
+                    日付: {(f.dateHeaders ?? []).join(" / ")} ｜ 内容: {(f.descriptionHeaders ?? []).join(" / ")} ｜ 金額: {(f.amountHeaders ?? []).join(" / ")}
+                  </p>
                 </div>
-              </div>
-              <p className={styles.reclassifyHint} style={{ margin: "0.3rem 0 0" }}>
-                日付: {(f.dateHeaders ?? []).join(" / ")} ｜ 内容: {(f.descriptionHeaders ?? []).join(" / ")} ｜ 金額: {(f.amountHeaders ?? []).join(" / ")}
-              </p>
+              ))}
+              {importFormats.length === 0 && !importFormatsBusy ? (
+                <p className={styles.reclassifyHint}>登録済フォーマットはありません。</p>
+              ) : null}
             </div>
-          ))}
-          {importFormats.length === 0 && !importFormatsBusy ? (
-            <p className={styles.reclassifyHint}>登録済フォーマットはありません。</p>
           ) : null}
         </div>
       </div>
