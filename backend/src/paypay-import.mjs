@@ -133,6 +133,16 @@ function detectHeaderIndexMap(headerCols) {
   };
 }
 
+function detectSimplePayPayRowShape(cols) {
+  // 例: 2026021400001,2026/02/14,10000,,ＰＡＹＰＡＹ...,601494
+  if (!Array.isArray(cols) || cols.length < 3) return false;
+  const txId = normalizeTransactionId(cols[0] ?? "");
+  const dt = normalizePayPayDateTime(cols[1] ?? "");
+  const amount = parseAmount(cols[2] ?? "");
+  if (!txId || !dt || amount == null || !Number.isFinite(amount) || amount <= 0) return false;
+  return true;
+}
+
 const PAYPAY_MERGE_TIME_WINDOW_MS = 10 * 60 * 1000;
 const SMALL_PAYMENT_THRESHOLD = 500;
 
@@ -164,13 +174,21 @@ export function buildPayPayImportPlan(csvText, options = {}) {
   }
   const header = parseCsvLine(lines[0]);
   const idx = detectHeaderIndexMap(header);
-  const missingCols = [];
-  if (idx.date < 0) missingCols.push("取引日");
-  if (idx.outAmount < 0) missingCols.push("出金金額（円）");
-  if (idx.type < 0) missingCols.push("取引内容");
-  if (idx.merchant < 0) missingCols.push("取引先");
-  if (idx.txId < 0) missingCols.push("取引番号");
-  if (missingCols.length > 0) {
+  const hasHeaderShape =
+    idx.date >= 0 &&
+    idx.outAmount >= 0 &&
+    idx.type >= 0 &&
+    idx.merchant >= 0 &&
+    idx.txId >= 0;
+  const firstRowAsData = parseCsvLine(lines[0]);
+  const simpleRowsMode = !hasHeaderShape && detectSimplePayPayRowShape(firstRowAsData);
+  if (!hasHeaderShape && !simpleRowsMode) {
+    const missingCols = [];
+    if (idx.date < 0) missingCols.push("取引日");
+    if (idx.outAmount < 0) missingCols.push("出金金額（円）");
+    if (idx.type < 0) missingCols.push("取引内容");
+    if (idx.merchant < 0) missingCols.push("取引先");
+    if (idx.txId < 0) missingCols.push("取引番号");
     return {
       ok: false,
       error: `PayPay CSV の必須列が不足しています: ${missingCols.join(", ")}`,
@@ -190,18 +208,30 @@ export function buildPayPayImportPlan(csvText, options = {}) {
   const paymentRows = [];
   let excludedCount = 0;
 
-  for (let i = 1; i < lines.length; i += 1) {
+  const startRow = simpleRowsMode ? 0 : 1;
+  for (let i = startRow; i < lines.length; i += 1) {
     const cols = parseCsvLine(lines[i]);
-    const type = toHalfWidthComparable(cols[idx.type] ?? "");
-    if (type !== "支払い") {
-      excludedCount += 1;
-      continue;
+    let txId = "";
+    let merchantRaw = "";
+    let amount = null;
+    let dt = null;
+    if (simpleRowsMode) {
+      txId = normalizeTransactionId(cols[0] ?? "");
+      dt = normalizePayPayDateTime(cols[1] ?? "");
+      amount = parseAmount(cols[2] ?? "");
+      merchantRaw = String(cols[4] ?? cols[3] ?? "").trim();
+    } else {
+      const type = toHalfWidthComparable(cols[idx.type] ?? "");
+      if (type !== "支払い") {
+        excludedCount += 1;
+        continue;
+      }
+      txId = normalizeTransactionId(cols[idx.txId] ?? "");
+      merchantRaw = String(cols[idx.merchant] ?? "").trim();
+      amount = parseAmount(cols[idx.outAmount]);
+      dt = normalizePayPayDateTime(cols[idx.date] ?? "");
     }
-    const txId = normalizeTransactionId(cols[idx.txId] ?? "");
-    const merchantRaw = String(cols[idx.merchant] ?? "").trim();
     const merchantNormalized = toHalfWidthComparable(merchantRaw);
-    const amount = parseAmount(cols[idx.outAmount]);
-    const dt = normalizePayPayDateTime(cols[idx.date] ?? "");
     if (!txId || !merchantNormalized || !dt || !Number.isFinite(amount) || amount == null) {
       excludedCount += 1;
       parseErrors.push(`行${i + 1}: 必須値の解釈に失敗`);

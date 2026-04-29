@@ -104,7 +104,15 @@ function escapeField(s: string): string {
  */
 export function looksLikePayPayCsv(text: string): boolean {
   const raw = String(text ?? "");
-  if (!/PayPay/i.test(raw) && !/ﾍﾟｲﾍﾟｲ|ペイペイ/.test(raw)) return false;
+  if (!/PayPay/i.test(raw) && !/ﾍﾟｲﾍﾟｲ|ペイペイ|ＰＡＹＰＡＹ/.test(raw)) {
+    // ヘッダーなし: 取引番号,日付,金額,...,PAYPAY
+    const first = raw.split(/\r?\n/).find((x) => x.trim()) ?? "";
+    const cols = parseCsvLine(first);
+    const looksDate = /^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(String(cols[1] ?? "").trim());
+    const looksAmount = /^\d[\d,]*$/.test(String(cols[2] ?? "").trim());
+    const hasPaypayWord = /paypay|ＰＡＹＰＡＹ|ペイペイ/i.test(first);
+    if (!(cols.length >= 3 && looksDate && looksAmount && hasPaypayWord)) return false;
+  }
   if (/(クレジット|カード).*(利用|明細|履歴|CSV)/.test(raw)) return false;
   const head = raw.slice(0, 4_000);
   if (/PayPay支払い[:：]/.test(head) || /PayPay.*(利用|入金|出金)/.test(head)) return true;
