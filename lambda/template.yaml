@@ -37,7 +37,8 @@ Resources:
         Variables:
           MAX_IMAGE_EDGE: !Ref MaxImageEdge
           JPEG_QUALITY: !Ref JpegQuality
-          BEDROCK_MODEL_ID: "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+          # ap-northeast-1: 推論プロファイルは apac.（us. は無効 → InvokeModel ValidationException）
+          BEDROCK_MODEL_ID: "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
       Policies:
         - Version: "2012-10-17"
           Statement:
