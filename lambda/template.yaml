@@ -37,6 +37,7 @@ Resources:
         Variables:
           MAX_IMAGE_EDGE: !Ref MaxImageEdge
           JPEG_QUALITY: !Ref JpegQuality
+          BEDROCK_MODEL_ID: "anthropic.claude-3-5-haiku-20241022-v1:0"
       Policies:
         - Version: "2012-10-17"
           Statement:
@@ -44,16 +45,13 @@ Resources:
               Action:
                 - s3:GetObject
               Resource: !Sub "arn:aws:s3:::${SourceBucketName}/*"
+            # 東京 API 用にリージョン付き ARN（Legacy 扱いの 3 haiku(202403) / 旧 sonnet には向けない）
             - Effect: Allow
               Action:
                 - bedrock:InvokeModel
               Resource:
-                - arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0
-        - Statement:
-            - Effect: Allow
-              Action: 'bedrock:InvokeModel'
-              Resource: 'arn:aws:bedrock:ap-northeast-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0'
-    Events:
+                - arn:aws:bedrock:ap-northeast-1::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0
+      Events:
         S3UploadTrigger:
           Type: S3
           Properties:
