@@ -11,6 +11,8 @@ const IMAGE_EXTS = new Set([
   ".heif",
   ".bmp",
   ".svg",
+  ".tif",
+  ".tiff",
 ]);
 
 export function isCsvFileName(name: string): boolean {

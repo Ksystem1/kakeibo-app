@@ -20,8 +20,20 @@ export function ImportHubPage() {
       <UniversalImporter
         onRoutedFiles={(list, kind) => {
           if (kind === "image") {
-            setMsg("画像を検出しました。AIレシート解析へ移動します。");
-            navigate("/receipt", { state: { prefillImportFile: list[0] } });
+            const prefillId =
+              typeof globalThis !== "undefined" && globalThis.crypto?.randomUUID
+                ? globalThis.crypto.randomUUID()
+                : `pf-${Date.now()}-${String(Math.random()).slice(2)}`;
+            if (list.length > 1) {
+              setMsg(
+                "複数の画像を検出したため、先頭1枚のレシート取込を始めます。他の画像は写メ/ファイルから選ぶで追加できます。",
+              );
+            } else {
+              setMsg("画像を検出しました。AIレシート解析へ移動します。");
+            }
+            navigate("/receipt", {
+              state: { prefillImportFile: list[0], prefillReceiptOnce: prefillId },
+            });
             return;
           }
           if (!canUseStatementImport) {

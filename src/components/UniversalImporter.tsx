@@ -23,7 +23,11 @@ export function UniversalImporter({ onRoutedFiles }: UniversalImporterProps) {
     if (list.length === 0) return;
     const first = list[0];
     if (isReceiptImageFile(first)) {
-      setHint("画像を検出しました。AIレシート解析を開始します。");
+      setHint(
+        list.length > 1
+          ? "先頭のレシート画像から取り込みを開始します。続きの枚数は写メ/ファイルから選ぶで追加できます。"
+          : "画像を検出しました。AIレシート解析を開始します。",
+      );
       onRoutedFiles(list, "image");
       return;
     }
@@ -79,7 +83,7 @@ export function UniversalImporter({ onRoutedFiles }: UniversalImporterProps) {
           <input
             ref={inputRef}
             type="file"
-            accept=".csv,.txt,.pdf,image/*"
+            accept=".csv,.txt,.pdf,.tif,.tiff,image/*"
             multiple
             style={{ display: "none" }}
             onChange={(e) => {

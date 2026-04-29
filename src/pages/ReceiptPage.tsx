@@ -660,6 +660,19 @@ export function ReceiptPage() {
     if (!s || typeof s !== "object") return;
     const prefillImportFile = (s as { prefillImportFile?: File }).prefillImportFile;
     if (prefillImportFile instanceof File) {
+      const prefillToken = (s as { prefillReceiptOnce?: string }).prefillReceiptOnce;
+      if (typeof prefillToken === "string" && prefillToken.trim()) {
+        const storageKey = `kakeibo-receipt-prefill-once-${prefillToken.trim()}`;
+        try {
+          if (globalThis.sessionStorage?.getItem(storageKey) === "1") {
+            navigate(location.pathname, { replace: true, state: null });
+            return;
+          }
+          globalThis.sessionStorage.setItem(storageKey, "1");
+        } catch {
+          /* ストレージ不可の環境は URL 上書きで二重化を防ぐ */
+        }
+      }
       void onFile(prefillImportFile);
       navigate(location.pathname, { replace: true, state: null });
       return;
@@ -702,7 +715,14 @@ export function ReceiptPage() {
         navigate(location.pathname, { replace: true, state: null });
       }
     })();
-  }, [location.state, location.pathname, navigate, combineSameTimePayments, combineSmallSameDayPayments]);
+  }, [
+    location.state,
+    location.pathname,
+    navigate,
+    combineSameTimePayments,
+    combineSmallSameDayPayments,
+    onFile,
+  ]);
 
   function clearPayPayImport() {
     setPaypayText("");
