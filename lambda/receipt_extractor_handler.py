@@ -15,10 +15,10 @@ logger.setLevel(logging.INFO)
 s3_client = boto3.client("s3")
 bedrock_client = boto3.client("bedrock-runtime")
 
-# 既定: Claude 3.5 Sonnet v2 推論プロファイル（ap-northeast-1 は apac.）。us. は無効で ValidationException になる。
-# BEDROCK_MODEL_ID で上書き可（他リージョンは list-inference-profiles で確認）
+# 既定: 東京向け非 Legacy 推論プロファイル（3.5 Sonnet v2 等は Legacy 扱いで 30 日未使用だと拒否）
+# 例: jp.anthropic.claude-sonnet-4-6 / global.anthropic.claude-haiku-4-5-20251001-v1:0
 _model_env = os.environ.get("BEDROCK_MODEL_ID", "").strip()
-MODEL_ID = _model_env or "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
+MODEL_ID = _model_env or "jp.anthropic.claude-sonnet-4-6"
 MAX_EDGE = int(os.getenv("MAX_IMAGE_EDGE", "1200"))
 JPEG_QUALITY = int(os.getenv("JPEG_QUALITY", "75"))
 MAX_TOKENS = 400
@@ -103,8 +103,6 @@ def _invoke_bedrock_with_image(image_jpeg: bytes) -> dict[str, Any]:
                     {"type": "text", "text": user_prompt},
                 ],
             },
-            # Pre-fill: force JSON object start to reduce extra text.
-            {"role": "assistant", "content": [{"type": "text", "text": "{"}]},
         ],
     }
 
@@ -119,9 +117,6 @@ def _invoke_bedrock_with_image(image_jpeg: bytes) -> dict[str, Any]:
     parts = payload.get("content", [])
     text_chunks = [p.get("text", "") for p in parts if p.get("type") == "text"]
     reply = "".join(text_chunks)
-    if not reply.startswith("{"):
-        reply = "{" + reply
-
     return _extract_json_from_reply(reply)
 
 
