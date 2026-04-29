@@ -6,7 +6,7 @@
  * レスポンスの名前を上記一覧で検証。クライアントのこの関数の前段または置換で呼び出す。
  */
 import Fuse from "fuse.js";
-import { lookupLearnedCategory } from "./importCategoryLearner";
+import { lookupLearnedCategory, lookupLearnedCategoryByPartial } from "./importCategoryLearner";
 
 export type CategoryPredictSource = "learner" | "keyword" | "substring" | "fuzzy" | "default" | "kept";
 
@@ -123,6 +123,10 @@ export function predictImportCategory(input: {
   const learned = lookupLearnedCategory(text);
   if (learned && names.includes(learned)) {
     return { name: learned, source: "learner", showAiBadge: false, showLearnedBadge: true };
+  }
+  const learnedPartial = lookupLearnedCategoryByPartial(text);
+  if (learnedPartial && names.includes(learnedPartial)) {
+    return { name: learnedPartial, source: "learner", showAiBadge: false, showLearnedBadge: true };
   }
 
   for (const rule of getKeywordRules()) {

@@ -1,10 +1,11 @@
 import { parseCsvLine } from "./csvLine";
 
-const DATE_HEADER = /利用日|取引日|お取引日|日付|利用日時|取引日時|勘定日|決済日/i;
+const DATE_HEADER = /ご利用日|利用日|取引日|お取引日|日付|利用日時|取引日時|勘定日|決済日/i;
 const AMOUNT_HEADER =
   /出金|出金額|出金金額|お支払|支払|利用金額|金額(?!.*取引)|引落|ご利用金額/i;
 const WITHDRAW_ONLY = /出金|引落|お支払|支払金額|ご利用金額(?!.*残高)/i;
-const MEMO_HEADER = /お取引内容|取引内容|摘要|解説|店|相手先|利用先|加盟店|内容|コメント|取引先|御利用/i;
+const MEMO_HEADER =
+  /ご利用先|お取引内容|取引内容|摘要|解説|店|相手先|利用先|加盟店|内容|コメント|取引先|備考|支払方法|御利用/i;
 
 function normalizeDate(raw: string): string | null {
   const s = String(raw ?? "").trim();

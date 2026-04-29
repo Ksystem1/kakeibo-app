@@ -43,6 +43,13 @@ type HeaderAlias = {
 
 const KNOWN_HEADER_PATTERNS: HeaderAlias[] = [
   {
+    // イオンカード CSV
+    date: ["ご利用日", "利用日"],
+    description: ["ご利用先", "利用先", "加盟店"],
+    descriptionSecondary: ["備考", "支払方法", "取引内容"],
+    amount: ["ご利用金額", "利用金額", "請求額", "金額"],
+  },
+  {
     // PayPay
     date: ["取引日", "日時", "利用日"],
     description: ["取引先", "支払先", "加盟店", "内容"],

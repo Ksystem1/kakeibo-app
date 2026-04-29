@@ -1027,7 +1027,7 @@ async function suggestExpenseCategoryFromTransactionHistory(pool, userId, txWher
     Array.isArray(txWhereParams) && txWhereParams.length > 0 ? txWhereParams : [userId, userId];
 
   const [rows] = await pool.query(
-    `SELECT t.category_id, c.name, t.transaction_date, t.id
+    `SELECT t.category_id, c.name, t.transaction_date, t.id, t.memo
      FROM transactions t
      JOIN categories c ON c.id = t.category_id
      WHERE ${txWhere}
@@ -1035,18 +1035,52 @@ async function suggestExpenseCategoryFromTransactionHistory(pool, userId, txWher
        AND t.category_id IS NOT NULL
        AND c.kind = 'expense'
        AND c.is_archived = 0
-       AND ${RECEIPT_NORMALIZED_MEMO_EXPR} = ?
+       AND (
+         ${RECEIPT_NORMALIZED_MEMO_EXPR} = ?
+         OR ${RECEIPT_NORMALIZED_MEMO_EXPR} LIKE ?
+         OR ? LIKE CONCAT('%', ${RECEIPT_NORMALIZED_MEMO_EXPR}, '%')
+       )
      ORDER BY t.transaction_date DESC, t.id DESC
-     LIMIT 1`,
-    [...p, normMemo],
+     LIMIT 80`,
+    [...p, normMemo, `%${normMemo}%`, normMemo],
   );
-  if (Array.isArray(rows) && rows[0]?.category_id != null) {
-    const top = rows[0];
-    return {
-      id: Number(top.category_id),
-      name: String(top.name),
-      source: "history",
-    };
+  if (Array.isArray(rows) && rows.length > 0) {
+    const catScore = new Map();
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i];
+      const categoryId = row?.category_id != null ? Number(row.category_id) : null;
+      if (categoryId == null || !Number.isFinite(categoryId)) continue;
+      const categoryName = String(row?.name ?? "").trim();
+      if (!categoryName) continue;
+      const rowMemoNorm = normalizeVendorName(row?.memo ?? "");
+      const exactLike = rowMemoNorm && (rowMemoNorm === normMemo || normMemo === rowMemoNorm);
+      const overlap =
+        rowMemoNorm &&
+        (rowMemoNorm.includes(normMemo) || normMemo.includes(rowMemoNorm));
+      const recency = Math.max(1, 12 - Math.floor(i / 8));
+      const score = (exactLike ? 28 : overlap ? 16 : 8) + recency;
+      const current = catScore.get(categoryId) ?? { score: 0, name: categoryName };
+      current.score += score;
+      if (!current.name) current.name = categoryName;
+      catScore.set(categoryId, current);
+    }
+    let bestId = null;
+    let bestName = "";
+    let bestScore = -1;
+    for (const [categoryId, st] of catScore.entries()) {
+      if (st.score > bestScore) {
+        bestId = Number(categoryId);
+        bestName = String(st.name ?? "");
+        bestScore = st.score;
+      }
+    }
+    if (bestId != null && bestScore > 0) {
+      return {
+        id: bestId,
+        name: bestName,
+        source: "history",
+      };
+    }
   }
   return null;
 }
