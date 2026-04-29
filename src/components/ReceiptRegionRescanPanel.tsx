@@ -6,16 +6,57 @@ const MIN_CROP_PX = 32;
 
 type DragBox = { x1: number; y1: number; x2: number; y2: number } | null;
 
+/** フォームの日付・金額・メモと同じ state を渡し、画像上にプレビュー表示する */
+export type ReceiptImageResultPreview = {
+  date: string;
+  total: string;
+  memo: string;
+};
+
+function formatDateForImageOverlay(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric" });
+    }
+  }
+  return t;
+}
+
+function formatTotalForImageOverlay(raw: string): string {
+  const s = raw.replace(/[, 　]/g, "").trim();
+  if (!s) return "";
+  const n = Number.parseFloat(s);
+  if (Number.isFinite(n)) return `¥${n.toLocaleString("ja-JP")}`;
+  return raw.trim();
+}
+
 type Props = {
   imageObjectUrl: string;
   busy: boolean;
   onCroppedFile: (file: File) => void;
+  /** 右カラムのフォームと同じ取り込み結果。画像列にも重ね表示する。 */
+  resultPreview?: ReceiptImageResultPreview;
+  /** 圧縮中・本番前アップロード中など（画像上に優先表示） */
+  ingestStatusMessage?: string | null;
+  /** ジョブ受付後・解析未完了。値がまだ空のとき待機文を出す用 */
+  parsingOcr?: boolean;
 };
 
 /**
  * レシート上の金額エリア等を囲み、その部分だけを新しい画像として再OCR用に切り出す。
  */
-export function ReceiptRegionRescanPanel({ imageObjectUrl, busy, onCroppedFile }: Props) {
+export function ReceiptRegionRescanPanel({
+  imageObjectUrl,
+  busy,
+  onCroppedFile,
+  resultPreview,
+  ingestStatusMessage,
+  parsingOcr = false,
+}: Props) {
   const helpId = useId();
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [drag, setDrag] = useState<DragBox>(null);
@@ -76,6 +117,14 @@ export function ReceiptRegionRescanPanel({ imageObjectUrl, busy, onCroppedFile }
 
   const canSubmit =
     box && box.w >= MIN_CROP_PX && box.h >= MIN_CROP_PX && !busy && !err;
+
+  const dRaw = (resultPreview?.date ?? "").trim();
+  const totalRaw = (resultPreview?.total ?? "").trim();
+  const memoRaw = (resultPreview?.memo ?? "").trim();
+  const hasResultValues = Boolean(dRaw || totalRaw || memoRaw);
+  const displayDate = formatDateForImageOverlay(dRaw);
+  const displayTotal = formatTotalForImageOverlay(totalRaw);
+  const showResultOverlay = Boolean(ingestStatusMessage) || hasResultValues || (parsingOcr && !ingestStatusMessage);
 
   const doCrop = useCallback(() => {
     if (!box) return;
@@ -166,6 +215,48 @@ export function ReceiptRegionRescanPanel({ imageObjectUrl, busy, onCroppedFile }
           draggable={false}
         />
         {overlay ? <div className={styles.receiptRescanBox} style={overlay} /> : null}
+        {showResultOverlay ? (
+          <div
+            className={styles.receiptRescanResultOverlay}
+            aria-live="polite"
+            aria-label="解析結果プレビュー"
+          >
+            {ingestStatusMessage ? (
+              <p className={styles.receiptRescanResultPending}>{ingestStatusMessage}</p>
+            ) : !hasResultValues && parsingOcr ? (
+              <p className={styles.receiptRescanResultPending}>AI 解析中…</p>
+            ) : hasResultValues ? (
+              <div>
+                {displayDate ? (
+                  <div className={styles.receiptRescanResultRow}>
+                    <span className={styles.receiptRescanResultLabel} aria-hidden>
+                      日付
+                    </span>
+                    <span className={styles.receiptRescanResultValue}>{displayDate}</span>
+                  </div>
+                ) : null}
+                {displayTotal ? (
+                  <div className={styles.receiptRescanResultRow}>
+                    <span className={styles.receiptRescanResultLabel} aria-hidden>
+                      金額
+                    </span>
+                    <span className={styles.receiptRescanResultValue}>{displayTotal}</span>
+                  </div>
+                ) : null}
+                {memoRaw ? (
+                  <div className={styles.receiptRescanResultRow}>
+                    <span className={styles.receiptRescanResultLabel} aria-hidden>
+                      メモ
+                    </span>
+                    <span className={`${styles.receiptRescanResultValue} ${styles.receiptRescanResultMemo}`}>
+                      {memoRaw}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {err ? (
         <p className={styles.receiptRescanErr} role="alert">

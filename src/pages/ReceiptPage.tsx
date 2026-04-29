@@ -1348,6 +1348,15 @@ export function ReceiptPage() {
                 onCroppedFile={(f) => {
                   void onFile(f);
                 }}
+                resultPreview={{ date: draftDate, total: draftTotal, memo: draftMemo }}
+                ingestStatusMessage={
+                  receiptIngestPhase === "compress"
+                    ? "画像を準備中…"
+                    : receiptIngestPhase === "upload"
+                      ? "アップロード中…"
+                      : null
+                }
+                parsingOcr={receiptLineBusy}
               />
             </aside>
           ) : null}

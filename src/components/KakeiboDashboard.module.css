@@ -96,6 +96,62 @@
   z-index: 1;
   box-sizing: border-box;
 }
+/* 解析結果: 画像下に重ね、フォームと同じ値を常に反映 */
+.receiptRescanResultOverlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  max-height: 46%;
+  overflow: auto;
+  padding: 0.55rem 0.6rem 0.6rem;
+  border-radius: 0 0 7px 7px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    color-mix(in srgb, var(--bg-card, #1a1d24) 82%, transparent) 18%,
+    color-mix(in srgb, var(--bg-card, #1a1d24) 92%, transparent) 100%
+  );
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.receiptRescanResultRow {
+  display: grid;
+  grid-template-columns: 2.1rem minmax(0, 1fr);
+  column-gap: 0.4rem;
+  align-items: baseline;
+}
+.receiptRescanResultRow + .receiptRescanResultRow {
+  margin-top: 0.1rem;
+}
+.receiptRescanResultLabel {
+  color: var(--text-muted, rgba(255, 255, 255, 0.6));
+  font-size: 0.72rem;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.receiptRescanResultValue {
+  font-weight: 600;
+  font-size: 0.8rem;
+  word-break: break-all;
+  min-width: 0;
+}
+.receiptRescanResultMemo {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.receiptRescanResultPending {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 0.15rem 0;
+}
 .receiptRescanErr {
   font-size: 0.86rem;
   color: #e85d5d;
