@@ -77,6 +77,18 @@ function colIndex(header: string[], re: RegExp): number {
   return header.findIndex((h) => re.test(String(h).trim()));
 }
 
+function inferPaymentLabel(raw: string, header: string[]): string | null {
+  const blob = `${String(raw ?? "")} ${header.join(" ")}`.normalize("NFKC").toLowerCase();
+  if (/paypay|ペイペイ/.test(blob)) return "PayPay支払い";
+  if (/d払い|d barai|dbarai|docomo/.test(blob)) return "d払い";
+  if (/メルペイ|merpay/.test(blob)) return "メルペイ払い";
+  if (/楽天ペイ|rakuten ?pay/.test(blob)) return "楽天ペイ払い";
+  if (/au ?pay|ａｕ ?ｐａｙ/.test(blob)) return "au PAY払い";
+  if (/クレジット|カード|visa|master|jcb|amex|diners|信販/.test(blob)) return "クレジット払い";
+  if (/銀行|信用金庫|信金|口座|引落/.test(blob)) return "口座引落";
+  return null;
+}
+
 /**
  * 銀行・カード会社の明細っぽい CSV を、既存 `POST /import/csv` が解釈する
  * `カテゴリ,YYYY-MM-DD,金額,メモ` 形式に変換（推測。判別不能なら null）。
@@ -120,6 +132,7 @@ export function tryConvertBankCardCsvToKakeibo(
   if (!found) return null;
 
   const { header, dataStart } = found;
+  const paymentLabel = inferPaymentLabel(raw, header);
   const iDate = colIndex(header, DATE_HEADER);
   let iAmt = colIndex(header, WITHDRAW_ONLY);
   if (iAmt < 0) iAmt = colIndex(header, AMOUNT_HEADER);
@@ -139,7 +152,12 @@ export function tryConvertBankCardCsvToKakeibo(
     if (!date) continue;
     const amt = parseAmountCell(cells[iAmt] ?? "");
     if (amt == null || amt <= 0) continue;
-    const memo = iMemo >= 0 ? String(cells[iMemo] ?? "").replace(/\r?\n/g, " ").trim() : "";
+    const memoRaw = iMemo >= 0 ? String(cells[iMemo] ?? "").replace(/\r?\n/g, " ").trim() : "";
+    const memo = memoRaw
+      ? paymentLabel
+        ? `${paymentLabel}: ${memoRaw}`.slice(0, 500)
+        : memoRaw
+      : paymentLabel ?? "";
     out.push(
       [defaultCategory, date, String(amt), escapeField(memo)].join(",")
     );

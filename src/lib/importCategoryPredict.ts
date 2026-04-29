@@ -74,6 +74,7 @@ function findLongestNameInText(text: string, names: string[], uncat: string): st
 function wordsFromContent(s: string): string[] {
   return s
     .normalize("NFKC")
+    .replace(/^(paypay支払い|d払い|メルペイ払い|楽天ペイ払い|au\s*pay払い|クレジット払い|口座引落)\s*[:：]\s*/i, "")
     .split(/[\s,、。．\n\r/|：:]+/u)
     .map((w) => w.replace(/[（）()【】\[\]「」]/g, "").trim())
     .filter((w) => w.length >= 2);
@@ -112,7 +113,9 @@ export function predictImportCategory(input: {
 }): CategoryPredictResult {
   const names = input.expenseNames.map((n) => String(n).trim()).filter(Boolean);
   const uncat = pickDefaultUncategorized(names);
-  const text = String(input.content ?? "").trim();
+  const text = String(input.content ?? "")
+    .trim()
+    .replace(/^(paypay支払い|d払い|メルペイ払い|楽天ペイ払い|au\s*pay払い|クレジット払い|口座引落)\s*[:：]\s*/i, "");
   if (!text) {
     return { name: uncat, source: "default", showAiBadge: false, showLearnedBadge: false };
   }

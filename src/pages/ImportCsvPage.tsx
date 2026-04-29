@@ -318,7 +318,7 @@ export function ImportCsvPage() {
 
   return (
     <div className={styles.wrap}>
-      <h1 className={styles.title}>銀行・カード明細 CSV 取込</h1>
+      <h1 className={styles.title}>銀行・カード・各種決済明細 取込</h1>
       {!canUseStatementImport ? (
         <div className={styles.settingsPanel} style={{ marginBottom: "0.9rem" }}>
           <p className={styles.sub} style={{ margin: 0 }}>
@@ -403,7 +403,7 @@ export function ImportCsvPage() {
         </p>
       </div>
       <p className={styles.sub}>
-        ヘッダー行を自動判定し、日付・内容・金額を抽出します（列順は不問）。対象月の支出を置き換え（収入はそのまま）。
+        ヘッダー行を自動判定し、日付・内容・金額を抽出します（列順は不問）。銀行・クレジット・信販・PayPay・d払い等の明細を取り込み、メモには支払手段を付与します。対象月の支出を置き換え（収入はそのまま）。
       </p>
       <form onSubmit={onSubmit}>
         <textarea
