@@ -660,17 +660,21 @@ export function ReceiptPage() {
     if (!s || typeof s !== "object") return;
     const prefillImportFile = (s as { prefillImportFile?: File }).prefillImportFile;
     if (prefillImportFile instanceof File) {
+      const PREFILL_LAST = "kakeibo-receipt-prefill-last";
       const prefillToken = (s as { prefillReceiptOnce?: string }).prefillReceiptOnce;
       if (typeof prefillToken === "string" && prefillToken.trim()) {
-        const storageKey = `kakeibo-receipt-prefill-once-${prefillToken.trim()}`;
-        try {
-          if (globalThis.sessionStorage?.getItem(storageKey) === "1") {
-            navigate(location.pathname, { replace: true, state: null });
-            return;
+        const t = prefillToken.trim();
+        if (t.length > 0 && t.length <= 80) {
+          try {
+            const prev = globalThis.sessionStorage?.getItem(PREFILL_LAST);
+            if (prev === t) {
+              navigate(location.pathname, { replace: true, state: null });
+              return;
+            }
+            globalThis.sessionStorage.setItem(PREFILL_LAST, t);
+          } catch {
+            /* プライベートモード等では二重化防止のみ諦め、URL 上書きで 1 回分は防ぐ */
           }
-          globalThis.sessionStorage.setItem(storageKey, "1");
-        } catch {
-          /* ストレージ不可の環境は URL 上書きで二重化を防ぐ */
         }
       }
       void onFile(prefillImportFile);

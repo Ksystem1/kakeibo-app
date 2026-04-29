@@ -60,7 +60,7 @@ export function useReceiptJob(
           let st: Awaited<ReturnType<typeof getReceiptJobStatus>>;
           try {
             st = await getReceiptJobStatus(q.jobId);
-            if (typeof console !== "undefined" && console.log) {
+            if (import.meta.env.DEV && typeof console !== "undefined" && console.log) {
               console.log("[receipt-job] polled status", {
                 jobId: q.jobId,
                 status: st.status,
