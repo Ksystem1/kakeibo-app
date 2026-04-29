@@ -5928,22 +5928,33 @@ export async function handleApiRequest(req, options = {}) {
         const monthOr = monthRanges
           .map(() => "(t.transaction_date >= ? AND t.transaction_date <= ?)")
           .join(" OR ");
-        const delParams = [...txP2];
+        const monthParams = [...txP2];
         for (const { from, to } of monthRanges) {
-          delParams.push(from, to);
+          monthParams.push(from, to);
         }
-        const [delRes] = await pool.query(
-          `DELETE FROM transactions t
+        const [existingRows] = await pool.query(
+          `SELECT t.id, t.transaction_date, t.amount
+           FROM transactions t
            WHERE ${txWhere}
-           AND t.kind = 'expense'
-           AND (${monthOr})`,
-          delParams,
+             AND t.kind = 'expense'
+             AND (${monthOr})
+           ORDER BY t.id DESC`,
+          monthParams,
         );
-        const deleted =
-          delRes && typeof delRes.affectedRows === "number"
-            ? delRes.affectedRows
-            : 0;
+        /** @type {Map<string, number>} */
+        const existingByDateAmount = new Map();
+        for (const r of Array.isArray(existingRows) ? existingRows : []) {
+          const dateStr = String(r?.transaction_date ?? "").slice(0, 10);
+          const amountNum = Number(r?.amount ?? NaN);
+          const idNum = Number(r?.id ?? NaN);
+          if (!dateStr || !Number.isFinite(amountNum) || !Number.isFinite(idNum)) continue;
+          const key = `${dateStr}|${Math.abs(Math.round(amountNum))}`;
+          if (!existingByDateAmount.has(key)) {
+            existingByDateAmount.set(key, idNum);
+          }
+        }
         let inserted = 0;
+        let updated = 0;
         let categoriesCreated = 0;
         /** @type {Map<string, number>} */
         const csvCategoryByNorm = new Map();
@@ -5961,35 +5972,60 @@ export async function handleApiRequest(req, options = {}) {
                 csvCategoryByNorm,
               );
           if (created) categoriesCreated += 1;
-          await pool.query(
-            `INSERT INTO transactions (
-               user_id, family_id, kind, amount, transaction_date, memo, category_id,
-               is_medical_expense, medical_type, medical_patient_name
-             )
-             VALUES (?, ?, 'expense', ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              userId,
-              familyId,
-              row.amount,
-              row.dateStr,
-              row.memoVal,
-              categoryId,
-              row.isMedicalExpense ? 1 : 0,
-              row.medicalType,
-              row.medicalPatientName,
-            ],
-          );
-          inserted += 1;
+          const key = `${row.dateStr}|${Math.abs(Math.round(row.amount))}`;
+          const existingId = existingByDateAmount.get(key);
+          if (existingId != null) {
+            await pool.query(
+              `UPDATE transactions
+               SET memo = ?,
+                   category_id = ?,
+                   is_medical_expense = ?,
+                   medical_type = ?,
+                   medical_patient_name = ?,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [
+                row.memoVal,
+                categoryId,
+                row.isMedicalExpense ? 1 : 0,
+                row.medicalType,
+                row.medicalPatientName,
+                existingId,
+              ],
+            );
+            updated += 1;
+          } else {
+            await pool.query(
+              `INSERT INTO transactions (
+                 user_id, family_id, kind, amount, transaction_date, memo, category_id,
+                 is_medical_expense, medical_type, medical_patient_name
+               )
+               VALUES (?, ?, 'expense', ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                userId,
+                familyId,
+                row.amount,
+                row.dateStr,
+                row.memoVal,
+                categoryId,
+                row.isMedicalExpense ? 1 : 0,
+                row.medicalType,
+                row.medicalPatientName,
+              ],
+            );
+            inserted += 1;
+          }
         }
         return json(
           200,
           {
             ok: true,
-            deleted,
+            deleted: 0,
             inserted,
+            updated,
             categoriesCreated,
             message:
-              "CSV の行に現れる年月（YYYY-MM）ごとに、その月の既存の支出を削除してから行を追加しました。カテゴリ列が空なら未分類、未登録名は支出カテゴリとして自動追加します。収入は削除しません。",
+              "既存データは保持し、同じ日付・同じ金額の支出のみ上書きしました。カテゴリ列が空なら未分類、未登録名は支出カテゴリとして自動追加します。",
           },
           hdrs,
           skipCors,
