@@ -85,7 +85,7 @@ test("executePayPayCsvImport: 既存IDは更新カウントされる", async () 
   assert.ok(calls.some((c) => String(c.sql).includes("ON DUPLICATE KEY UPDATE")));
 });
 
-test("executePayPayCsvImport: メモは取引内容を優先し、取引番号は含めない", async () => {
+test("executePayPayCsvImport: メモは取引先を優先し、取引番号は含めない", async () => {
   const calls = [];
   const fakePool = {
     async query(sql, params) {
@@ -119,7 +119,7 @@ test("executePayPayCsvImport: メモは取引内容を優先し、取引番号�
   const insert = calls.find((c) => String(c.sql).includes("INSERT INTO transactions"));
   assert.ok(insert);
   const params = insert.params;
-  const memo = params.find((x) => typeof x === "string" && x === "支払い");
+  const memo = params.find((x) => typeof x === "string" && x === "七福亭");
   assert.ok(memo, `memo を params から検出: ${JSON.stringify(params)}`);
   assert.equal(memo.includes("memo-fmt-1"), false);
 });

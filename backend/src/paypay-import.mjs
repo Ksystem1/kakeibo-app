@@ -335,7 +335,7 @@ export function buildPayPayImportPlan(csvText, options = {}) {
 }
 
 /**
- * メモは取引内容を優先し、無い場合は店舗名を使用。
+ * メモは取引先（merchant）を優先し、無い場合は取引内容を使用。
  * @param {string} contentRaw
  * @param {string} merchantRaw
  * @param {boolean} combined 複数決済の合算行
@@ -343,7 +343,7 @@ export function buildPayPayImportPlan(csvText, options = {}) {
 function buildMemo(contentRaw, merchantRaw, combined) {
   const content = String(contentRaw ?? "").trim();
   const merchant = String(merchantRaw ?? "").trim();
-  const body = content || merchant || "（取引先なし）";
+  const body = merchant || content || "（取引先なし）";
   const base = combined ? `${body} (複数決済を合算)` : body;
   return base.slice(0, 500);
 }
