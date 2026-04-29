@@ -19,6 +19,7 @@
     "deploy:prod": "node infra/scripts/deploy-production.mjs",
     "deploy:auto": "node infra/scripts/deploy-and-verify.mjs",
     "verify:login": "node infra/scripts/verify-login.mjs",
+    "verify:receipt-upload": "node infra/scripts/verify-receipt-upload.mjs",
     "verify:connectivity": "node infra/scripts/verify-connectivity.mjs",
     "verify:git-sync": "node infra/scripts/verify-git-sync.mjs",
     "verify:grade-group": "node scripts/verify-grade-group.mjs",

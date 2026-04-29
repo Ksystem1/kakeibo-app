@@ -130,6 +130,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if not records:
         return {"statusCode": 400, "body": json.dumps({"error": "No S3 records in event"})}
 
+    logger.info("S3 trigger: %d record(s) (s3-put 直結の Bedrock 取込。画面アップロードは ECS /receipts/upload)", len(records))
+
     for record in records:
         bucket = record.get("s3", {}).get("bucket", {}).get("name")
         raw_key = record.get("s3", {}).get("object", {}).get("key")

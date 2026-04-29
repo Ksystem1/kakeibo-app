@@ -6482,6 +6482,11 @@ export async function handleApiRequest(req, options = {}) {
              VALUES (?, ?, 'pending', ?)`,
             [jobId, userId, requestJson],
           );
+          logger.info("receipts.upload.enqueued", {
+            jobId,
+            userId,
+            note: "画面取込は ECS 本 API 経路。S3 トリガ Lambda ではない（その Lambda の LogGroup には出ない）",
+          });
         } catch (e) {
           if (e && typeof e === "object" && e.code === "ER_NO_SUCH_TABLE") {
             return json(
@@ -7372,7 +7377,7 @@ async function runReceiptJobAfterUpload(pool, jobId, userId, forwardHeaders) {
   /** 受付直後の二重 kick（setImmediate + 1.5s watchdog）の 2 本目は affectedRows=0 で return する。finally はその return 後にも走るため、lock を取れなかった起動ではフォールバックを実行しない（進行中の本処理を上書きしない） */
   let jobLockAcquired = false;
   try {
-    console.error("[receipts.job.start]", { jobId, userId });
+    logger.info("receipts.job.run_start", { jobId, userId });
     const [u] = await pool.query(
       `UPDATE receipt_processing_jobs SET status = 'processing', updated_at = NOW()
        WHERE job_id = ? AND user_id = ? AND status = 'pending'`,
