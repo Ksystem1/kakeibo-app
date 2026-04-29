@@ -1,6 +1,6 @@
 # Receipt Extractor Lambda
 
-AWS Lambda (`python3.12` / `arm64`) that triggers on S3 upload, compresses receipt images with Pillow, and extracts `date/total/shop_name` using Amazon Bedrock Claude 3.5 Haiku.
+AWS Lambda (`python3.12` / `arm64`) that triggers on S3 upload, compresses receipt images with Pillow, and extracts `date/total/shop_name` using Amazon Bedrock Claude 3.5 Sonnet.
 
 ## Files
 
@@ -26,10 +26,10 @@ Recommended guided inputs:
 
 ## Notes
 
-- Model ID is fixed to:
-  - `anthropic.claude-3-5-haiku-20241022-v1:0`
+- Default model ID:
+  - `anthropic.claude-3-5-sonnet-20240620-v1:0` (override with env `BEDROCK_MODEL_ID` if needed)
 - Cost/speed controls:
   - max edge resize: `MAX_IMAGE_EDGE` (default `1200`)
   - JPEG quality: `JPEG_QUALITY` (default `75`)
   - Bedrock `max_tokens`: `400`
-- Ensure your AWS account has Bedrock access to Claude 3.5 Haiku.
+- Ensure your AWS account has Bedrock access to Claude 3.5 Sonnet in `ap-northeast-1`.

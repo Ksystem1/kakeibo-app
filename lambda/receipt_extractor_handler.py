@@ -15,10 +15,10 @@ logger.setLevel(logging.INFO)
 s3_client = boto3.client("s3")
 bedrock_client = boto3.client("bedrock-runtime")
 
-# レガシー扱いの旧 Haiku(202403)は避け、東京リージョンで有効化しやすい 3.5 Haiku を既定にする
+# 既定: Claude 3.5 Sonnet（ap-northeast-1 の Bedrock で有効化が必要）
 # 例: 環境変数 BEDROCK_MODEL_ID で上書き
 _model_env = os.environ.get("BEDROCK_MODEL_ID", "").strip()
-MODEL_ID = _model_env or "anthropic.claude-3-5-haiku-20241022-v1:0"
+MODEL_ID = _model_env or "anthropic.claude-3-5-sonnet-20240620-v1:0"
 MAX_EDGE = int(os.getenv("MAX_IMAGE_EDGE", "1200"))
 JPEG_QUALITY = int(os.getenv("JPEG_QUALITY", "75"))
 MAX_TOKENS = 400
