@@ -1700,7 +1700,13 @@ export async function savePlaceCategoryPreference(body: {
 
 export async function saveReceiptOcrCorrection(body: {
   summary: Record<string, unknown>;
-  items: Array<{ name: string; amount: number | null; confidence?: number }>;
+  /** 明細行の学習用: name/amount に加え category（食費・日用品…）を含める */
+  items: Array<{
+    name: string;
+    amount: number | null;
+    confidence?: number;
+    category?: string | null;
+  }>;
   category_id: number | null;
   memo: string | null;
   /** 匿名グローバル辞書用: 登録時にユーザーが確定した合計（円） */

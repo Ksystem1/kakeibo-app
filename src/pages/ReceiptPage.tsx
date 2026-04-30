@@ -314,10 +314,15 @@ export function ReceiptPage() {
   /** 登録時に POST /receipts/learn へ送る直近の取込スナップショット */
   const [lastOcrForLearn, setLastOcrForLearn] = useState<{
     summary: Record<string, unknown>;
-    items: Array<{ name: string; amount: number | null; confidence?: number }>;
+    items: Array<{
+      name: string;
+      amount: number | null;
+      confidence?: number;
+      category?: string | null;
+    }>;
   } | null>(null);
-  /** 解析直後にフォームへ入れたメモ（店名）・カテゴリ・金額。差分があれば学習する */
-  const [loadedReceiptBaseline, setLoadedReceiptBaseline] = useState<{
+  /** 解析直後のメモ・カテゴリ・金額（学習の誤上書き防止用。遅延する keyword 反映などは ref だけを更新） */
+  const loadedReceiptBaselineRef = useRef<{
     memo: string;
     categoryId: number | null;
     totalAmount: number | null;
@@ -567,14 +572,14 @@ export function ReceiptPage() {
               String(r.suggestedVendor.suggestedStoreName).trim() !== ""
             ? String(r.suggestedVendor.suggestedStoreName).trim()
             : vendorTrim;
-      setLoadedReceiptBaseline({
+      loadedReceiptBaselineRef.current = {
         memo: initialMemo,
         categoryId: initialCategoryId,
         totalAmount:
           s?.totalAmount != null && Number.isFinite(Number(s.totalAmount))
             ? Math.round(Number(s.totalAmount))
             : null,
-      });
+      };
       {
         const parts: string[] = [];
         if (r.receiptAdvancedParsingBanner) parts.push(r.receiptAdvancedParsingBanner);
@@ -605,14 +610,13 @@ export function ReceiptPage() {
 
   /** 解析時は categories が遅れて届くと keyword 提案が後から入る。baseline.categoryId が null のままだと誤学習するため、ユーザー未操作時だけ追従する */
   useEffect(() => {
-    setLoadedReceiptBaseline((b) => {
-      if (!b) return b;
-      if (categoryTouchedByUserRef.current) return b;
-      if (b.categoryId != null) return b;
-      const next = normalizeReceiptCategoryId(draftCategoryId);
-      if (next == null) return b;
-      return { ...b, categoryId: next };
-    });
+    const b = loadedReceiptBaselineRef.current;
+    if (!b) return;
+    if (categoryTouchedByUserRef.current) return;
+    if (b.categoryId != null) return;
+    const next = normalizeReceiptCategoryId(draftCategoryId);
+    if (next == null) return;
+    loadedReceiptBaselineRef.current = { ...b, categoryId: next };
   }, [draftCategoryId]);
 
   useEffect(() => {
@@ -931,7 +935,7 @@ export function ReceiptPage() {
     setItems([]);
     setReceiptMainCategory(null);
     setLastOcrForLearn(null);
-    setLoadedReceiptBaseline(null);
+    loadedReceiptBaselineRef.current = null;
     setReceiptOcrVendorKey(null);
     setReceiptBedrockVendorLow(false);
     memoTouchedByUserRef.current = false;
@@ -1572,7 +1576,10 @@ export function ReceiptPage() {
               </p>
             ) : null}
             <div style={{ display: "grid", gap: "0.45rem" }}>
-              {items.map((it, idx) => (
+              {items.map((it, idx) => {
+                const lineAmt = Number(it.amount);
+                const hasAmt = Number.isFinite(lineAmt) && lineAmt > 0;
+                return (
                 <div
                   key={`${it.name}-${idx}`}
                   className={
@@ -1582,16 +1589,14 @@ export function ReceiptPage() {
                   }
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "minmax(0,1fr) auto",
+                    gridTemplateColumns: "minmax(0,1fr) minmax(7rem,auto) auto",
                     gap: "0.45rem",
                     alignItems: "center",
                   }}
                 >
                   <span className={styles.sub}>
                     {it.name}
-                    {Number.isFinite(Number(it.amount ?? NaN))
-                      ? `（¥${Number(it.amount).toLocaleString("ja-JP")}）`
-                      : ""}
+                    {hasAmt ? `（¥${lineAmt.toLocaleString("ja-JP")}）` : ""}
                   </span>
                   <select
                     value={it.category ?? "その他"}
@@ -1601,6 +1606,7 @@ export function ReceiptPage() {
                         prev.map((row, i) => (i === idx ? { ...row, category: next } : row)),
                       );
                     }}
+                    aria-label={`行${idx + 1}の品目分類`}
                   >
                     {RECEIPT_ITEM_CATEGORIES.map((cat) => (
                       <option key={cat} value={cat}>
@@ -1608,8 +1614,24 @@ export function ReceiptPage() {
                       </option>
                     ))}
                   </select>
+                  {hasAmt ? (
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnSm}`}
+                      onClick={() => {
+                        setDraftTotal(String(Math.round(lineAmt)));
+                        setNotice(null);
+                      }}
+                      title="この行の金額を、上段の合計欄（登録用の金額）に反映します"
+                    >
+                      合計に
+                    </button>
+                  ) : (
+                    <span aria-hidden="true" />
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : null}
@@ -1647,28 +1669,21 @@ export function ReceiptPage() {
                 category_id: submittedCat,
                 from_receipt: true,
               });
-              if (lastOcrForLearn?.summary && loadedReceiptBaseline) {
-                const submittedMemo = draftMemo.trim();
-                const submittedTotal = Number.isFinite(amount) ? Math.round(amount) : null;
-                const memoChanged = submittedMemo !== loadedReceiptBaseline.memo;
-                const baselineCat = normalizeReceiptCategoryId(loadedReceiptBaseline.categoryId);
-                const categoryChanged = submittedCat !== baselineCat;
-                const totalChanged = submittedTotal !== loadedReceiptBaseline.totalAmount;
-                if (
-                  memoChanged ||
-                  totalChanged ||
-                  categoryChanged ||
-                  categoryTouchedByUserRef.current
-                ) {
-                  void saveReceiptOcrCorrection({
-                    summary: lastOcrForLearn.summary,
-                    items: lastOcrForLearn.items,
-                    category_id: submittedCat,
-                    memo: submittedMemo || null,
-                    confirmed_total_amount: amount,
-                    confirmed_date: dateField.value,
-                  }).catch(() => {});
-                }
+              if (lastOcrForLearn?.summary) {
+                const itemsForLearn = items.map((row) => ({
+                  name: row.name,
+                  amount: row.amount ?? null,
+                  category: row.category ?? null,
+                  confidence: row.confidence,
+                }));
+                void saveReceiptOcrCorrection({
+                  summary: lastOcrForLearn.summary,
+                  items: itemsForLearn,
+                  category_id: submittedCat,
+                  memo: draftMemo.trim() || null,
+                  confirmed_total_amount: amount,
+                  confirmed_date: dateField.value,
+                }).catch(() => {});
               }
               if (receiptOcrVendorKey && lastParsePremium) {
                 void savePlaceCategoryPreference({

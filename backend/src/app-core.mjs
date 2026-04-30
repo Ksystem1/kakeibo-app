@@ -22,6 +22,9 @@ import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
 import {
   buildReceiptOcrSnapshot,
   receiptOcrMatchKey,
+  lineItemLearnKey,
+  normalizeVendorForMatch,
+  receiptOcrSnapshotContentEqualForLearn,
 } from "./receipt-learn.mjs";
 import {
   buildReceiptTotalCandidates,
@@ -891,36 +894,74 @@ function sumReceiptLineItemAmounts(items) {
 }
 
 /**
- * プレミアム: 印字合計と明細合計のずれを検算し、明細優先で補正することがある。
+ * プレミアム: 合計欄に値が無い場合のみ、明細合算で補完する。印字合計は上書きしない
+ *（明細行に小計行が混ざると合算が膨らみ、正しい合計を潰すため）。
  * @returns {{ summary: Record<string, unknown>, adjusted: boolean, note: string | null }}
  */
 function reconcilePremiumReceiptTotal(summary, items) {
   const base = summary && typeof summary === "object" ? { ...summary } : {};
   const lineSum = sumReceiptLineItemAmounts(items);
+  const cur = Number(base.totalAmount ?? NaN);
+  if (Number.isFinite(cur) && cur > 0) {
+    return { summary: base, adjusted: false, note: null };
+  }
   if (!Number.isFinite(lineSum) || lineSum <= 0) {
     return { summary: base, adjusted: false, note: null };
   }
-  const cur = Number(base.totalAmount ?? NaN);
-  if (!Number.isFinite(cur) || cur <= 0) {
-    return {
-      summary: { ...base, totalAmount: lineSum },
-      adjusted: true,
-      note: `明細を検算し、合計金額を ${lineSum.toLocaleString("ja-JP")} 円としました。`,
-    };
+  return {
+    summary: { ...base, totalAmount: lineSum },
+    adjusted: true,
+    note: `合計欄の値が得られなかったため、明細行を合算し ${lineSum.toLocaleString("ja-JP")} 円としました。`,
+  };
+}
+
+/**
+ * 同じ店の過去取込で保存した明細行カテゴリ（食費/日用品/…）を、名称＋金額で上書き適用する
+ */
+async function applyUserLearnedLineItemTagCategories(pool, userId, vendorName, items) {
+  const vKey = normalizeVendorForMatch(vendorName);
+  if (!vKey || vKey.length < 2) return items;
+  if (!Array.isArray(items) || items.length === 0) return items;
+  let rows;
+  try {
+    const r = await pool.query(
+      `SELECT ocr_snapshot_json FROM receipt_ocr_corrections
+       WHERE user_id = ? ORDER BY updated_at DESC LIMIT 500`,
+      [userId],
+    );
+    rows = r[0];
+  } catch {
+    return items;
   }
-  const diff = Math.abs(cur - lineSum);
-  if (diff <= 1) return { summary: base, adjusted: false, note: null };
-  const ratio = cur / lineSum;
-  if (ratio < 0.95 || ratio > 1.08) {
-    const prev = Math.round(cur);
-    const next = lineSum;
-    return {
-      summary: { ...base, totalAmount: next },
-      adjusted: true,
-      note: `明細を検算し、合計金額を補正しました（¥${prev.toLocaleString("ja-JP")} → ¥${next.toLocaleString("ja-JP")}）。`,
-    };
+  if (!Array.isArray(rows) || rows.length === 0) return items;
+  /** @type {Map<string, string>} */
+  const map = new Map();
+  for (const row of rows) {
+    let snap;
+    try {
+      snap = JSON.parse(String(row?.ocr_snapshot_json ?? "{}"));
+    } catch {
+      continue;
+    }
+    const sv = normalizeVendorForMatch(snap?.vendorName ?? "");
+    if (!sv) continue;
+    if (sv !== vKey && !sv.includes(vKey) && !vKey.includes(sv)) continue;
+    for (const it of Array.isArray(snap.items) ? snap.items : []) {
+      const k = lineItemLearnKey(it?.name, it?.amount);
+      const lc = String(it?.lineCategory ?? "").trim();
+      if (k && lc && !map.has(k)) {
+        map.set(k, lc);
+      }
+    }
   }
-  return { summary: base, adjusted: false, note: null };
+  if (map.size === 0) return items;
+  return items.map((x) => {
+    const k = lineItemLearnKey(x?.name, x?.amount);
+    if (!k) return x;
+    const h = map.get(k);
+    if (h) return { ...x, category: h };
+    return x;
+  });
 }
 
 const JP_PHONE_IN_OCR_RE = /0\d{1,4}-\d{1,4}-\d{4}|0\d{9,10}/;
@@ -6873,7 +6914,7 @@ export async function handleApiRequest(req, options = {}) {
 
         try {
           const [existing] = await pool.query(
-            `SELECT category_id, memo FROM receipt_ocr_corrections
+            `SELECT category_id, memo, ocr_snapshot_json FROM receipt_ocr_corrections
              WHERE user_id = ? AND match_key = ? LIMIT 1`,
             [userId, matchKey],
           );
@@ -6886,7 +6927,15 @@ export async function handleApiRequest(req, options = {}) {
           const sameCat = (exCat ?? null) === (categoryId ?? null);
           const sameMemo = (exMemo ?? "") === (memo ?? "");
           if (ex && sameCat && sameMemo) {
-            return json(200, { ok: true, skipped: true }, hdrs, skipCors);
+            let prevSnap = null;
+            try {
+              prevSnap = JSON.parse(String(ex.ocr_snapshot_json ?? "{}"));
+            } catch {
+              prevSnap = null;
+            }
+            if (prevSnap && receiptOcrSnapshotContentEqualForLearn(prevSnap, snapshot)) {
+              return json(200, { ok: true, skipped: true }, hdrs, skipCors);
+            }
           }
 
           const jsonSnap = JSON.stringify(snapshot);
@@ -7195,6 +7244,19 @@ export async function handleApiRequest(req, options = {}) {
               ...x,
               category: String(x?.category ?? "").trim() || "その他",
             }));
+            const vnForLineLearn = String(adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "").trim();
+            if (vnForLineLearn) {
+              try {
+                result.items = await applyUserLearnedLineItemTagCategories(
+                  pool,
+                  userId,
+                  vnForLineLearn,
+                  result.items,
+                );
+              } catch (eLine) {
+                logError("receipts.parse.line_item_learn", eLine);
+              }
+            }
           }
           let aiCategoryId = null;
           let aiCategoryName = null;

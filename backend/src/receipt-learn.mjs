@@ -40,13 +40,22 @@ export function buildReceiptOcrSnapshot(summary, items) {
     totalAmount: total,
     date: summary?.date != null ? String(summary.date) : null,
     items: Array.isArray(items)
-      ? items.map((it) => ({
-          name: it?.name != null ? String(it.name) : "",
-          amount:
-            it?.amount != null && Number.isFinite(Number(it.amount))
-              ? Number(it.amount)
-              : null,
-        }))
+      ? items.map((it) => {
+          const lineCat =
+            it?.lineCategory != null && String(it.lineCategory).trim() !== ""
+              ? String(it.lineCategory).trim()
+              : it?.category != null && String(it.category).trim() !== ""
+                ? String(it.category).trim()
+                : null;
+          return {
+            name: it?.name != null ? String(it.name) : "",
+            amount:
+              it?.amount != null && Number.isFinite(Number(it.amount))
+                ? Number(it.amount)
+                : null,
+            lineCategory: lineCat,
+          };
+        })
       : [],
   };
 }
@@ -70,4 +79,39 @@ export function receiptOcrMatchKey(summary, items) {
     .join("|");
   const canonical = JSON.stringify({ v, t, d, itemPart });
   return crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+/**
+ * 明細行名＋金額で、ユーザーが学習させた行カテゴリを照合するキー
+ * @param {string|undefined|null} name
+ * @param {unknown} amount
+ * @returns {string|null}
+ */
+export function lineItemLearnKey(name, amount) {
+  const t = normalizeToken(name ?? "");
+  const a = amount != null && Number.isFinite(Number(amount)) ? Math.round(Number(amount)) : NaN;
+  if (!t || !Number.isFinite(a) || a <= 0) return null;
+  return `${t}@@${a}`;
+}
+
+/**
+ * 学習のスキップ判定: 取込内容と行カテゴリが前回と同一なら真
+ */
+function lineCategoryLearnSignature(snap) {
+  return (Array.isArray(snap?.items) ? snap.items : [])
+    .map((it) => {
+      const k = lineItemLearnKey(it?.name, it?.amount);
+      if (!k) return null;
+      return `${k}|${String(it?.lineCategory ?? "").trim()}`;
+    })
+    .filter(Boolean)
+    .sort()
+    .join("##");
+}
+
+export function receiptOcrSnapshotContentEqualForLearn(a, b) {
+  if (String(a?.vendorName ?? "") !== String(b?.vendorName ?? "")) return false;
+  if (Number(a?.totalAmount ?? NaN) !== Number(b?.totalAmount ?? NaN)) return false;
+  if (String(a?.date ?? "") !== String(b?.date ?? "")) return false;
+  return lineCategoryLearnSignature(a) === lineCategoryLearnSignature(b);
 }

@@ -199,7 +199,11 @@ export function buildReceiptTotalCandidates(p) {
   const mainN = Number(main);
   if (Number.isFinite(lineSum) && lineSum > 0) {
     if (!Number.isFinite(mainN) || Math.abs(lineSum - mainN) >= 1) {
-      add(lineSum, "明細の合算", "lines");
+      const ratio = Number.isFinite(mainN) && mainN > 0 ? lineSum / mainN : 1;
+      // 小計行・合計行が明細に混ざると合算が膨らむため、差が大きいときは候補に出さない
+      if (!Number.isFinite(ratio) || (ratio >= 0.75 && ratio <= 1.35)) {
+        add(lineSum, "明細の合算", "lines");
+      }
     }
   }
 
