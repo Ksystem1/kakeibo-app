@@ -283,6 +283,7 @@ export function ReceiptPage() {
     | "history"
     | "keywords"
     | "global_master"
+    | "shared_learning"
     | "chain_catalog"
     | "line_items"
     | "correction"
@@ -1395,6 +1396,8 @@ export function ReceiptPage() {
                   ? "同じ店名に対して以前選んだカテゴリを優先しました（必要なら変更できます）。"
                 : categorySuggestSource === "global_master"
                   ? "参考データからカテゴリを推測しました（必要なら変更できます）。"
+                : categorySuggestSource === "shared_learning"
+                  ? "共有学習データからカテゴリを提案しました（必要なら変更できます）。"
                 : categorySuggestSource === "ai"
                   ? "カテゴリを自動で提案しました（必要なら変更できます）。"
                 : "カテゴリ候補を自動提案しました（必要なら変更できます）。"}

@@ -1379,6 +1379,7 @@ export type ParseReceiptResult = {
     | "history"
     | "keywords"
     | "global_master"
+    | "shared_learning"
     | "chain_catalog"
     | "line_items"
     | "correction"
@@ -2071,6 +2072,73 @@ export async function getAdminUsers() {
     }>;
     meta?: { subscriptionStatusWritable?: boolean };
   }>(res);
+}
+
+export type AdminReceiptLearningCatalogRow = {
+  id: number;
+  vendor_label: string | null;
+  vendor_norm: string;
+  year_month: string;
+  total_amount: number | null;
+  item_tokens: string | null;
+  category_name_hint: string | null;
+  sample_count: number;
+  is_disabled: boolean;
+  admin_note: string | null;
+  last_seen_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export async function getAdminReceiptLearningCatalog(params?: {
+  q?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const sp = new URLSearchParams();
+  if (params?.q && params.q.trim()) sp.set("q", params.q.trim());
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  if (params?.offset != null) sp.set("offset", String(params.offset));
+  const q = sp.toString();
+  const res = await apiFetch(`${BASE}/admin/receipt-learning-catalog${q ? `?${q}` : ""}`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    items: AdminReceiptLearningCatalogRow[];
+    meta: {
+      total_count: number;
+      active_count: number;
+      disabled_count: number;
+      limit: number;
+      offset: number;
+    };
+  }>(res);
+}
+
+export async function patchAdminReceiptLearningCatalog(
+  id: number,
+  body: {
+    vendor_label?: string | null;
+    category_name_hint?: string | null;
+    admin_note?: string | null;
+    is_disabled?: boolean;
+  },
+) {
+  const res = await apiFetch(`${BASE}/admin/receipt-learning-catalog/${id}`, {
+    method: "PATCH",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{ ok: boolean }>(res);
+}
+
+export async function deleteAdminReceiptLearningCatalog(id: number) {
+  const res = await apiFetch(`${BASE}/admin/receipt-learning-catalog/${id}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+  });
+  return parse<{ ok: boolean }>(res);
 }
 
 export async function createAdminUser(body: {

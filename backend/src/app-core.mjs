@@ -1072,6 +1072,58 @@ function buildReceiptSuggestedMemo(vendorName, ocrLines) {
   if (payment) return payment.slice(0, 500);
   return vendor.slice(0, 500);
 }
+
+function normalizeReceiptLearningToken(s) {
+  return String(s ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[　]/g, "")
+    .replace(/[()（）【】\[\]{}「」『』<>＜＞:：;；,，.。・]/g, "");
+}
+
+function receiptLearningYearMonth(rawDate) {
+  const ymd = String(rawDate ?? "").trim().replace(/\//g, "-");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd.slice(0, 7);
+  return "0000-00";
+}
+
+function buildReceiptLearningCatalogRow(summary, items, categoryNameHint) {
+  const vendorLabel = String(summary?.vendorName ?? "").trim().slice(0, 120);
+  const vendorNorm = normalizeVendorForMatch(vendorLabel).slice(0, 191);
+  const ym = receiptLearningYearMonth(summary?.date);
+  const totalRaw = Number(summary?.totalAmount ?? NaN);
+  const totalAmount = Number.isFinite(totalRaw) && totalRaw > 0 ? Math.round(totalRaw) : null;
+  const tokens = Array.from(
+    new Set(
+      (Array.isArray(items) ? items : [])
+        .map((it) => normalizeReceiptLearningToken(it?.name ?? ""))
+        .filter((t) => t.length >= 2 && !/^\d+$/.test(t))
+        .slice(0, 40),
+    ),
+  )
+    .sort((a, b) => a.localeCompare(b, "ja"))
+    .slice(0, 8);
+  const itemTokens = tokens.length > 0 ? tokens.join("|").slice(0, 255) : null;
+  const canonical = JSON.stringify({
+    v: vendorNorm,
+    ym,
+    t: totalAmount,
+    k: itemTokens ?? "",
+  });
+  const fingerprint = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+  return {
+    fingerprint,
+    vendorNorm,
+    vendorLabel: vendorLabel || null,
+    yearMonth: ym,
+    totalAmount,
+    itemTokens,
+    categoryNameHint:
+      categoryNameHint != null && String(categoryNameHint).trim() !== ""
+        ? String(categoryNameHint).trim().slice(0, 100)
+        : null,
+  };
+}
 function inferVendorNameFromOcrLines(ocrLines) {
   const joined = Array.isArray(ocrLines) ? ocrLines.map((x) => String(x ?? "")).join("\n") : "";
   if (!joined) return null;
@@ -1335,6 +1387,64 @@ async function suggestExpenseCategoryFromGlobalMaster(pool, vendor, userExpenseC
   return null;
 }
 
+/** 全ユーザー共有の学習カタログ（匿名集約）からカテゴリ候補を引く */
+async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, userExpenseCategories) {
+  const userCats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
+  if (userCats.length === 0) return null;
+  const vendorNorm = normalizeVendorForMatch(summary?.vendorName ?? "");
+  if (!vendorNorm || vendorNorm.length < 2) return null;
+  const ym = receiptLearningYearMonth(summary?.date);
+  const totalRaw = Number(summary?.totalAmount ?? NaN);
+  const total = Number.isFinite(totalRaw) && totalRaw > 0 ? Math.round(totalRaw) : null;
+  const yms = ym === "0000-00" ? ["0000-00"] : [ym, "0000-00"];
+  const [rows] = await pool.query(
+    `SELECT category_name_hint, sample_count, year_month, total_amount
+     FROM receipt_learning_catalog
+     WHERE is_disabled = 0
+       AND vendor_norm = ?
+       AND year_month IN (${yms.map(() => "?").join(",")})
+     ORDER BY sample_count DESC, updated_at DESC
+     LIMIT 24`,
+    [vendorNorm, ...yms],
+  );
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  /** @type {Map<number, { name: string; score: number }>} */
+  const scoreByCategoryId = new Map();
+  for (const row of rows) {
+    const hint = String(row?.category_name_hint ?? "").trim();
+    if (!hint) continue;
+    const hintKey = normalizeCategoryNameKey(hint);
+    const hit = userCats.find((c) => {
+      const ck = normalizeCategoryNameKey(c?.name ?? "");
+      return ck === hintKey || ck.includes(hintKey) || hintKey.includes(ck);
+    });
+    if (!hit?.id) continue;
+    let score = Math.max(1, Number(row?.sample_count ?? 1));
+    if (String(row?.year_month ?? "") === ym) score += 3;
+    const rowTotal = Number(row?.total_amount ?? NaN);
+    if (total != null && Number.isFinite(rowTotal) && rowTotal > 0) {
+      const diff = Math.abs(rowTotal - total);
+      if (diff <= 1) score += 5;
+      else if (diff <= 20) score += 2;
+    }
+    const cur = scoreByCategoryId.get(Number(hit.id)) ?? { name: String(hit.name), score: 0 };
+    cur.score += score;
+    scoreByCategoryId.set(Number(hit.id), cur);
+  }
+  let bestId = null;
+  let bestName = "";
+  let bestScore = -1;
+  for (const [id, st] of scoreByCategoryId.entries()) {
+    if (st.score > bestScore) {
+      bestId = id;
+      bestName = st.name;
+      bestScore = st.score;
+    }
+  }
+  if (bestId == null || bestScore <= 0) return null;
+  return { id: bestId, name: bestName, source: "shared_learning" };
+}
+
 async function suggestExpenseCategoryForReceipt(
   pool,
   userId,
@@ -1412,6 +1522,7 @@ async function predictCategory({
   familyId,
   txWhere,
   txWhereParams,
+  receiptSummary,
   vendor,
   items,
   userExpenseCategories,
@@ -1446,6 +1557,14 @@ async function predictCategory({
     );
     if (fromGlobal?.id != null) {
       return { ...fromGlobal, lowConfidence: false };
+    }
+    const fromSharedLearning = await suggestExpenseCategoryFromSharedLearningCatalog(
+      pool,
+      receiptSummary ?? { vendorName: vendor, totalAmount: null, date: null },
+      userExpenseCategories,
+    );
+    if (fromSharedLearning?.id != null) {
+      return { ...fromSharedLearning, lowConfidence: false };
     }
     const fromLineItems = suggestExpenseCategoryFromPremiumLineItems(
       items,
@@ -2719,6 +2838,7 @@ export async function handleApiRequest(req, options = {}) {
             adminAnnouncement: "/admin/announcement",
             adminMonitorRecruitmentSettings: "/admin/monitor-recruitment-settings",
             adminImportFormatAudit: "/admin/import-formats/audit",
+            adminReceiptLearningCatalog: "/admin/receipt-learning-catalog",
             supportChatMessages: "/support/chat/messages",
             supportChatRead: "/support/chat/read",
             familyChatMessages: "/family/chat/messages",
@@ -3437,6 +3557,179 @@ export async function handleApiRequest(req, options = {}) {
         return json(404, { error: "見つかりません" }, hdrs, skipCors);
       }
       return json(200, { ok: true }, hdrs, skipCors);
+    }
+
+    if (routeKey(method, path) === "GET /admin/receipt-learning-catalog") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const limitRaw = Number.parseInt(String(q.limit ?? "120"), 10);
+      const offsetRaw = Number.parseInt(String(q.offset ?? "0"), 10);
+      const limit = Number.isFinite(limitRaw) ? Math.min(500, Math.max(1, limitRaw)) : 120;
+      const offset = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+      const kw = String(q.q ?? "").trim();
+      const where = kw
+        ? `WHERE rl.vendor_label LIKE ? OR rl.vendor_norm LIKE ? OR rl.category_name_hint LIKE ?`
+        : "";
+      const params = kw ? [`%${kw}%`, `%${kw}%`, `%${kw}%`] : [];
+      try {
+        const [countRows] = await pool.query(
+          `SELECT
+             COUNT(*) AS total_count,
+             SUM(CASE WHEN rl.is_disabled = 0 THEN 1 ELSE 0 END) AS active_count,
+             SUM(CASE WHEN rl.is_disabled = 1 THEN 1 ELSE 0 END) AS disabled_count
+           FROM receipt_learning_catalog rl
+           ${where}`,
+          params,
+        );
+        const [rows] = await pool.query(
+          `SELECT
+             rl.id,
+             rl.vendor_label,
+             rl.vendor_norm,
+             rl.year_month,
+             rl.total_amount,
+             rl.item_tokens,
+             rl.category_name_hint,
+             rl.sample_count,
+             rl.is_disabled,
+             rl.admin_note,
+             rl.last_seen_at,
+             rl.created_at,
+             rl.updated_at
+           FROM receipt_learning_catalog rl
+           ${where}
+           ORDER BY rl.sample_count DESC, rl.last_seen_at DESC, rl.id DESC
+           LIMIT ? OFFSET ?`,
+          [...params, limit, offset],
+        );
+        const c = Array.isArray(countRows) && countRows[0] ? countRows[0] : {};
+        return json(
+          200,
+          {
+            items: Array.isArray(rows)
+              ? rows.map((r) => ({
+                  id: Number(r.id),
+                  vendor_label: r.vendor_label == null ? null : String(r.vendor_label),
+                  vendor_norm: String(r.vendor_norm ?? ""),
+                  year_month: String(r.year_month ?? "0000-00"),
+                  total_amount:
+                    r.total_amount != null && Number.isFinite(Number(r.total_amount))
+                      ? Math.round(Number(r.total_amount))
+                      : null,
+                  item_tokens: r.item_tokens == null ? null : String(r.item_tokens),
+                  category_name_hint:
+                    r.category_name_hint == null ? null : String(r.category_name_hint),
+                  sample_count: Math.max(1, Number(r.sample_count ?? 1)),
+                  is_disabled: Number(r.is_disabled) === 1,
+                  admin_note: r.admin_note == null ? null : String(r.admin_note),
+                  last_seen_at: r.last_seen_at ?? null,
+                  created_at: r.created_at ?? null,
+                  updated_at: r.updated_at ?? null,
+                }))
+              : [],
+            meta: {
+              total_count: Number(c.total_count ?? 0),
+              active_count: Number(c.active_count ?? 0),
+              disabled_count: Number(c.disabled_count ?? 0),
+              limit,
+              offset,
+            },
+          },
+          hdrs,
+          skipCors,
+        );
+      } catch (e) {
+        const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+        if (code === "ER_NO_SUCH_TABLE") {
+          return json(
+            503,
+            {
+              error: "MigrationRequired",
+              detail:
+                "receipt_learning_catalog テーブルがありません。db/migration_v45_receipt_learning_catalog.sql を適用してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        logError("admin.receipt_learning_catalog.list", e);
+        return json(500, { error: "AdminReceiptLearningCatalogListError" }, hdrs, skipCors);
+      }
+    }
+
+    if (method === "PATCH" && /^\/admin\/receipt-learning-catalog\/\d+$/.test(path)) {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const id = Number(path.split("/").pop());
+      if (!Number.isFinite(id) || id <= 0) {
+        return json(400, { error: "InvalidRequest", detail: "id が不正です。" }, hdrs, skipCors);
+      }
+      const b = JSON.parse(req.body || "{}");
+      const patch = {};
+      if ("vendor_label" in b) {
+        patch.vendor_label =
+          b.vendor_label == null || String(b.vendor_label).trim() === ""
+            ? null
+            : String(b.vendor_label).trim().slice(0, 120);
+      }
+      if ("category_name_hint" in b) {
+        patch.category_name_hint =
+          b.category_name_hint == null || String(b.category_name_hint).trim() === ""
+            ? null
+            : String(b.category_name_hint).trim().slice(0, 100);
+      }
+      if ("admin_note" in b) {
+        patch.admin_note =
+          b.admin_note == null || String(b.admin_note).trim() === ""
+            ? null
+            : String(b.admin_note).trim().slice(0, 255);
+      }
+      if ("is_disabled" in b) {
+        patch.is_disabled = b.is_disabled === true ? 1 : 0;
+      }
+      const keys = Object.keys(patch);
+      if (keys.length === 0) {
+        return json(400, { error: "InvalidRequest", detail: "更新対象がありません。" }, hdrs, skipCors);
+      }
+      try {
+        const setSql = keys.map((k) => `${k} = ?`).join(", ");
+        const values = keys.map((k) => patch[k]);
+        const [ret] = await pool.query(
+          `UPDATE receipt_learning_catalog
+           SET ${setSql}, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [...values, id],
+        );
+        if (Number(ret?.affectedRows ?? 0) <= 0) {
+          return json(404, { error: "NotFound", detail: "対象データが見つかりません。" }, hdrs, skipCors);
+        }
+        return json(200, { ok: true }, hdrs, skipCors);
+      } catch (e) {
+        logError("admin.receipt_learning_catalog.patch", e);
+        return json(500, { error: "AdminReceiptLearningCatalogUpdateError" }, hdrs, skipCors);
+      }
+    }
+
+    if (method === "DELETE" && /^\/admin\/receipt-learning-catalog\/\d+$/.test(path)) {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const id = Number(path.split("/").pop());
+      if (!Number.isFinite(id) || id <= 0) {
+        return json(400, { error: "InvalidRequest", detail: "id が不正です。" }, hdrs, skipCors);
+      }
+      try {
+        const [ret] = await pool.query(
+          `DELETE FROM receipt_learning_catalog WHERE id = ? LIMIT 1`,
+          [id],
+        );
+        if (Number(ret?.affectedRows ?? 0) <= 0) {
+          return json(404, { error: "NotFound", detail: "対象データが見つかりません。" }, hdrs, skipCors);
+        }
+        return json(200, { ok: true }, hdrs, skipCors);
+      } catch (e) {
+        logError("admin.receipt_learning_catalog.delete", e);
+        return json(500, { error: "AdminReceiptLearningCatalogDeleteError" }, hdrs, skipCors);
+      }
     }
 
     if (routeKey(method, path) === "GET /admin/users") {
@@ -7113,6 +7406,55 @@ export async function handleApiRequest(req, options = {}) {
               logError("receipts.learn.global_agg", eG);
             }
           }
+          try {
+            let categoryNameHint = null;
+            if (categoryId != null) {
+              const [catRows] = await pool.query(
+                `SELECT c.name
+                 FROM categories c
+                 WHERE c.id = ? AND c.kind = 'expense' AND c.is_archived = 0
+                 LIMIT 1`,
+                [categoryId],
+              );
+              if (Array.isArray(catRows) && catRows[0]?.name) {
+                categoryNameHint = String(catRows[0].name).trim().slice(0, 100);
+              }
+            }
+            const catalogRow = buildReceiptLearningCatalogRow(snapshot, items, categoryNameHint);
+            if (catalogRow.vendorNorm) {
+              await pool.query(
+                `INSERT INTO receipt_learning_catalog
+                  (fingerprint, vendor_norm, vendor_label, year_month, total_amount, item_tokens, category_name_hint,
+                   sample_count, is_disabled, last_seen_at, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW())
+                 ON DUPLICATE KEY UPDATE
+                   vendor_label = CASE
+                     WHEN VALUES(vendor_label) IS NULL THEN vendor_label
+                     WHEN vendor_label IS NULL OR CHAR_LENGTH(VALUES(vendor_label)) > CHAR_LENGTH(vendor_label)
+                       THEN VALUES(vendor_label)
+                     ELSE vendor_label
+                   END,
+                   category_name_hint = COALESCE(VALUES(category_name_hint), category_name_hint),
+                   sample_count = sample_count + 1,
+                   last_seen_at = NOW(),
+                   updated_at = CURRENT_TIMESTAMP`,
+                [
+                  catalogRow.fingerprint,
+                  catalogRow.vendorNorm,
+                  catalogRow.vendorLabel,
+                  catalogRow.yearMonth,
+                  catalogRow.totalAmount,
+                  catalogRow.itemTokens,
+                  catalogRow.categoryNameHint,
+                ],
+              );
+            }
+          } catch (eCat) {
+            const cCode = eCat && typeof eCat === "object" && "code" in eCat ? String(eCat.code) : "";
+            if (cCode !== "ER_NO_SUCH_TABLE") {
+              logError("receipts.learn.shared_catalog", eCat);
+            }
+          }
           return json(200, { ok: true, skipped: false }, hdrs, skipCors);
         } catch (e) {
           const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
@@ -7553,6 +7895,7 @@ export async function handleApiRequest(req, options = {}) {
             familyId,
             txWhere,
             txWhereParams: txP2,
+            receiptSummary: adjustedSummary,
             vendor: adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
             items: result?.items ?? [],
             userExpenseCategories: expenseCatRows,
@@ -7699,6 +8042,7 @@ export async function handleApiRequest(req, options = {}) {
               finalSource === "history" ||
               finalSource === "chain_catalog" ||
               finalSource === "global_master" ||
+              finalSource === "shared_learning" ||
               finalSource === "line_items" ||
               totalCandidates.some((c) => c.source === "global"));
           const body = {

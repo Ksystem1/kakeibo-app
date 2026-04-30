@@ -8,6 +8,7 @@ import {
   getAdminImportFormatAudit,
   getAdminMonitorRecruitmentSettings,
   getAdminPayPayImportSummary,
+  getAdminReceiptLearningCatalog,
   getAdminSalesLogs,
   getAdminSalesDailySummaryWithFallback,
   getAdminSalesMonthlySummary,
@@ -15,18 +16,21 @@ import {
   getAdminUsers,
   getReconcileDismissedKeys,
   patchAdminFeaturePermission,
+  patchAdminReceiptLearningCatalog,
   postAdminSubscriptionReconcileApply,
   putAdminAnnouncement,
   setReconcileDismissedKeys,
   putAdminMonitorRecruitmentSettings,
   resetAdminUserPassword,
   updateAdminUser,
+  deleteAdminReceiptLearningCatalog,
   downloadAdminSalesCsv,
   type AdminFeaturePermissionRow,
   type AdminImportFormatAuditRow,
   type AdminSalesDailySummaryRow,
   type AdminSalesLogRow,
   type AdminSalesMonthlySummaryRow,
+  type AdminReceiptLearningCatalogRow,
 } from "../lib/api";
 import { AdminSalesCharts } from "../components/AdminSalesCharts";
 import { buildAdminSalesAdvancedAnalysis } from "../lib/adminSalesAdvancedAnalysis";
@@ -349,6 +353,14 @@ export function AdminPage() {
   const [featurePermSaving, setFeaturePermSaving] = useState<string | null>(null);
   const [importFormatAuditRows, setImportFormatAuditRows] = useState<AdminImportFormatAuditRow[]>([]);
   const [importFormatAuditError, setImportFormatAuditError] = useState<string | null>(null);
+  const [receiptLearningRows, setReceiptLearningRows] = useState<AdminReceiptLearningCatalogRow[]>([]);
+  const [receiptLearningMeta, setReceiptLearningMeta] = useState<{
+    total_count: number;
+    active_count: number;
+    disabled_count: number;
+  } | null>(null);
+  const [receiptLearningError, setReceiptLearningError] = useState<string | null>(null);
+  const [receiptLearningBusyId, setReceiptLearningBusyId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -414,6 +426,18 @@ export function AdminPage() {
         setImportFormatAuditError(msg && msg.trim() ? msg : "取込フォーマット監査ログの取得に失敗しました。");
         return { items: [] as AdminImportFormatAuditRow[] };
       });
+      const receiptLearning = await getAdminReceiptLearningCatalog({ limit: 120 }).catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        setReceiptLearningError(
+          msg && msg.trim()
+            ? msg
+            : "レシート学習カタログの取得に失敗しました。migration v45 の適用を確認してください。",
+        );
+        return {
+          items: [] as AdminReceiptLearningCatalogRow[],
+          meta: { total_count: 0, active_count: 0, disabled_count: 0, limit: 120, offset: 0 },
+        };
+      });
       const list = Array.isArray(res.items) ? res.items : [];
       setFeaturePermError(null);
       try {
@@ -437,10 +461,23 @@ export function AdminPage() {
       if (Array.isArray(importAudit.items)) {
         setImportFormatAuditError(null);
       }
+      if (Array.isArray(receiptLearning.items)) {
+        setReceiptLearningError(null);
+      }
       setPaypayImportSummary(Array.isArray(monitor.items) ? monitor.items : []);
       setSalesMonthlySummary(Array.isArray(monthlySales.items) ? monthlySales.items : []);
       setSalesLogs(Array.isArray(sales.items) ? sales.items : []);
       setImportFormatAuditRows(Array.isArray(importAudit.items) ? importAudit.items : []);
+      setReceiptLearningRows(Array.isArray(receiptLearning.items) ? receiptLearning.items : []);
+      setReceiptLearningMeta(
+        receiptLearning.meta
+          ? {
+              total_count: Number(receiptLearning.meta.total_count ?? 0),
+              active_count: Number(receiptLearning.meta.active_count ?? 0),
+              disabled_count: Number(receiptLearning.meta.disabled_count ?? 0),
+            }
+          : { total_count: 0, active_count: 0, disabled_count: 0 },
+      );
       setSubscriptionStatusWritable(res.meta?.subscriptionStatusWritable !== false);
       setDisplayNameDrafts(
         Object.fromEntries(
@@ -775,6 +812,47 @@ export function AdminPage() {
       setSavingUserId(null);
     }
   }, []);
+
+  const onPatchReceiptLearning = useCallback(
+    async (
+      rowId: number,
+      body: {
+        vendor_label?: string | null;
+        category_name_hint?: string | null;
+        admin_note?: string | null;
+        is_disabled?: boolean;
+      },
+    ) => {
+      setReceiptLearningBusyId(rowId);
+      setError(null);
+      try {
+        await patchAdminReceiptLearningCatalog(rowId, body);
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "学習カタログの更新に失敗しました");
+      } finally {
+        setReceiptLearningBusyId(null);
+      }
+    },
+    [load],
+  );
+
+  const onDeleteReceiptLearning = useCallback(
+    async (rowId: number) => {
+      if (!window.confirm("この学習データを削除します。よろしいですか？")) return;
+      setReceiptLearningBusyId(rowId);
+      setError(null);
+      try {
+        await deleteAdminReceiptLearningCatalog(rowId);
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "学習カタログの削除に失敗しました");
+      } finally {
+        setReceiptLearningBusyId(null);
+      }
+    },
+    [load],
+  );
 
   const onCreateUser = useCallback(async () => {
     const email = newEmail.trim().toLowerCase();
@@ -1405,6 +1483,118 @@ export function AdminPage() {
           {announcementMessage ? (
             <span style={{ fontSize: "0.88rem", color: "var(--text-muted)" }}>{announcementMessage}</span>
           ) : null}
+        </div>
+      </div>
+      <div
+        style={{
+          margin: "0.8rem 0 1rem",
+          padding: "0.9rem 1rem",
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+        }}
+      >
+        <h2 style={{ margin: "0 0 0.45rem", fontSize: "1.02rem" }}>レシート学習データ（重複統合）</h2>
+        <p style={{ margin: "0 0 0.65rem", fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+          OCR結果とユーザー補正から抽出した必要最小限データを、fingerprint単位で統合保存しています。管理者のみ編集・無効化・削除できます。
+        </p>
+        <p style={{ margin: "0 0 0.55rem", fontSize: "0.86rem", color: "var(--text-muted)" }}>
+          全体: {receiptLearningMeta?.total_count ?? 0} 件 / 有効: {receiptLearningMeta?.active_count ?? 0} 件 / 無効:{" "}
+          {receiptLearningMeta?.disabled_count ?? 0} 件
+        </p>
+        {receiptLearningError ? (
+          <p style={{ margin: "0 0 0.55rem", color: "var(--danger, #c44)", fontSize: "0.86rem" }} role="alert">
+            {receiptLearningError}
+          </p>
+        ) : null}
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
+            <thead>
+              <tr style={{ background: "var(--bg-card)" }}>
+                <th style={adminTableTh}>ID</th>
+                <th style={adminTableTh}>店名</th>
+                <th style={adminTableTh}>カテゴリヒント</th>
+                <th style={adminTableTh}>年月</th>
+                <th style={adminTableTh}>合計</th>
+                <th style={adminTableTh}>件数</th>
+                <th style={adminTableTh}>最終更新</th>
+                <th style={adminTableTh}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {receiptLearningRows.map((row) => {
+                const busy = receiptLearningBusyId === row.id;
+                return (
+                  <tr key={`receipt-learn-${row.id}`} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={adminTableTd}>{row.id}</td>
+                    <td style={adminTableTd}>
+                      <input
+                        type="text"
+                        defaultValue={row.vendor_label ?? ""}
+                        disabled={busy}
+                        onBlur={(e) => {
+                          const next = e.target.value.trim();
+                          if (next === (row.vendor_label ?? "")) return;
+                          void onPatchReceiptLearning(row.id, { vendor_label: next || null });
+                        }}
+                        style={{ minWidth: 140, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+                      />
+                    </td>
+                    <td style={adminTableTd}>
+                      <input
+                        type="text"
+                        defaultValue={row.category_name_hint ?? ""}
+                        disabled={busy}
+                        onBlur={(e) => {
+                          const next = e.target.value.trim();
+                          if (next === (row.category_name_hint ?? "")) return;
+                          void onPatchReceiptLearning(row.id, { category_name_hint: next || null });
+                        }}
+                        style={{ minWidth: 140, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+                      />
+                    </td>
+                    <td style={adminTableTd}>{row.year_month}</td>
+                    <td style={adminTableTd}>
+                      {row.total_amount != null ? `¥${Number(row.total_amount).toLocaleString("ja-JP")}` : "—"}
+                    </td>
+                    <td style={adminTableTd}>{Number(row.sample_count ?? 0).toLocaleString("ja-JP")}</td>
+                    <td style={adminTableTd}>{formatDateTime(row.updated_at)}</td>
+                    <td style={adminTableTd}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            void onPatchReceiptLearning(row.id, { is_disabled: !row.is_disabled });
+                          }}
+                          style={adminTableBtn}
+                        >
+                          {row.is_disabled ? "有効化" : "無効化"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            void onDeleteReceiptLearning(row.id);
+                          }}
+                          style={{ ...adminTableBtn, color: "#b42318" }}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {receiptLearningRows.length === 0 ? (
+                <tr>
+                  <td style={adminTableTd} colSpan={8}>
+                    学習データはまだありません。
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </div>
       <div
