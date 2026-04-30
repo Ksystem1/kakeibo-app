@@ -86,6 +86,11 @@ const conn = await mysql.createConnection({
 
 try {
   console.log(`接続: ${user}@${host}:${port}/${database}`);
+  const reset = /^(1|true|yes)$/i.test(String(process.env.RESET_RECEIPT_LEARNING_CATALOG ?? ""));
+  if (reset) {
+    await conn.query("TRUNCATE TABLE receipt_learning_catalog");
+    console.log("receipt_learning_catalog を TRUNCATE しました");
+  }
   const [rows] = await conn.query(
     `SELECT r.id, r.ocr_snapshot_json, r.category_id, c.name AS category_name
      FROM receipt_ocr_corrections r
