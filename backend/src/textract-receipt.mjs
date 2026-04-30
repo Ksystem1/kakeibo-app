@@ -189,6 +189,35 @@ function parseMoney(raw) {
   const n = Number.parseFloat(s);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
 }
+function isValidYmd(y, m, d) {
+  const yy = Number(y);
+  const mm = Number(m);
+  const dd = Number(d);
+  if (!Number.isInteger(yy) || !Number.isInteger(mm) || !Number.isInteger(dd)) return false;
+  if (yy < 1970 || yy > 2100) return false;
+  if (mm < 1 || mm > 12) return false;
+  if (dd < 1 || dd > 31) return false;
+  const dt = new Date(Date.UTC(yy, mm - 1, dd));
+  return (
+    dt.getUTCFullYear() === yy &&
+    dt.getUTCMonth() + 1 === mm &&
+    dt.getUTCDate() === dd
+  );
+}
+function toYmdOrNull(y, m, d) {
+  if (!isValidYmd(y, m, d)) return null;
+  return `${String(y)}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+function inferYearForMonthDay(month, day) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const cur = new Date(Date.UTC(year, month - 1, day));
+  if (!Number.isFinite(cur.getTime())) return year;
+  // 年始に前年レシートを読むケースに配慮し、未来に寄りすぎる場合は前年へ。
+  const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = (cur.getTime() - todayUtc) / (24 * 60 * 60 * 1000);
+  return diffDays > 45 ? year - 1 : year;
+}
 function normalizeDateText(raw) {
   if (raw == null || raw === "") return null;
   let s = String(raw).trim();
@@ -200,72 +229,72 @@ function normalizeDateText(raw) {
   const rei = /令和\s*(\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/.exec(s);
   if (rei) {
     const y = 2018 + Number.parseInt(rei[1], 10);
-    return `${y}-${rei[2].padStart(2, "0")}-${rei[3].padStart(2, "0")}`;
+    return toYmdOrNull(y, rei[2], rei[3]);
   }
   const hei = /平成\s*(\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/.exec(s);
   if (hei) {
     const y = 1988 + Number.parseInt(hei[1], 10);
-    return `${y}-${hei[2].padStart(2, "0")}-${hei[3].padStart(2, "0")}`;
+    return toYmdOrNull(y, hei[2], hei[3]);
   }
   const sho = /昭和\s*(\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?/.exec(s);
   if (sho) {
     const y = 1925 + Number.parseInt(sho[1], 10);
-    return `${y}-${sho[2].padStart(2, "0")}-${sho[3].padStart(2, "0")}`;
+    return toYmdOrNull(y, sho[2], sho[3]);
   }
 
   const jp = /^(\d{4})年(\d{1,2})月(\d{1,2})日?/.exec(s);
-  if (jp) return `${jp[1]}-${jp[2].padStart(2, "0")}-${jp[3].padStart(2, "0")}`;
+  if (jp) return toYmdOrNull(jp[1], jp[2], jp[3]);
 
   const reiShort = /^R(\d{1,2})[./-](\d{1,2})[./-](\d{1,2})$/i.exec(s);
   if (reiShort) {
     const y = 2018 + Number.parseInt(reiShort[1], 10);
-    return `${y}-${reiShort[2].padStart(2, "0")}-${reiShort[3].padStart(2, "0")}`;
+    return toYmdOrNull(y, reiShort[2], reiShort[3]);
   }
 
   const isoLike = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(s);
   if (isoLike) {
-    return `${isoLike[1]}-${isoLike[2].padStart(2, "0")}-${isoLike[3].padStart(2, "0")}`;
+    return toYmdOrNull(isoLike[1], isoLike[2], isoLike[3]);
   }
 
   const ymdDot = /^(\d{4})[.](\d{1,2})[.](\d{1,2})$/.exec(s);
   if (ymdDot) {
-    return `${ymdDot[1]}-${ymdDot[2].padStart(2, "0")}-${ymdDot[3].padStart(2, "0")}`;
+    return toYmdOrNull(ymdDot[1], ymdDot[2], ymdDot[3]);
   }
 
   const compact8 = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
   if (compact8) {
-    return `${compact8[1]}-${compact8[2]}-${compact8[3]}`;
+    return toYmdOrNull(compact8[1], compact8[2], compact8[3]);
   }
 
   const us = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(s);
-  if (us) return `${us[3]}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`;
+  if (us) return toYmdOrNull(us[3], us[1], us[2]);
 
   const mdY2 = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/.exec(s);
   if (mdY2) {
     const n = Number.parseInt(mdY2[3], 10);
     const y = n >= 70 ? 1900 + n : 2000 + n;
-    return `${y}-${mdY2[1].padStart(2, "0")}-${mdY2[2].padStart(2, "0")}`;
+    return toYmdOrNull(y, mdY2[1], mdY2[2]);
   }
 
   const ymdShort = /^(\d{2})[./-](\d{1,2})[./-](\d{1,2})$/.exec(s);
   if (ymdShort) {
     const n = Number.parseInt(ymdShort[1], 10);
     const y = n >= 70 ? 1900 + n : 2000 + n;
-    return `${y}-${ymdShort[2].padStart(2, "0")}-${ymdShort[3].padStart(2, "0")}`;
+    return toYmdOrNull(y, ymdShort[2], ymdShort[3]);
   }
 
   const laxJp = /(20\d{2}|19\d{2})年(\d{1,2})月(\d{1,2})日?/.exec(s);
   if (laxJp) {
-    return `${laxJp[1]}-${laxJp[2].padStart(2, "0")}-${laxJp[3].padStart(2, "0")}`;
+    return toYmdOrNull(laxJp[1], laxJp[2], laxJp[3]);
   }
   const laxIso = /(20\d{2}|19\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(s);
   if (laxIso) {
-    return `${laxIso[1]}-${laxIso[2].padStart(2, "0")}-${laxIso[3].padStart(2, "0")}`;
+    return toYmdOrNull(laxIso[1], laxIso[2], laxIso[3]);
   }
   const laxR = /R(\d{1,2})[./-](\d{1,2})[./-](\d{1,2})/i.exec(s);
   if (laxR) {
     const y = 2018 + Number.parseInt(laxR[1], 10);
-    return `${y}-${laxR[2].padStart(2, "0")}-${laxR[3].padStart(2, "0")}`;
+    return toYmdOrNull(y, laxR[2], laxR[3]);
   }
 
   return null;
@@ -291,6 +320,27 @@ function extractDateFromText(raw) {
     const d = normalizeDateText(m[1]);
     if (d) return d;
   }
+  const hasDateLabel = /日付|発行|購入|会計|ご利用日|取引日時|取引日|利用日|売上日|領収日|receipt\s*date|date/i.test(
+    s,
+  );
+  if (hasDateLabel) {
+    const md = /(?:^|[^\d])(\d{1,2})[./-](\d{1,2})(?:$|[^\d])/.exec(s);
+    if (md) {
+      const month = Number.parseInt(md[1], 10);
+      const day = Number.parseInt(md[2], 10);
+      const year = inferYearForMonthDay(month, day);
+      const ymd = toYmdOrNull(year, month, day);
+      if (ymd) return ymd;
+    }
+    const jpMd = /(?:^|[^\d])(\d{1,2})月(\d{1,2})日/.exec(s);
+    if (jpMd) {
+      const month = Number.parseInt(jpMd[1], 10);
+      const day = Number.parseInt(jpMd[2], 10);
+      const year = inferYearForMonthDay(month, day);
+      const ymd = toYmdOrNull(year, month, day);
+      if (ymd) return ymd;
+    }
+  }
   return null;
 }
 
@@ -298,7 +348,9 @@ function extractDateFromText(raw) {
 function fallbackDateFromSummaryFields(summaryFields) {
   if (!Array.isArray(summaryFields)) return null;
   for (const f of summaryFields) {
-    const chunks = [fieldText(f), fieldLabel(f)].filter(Boolean);
+    const text = fieldText(f);
+    const label = fieldLabel(f);
+    const chunks = [`${label} ${text}`.trim(), text, label].filter(Boolean);
     for (const c of chunks) {
       const d = extractDateFromText(c);
       if (d) return d;
@@ -382,6 +434,7 @@ function summaryFromFields(summaryFields) {
           amt,
           conf,
           label,
+          type: t,
           preferred: looksLikeTotalLabel(label),
         });
       }
@@ -389,7 +442,7 @@ function summaryFromFields(summaryFields) {
     if (t === "OTHER" && looksLikeTotalLabel(label)) {
       const amt = parseMoney(text);
       if (amt != null && !looksLikeChangeOrTenderLabel(label)) {
-        totalCandidates.push({ amt, conf, label, preferred: true });
+        totalCandidates.push({ amt, conf, label, type: t, preferred: true });
       }
     }
     if (t === "SUBTOTAL") {
@@ -407,7 +460,7 @@ function summaryFromFields(summaryFields) {
       }
     }
     if (DATE_SUMMARY_TYPES.has(t)) {
-      const d = extractDateFromText(text) ?? extractDateFromText(label);
+      const d = extractDateFromText(`${label} ${text}`) ?? extractDateFromText(text) ?? extractDateFromText(label);
       if (d && !out.date) {
         out.date = d;
         out.fieldConfidence.date = conf;
@@ -430,12 +483,31 @@ function summaryFromFields(summaryFields) {
     out.fieldConfidence.vendorName = best.conf;
   }
   if (totalCandidates.length > 0) {
+    const subtotalTax = subtotal != null && tax != null ? Math.round((subtotal + tax) * 100) / 100 : null;
     totalCandidates.sort((a, b) => {
-      if (a.preferred !== b.preferred) return (b.preferred ? 1 : 0) - (a.preferred ? 1 : 0);
-      if (Math.abs(b.amt - a.amt) > 0.009) return b.amt - a.amt;
-      const ca = a.conf ?? 0;
+      const score = (c) => {
+        let s = 0;
+        if (c.preferred) s += 3;
+        if (c.type === "TOTAL" || c.type === "TOTAL_AMOUNT" || c.type === "TOTAL_AMOUNT_PAID") s += 1.5;
+        if (typeof c.conf === "number") s += c.conf * 2;
+        if (subtotalTax != null && Number.isFinite(subtotalTax) && subtotalTax > 0) {
+          const diff = Math.abs(c.amt - subtotalTax);
+          const ratio = diff / Math.max(1, subtotalTax);
+          if (diff <= 1) s += 3;
+          else if (ratio <= 0.06) s += 1.5;
+          else if (ratio >= 0.5) s -= 2;
+        }
+        if (c.amt >= 1_000_000) s -= 1;
+        return s;
+      };
+      const sb = score(b);
+      const sa = score(a);
+      if (Math.abs(sb - sa) > 0.0001) return sb - sa;
       const cb = b.conf ?? 0;
+      const ca = a.conf ?? 0;
       if (Math.abs(cb - ca) > 0.001) return cb - ca;
+      if (a.preferred !== b.preferred) return (b.preferred ? 1 : 0) - (a.preferred ? 1 : 0);
+      if (Math.abs(a.amt - b.amt) > 0.009) return a.amt - b.amt;
       return 0;
     });
     out.totalAmount = totalCandidates[0].amt;
@@ -494,7 +566,7 @@ function moneyCandidatesFromLine(line) {
   return out;
 }
 
-function fallbackTotalFromOcrLines(lines) {
+function fallbackTotalFromOcrLines(lines, expectedTotal = null) {
   if (!Array.isArray(lines) || lines.length === 0) return null;
   /** @type {Array<{ amount: number; score: number }>} */
   const candidates = [];
@@ -504,8 +576,20 @@ function fallbackTotalFromOcrLines(lines) {
     const hasTotal = lineHasTotalKeyword(line);
     if (!hasTotal) continue;
     if (lineHasNonTotalKeyword(line)) continue;
-    const amount = Math.max(...amounts);
-    candidates.push({ amount, score: 3 });
+    for (const amount of amounts) {
+      let score = 3;
+      if (/合計|総額|TOTAL/i.test(String(line))) score += 2;
+      if (/お支払|支払|ご請求|請求額/i.test(String(line))) score += 1.5;
+      const expected = Number(expectedTotal);
+      if (Number.isFinite(expected) && expected > 0) {
+        const diff = Math.abs(amount - expected);
+        const ratio = diff / Math.max(1, expected);
+        if (diff <= 1) score += 4;
+        else if (ratio <= 0.08) score += 2;
+        else if (ratio >= 0.35) score -= 2;
+      }
+      candidates.push({ amount, score });
+    }
   }
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => b.score - a.score || b.amount - a.amount);
@@ -796,8 +880,31 @@ export function createReceiptAnalyzer(ctx = {}) {
     let notice = null;
     let totalAmount = summary.totalAmount;
     let fieldConfidence = { ...summary.fieldConfidence };
+    const lineSumForCheck = fallbackTotalFromLineItems(items);
+    const currentTotalN = Number(totalAmount);
+    if (
+      Number.isFinite(currentTotalN) &&
+      currentTotalN > 0 &&
+      Number.isFinite(lineSumForCheck) &&
+      lineSumForCheck > 0
+    ) {
+      const ratio = currentTotalN / lineSumForCheck;
+      if (ratio >= 1.8 || ratio <= 0.45) {
+        const byOcrLine = fallbackTotalFromOcrLines(ocrLines, lineSumForCheck);
+        if (byOcrLine != null) {
+          const diffNow = Math.abs(currentTotalN - lineSumForCheck);
+          const diffCandidate = Math.abs(byOcrLine - lineSumForCheck);
+          if (diffCandidate + 1 < diffNow) {
+            totalAmount = byOcrLine;
+            fieldConfidence = { ...fieldConfidence, totalAmount: null };
+            notice =
+              "合計候補の整合性を再評価し、OCR 行からより自然な金額を採用しました。必要に応じて修正してください。";
+          }
+        }
+      }
+    }
     if (totalAmount == null) {
-      const byOcrLine = fallbackTotalFromOcrLines(ocrLines);
+      const byOcrLine = fallbackTotalFromOcrLines(ocrLines, lineSumForCheck);
       if (byOcrLine != null) {
         totalAmount = byOcrLine;
         fieldConfidence = { ...fieldConfidence, totalAmount: null };

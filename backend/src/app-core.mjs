@@ -1011,6 +1011,8 @@ function suggestExpenseCategoryFromDominantItemCategory(items, userExpenseCatego
   if (userCats.length === 0 || !Array.isArray(items) || items.length === 0) return null;
   /** @type {Map<string, { count: number; amount: number }>} */
   const stats = new Map();
+  let taggedCount = 0;
+  let taggedAmount = 0;
   for (const it of items) {
     const tag = tagFromReceiptItemCategoryName(it?.category ?? "");
     if (!tag) continue;
@@ -1019,6 +1021,8 @@ function suggestExpenseCategoryFromDominantItemCategory(items, userExpenseCatego
     cur.count += 1;
     if (Number.isFinite(amount) && amount > 0) cur.amount += amount;
     stats.set(tag, cur);
+    taggedCount += 1;
+    if (Number.isFinite(amount) && amount > 0) taggedAmount += amount;
   }
   if (stats.size === 0) return null;
   let bestTag = null;
@@ -1032,6 +1036,14 @@ function suggestExpenseCategoryFromDominantItemCategory(items, userExpenseCatego
     }
   }
   if (!bestTag) return null;
+  const countShare = taggedCount > 0 ? bestCount / taggedCount : 0;
+  const amountShare = taggedAmount > 0 ? bestAmount / taggedAmount : 0;
+  const allowSingleLine = taggedCount === 1 && items.length === 1;
+  // 誤検知抑制: 明細カテゴリ起因の自動カテゴリ反映は「優勢が明確」なときだけ適用。
+  if (!allowSingleLine) {
+    if (bestCount < 2) return null;
+    if (countShare < 0.6 && amountShare < 0.55) return null;
+  }
   const hit = userCats.find((c) => tagFromCategoryName(c?.name ?? "") === bestTag);
   if (!hit?.id) return null;
   return { id: Number(hit.id), name: String(hit.name), source: "line_items" };
