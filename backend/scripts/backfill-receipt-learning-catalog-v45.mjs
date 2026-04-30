@@ -27,7 +27,10 @@ function normalizeReceiptLearningToken(s) {
 
 function receiptLearningYearMonth(rawDate) {
   const ymd = String(rawDate ?? "").trim().replace(/\//g, "-");
-  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd.slice(0, 7);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    const y = Number(ymd.slice(0, 4));
+    if (Number.isFinite(y) && y >= 2000 && y <= 2100) return ymd.slice(0, 7);
+  }
   return "0000-00";
 }
 
@@ -49,7 +52,7 @@ function buildCatalogRow(snapshot, categoryNameHint) {
     .sort((a, b) => a.localeCompare(b, "ja"))
     .slice(0, 8);
   const itemTokens = tokens.length > 0 ? tokens.join("|").slice(0, 255) : null;
-  const canonical = JSON.stringify({ v: vendorNorm, ym, t: totalAmount, k: itemTokens ?? "" });
+  const canonical = JSON.stringify({ v: vendorNorm, k: itemTokens ?? "", c: categoryNameHint ?? "" });
   const fingerprint = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
   return {
     fingerprint,

@@ -204,7 +204,7 @@ CREATE TABLE IF NOT EXISTS receipt_ocr_corrections (
 -- 匿名・重複排除済みのレシート学習カタログ（管理者で確認・修正）
 CREATE TABLE IF NOT EXISTS receipt_learning_catalog (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  fingerprint CHAR(64) NOT NULL COMMENT 'sha256(vendor_norm+year_month+total_amount+item_tokens)',
+  fingerprint CHAR(64) NOT NULL COMMENT 'sha256(vendor_norm+item_tokens+category_name_hint)',
   vendor_norm VARCHAR(191) NOT NULL COMMENT 'normalized vendor key',
   vendor_label VARCHAR(120) NULL COMMENT 'display vendor label',
   `year_month` CHAR(7) NOT NULL DEFAULT '0000-00' COMMENT 'yyyy-mm',

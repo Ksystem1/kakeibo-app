@@ -1083,7 +1083,10 @@ function normalizeReceiptLearningToken(s) {
 
 function receiptLearningYearMonth(rawDate) {
   const ymd = String(rawDate ?? "").trim().replace(/\//g, "-");
-  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd.slice(0, 7);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    const y = Number(ymd.slice(0, 4));
+    if (Number.isFinite(y) && y >= 2000 && y <= 2100) return ymd.slice(0, 7);
+  }
   return "0000-00";
 }
 
@@ -1104,12 +1107,7 @@ function buildReceiptLearningCatalogRow(summary, items, categoryNameHint) {
     .sort((a, b) => a.localeCompare(b, "ja"))
     .slice(0, 8);
   const itemTokens = tokens.length > 0 ? tokens.join("|").slice(0, 255) : null;
-  const canonical = JSON.stringify({
-    v: vendorNorm,
-    ym,
-    t: totalAmount,
-    k: itemTokens ?? "",
-  });
+  const canonical = JSON.stringify({ v: vendorNorm, k: itemTokens ?? "", c: categoryNameHint ?? "" });
   const fingerprint = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
   return {
     fingerprint,
@@ -1396,16 +1394,24 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
   const ym = receiptLearningYearMonth(summary?.date);
   const totalRaw = Number(summary?.totalAmount ?? NaN);
   const total = Number.isFinite(totalRaw) && totalRaw > 0 ? Math.round(totalRaw) : null;
-  const yms = ym === "0000-00" ? ["0000-00"] : [ym, "0000-00"];
+  const itemTokensNow = Array.from(
+    new Set(
+      (Array.isArray(summary?.items) ? summary.items : [])
+        .map((it) => normalizeReceiptLearningToken(it?.name ?? ""))
+        .filter((t) => t.length >= 2 && !/^\d+$/.test(t))
+        .slice(0, 40),
+    ),
+  );
+  const tokenSetNow = new Set(itemTokensNow);
   const [rows] = await pool.query(
-    `SELECT category_name_hint, sample_count, \`year_month\` AS year_month, total_amount
+    `SELECT category_name_hint, sample_count, \`year_month\` AS year_month, total_amount, item_tokens
      FROM receipt_learning_catalog
      WHERE is_disabled = 0
        AND vendor_norm = ?
-       AND \`year_month\` IN (${yms.map(() => "?").join(",")})
+       AND category_name_hint IS NOT NULL
      ORDER BY sample_count DESC, updated_at DESC
-     LIMIT 24`,
-    [vendorNorm, ...yms],
+     LIMIT 400`,
+    [vendorNorm],
   );
   if (!Array.isArray(rows) || rows.length === 0) return null;
   /** @type {Map<number, { name: string; score: number }>} */
@@ -1420,12 +1426,24 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
     });
     if (!hit?.id) continue;
     let score = Math.max(1, Number(row?.sample_count ?? 1));
-    if (String(row?.year_month ?? "") === ym) score += 3;
+    if (String(row?.year_month ?? "") === ym && ym !== "0000-00") score += 2;
     const rowTotal = Number(row?.total_amount ?? NaN);
     if (total != null && Number.isFinite(rowTotal) && rowTotal > 0) {
       const diff = Math.abs(rowTotal - total);
       if (diff <= 1) score += 5;
       else if (diff <= 20) score += 2;
+      else if (diff >= 5000) score -= 1;
+    }
+    const rowTokens = String(row?.item_tokens ?? "")
+      .split("|")
+      .map((x) => String(x).trim())
+      .filter(Boolean);
+    if (rowTokens.length > 0 && tokenSetNow.size > 0) {
+      let overlap = 0;
+      for (const tk of rowTokens) {
+        if (tokenSetNow.has(tk)) overlap += 1;
+      }
+      if (overlap >= 1) score += overlap * 3;
     }
     const cur = scoreByCategoryId.get(Number(hit.id)) ?? { name: String(hit.name), score: 0 };
     cur.score += score;
