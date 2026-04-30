@@ -1398,11 +1398,11 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
   const total = Number.isFinite(totalRaw) && totalRaw > 0 ? Math.round(totalRaw) : null;
   const yms = ym === "0000-00" ? ["0000-00"] : [ym, "0000-00"];
   const [rows] = await pool.query(
-    `SELECT category_name_hint, sample_count, year_month, total_amount
+    `SELECT category_name_hint, sample_count, \`year_month\` AS year_month, total_amount
      FROM receipt_learning_catalog
      WHERE is_disabled = 0
        AND vendor_norm = ?
-       AND year_month IN (${yms.map(() => "?").join(",")})
+       AND \`year_month\` IN (${yms.map(() => "?").join(",")})
      ORDER BY sample_count DESC, updated_at DESC
      LIMIT 24`,
     [vendorNorm, ...yms],
@@ -3599,7 +3599,7 @@ export async function handleApiRequest(req, options = {}) {
              rl.id,
              rl.vendor_label,
              rl.vendor_norm,
-             rl.year_month,
+             rl.\`year_month\` AS year_month,
              rl.total_amount,
              rl.item_tokens,
              rl.category_name_hint,
@@ -7439,7 +7439,7 @@ export async function handleApiRequest(req, options = {}) {
             if (catalogRow.vendorNorm) {
               await pool.query(
                 `INSERT INTO receipt_learning_catalog
-                  (fingerprint, vendor_norm, vendor_label, year_month, total_amount, item_tokens, category_name_hint,
+                  (fingerprint, vendor_norm, vendor_label, \`year_month\`, total_amount, item_tokens, category_name_hint,
                    sample_count, is_disabled, last_seen_at, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW())
                  ON DUPLICATE KEY UPDATE

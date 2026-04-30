@@ -60,7 +60,8 @@
     "db:migrate-v42": "node scripts/run-migration-v42.mjs",
     "db:migrate-v43": "node scripts/run-migration-v43.mjs",
     "db:migrate-v44": "node scripts/run-migration-v44.mjs",
-    "db:migrate-v45": "node scripts/run-migration-v45.mjs"
+    "db:migrate-v45": "node scripts/run-migration-v45.mjs",
+    "db:backfill-v45": "node scripts/backfill-receipt-learning-catalog-v45.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1026.0",
