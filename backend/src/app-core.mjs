@@ -1080,6 +1080,60 @@ function inferVendorNameFromOcrLines(ocrLines) {
   }
   return null;
 }
+function isLikelyGarbledVendorName(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return true;
+  if (s.length <= 1) return true;
+  if (/^\d+$/.test(s)) return true;
+  if (/^[A-Za-z0-9]{2,8}$/.test(s) && /\d/.test(s)) return true;
+  if (!/[ぁ-んァ-ヶ一-龥A-Za-z]/.test(s)) return true;
+  return false;
+}
+function hybridVendorCanOverride(currentVendor, hybridVendor, ocrLines) {
+  const base = String(currentVendor ?? "").trim();
+  const cand = String(hybridVendor ?? "").trim();
+  if (!cand || isLikelyGarbledVendorName(cand)) return false;
+  if (receiptVendorSignalWeak(base)) return true;
+  const nb = normalizeVendorName(base);
+  const nc = normalizeVendorName(cand);
+  if (!nb || !nc) return false;
+  if (nb === nc || nb.includes(nc) || nc.includes(nb)) return true;
+  const inferred = inferVendorNameFromOcrLines(ocrLines);
+  if (inferred && normalizeVendorName(inferred) === nc) return true;
+  return false;
+}
+function lineLooksLikeTotal(line) {
+  return /合計|総額|お会計|お支払|支払金額|ご請求|TOTAL/i.test(String(line ?? ""));
+}
+function parseYenNumbersFromLine(line) {
+  const s = String(line ?? "")
+    .replace(/[¥￥]/g, "")
+    .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+  const hits = s.match(/\d{1,3}(?:,\d{3})+|\d+/g) ?? [];
+  return hits
+    .map((x) => Number(String(x).replace(/,/g, "")))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+function totalAppearsInOcrTotalLine(ocrLines, total) {
+  const t = Math.round(Number(total));
+  if (!Number.isFinite(t) || t <= 0 || !Array.isArray(ocrLines)) return false;
+  for (const line of ocrLines) {
+    if (!lineLooksLikeTotal(line)) continue;
+    const nums = parseYenNumbersFromLine(line);
+    if (nums.includes(t)) return true;
+  }
+  return false;
+}
+function hybridTotalCanOverride(currentTotal, hybridTotal, ocrLines) {
+  const curr = Number(currentTotal);
+  const cand = Number(hybridTotal);
+  if (!Number.isFinite(cand) || cand <= 0) return false;
+  if (!Number.isFinite(curr) || curr <= 0) return true;
+  const diff = Math.abs(cand - curr);
+  const ratio = diff / Math.max(1, curr);
+  if (diff <= 1 || ratio <= 0.08) return true;
+  return totalAppearsInOcrTotalLine(ocrLines, cand);
+}
 
 const RECEIPT_NORMALIZED_MEMO_EXPR =
   "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(t.memo), ' ', ''), '　', ''), '株式会社', ''), '(株)', ''))";
@@ -7284,13 +7338,28 @@ export async function handleApiRequest(req, options = {}) {
           let adjustedSummary = { ...(result?.summary ?? {}) };
           if (hybridReceipt?.ok && hybridReceipt.data) {
             const hs = hybridReceipt.data;
-            if (hs.storeName && String(hs.storeName).trim()) {
+            if (
+              hs.storeName &&
+              hybridVendorCanOverride(
+                adjustedSummary.vendorName,
+                hs.storeName,
+                result?.ocrLines ?? [],
+              )
+            ) {
               adjustedSummary.vendorName = String(hs.storeName).trim().slice(0, 120);
             }
             if (hs.date && /^\d{4}-\d{2}-\d{2}$/.test(String(hs.date))) {
               adjustedSummary.date = String(hs.date);
             }
-            if (Number.isFinite(Number(hs.totalAmount)) && Number(hs.totalAmount) > 0) {
+            if (
+              Number.isFinite(Number(hs.totalAmount)) &&
+              Number(hs.totalAmount) > 0 &&
+              hybridTotalCanOverride(
+                adjustedSummary.totalAmount,
+                hs.totalAmount,
+                result?.ocrLines ?? [],
+              )
+            ) {
               adjustedSummary.totalAmount = Math.round(Number(hs.totalAmount));
             }
             if (Number.isFinite(Number(hs.taxAmount)) && Number(hs.taxAmount) >= 0) {
