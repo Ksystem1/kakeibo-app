@@ -3567,6 +3567,19 @@ export async function handleApiRequest(req, options = {}) {
       const limit = Number.isFinite(limitRaw) ? Math.min(500, Math.max(1, limitRaw)) : 120;
       const offset = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
       const kw = String(q.q ?? "").trim();
+      const sortKeyRaw = String(q.sort ?? "sample_count").trim().toLowerCase();
+      const orderRaw = String(q.order ?? "desc").trim().toLowerCase();
+      const sortKey =
+        sortKeyRaw === "last_seen_at" || sortKeyRaw === "updated_at" || sortKeyRaw === "sample_count"
+          ? sortKeyRaw
+          : "sample_count";
+      const sortDir = orderRaw === "asc" ? "ASC" : "DESC";
+      const orderClause =
+        sortKey === "sample_count"
+          ? `rl.sample_count ${sortDir}, rl.last_seen_at DESC, rl.id DESC`
+          : sortKey === "last_seen_at"
+            ? `rl.last_seen_at ${sortDir}, rl.sample_count DESC, rl.id DESC`
+            : `rl.updated_at ${sortDir}, rl.sample_count DESC, rl.id DESC`;
       const where = kw
         ? `WHERE rl.vendor_label LIKE ? OR rl.vendor_norm LIKE ? OR rl.category_name_hint LIKE ?`
         : "";
@@ -3598,7 +3611,7 @@ export async function handleApiRequest(req, options = {}) {
              rl.updated_at
            FROM receipt_learning_catalog rl
            ${where}
-           ORDER BY rl.sample_count DESC, rl.last_seen_at DESC, rl.id DESC
+           ORDER BY ${orderClause}
            LIMIT ? OFFSET ?`,
           [...params, limit, offset],
         );
@@ -3633,6 +3646,8 @@ export async function handleApiRequest(req, options = {}) {
               disabled_count: Number(c.disabled_count ?? 0),
               limit,
               offset,
+              sort: sortKey,
+              order: sortDir.toLowerCase(),
             },
           },
           hdrs,

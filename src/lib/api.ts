@@ -2094,11 +2094,15 @@ export async function getAdminReceiptLearningCatalog(params?: {
   q?: string;
   limit?: number;
   offset?: number;
+  sort?: "sample_count" | "last_seen_at" | "updated_at";
+  order?: "asc" | "desc";
 }) {
   const sp = new URLSearchParams();
   if (params?.q && params.q.trim()) sp.set("q", params.q.trim());
   if (params?.limit != null) sp.set("limit", String(params.limit));
   if (params?.offset != null) sp.set("offset", String(params.offset));
+  if (params?.sort) sp.set("sort", params.sort);
+  if (params?.order) sp.set("order", params.order);
   const q = sp.toString();
   const res = await apiFetch(`${BASE}/admin/receipt-learning-catalog${q ? `?${q}` : ""}`, {
     headers: buildHeaders(),
@@ -2112,6 +2116,8 @@ export async function getAdminReceiptLearningCatalog(params?: {
       disabled_count: number;
       limit: number;
       offset: number;
+      sort?: "sample_count" | "last_seen_at" | "updated_at";
+      order?: "asc" | "desc";
     };
   }>(res);
 }

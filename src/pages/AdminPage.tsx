@@ -359,6 +359,11 @@ export function AdminPage() {
     active_count: number;
     disabled_count: number;
   } | null>(null);
+  const [receiptLearningQuery, setReceiptLearningQuery] = useState("");
+  const [receiptLearningSort, setReceiptLearningSort] = useState<"sample_count" | "last_seen_at" | "updated_at">(
+    "sample_count",
+  );
+  const [receiptLearningOrder, setReceiptLearningOrder] = useState<"asc" | "desc">("desc");
   const [receiptLearningError, setReceiptLearningError] = useState<string | null>(null);
   const [receiptLearningBusyId, setReceiptLearningBusyId] = useState<number | null>(null);
 
@@ -426,7 +431,12 @@ export function AdminPage() {
         setImportFormatAuditError(msg && msg.trim() ? msg : "取込フォーマット監査ログの取得に失敗しました。");
         return { items: [] as AdminImportFormatAuditRow[] };
       });
-      const receiptLearning = await getAdminReceiptLearningCatalog({ limit: 120 }).catch((e) => {
+      const receiptLearning = await getAdminReceiptLearningCatalog({
+        limit: 120,
+        q: receiptLearningQuery,
+        sort: receiptLearningSort,
+        order: receiptLearningOrder,
+      }).catch((e) => {
         const msg = e instanceof Error ? e.message : String(e);
         setReceiptLearningError(
           msg && msg.trim()
@@ -514,7 +524,7 @@ export function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [salesFilterYm]);
+  }, [salesFilterYm, receiptLearningOrder, receiptLearningQuery, receiptLearningSort]);
 
   useEffect(() => {
     void load();
@@ -1502,6 +1512,50 @@ export function AdminPage() {
           全体: {receiptLearningMeta?.total_count ?? 0} 件 / 有効: {receiptLearningMeta?.active_count ?? 0} 件 / 無効:{" "}
           {receiptLearningMeta?.disabled_count ?? 0} 件
         </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "end", marginBottom: "0.55rem" }}>
+          <label style={{ display: "grid", gap: "0.2rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>検索（店名/カテゴリ）</span>
+            <input
+              type="text"
+              value={receiptLearningQuery}
+              onChange={(e) => setReceiptLearningQuery(e.target.value)}
+              placeholder="例: くら / 外食 / FamilyMart"
+              style={{ minWidth: 220 }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: "0.2rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>並び替え</span>
+            <select
+              value={receiptLearningSort}
+              onChange={(e) =>
+                setReceiptLearningSort(e.target.value as "sample_count" | "last_seen_at" | "updated_at")
+              }
+            >
+              <option value="sample_count">件数</option>
+              <option value="last_seen_at">最終参照</option>
+              <option value="updated_at">更新日時</option>
+            </select>
+          </label>
+          <label style={{ display: "grid", gap: "0.2rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>順序</span>
+            <select
+              value={receiptLearningOrder}
+              onChange={(e) => setReceiptLearningOrder(e.target.value as "asc" | "desc")}
+            >
+              <option value="desc">降順</option>
+              <option value="asc">昇順</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => {
+              void load();
+            }}
+          >
+            {loading ? "読込中..." : "再検索"}
+          </button>
+        </div>
         {receiptLearningError ? (
           <p style={{ margin: "0 0 0.55rem", color: "var(--danger, #c44)", fontSize: "0.86rem" }} role="alert">
             {receiptLearningError}
