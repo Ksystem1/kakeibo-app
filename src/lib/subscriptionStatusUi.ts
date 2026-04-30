@@ -77,13 +77,13 @@ export function formatSettingsSubscriptionSummary(user: {
   const endNum = endOk ? formatPeriodEndNumericJa(end!) : null;
 
   if (status === "admin_free" || status === "admin_granted") {
-    return "管理者による無料開放枠です。プレミアム機能をご利用いただけます。";
+    return "追加機能をご利用いただけます。";
   }
   if ((status === "active" || status === "trialing" || status === "past_due") && user.subscriptionCancelAtPeriodEnd) {
     if (endStr && endNum) {
-      return `解約が予約されています。${endNum}まではプレミアムをご利用いただけます（請求期間の終了日: ${endStr}）。`;
+      return `解約が予約されています。${endNum}まで追加機能をご利用いただけます（請求期間の終了日: ${endStr}）。`;
     }
-    return `解約が予約されています。有効期限の日付は${SUBSCRIPTION_PERIOD_END_PENDING_JA}です。表示が追いつかない場合は Stripe のお客様ポータルで終了日をご確認ください。`;
+    return `解約が予約されています。有効期限の日付は${SUBSCRIPTION_PERIOD_END_PENDING_JA}です。表示が追いつかない場合は、お支払いの管理画面で終了日をご確認ください。`;
   }
   if ((status === "active" || status === "trialing" || status === "past_due") && !user.subscriptionCancelAtPeriodEnd) {
     if (status === "active") {
@@ -92,7 +92,7 @@ export function formatSettingsSubscriptionSummary(user: {
     return `${label}${endStr ? `（次の請求期間終了: ${endStr}）` : ""}`;
   }
   if (status === "canceled" && endOk && Date.now() <= end!.getTime()) {
-    return `${label} — ${endStr}まで引き続きプレミアムをご利用いただけます。`;
+    return `${label} — ${endStr}まで引き続き追加機能をご利用いただけます。`;
   }
   return label;
 }

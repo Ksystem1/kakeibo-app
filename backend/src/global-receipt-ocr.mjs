@@ -210,7 +210,7 @@ export function buildReceiptTotalCandidates(p) {
   for (const r of globalRows) {
     add(
       r.total,
-      `匿名辞書の傾向（参照 ${r.weight}）`,
+      `参考データ（傾向 ${r.weight}）`,
       "global",
     );
   }

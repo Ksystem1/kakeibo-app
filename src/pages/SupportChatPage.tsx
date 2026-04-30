@@ -315,7 +315,7 @@ export function SupportChatPage() {
         運営サポート
       </h1>
       <p className={styles.sub} style={{ marginBottom: "0.75rem", lineHeight: 1.55 }}>
-        家族単位でお問い合わせいただけます。管理者からの返信は左側の吹き出しで表示されます。
+        家族単位でお問い合わせいただけます。返信は左側の吹き出しで表示されます。
       </p>
       {error ? (
         <p

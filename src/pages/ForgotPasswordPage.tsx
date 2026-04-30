@@ -22,7 +22,7 @@ export function ForgotPasswordPage() {
     try {
       const r = await forgotPasswordRequest(em);
       let msg = r.message ?? "処理しました。";
-      if (r.debug_reset_token) {
+      if (import.meta.env.DEV && r.debug_reset_token) {
         msg += ` 開発用トークン: ${r.debug_reset_token}（/reset-password で使用）`;
       }
       setDone(msg);

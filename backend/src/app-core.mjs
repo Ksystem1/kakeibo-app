@@ -145,7 +145,7 @@ function rejectNonAdminSubscriptionBodyFields(b, hdrs, skipCors) {
     400,
     {
       error: "InvalidRequest",
-      detail: "サブスクリプション状態は管理者のみが変更できます",
+      detail: "この操作は実行できません。",
     },
     hdrs,
     skipCors,
@@ -6158,7 +6158,7 @@ export async function handleApiRequest(req, options = {}) {
         try {
           aiResult = await askBedrockAdvisor(message, ctx);
           if (aiResult?.ok && aiResult.reply) {
-            return json(200, { ok: true, reply: aiResult.reply, source: "bedrock" }, hdrs, skipCors);
+            return json(200, { ok: true, reply: aiResult.reply }, hdrs, skipCors);
           }
           if (aiResult && !aiResult.ok) {
             const detailParts = [aiResult.code, aiResult.message].filter(Boolean);
@@ -6243,17 +6243,7 @@ export async function handleApiRequest(req, options = {}) {
         }
 
         const reply = buildAdvisorFallbackReply(message, ctx);
-        return json(
-          200,
-          {
-            ok: true,
-            reply,
-            source: "fallback",
-            ...(bedrockDetail ? { sourceDetail: bedrockDetail } : {}),
-          },
-          hdrs,
-          skipCors,
-        );
+        return json(200, { ok: true, reply }, hdrs, skipCors);
       }
 
       case "POST /import/csv": {
@@ -6264,7 +6254,7 @@ export async function handleApiRequest(req, options = {}) {
             403,
             {
               error: "FeatureNotAllowed",
-              detail: "CSV取込はプレミアム限定機能です。",
+              detail: "この取込は現在ご利用いただけません。設定からご契約内容をご確認ください。",
               feature: "export_csv",
             },
             hdrs,
@@ -7366,12 +7356,12 @@ export async function handleApiRequest(req, options = {}) {
           if (subscriptionActive) {
             if (learnCorrectionHit && (learnedCategoryId != null || learnedMemoPresent)) {
               receiptAdvancedParsingMessages.push(
-                "過去に保存した修正パターンに基づき、カテゴリやメモを提案しました。",
+                "過去の入力内容を参考に、カテゴリやメモを提案しました。",
               );
             }
             if (hybridReceipt?.ok) {
               receiptAdvancedParsingMessages.push(
-                "Textract抽出結果をBedrockで補正し、店名・日付・合計・明細の推定を強化しました。",
+                "店名・日付・合計・明細の読み取りを補正しました。",
               );
             }
             if (reconcileAdjusted && reconcilePremiumNote) {
@@ -7645,12 +7635,7 @@ export async function handleApiRequest(req, options = {}) {
             status,
             {
               error: code,
-              detail:
-                e instanceof Error
-                  ? e.message
-                  : typeof e === "string"
-                    ? e
-                    : "レシート解析に失敗しました。",
+              detail: "レシート解析に失敗しました。しばらくしてから再度お試しください。",
             },
             hdrs,
             skipCors,
@@ -7669,7 +7654,7 @@ export async function handleApiRequest(req, options = {}) {
             403,
             {
               error: "SubscriptionRequired",
-              detail: "店名の名寄せ（Amazon Bedrock）はプレミアム機能です。",
+              detail: "この機能は現在ご利用いただけません。",
             },
             hdrs,
             skipCors,
@@ -7731,7 +7716,7 @@ export async function handleApiRequest(req, options = {}) {
           logError("receipts.resolve_suggested_vendor", e);
           return json(
             500,
-            { error: "ResolveVendorError", detail: "店名の名寄せ（Bedrock）に失敗しました。" },
+            { error: "ResolveVendorError", detail: "店名の整理に失敗しました。しばらくしてから再度お試しください。" },
             hdrs,
             skipCors,
           );
@@ -7748,7 +7733,7 @@ export async function handleApiRequest(req, options = {}) {
             403,
             {
               error: "SubscriptionRequired",
-              detail: "店名×カテゴリの学習はプレミアム機能です。",
+              detail: "この機能は現在ご利用いただけません。",
             },
             hdrs,
             skipCors,
@@ -7758,7 +7743,7 @@ export async function handleApiRequest(req, options = {}) {
         if (!/^[a-f0-9]{64}$/i.test(ocrKey)) {
           return json(
             400,
-            { error: "InvalidRequest", detail: "ocrVendorKey が不正です。" },
+            { error: "InvalidRequest", detail: "送信内容に誤りがあります。" },
             hdrs,
             skipCors,
           );

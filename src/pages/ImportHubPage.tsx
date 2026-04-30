@@ -38,7 +38,7 @@ export function ImportHubPage() {
           }
           if (!canUseStatementImport) {
             setShowUpgradeModal(true);
-            setMsg("CSV/PDF 取込はプレミアム限定です。");
+            setMsg("この取込は現在ご利用いただけません。設定からご契約内容をご確認ください。");
             return;
           }
           setMsg("CSV/PDF を検出しました。おまかせ解析を開始します。");
@@ -95,7 +95,7 @@ export function ImportHubPage() {
       <p className={styles.sub} style={{ marginTop: "0.95rem" }}>
         迷わない家計簿。取り込み口は、ひとつだけ。{" "}
         <Link to="/receipt" style={{ color: "var(--accent)" }}>
-          AIレシート詳細
+          レシート取込へ
         </Link>
       </p>
       {showUpgradeModal ? (
@@ -106,16 +106,18 @@ export function ImportHubPage() {
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>プレミアム限定機能</h2>
+            <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>
+              この取込について
+            </h2>
             <p className={styles.sub}>
-              銀行・カードの CSV/PDF 取込はプレミアムでご利用いただけます。Standard ではレシートAIと手入力をご利用ください。
+              銀行・カードの CSV/PDF 取込は、ご契約内容に応じてご利用いただけます。レシート画像の取込や手入力は引き続きご利用いただけます。
             </p>
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.8rem" }}>
               <button type="button" className={styles.btn} onClick={() => setShowUpgradeModal(false)}>
                 閉じる
               </button>
               <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => navigate("/settings")}>
-                今すぐプレミアムを体験
+                設定を開く
               </button>
             </div>
           </div>

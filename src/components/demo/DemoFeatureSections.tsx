@@ -12,7 +12,7 @@ function yen(n: number) {
 
 export type DemoSectionClassProps = { className?: string };
 
-/** 医療費控除（プレミアム）— 静的プレビュー。DB 非接触 */
+/** 医療費控除のデモ（静的プレビュー。DB 非接触） */
 export function DemoMedicalDeductionSection({ className }: DemoSectionClassProps) {
   const [demoTap, setDemoTap] = useState(false);
   const typeTotals = demoMedicalMatrixRows.reduce(
@@ -31,7 +31,7 @@ export function DemoMedicalDeductionSection({ className }: DemoSectionClassProps
     >
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Premium</p>
+          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">医療費</p>
           <h2 className="text-base font-bold text-slate-900">医療費控除の集計</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-600">
             氏名（行）× 区分（列）のマトリックスで一目で確認でき、<strong>国税庁の医療費集計用CSV</strong>
@@ -180,7 +180,7 @@ export function DemoReceiptImportSection({ className }: DemoSectionClassProps) {
     >
       <h2 className="text-base font-bold text-stone-900">ユニバーサル取込ハブ</h2>
       <p className="mt-1 text-xs leading-relaxed text-stone-600">
-        入口はひとつ。画像は AI レシート解析、CSV/PDF は明細解析へ
+        入口はひとつ。画像はレシート解析、CSV/PDF は明細解析へ
         <strong>自動で振り分け</strong>ます。
       </p>
       <div
@@ -206,23 +206,23 @@ export function DemoPlanCompareSection({ className }: DemoSectionClassProps) {
     <section
       className={`rounded-2xl border border-cyan-200/80 bg-gradient-to-b from-cyan-50/90 via-white to-emerald-50/70 p-4 shadow-md md:p-5 ${className ?? ""}`}
     >
-      <h2 className="text-base font-bold text-slate-900">あなたにぴったりのプランを</h2>
-      <p className="mt-1 text-xs text-slate-600">Standard と Premium を、目的に合わせて選べます。</p>
+      <h2 className="text-base font-bold text-slate-900">ご利用内容のイメージ</h2>
+      <p className="mt-1 text-xs text-slate-600">基本の機能と、拡張できる機能の違いをイメージしやすくまとめています。</p>
       <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full min-w-[460px] border-collapse text-xs">
           <thead>
             <tr className="bg-slate-100 text-slate-700">
               <th className="p-2 text-left">機能</th>
-              <th className="p-2 text-center">Standard</th>
-              <th className="p-2 text-center">Premium</th>
+              <th className="p-2 text-center">基本</th>
+              <th className="p-2 text-center">拡張</th>
             </tr>
           </thead>
           <tbody>
             {[
-              ["レシートAI", "○（枠あり）", "○（無制限）"],
+              ["レシート取込", "○（枠あり）", "○（無制限）"],
               ["CSV/PDF 取込", "×", "○"],
               ["医療費CSV出力", "×", "○"],
-              ["プレミアムスキン", "×", "○"],
+              ["外観のカスタム", "×", "○"],
             ].map((r) => (
               <tr key={r[0]} className="border-t border-slate-100">
                 <td className="p-2 text-slate-800">{r[0]}</td>
@@ -237,7 +237,7 @@ export function DemoPlanCompareSection({ className }: DemoSectionClassProps) {
         type="button"
         className="mt-3 w-full rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 py-2.5 text-sm font-bold text-slate-900 shadow-lg shadow-orange-300/35"
       >
-        今すぐプレミアムを体験
+        詳しく見る
       </button>
       <p className="mt-1.5 text-center text-[10px] text-slate-500">使う機能だけを、わかりやすく比較できます。</p>
     </section>

@@ -178,7 +178,7 @@ export function AiAdvisorChat() {
             ? {
                 id: typingId,
                 role: "ai",
-                text: "通信状況の影響で詳細分析ができませんでした。固定費の見直し（通信費・サブスク）から始めるのがおすすめです。",
+                text: "通信状況の影響で詳細な回答を用意できませんでした。固定費の見直しから始めるのがおすすめです。",
               }
             : m,
         ),
@@ -209,7 +209,7 @@ export function AiAdvisorChat() {
           >
             {m.typing ? (
               <span className="inline-flex items-center gap-1 text-slate-600">
-                AIが考えています
+                回答を準備しています
                 <span className="inline-flex">
                   <span className="animate-bounce [animation-delay:0ms]">.</span>
                   <span className="animate-bounce [animation-delay:120ms]">.</span>

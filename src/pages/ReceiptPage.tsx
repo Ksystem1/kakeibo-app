@@ -28,8 +28,8 @@ import { formatReceiptQueueFailureMessage } from "../lib/receiptJobResult";
 import { useReceiptTouchUi } from "../hooks/useReceiptTouchUi";
 import styles from "../components/KakeiboDashboard.module.css";
 
-/** 取込フォーム: OCR/AI 確信度が低いセル向け（オレンジ枠＋title） */
-const RECEIPT_AI_INFERENCE_HINT = "AIによる推論です。内容を確認してください";
+/** 取込フォーム: 自動推定の確信度が低いセル向け（オレンジ枠＋title） */
+const RECEIPT_AI_INFERENCE_HINT = "自動で読み取った内容です。必要に応じて修正してください。";
 
 /** 日付入力（type=date）に載せられる形へ寄せる。無理ならテキストとして扱う */
 function dateFieldMode(raw: string): { kind: "iso"; value: string } | { kind: "text"; value: string } {
@@ -292,14 +292,14 @@ export function ReceiptPage() {
   >(null);
   const [suggestedCategoryLowConfidence, setSuggestedCategoryLowConfidence] = useState(false);
   const [suggestedCategoryNameHint, setSuggestedCategoryNameHint] = useState<string | null>(null);
-  /** プレミアム: 解析 API が返す合計の候補（匿名辞書・明細合算など） */
+  /** 解析結果に付く合計の候補（参考データ・明細合算など） */
   const [totalCandidates, setTotalCandidates] = useState<
     Array<{ total: number; label: string; source: string }>
   >([]);
   const [lastParsePremium, setLastParsePremium] = useState(false);
   const [receiptDictionaryHits, setReceiptDictionaryHits] = useState(0);
   const [suggestedVendorHint, setSuggestedVendorHint] = useState<string | null>(null);
-  /** Bedrock 名寄せの確信度が低い（サーバーが inferenceLowConfidence） */
+  /** 店名の自動推定の確信度が低い（サーバーが inferenceLowConfidence） */
   const [receiptBedrockVendorLow, setReceiptBedrockVendorLow] = useState(false);
   const [receiptOcrVendorKey, setReceiptOcrVendorKey] = useState<string | null>(null);
   const memoTouchedByUserRef = useRef(false);
@@ -474,7 +474,7 @@ export function ReceiptPage() {
         const rd = r.receiptAiDetail;
         if (rd && rd.taxAmount != null && Number.isFinite(rd.taxAmount)) {
           setReceiptAiTaxHint(
-            `AI 推定: 内消費税等 約 ¥${Number(rd.taxAmount).toLocaleString("ja-JP")}（要確認）`,
+            `参考: 内消費税等 約 ¥${Number(rd.taxAmount).toLocaleString("ja-JP")}（要確認）`,
           );
         } else {
           setReceiptAiTaxHint(null);
@@ -1090,7 +1090,7 @@ export function ReceiptPage() {
                       aria-live="polite"
                     >
                       <span className={styles.receiptImportQueueSkeletonBar} />
-                      <span>AI解析中…</span>
+                      <span>解析中…</span>
                     </div>
                   ) : row.status === "failed" ? (
                     <div className={styles.receiptImportQueueError} style={{ display: "grid", gap: "0.45rem" }}>
@@ -1153,15 +1153,13 @@ export function ReceiptPage() {
           })}
         </ul>
       ) : null}
-      {receiptDebugTier !== "server" ? (
+      {import.meta.env.DEV && receiptDebugTier !== "server" ? (
         <p
           className={styles.infoText}
           style={{ marginTop: "0.35rem", maxWidth: 640 }}
         >
-          開発: レシートAIは「
-          {receiptDebugTier === "free" ? "無料（厳密）" : "有料（履歴ヒントあり）"}
-          」プロンプトを強制中。設定画面のボタンで切り替えられます。
-          （本番では契約中・管理者付与などの判定はサーバーが行い、この強制は無効です。）
+          開発用: レシート取込の挙動を「{receiptDebugTier === "free" ? "制限あり" : "拡張あり"}
+          」に固定しています。設定画面のボタンで切り替えられます。
         </p>
       ) : null}
 
@@ -1390,15 +1388,15 @@ export function ReceiptPage() {
         {categorySuggestSource ? (
           <p className={styles.receiptSummaryHint} style={{ marginTop: "-0.2rem" }}>
             {categorySuggestSource === "history"
-              ? "過去履歴から自動反映しました（必要なら変更できます）。"
+              ? "過去の取引から自動反映しました（必要なら変更できます）。"
               : categorySuggestSource === "correction"
-                ? "過去の補正内容を反映しました（必要なら変更できます）。"
+                ? "過去の修正内容を反映しました（必要なら変更できます）。"
                 : categorySuggestSource === "vendor_key_learn"
-                  ? "同じ店名（OCRキー名寄せ）に対して以前選んだカテゴリを優先しました（必要なら変更できます）。"
+                  ? "同じ店名に対して以前選んだカテゴリを優先しました（必要なら変更できます）。"
                 : categorySuggestSource === "global_master"
-                  ? "全体の統計辞書からカテゴリを推測しました（必要なら変更できます）。"
+                  ? "参考データからカテゴリを推測しました（必要なら変更できます）。"
                 : categorySuggestSource === "ai"
-                  ? "AIがカテゴリを予測して自動反映しました（必要なら変更できます）。"
+                  ? "カテゴリを自動で提案しました（必要なら変更できます）。"
                 : "カテゴリ候補を自動提案しました（必要なら変更できます）。"}
           </p>
         ) : null}
@@ -1420,7 +1418,7 @@ export function ReceiptPage() {
           <p
             className={styles.receiptSummaryHint}
             style={{ gridColumn: "1 / -1" }}
-            title="OCRの生表記を推定店名（Amazon Bedrock）に揃えた結果です。メモ欄のツールチップでも確認できます。"
+            title="読み取った表記を店名として整えた結果です。メモ欄のツールチップでも確認できます。"
           >
             推定店名: {suggestedVendorHint}
           </p>
@@ -1511,10 +1509,10 @@ export function ReceiptPage() {
             style={{ gridColumn: "1 / -1" }}
           >
             <span className={styles.sub} style={{ display: "block", marginBottom: "0.35rem" }}>
-              合計の候補（プレミアム）
+              合計の候補
               {receiptDictionaryHits > 0 ? (
                 <span style={{ marginLeft: "0.35rem", opacity: 0.85 }}>
-                  · 匿名辞書 {receiptDictionaryHits} 件一致
+                  · 参考 {receiptDictionaryHits} 件
                 </span>
               ) : null}
             </span>
@@ -1530,7 +1528,7 @@ export function ReceiptPage() {
                   ¥{c.total.toLocaleString("ja-JP")}
                   <span className={styles.sub} style={{ marginLeft: "0.25rem", fontSize: "0.82em" }}>
                     {c.source === "global"
-                      ? "辞書"
+                      ? "参考"
                       : c.source === "lines"
                         ? "明細"
                         : "解析"}

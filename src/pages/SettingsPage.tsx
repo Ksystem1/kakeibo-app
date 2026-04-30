@@ -331,9 +331,9 @@ export function SettingsPage() {
     if (!effectiveUser?.subscriptionCancelAtPeriodEnd) return null;
     const endLabel = formatSubscriptionPeriodEndJaLong(effectiveUser.subscriptionPeriodEndAt ?? null);
     if (!endLabel) {
-      return `当月末解約の予定です。終了日は${SUBSCRIPTION_PERIOD_END_PENDING_JA}です。請求期間の終了まではプレミアムをご利用いただけます。`;
+      return `当月末解約の予定です。終了日は${SUBSCRIPTION_PERIOD_END_PENDING_JA}です。請求期間の終了までは追加機能をご利用いただけます。`;
     }
-    return `当月末解約の予定です。プレミアムは ${endLabel} まで（請求期間の終了日基準）ご利用いただけます。`;
+    return `当月末解約の予定です。追加機能は ${endLabel} まで（請求期間の終了日基準）ご利用いただけます。`;
   }, [effectiveUser]);
 
   const premiumCancelInfo = useMemo(() => {
@@ -348,7 +348,7 @@ export function SettingsPage() {
 
     if (canceled) {
       if (!periodEnd) {
-        return `ℹ 解約済み（有効期限：${SUBSCRIPTION_PERIOD_END_PENDING_JA}。Stripe のサブスクリプション画面で日付をご確認ください）`;
+        return `ℹ 解約済み（有効期限：${SUBSCRIPTION_PERIOD_END_PENDING_JA}。お支払いの管理画面で日付をご確認ください）`;
       }
       return `ℹ 解約済み（有効期限：${periodEnd} まで引き続き利用可能でした）`;
     }
@@ -373,16 +373,9 @@ export function SettingsPage() {
       .then((r) => {
         if (!cancelled) {
           setStripeCheckoutReady(isStripeCheckoutUiReady(r));
-          console.log("Stripe Config received:", {
-            checkoutReady: r.checkoutReady,
-            priceIdConfigured: r.priceIdConfigured,
-            secretKeyConfigured: r.secretKeyConfigured,
-            uiReady: isStripeCheckoutUiReady(r),
-          });
         }
       })
-      .catch((err) => {
-        console.warn("Stripe config fetch failed:", err);
+      .catch(() => {
         /* ステータス取得に失敗しても Checkout 自体は試せるようにする */
         if (!cancelled) setStripeCheckoutReady(true);
       });
@@ -588,7 +581,7 @@ export function SettingsPage() {
       <div className={styles.settingsPanel} style={{ marginTop: "1.25rem", maxWidth: 980 }}>
         <h2 className={styles.sectionTitle}>おまかせ取込フォーマット設定（全ユーザ共通）</h2>
         <p className={styles.reclassifyHint} style={{ marginTop: "0.2rem" }}>
-          銀行・カード会社CSVのヘッダー名を登録できます。追加・更新は全ユーザ可能、削除は管理者のみです。
+          銀行・カード会社CSVのヘッダー名を登録できます。追加・更新はご家族のメンバーが行え、削除はご家族の設定により制限される場合があります。
         </p>
         {importFormatsMsg ? (
           <p className={styles.reclassifyHint} style={{ color: "var(--success, #166534)", marginTop: "0.45rem" }}>
@@ -720,11 +713,11 @@ export function SettingsPage() {
           style={{ margin: "0.4rem 0 0.25rem", fontSize: "0.9rem", lineHeight: 1.65 }}
         >
           本アプリのメイン導線は、テキスト中心のガラス風ミニマルナビ（スマートフォンは画面下部、PC
-          は上部）に統一しています。従来の画像によるアイコン着せ替え（スタンダード／フルーツ等）は廃止しました。プレミアム会員向けのレシート取込等の特典は、契約状況に従い従来どおり利用できます。
+          は上部）に統一しています。従来の画像によるアイコン着せ替えは廃止しました。レシート取込など一部の機能は、ご契約内容に応じてご利用いただけます。
         </p>
         {token && effectiveUser ? (
           <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
-            <p style={{ margin: 0, fontWeight: 600 }}>プレミアム（サブスクリプション）</p>
+            <p style={{ margin: 0, fontWeight: 600 }}>ご契約・お支払い</p>
             <div
               className={styles.modeRow}
               style={{
@@ -766,7 +759,7 @@ export function SettingsPage() {
                         }
                       }}
                     >
-                      {portalBusy ? "準備中…" : "解約（プラン管理）"}
+                      {portalBusy ? "準備中…" : "解約・契約の確認"}
                     </button>
                   ) : null}
                   {premiumCancelInfo ? (
@@ -823,10 +816,10 @@ export function SettingsPage() {
                   background: "var(--panel-bg)",
                 }}
               >
-                <p style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>プレミアム契約</p>
+                <p style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>有料プランのお申し込み</p>
                 <p className={styles.reclassifyHint} style={{ margin: "0 0 0.65rem" }}>
-                  Stripe でサブスクリプションに申し込むと、レシート取込等のプレミアム機能をご利用いただけます。解約はいつでも可能で、
-                  <strong> 請求期間の終了日までは利用を継続</strong>できます（Stripe の請求サイクルに準じます）。
+                  お支払いサイトからお申し込みいただくと、レシート取込などの追加機能をご利用いただけます。解約はいつでも可能で、
+                  <strong> 請求期間の終了日までは利用を継続</strong>できます。
                 </p>
                 {stripeCheckoutReady === null ? (
                   <p className={styles.reclassifyHint} style={{ margin: "0 0 0.5rem" }}>
@@ -835,10 +828,14 @@ export function SettingsPage() {
                 ) : null}
                 {stripeCheckoutReady === false ? (
                   <p className={styles.reclassifyHint} style={{ margin: "0 0 0.65rem" }}>
-                    サーバー側の決済設定が未完了です。API ホストにサブスク用の Price ID（例:{" "}
-                    <code>STRIPE_TEST_PRICE_ID</code>）と Stripe 秘密鍵が読み込まれているか確認してください。プロジェクトルートで{" "}
-                    <code>npm run dev</code> を使う場合は <code>backend/.env</code> に記載し、Vite 経由なら{" "}
-                    <code>API_PATH_PREFIX=/api</code> も必要です。
+                    {import.meta.env.DEV ? (
+                      <>
+                        開発環境: 決済用の環境変数が読み込まれていない可能性があります。{" "}
+                        <code>backend/.env</code> の設定と API の起動を確認してください。
+                      </>
+                    ) : (
+                      <>決済の受付準備ができていません。しばらく経ってから再度お試しください。</>
+                    )}
                   </p>
                 ) : null}
                 <div className={styles.modeRow} style={{ flexWrap: "wrap", gap: "0.4rem" }}>
@@ -867,7 +864,9 @@ export function SettingsPage() {
                           /STRIPE_|設定してください|StripeCheckoutUnavailable|決済設定/i.test(raw);
                         setStripeCheckoutMessage(
                           isServerConfig
-                            ? "サーバーに決済用の環境変数が読み込まれていない可能性があります。API を再起動し、backend/.env の STRIPE_TEST_PRICE_ID（または STRIPE_PRICE_ID）と Stripe 秘密鍵、必要なら API_PATH_PREFIX=/api を確認してください。"
+                            ? import.meta.env.DEV
+                              ? "開発環境の決済設定を確認してください（環境変数・API 再起動）。"
+                              : "決済の受付に失敗しました。しばらく経ってから再度お試しください。"
                             : raw,
                         );
                       } finally {
@@ -879,7 +878,7 @@ export function SettingsPage() {
                       ? "準備中…"
                       : stripeCheckoutReady === null
                         ? "確認中…"
-                        : "契約する（Stripe Checkout）"}
+                        : "お申し込みに進む"}
                   </button>
                   <button
                     type="button"
@@ -906,7 +905,7 @@ export function SettingsPage() {
             {premiumPurchaseUrl ? (
               <p style={{ margin: "0.45rem 0 0" }}>
                 <a href={premiumPurchaseUrl} target="_blank" rel="noopener noreferrer">
-                  プレミアムの案内・お申し込み（外部サイト）
+                  案内・お申し込み（外部サイト）
                 </a>
               </p>
             ) : null}
@@ -1039,7 +1038,7 @@ export function SettingsPage() {
           />
         ) : (
           <p className={styles.reclassifyHint} style={{ marginTop: "0.3rem" }}>
-            ガイド画像を読み込めませんでした。再読み込みしても表示されない場合は、管理者にお問い合わせください。
+            ガイド画像を読み込めませんでした。再読み込みしても表示されない場合は、サポートにお問い合わせください。
           </p>
         )}
         {!pwaTarget ? (
@@ -1181,8 +1180,8 @@ export function SettingsPage() {
               最終確認
             </h2>
             <p className={styles.reclassifyHint} style={{ marginTop: 0 }}>
-              退会すると家計簿データはすべて消去され、プレミアムプランに加入している場合は
-              <strong> Stripe の定期課金は即時解約</strong>されます（残り日数の返金は各規約に従います）。この操作は
+              退会すると家計簿データはすべて消去され、有料の定期お支払いに加入している場合は
+              <strong> 定期のお支払いは即時解約</strong>されます（残り日数の返金は各規約に従います）。この操作は
               <strong>取り消せません</strong>。
             </p>
             {String(passkeyStatus?.authMethod ?? "")

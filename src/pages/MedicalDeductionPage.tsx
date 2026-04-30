@@ -229,7 +229,7 @@ function MedicalDeductionPageInner() {
             title={
               canExportCsv
                 ? "BOM付きUTF-8で出力します（Windows Excel向け）"
-                : "国税庁フォーマットCSV出力はプレミアム限定です"
+                : "国税庁フォーマットのCSV出力は現在ご利用いただけません"
             }
           >
             {canExportCsv ? (
@@ -237,7 +237,7 @@ function MedicalDeductionPageInner() {
             ) : (
               <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
                 <Lock size={14} />
-                CSVで書き出す（プレミアム）
+                CSVで書き出す
               </span>
             )}
           </button>

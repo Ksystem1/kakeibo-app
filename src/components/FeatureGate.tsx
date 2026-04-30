@@ -58,7 +58,7 @@ export function FeatureGate({
           minWidth: "2rem",
           ...style,
         }}
-        title="この機能はお使いのプランでは利用できません"
+        title="この機能は現在ご利用いただけません"
       >
         <div style={{ pointerEvents: "none", opacity: 0.45 }}>{children}</div>
         <div

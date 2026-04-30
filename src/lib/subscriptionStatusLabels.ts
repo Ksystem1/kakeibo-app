@@ -19,9 +19,9 @@ const SUBSCRIPTION_STATUS_LABEL_JA: Record<string, string> = {
   trialing: "トライアル中",
   unpaid: "未払い",
   paused: "一時停止",
-  admin_free: "管理者付与",
+  admin_free: "追加機能をご利用中",
   /** 互換・外部連携用（API 保存値は admin_free に正規化） */
-  admin_granted: "管理者付与",
+  admin_granted: "追加機能をご利用中",
 };
 
 export function subscriptionStatusLabelJa(value: string): string {

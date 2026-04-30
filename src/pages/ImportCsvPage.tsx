@@ -183,7 +183,7 @@ export function ImportCsvPage() {
 
   async function parseFiles(files: FileList | File[]) {
     if (!canUseStatementImport) {
-      setErr("CSV/PDF 取込はプレミアム限定機能です。設定画面からアップグレードできます。");
+      setErr("この取込は現在ご利用いただけません。設定画面からご契約内容をご確認ください。");
       return;
     }
     const list = Array.from(files ?? []);
@@ -276,7 +276,7 @@ export function ImportCsvPage() {
     setLoading(true);
     try {
       if (!canUseStatementImport) {
-        setErr("CSV取込はプレミアム限定です。");
+        setErr("この取込は現在ご利用いただけません。");
         return;
       }
       if (rows.length > 0) {
@@ -357,7 +357,10 @@ export function ImportCsvPage() {
       {!canUseStatementImport ? (
         <div className={styles.settingsPanel} style={{ marginBottom: "0.9rem" }}>
           <p className={styles.sub} style={{ margin: 0 }}>
-            この機能はプレミアム限定です。<Link to="/settings" style={{ color: "var(--accent)" }}>プランを確認する</Link>
+            この機能は現在ご利用いただけません。{" "}
+            <Link to="/settings" style={{ color: "var(--accent)" }}>
+              設定を開く
+            </Link>
           </p>
         </div>
       ) : null}

@@ -155,7 +155,7 @@ export function MembersPage({ embedded = false }: { embedded?: boolean }) {
             <tr>
               <th>メール</th>
               <th>表示名</th>
-              <th>権限</th>
+              <th>役割</th>
             </tr>
           </thead>
           <tbody>
