@@ -145,6 +145,11 @@ function looksLikeTotalLabel(label) {
     c,
   );
 }
+function looksLikeTaxLabel(label) {
+  const c = compactLabel(label);
+  if (!c) return false;
+  return /税|消費税|内税|外税|vat|gst|tax/.test(c);
+}
 
 const TOTAL_FIELD_TYPES = new Set([
   "TOTAL",
@@ -483,13 +488,21 @@ function summaryFromFields(summaryFields) {
     out.fieldConfidence.vendorName = best.conf;
   }
   if (totalCandidates.length > 0) {
+    const amountCount = new Map();
+    for (const c of totalCandidates) {
+      const k = Math.round(Number(c.amt));
+      amountCount.set(k, (amountCount.get(k) ?? 0) + 1);
+    }
     const subtotalTax = subtotal != null && tax != null ? Math.round((subtotal + tax) * 100) / 100 : null;
     totalCandidates.sort((a, b) => {
       const score = (c) => {
         let s = 0;
         if (c.preferred) s += 3;
         if (c.type === "TOTAL" || c.type === "TOTAL_AMOUNT" || c.type === "TOTAL_AMOUNT_PAID") s += 1.5;
+        if (looksLikeTaxLabel(c.label)) s -= 4;
         if (typeof c.conf === "number") s += c.conf * 2;
+        const repeated = amountCount.get(Math.round(Number(c.amt))) ?? 0;
+        if (repeated >= 2) s += 1.5;
         if (subtotalTax != null && Number.isFinite(subtotalTax) && subtotalTax > 0) {
           const diff = Math.abs(c.amt - subtotalTax);
           const ratio = diff / Math.max(1, subtotalTax);

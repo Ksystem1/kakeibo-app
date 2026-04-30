@@ -497,6 +497,14 @@ const RECEIPT_VENDOR_TAG_HINTS = {
   daily: ["ダイソー", "セリア", "キャンドゥ", "無印"],
   transport: ["jr", "地下鉄", "メトロ", "モバイルsuica", "pasmo"],
 };
+const RECEIPT_VENDOR_CANONICAL_PATTERNS = [
+  { pattern: /daily\s*yamazaki|デイリー\s*ヤマザキ/i, vendorName: "DailyYAMAZAKI", tag: "food" },
+  { pattern: /family\s*mart|ファミリーマート|ファミマ/i, vendorName: "FamilyMart", tag: "food" },
+  { pattern: /くら寿司|^くら$/i, vendorName: "くら", tag: "leisure" },
+  { pattern: /かつはな亭/i, vendorName: "かつはな亭", tag: "leisure" },
+  { pattern: /うなぎ割烹\s*竹江|竹江/i, vendorName: "うなぎ割烹 竹江", tag: "leisure" },
+  { pattern: /デンタル\s*クリニック|歯科|歯医者/i, vendorName: "デンタルクリニック", tag: "medical" },
+];
 
 /**
  * 明細行テキスト向けの語彙（店名が弱くても効かせる・プレミアム用）。
@@ -1063,6 +1071,14 @@ function buildReceiptSuggestedMemo(vendorName, ocrLines) {
   if (payment && vendor) return `${payment} ${vendor}`.slice(0, 500);
   if (payment) return payment.slice(0, 500);
   return vendor.slice(0, 500);
+}
+function inferVendorNameFromOcrLines(ocrLines) {
+  const joined = Array.isArray(ocrLines) ? ocrLines.map((x) => String(x ?? "")).join("\n") : "";
+  if (!joined) return null;
+  for (const row of RECEIPT_VENDOR_CANONICAL_PATTERNS) {
+    if (row.pattern.test(joined)) return row.vendorName;
+  }
+  return null;
 }
 
 const RECEIPT_NORMALIZED_MEMO_EXPR =
@@ -7314,6 +7330,12 @@ export async function handleApiRequest(req, options = {}) {
               } catch (eLine) {
                 logError("receipts.parse.line_item_learn", eLine);
               }
+            }
+          }
+          if (receiptVendorSignalWeak(adjustedSummary?.vendorName)) {
+            const inferredVendor = inferVendorNameFromOcrLines(result?.ocrLines ?? []);
+            if (inferredVendor) {
+              adjustedSummary.vendorName = inferredVendor;
             }
           }
           let aiCategoryId = null;
