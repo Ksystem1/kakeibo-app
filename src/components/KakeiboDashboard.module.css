@@ -803,6 +803,29 @@
     grid-row: 3;
   }
 
+  /* 合計の候補チップは日付・金額行とは別グリッド行（金額欄と同クラスを使わない） */
+  .form[data-receipt-form] > .receiptFieldTotalCandidates {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    align-self: start;
+  }
+
+  .form[data-receipt-form] .receiptTotalCandidateRow {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    width: 100%;
+    margin-bottom: 0;
+    gap: 0.4rem;
+    align-items: stretch;
+  }
+
+  .form[data-receipt-form] .receiptTotalCandidateRow .btn {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    justify-content: center;
+  }
+
   .form[data-receipt-form] > .receiptFieldMemo {
     grid-column: 1 / -1;
     grid-row: 4;
@@ -811,6 +834,37 @@
   .form[data-receipt-form] > .receiptFormSubmit {
     grid-column: 1 / -1;
     grid-row: 5;
+  }
+
+  .form[data-receipt-form]:has(> .receiptFieldTotalCandidates) > .receiptFieldMemo {
+    grid-row: 5;
+  }
+
+  .form[data-receipt-form]:has(> .receiptFieldTotalCandidates) > .receiptFieldLineItems {
+    grid-column: 1 / -1;
+    grid-row: 6;
+  }
+
+  .form[data-receipt-form]:has(> .receiptFieldTotalCandidates):not(:has(> .receiptFieldLineItems))
+    > .receiptFormSubmit {
+    grid-row: 6;
+  }
+
+  .form[data-receipt-form]:has(> .receiptFieldTotalCandidates):has(> .receiptFieldLineItems)
+    > .receiptFormSubmit {
+    grid-row: 7;
+  }
+
+  /* 合計候補なしで明細パネルあり: メモ直下に明細→登録 */
+  .form[data-receipt-form]:not(:has(> .receiptFieldTotalCandidates)):has(> .receiptFieldLineItems)
+    > .receiptFieldLineItems {
+    grid-column: 1 / -1;
+    grid-row: 5;
+  }
+
+  .form[data-receipt-form]:not(:has(> .receiptFieldTotalCandidates)):has(> .receiptFieldLineItems)
+    > .receiptFormSubmit {
+    grid-row: 6;
   }
 
   .form[data-receipt-form] .receiptFieldDate input[type="date"] {
@@ -1689,6 +1743,11 @@
 }
 
 .receiptMemoField {
+  grid-column: 1 / -1;
+}
+
+/* レシート確認: 合計候補ブロックは全幅（PC の auto-fill グリッドでも途中で切れないように） */
+.form[data-receipt-form] > .receiptFieldTotalCandidates {
   grid-column: 1 / -1;
 }
 

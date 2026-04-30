@@ -1504,10 +1504,7 @@ export function ReceiptPage() {
           ) : null}
         </div>
         {showTotalCandidateChips ? (
-          <div
-            className={`${styles.field} ${styles.receiptFieldAmount}`}
-            style={{ gridColumn: "1 / -1" }}
-          >
+          <div className={`${styles.field} ${styles.receiptFieldTotalCandidates}`}>
             <span className={styles.sub} style={{ display: "block", marginBottom: "0.35rem" }}>
               合計の候補
               {receiptDictionaryHits > 0 ? (
@@ -1516,7 +1513,7 @@ export function ReceiptPage() {
                 </span>
               ) : null}
             </span>
-            <div className={styles.modeRow} style={{ flexWrap: "wrap", gap: "0.35rem" }}>
+            <div className={`${styles.modeRow} ${styles.receiptTotalCandidateRow}`}>
               {totalCandidates.map((c, idx) => (
                 <button
                   key={`${c.source}-${c.total}-${idx}`}
@@ -1566,7 +1563,7 @@ export function ReceiptPage() {
           />
         </div>
         {items.length > 0 ? (
-          <div className={`${styles.field} ${styles.receiptMemoField}`}>
+          <div className={`${styles.field} ${styles.receiptMemoField} ${styles.receiptFieldLineItems}`}>
             <label style={{ marginBottom: "0.35rem" }}>明細カテゴリ（自動判定・手動修正可）</label>
             {displayMainCategory ? (
               <p className={styles.receiptSummaryHint} style={{ marginBottom: "0.5rem" }}>
