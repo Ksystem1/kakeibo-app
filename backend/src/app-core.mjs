@@ -1536,6 +1536,7 @@ const ADMIN_USERS_LIST_SQL_WITH_SUB_LEGACY = `SELECT
            u.created_at,
            u.updated_at,
            u.last_login_at,
+           u.last_access_user_agent,
            u.default_family_id,
            COALESCE(u.family_role, 'MEMBER') AS family_role,
            u.kid_theme AS kid_theme,
@@ -1568,6 +1569,7 @@ const ADMIN_USERS_LIST_SQL_WITH_SUB = `SELECT
            u.created_at,
            u.updated_at,
            u.last_login_at,
+           u.last_access_user_agent,
            u.default_family_id,
            COALESCE(u.family_role, 'MEMBER') AS family_role,
            u.kid_theme AS kid_theme,
@@ -1599,6 +1601,7 @@ const ADMIN_USERS_LIST_SQL_WITHOUT_SUB = `SELECT
            u.created_at,
            u.updated_at,
            u.last_login_at,
+           u.last_access_user_agent,
            u.default_family_id,
            COALESCE(u.family_role, 'MEMBER') AS family_role,
            u.kid_theme AS kid_theme,
@@ -1715,15 +1718,34 @@ function isErBadFieldErrorAppCore(e) {
 }
 
 let warnedLastAccessedAtColumnMissing = false;
+let warnedLastAccessUserAgentColumnMissing = false;
+
+/**
+ * 管理画面「接続」列用。リクエストの User-Agent 先頭512文字（NULL バイト除去）。
+ * @param {Record<string, string|undefined>|null|undefined} headers
+ */
+function extractClientUserAgentForStore(headers) {
+  if (!headers || typeof headers !== "object") return "";
+  let v = "";
+  for (const [k, val] of Object.entries(headers)) {
+    if (String(k).toLowerCase() === "user-agent" && val != null && String(val).trim() !== "") {
+      v = String(val);
+      break;
+    }
+  }
+  return v.replace(/\0/g, "").trim().slice(0, 512);
+}
 
 /**
  * 認証済みAPIの利用実績: 15分以上経過したときだけ users.last_accessed_at を更新。
- * 更新頻度を抑えて DB 負荷を避ける。
+ * v44 適用済みなら同タイミングで last_access_user_agent も更新（管理画面の端末表示用）。
  */
-async function touchUserLastAccessedAt(pool, userId) {
+async function touchUserLastAccessedAt(pool, userId, headers) {
   const uid = Number(userId);
   if (!Number.isFinite(uid) || uid <= 0) return;
-  try {
+  const ua = extractClientUserAgentForStore(headers);
+
+  async function updateLastAccessedOnly() {
     await pool.query(
       `UPDATE users
        SET last_accessed_at = NOW(), updated_at = NOW()
@@ -1731,18 +1753,47 @@ async function touchUserLastAccessedAt(pool, userId) {
          AND (last_accessed_at IS NULL OR last_accessed_at < (NOW() - INTERVAL 15 MINUTE))`,
       [uid],
     );
+  }
+
+  async function updateLastAccessedAndUa() {
+    await pool.query(
+      `UPDATE users
+       SET last_accessed_at = NOW(),
+           last_access_user_agent = ?,
+           updated_at = NOW()
+       WHERE id = ?
+         AND (last_accessed_at IS NULL OR last_accessed_at < (NOW() - INTERVAL 15 MINUTE))`,
+      [ua, uid],
+    );
+  }
+
+  try {
+    if (ua) await updateLastAccessedAndUa();
+    else await updateLastAccessedOnly();
   } catch (e) {
-    if (isErBadFieldErrorAppCore(e)) {
-      if (!warnedLastAccessedAtColumnMissing) {
-        warnedLastAccessedAtColumnMissing = true;
-        logger.warn(
-          "users.last_accessed_at column missing; apply db/migration_v33_users_last_accessed_at.sql",
-          { event: "users.last_accessed_at.missing" },
-        );
-      }
-      return;
+    if (!isErBadFieldErrorAppCore(e)) throw e;
+    if (ua && !warnedLastAccessUserAgentColumnMissing) {
+      warnedLastAccessUserAgentColumnMissing = true;
+      logger.warn(
+        "users.last_access_user_agent column missing; apply db/migration_v44_users_last_access_user_agent.sql",
+        { event: "users.last_access_user_agent.missing" },
+      );
     }
-    throw e;
+    try {
+      await updateLastAccessedOnly();
+    } catch (e2) {
+      if (isErBadFieldErrorAppCore(e2)) {
+        if (!warnedLastAccessedAtColumnMissing) {
+          warnedLastAccessedAtColumnMissing = true;
+          logger.warn(
+            "users.last_accessed_at column missing; apply db/migration_v33_users_last_accessed_at.sql",
+            { event: "users.last_accessed_at.missing" },
+          );
+        }
+        return;
+      }
+      throw e2;
+    }
   }
 }
 
@@ -2783,7 +2834,7 @@ export async function handleApiRequest(req, options = {}) {
     }
 
     const q = req.queryStringParameters || {};
-    await touchUserLastAccessedAt(pool, userId);
+    await touchUserLastAccessedAt(pool, userId, hdrs);
     const rkFeatEarly = routeKey(method, path);
     if (rkFeatEarly === "GET /check-permission" || rkFeatEarly === "GET /api/check-permission") {
       const feature = normalizeFeatureKey(q.feature ?? q.f);
@@ -3335,6 +3386,11 @@ export async function handleApiRequest(req, options = {}) {
               ? null
               : normalizeAdminKidTheme(r.kid_theme),
         family_peers: r.family_peers == null || r.family_peers === "" ? null : String(r.family_peers),
+        user_agent:
+          r.last_access_user_agent == null || String(r.last_access_user_agent).trim() === ""
+            ? null
+            : String(r.last_access_user_agent).trim(),
+        login_device: null,
       }));
       return json(
         200,

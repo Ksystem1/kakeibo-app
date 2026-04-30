@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   last_login_at   DATETIME NULL COMMENT '最終ログイン（認証成功時）',
   last_accessed_at DATETIME NULL COMMENT '最終アクセス（認証済みAPI利用時。15分間隔で更新）',
+  last_access_user_agent VARCHAR(512) NULL COMMENT '最終アクセス時の User-Agent（先頭512文字）',
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_cognito_sub (cognito_sub),
   KEY idx_users_email (email),

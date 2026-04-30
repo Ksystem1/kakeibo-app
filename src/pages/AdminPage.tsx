@@ -141,7 +141,12 @@ type AdminUser = {
 
 function parseDeviceBadge(u: AdminUser): { icon: string; title: string } {
   const raw = `${u.login_device ?? ""} ${u.user_agent ?? ""}`.toLowerCase();
-  if (!raw.trim()) return { icon: "❓", title: "不明（デバイス情報なし）" };
+  if (!raw.trim()) {
+    return {
+      icon: "❓",
+      title: "未記録（各ユーザーがアプリにアクセスすると、ブラウザ情報から端末の目安を表示します）",
+    };
+  }
 
   const isTablet = /ipad|tablet|sm-t|tab|kindle|silk/.test(raw);
   const isMobile = !isTablet && /iphone|android|mobile|phone|pixel/.test(raw);
@@ -163,7 +168,15 @@ function parseDeviceBadge(u: AdminUser): { icon: string; title: string } {
   if (isTablet) return { icon: "📟", title: `タブレット (${os})` };
   if (isMobile) return { icon: "📱", title: `スマホ (${os})` };
   if (isPc) return { icon: "💻", title: `PC (${os})` };
-  return { icon: "❓", title: `判別不能 (${os})` };
+  const uaSnippet = String(u.user_agent ?? "")
+    .trim()
+    .slice(0, 140);
+  return {
+    icon: "❓",
+    title: uaSnippet
+      ? `端末種別を自動判定できませんでした（${os}）。User-Agent 抜粋: ${uaSnippet}`
+      : `端末種別を自動判定できませんでした（${os}）`,
+  };
 }
 
 type AdminFamilyGroup = {
