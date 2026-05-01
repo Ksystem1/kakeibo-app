@@ -41,6 +41,21 @@ test("analyzeReceiptImageBytes: 税額ラベルの候補は合計より優先し
   assert.equal(out.summary.totalAmount, 16610);
 });
 
+test("analyzeReceiptImageBytes: 小計+税を二重に足した誤合計を小計+税へ矯正", async () => {
+  const analyze = fakeAnalyzerWithExpenseDoc({
+    ExpenseIndex: 1,
+    SummaryFields: [
+      { Type: { Text: "SUBTOTAL" }, ValueDetection: { Text: "15100", Confidence: 99 } },
+      { Type: { Text: "TAX" }, ValueDetection: { Text: "1510", Confidence: 99 } },
+      { Type: { Text: "TOTAL" }, LabelDetection: { Text: "合計" }, ValueDetection: { Text: "18120", Confidence: 98 } },
+    ],
+    LineItemGroups: [],
+  });
+
+  const out = await analyze(Buffer.from("dummy"));
+  assert.equal(out.summary.totalAmount, 16610);
+});
+
 test("analyzeReceiptImageBytes: 年なし日付(M/D)を日付ラベル付きで補完", async () => {
   const now = new Date();
   const mm = String(now.getMonth() + 1);

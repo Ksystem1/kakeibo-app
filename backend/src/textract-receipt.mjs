@@ -532,6 +532,20 @@ function summaryFromFields(summaryFields) {
       taxConf ?? 1,
     );
   }
+  // Textract が「小計 + 税 + 税」と誤結合した候補（例: 15100+1510+1510=18120）を小計+税へ寄せる
+  if (out.totalAmount != null && subtotal != null && tax != null) {
+    const tot = Math.round(Number(out.totalAmount) * 100) / 100;
+    const st = Math.round(Number(subtotal) * 100) / 100;
+    const tx = Math.round(Number(tax) * 100) / 100;
+    if (Number.isFinite(tot) && Number.isFinite(st) && Number.isFinite(tx) && tx > 0) {
+      const expected = Math.round((st + tx) * 100) / 100;
+      const doubleTaxTotal = Math.round((st + tx * 2) * 100) / 100;
+      if (Math.abs(tot - doubleTaxTotal) <= 1 && Math.abs(tot - expected) >= 3) {
+        out.totalAmount = expected;
+        out.fieldConfidence.totalAmount = out.fieldConfidence.totalAmount ?? null;
+      }
+    }
+  }
   return out;
 }
 
