@@ -534,17 +534,107 @@ function summaryFromFields(summaryFields) {
   }
   // Textract が「小計 + 税 + 税」と誤結合した候補（例: 15100+1510+1510=18120）を小計+税へ寄せる
   if (out.totalAmount != null && subtotal != null && tax != null) {
-    const tot = Math.round(Number(out.totalAmount) * 100) / 100;
-    const st = Math.round(Number(subtotal) * 100) / 100;
-    const tx = Math.round(Number(tax) * 100) / 100;
-    if (Number.isFinite(tot) && Number.isFinite(st) && Number.isFinite(tx) && tx > 0) {
-      const expected = Math.round((st + tx) * 100) / 100;
-      const doubleTaxTotal = Math.round((st + tx * 2) * 100) / 100;
-      if (Math.abs(tot - doubleTaxTotal) <= 1 && Math.abs(tot - expected) >= 3) {
-        out.totalAmount = expected;
-        out.fieldConfidence.totalAmount = out.fieldConfidence.totalAmount ?? null;
-      }
+    const next = reconcileTotalDoubleTaxError(out.totalAmount, subtotal, tax);
+    if (next !== out.totalAmount) {
+      out.totalAmount = next;
+      out.fieldConfidence.totalAmount = out.fieldConfidence.totalAmount ?? null;
     }
+  }
+  return out;
+}
+
+/**
+ * 型付きの小計・税が無くても OCR 行ブロックから拾う（SummaryFields に SUBTOTAL が無い店舗がある）
+ * @returns {{ subtotal: number | null, tax: number | null }}
+ */
+function extractSubtotalTaxFromOcrLines(ocrLines) {
+  let subtotal = null;
+  let tax = null;
+  if (!Array.isArray(ocrLines)) return { subtotal, tax };
+  const takeSubtotalNearLine = (idx) => {
+    const s = String(ocrLines[idx] ?? "");
+    if (!/小計/.test(s) || /合計|総額|お会計/.test(s)) return null;
+    const stripped = s.replace(/小計/g, "").trim();
+    let nums = moneyCandidatesFromLine(stripped).filter((n) => n >= 50 && n <= 99_999_999);
+    if (nums.length === 0 && ocrLines[idx + 1] != null) {
+      nums = moneyCandidatesFromLine(ocrLines[idx + 1]).filter((n) => n >= 50 && n <= 99_999_999);
+    }
+    return nums.length ? Math.max(...nums) : null;
+  };
+  const takeTaxNearLine = (idx) => {
+    const s = String(ocrLines[idx] ?? "");
+    if (!/(外税|内税|消費税(?:額)?|内消費税)/.test(s) || /小計|合計|総額|お会計|お支払/.test(s)) {
+      return null;
+    }
+    const stripped = s
+      .replace(/外税|内税|消費税(?:額)?|内消費税|内消費税等/g, "")
+      .replace(/[（(][^)）]*[)）]/g, "")
+      .trim();
+    const next = ocrLines[idx + 1] != null ? String(ocrLines[idx + 1]) : "";
+    const blob = next ? `${stripped} ${next}` : stripped;
+    const nums = moneyCandidatesFromLine(blob).filter((n) => n >= 8 && n <= 99_999_999);
+    const large = nums.filter((n) => n >= 50);
+    if (large.length) return Math.max(...large);
+    return nums.length ? Math.max(...nums) : null;
+  };
+  for (let i = 0; i < ocrLines.length; i += 1) {
+    if (subtotal == null) {
+      const v = takeSubtotalNearLine(i);
+      if (v != null) subtotal = v;
+    }
+    if (tax == null) {
+      const v = takeTaxNearLine(i);
+      if (v != null) tax = v;
+    }
+    if (subtotal != null && tax != null) return { subtotal, tax };
+  }
+  return { subtotal, tax };
+}
+
+/**
+ * @param {unknown} total
+ * @param {unknown} subtotal
+ * @param {unknown} tax
+ * @returns {unknown}
+ */
+function reconcileTotalDoubleTaxError(total, subtotal, tax) {
+  if (total == null || subtotal == null || tax == null) return total;
+  const tot = Math.round(Number(total) * 100) / 100;
+  const st = Math.round(Number(subtotal) * 100) / 100;
+  const tx = Math.round(Number(tax) * 100) / 100;
+  if (!Number.isFinite(tot) || tot <= 0 || !Number.isFinite(st) || !Number.isFinite(tx) || tx <= 0) return total;
+  const expected = Math.round((st + tx) * 100) / 100;
+  const doubleTaxTotal = Math.round((st + tx * 2) * 100) / 100;
+  if (Math.abs(tot - doubleTaxTotal) <= 1 && Math.abs(tot - expected) >= 3) return expected;
+  return total;
+}
+
+/**
+ * 品目名が記号のみの重複行を落とす（同じ金額が何度も出て明細合算が膨らむ対策）
+ * @param {Array<{ name?: string; amount?: unknown; confidence?: number }>} rows
+ */
+function dedupeJunkSymbolDuplicateLineItems(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) return rows;
+  const junkName = (raw) => {
+    const s = String(raw ?? "").trim();
+    if (!s) return true;
+    return /^[\s*・.。_\-+=（）()｜|]+$/.test(s) || (s.length <= 2 && /^[\s*・.。_\-+=（）()]+$/.test(s));
+  };
+  if (!rows.some((r) => junkName(r?.name))) return rows;
+  const seenAmount = new Set();
+  const out = [];
+  for (const r of rows) {
+    const a = Number(r?.amount);
+    if (!Number.isFinite(a) || a <= 0) {
+      out.push(r);
+      continue;
+    }
+    const key = Math.round(a * 100) / 100;
+    if (junkName(r?.name)) {
+      if (seenAmount.has(key)) continue;
+      seenAmount.add(key);
+    }
+    out.push(r);
   }
   return out;
 }
@@ -902,12 +992,24 @@ export function createReceiptAnalyzer(ctx = {}) {
       return Number(b?.ExpenseIndex ?? 0) - Number(a?.ExpenseIndex ?? 0);
     })[0];
     const summary = summaryFromFields(doc.SummaryFields);
-    const items = lineItemsFromExpenseDoc(doc);
+    let items = lineItemsFromExpenseDoc(doc);
+    items = dedupeJunkSymbolDuplicateLineItems(items);
     const ocrTextBlocks = collectOcrTextBlocksFromExpenseDoc(doc);
     const ocrLines = ocrTextBlocks.map((x) => x.text).slice(0, 180);
     let notice = null;
     let totalAmount = summary.totalAmount;
     let fieldConfidence = { ...summary.fieldConfidence };
+    const ocrSubTax = extractSubtotalTaxFromOcrLines(ocrLines);
+    if (ocrSubTax.subtotal != null && ocrSubTax.tax != null) {
+      const nextTot = reconcileTotalDoubleTaxError(totalAmount, ocrSubTax.subtotal, ocrSubTax.tax);
+      if (nextTot !== totalAmount) {
+        totalAmount = nextTot;
+        fieldConfidence = { ...fieldConfidence, totalAmount: null };
+        notice =
+          (notice ? `${notice} ` : "") +
+          "OCR 上の小計・税額と照らし、二重に税を足した合計候補を修正しました。";
+      }
+    }
     const lineSumForCheck = fallbackTotalFromLineItems(items);
     const currentTotalN = Number(totalAmount);
     if (

@@ -1076,16 +1076,32 @@ function detectReceiptPaymentLabel(ocrLines) {
   return null;
 }
 
+function inferPartyCountMemoFromOcr(ocrLines) {
+  const j = Array.isArray(ocrLines) ? ocrLines.join("\n") : "";
+  const m = /(\d{1,3})\s*名/.exec(j);
+  if (!m) return null;
+  return `${m[1]}名`;
+}
+
 function buildReceiptSuggestedMemo(vendorName, ocrLines) {
   const vendor = String(vendorName ?? "").trim();
   const payment = detectReceiptPaymentLabel(ocrLines);
+  const party = inferPartyCountMemoFromOcr(ocrLines);
   const vendorUsable = vendor.length > 0 && !isLikelyGarbledVendorName(vendor);
-  if (payment && vendorUsable) return `${payment} ${vendor}`.slice(0, 500);
-  if (payment) return payment.slice(0, 500);
-  if (vendorUsable) return vendor.slice(0, 500);
+  const withParty = (base) => {
+    const b = String(base ?? "").trim();
+    if (!party) return b.slice(0, 500);
+    if (!b) return party.slice(0, 500);
+    if (b.includes(party)) return b.slice(0, 500);
+    return `${b} ${party}`.slice(0, 500);
+  };
+  if (payment && vendorUsable) return withParty(`${payment} ${vendor}`);
+  if (payment) return withParty(payment);
+  if (vendorUsable) return withParty(vendor);
   const inferred = inferVendorNameFromOcrLines(ocrLines);
-  if (payment && inferred) return `${payment} ${inferred}`.slice(0, 500);
-  if (inferred) return inferred.slice(0, 500);
+  if (payment && inferred) return withParty(`${payment} ${inferred}`);
+  if (inferred) return withParty(inferred);
+  if (party) return party.slice(0, 500);
   return "";
 }
 
