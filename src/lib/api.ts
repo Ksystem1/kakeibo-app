@@ -2147,6 +2147,23 @@ export async function deleteAdminReceiptLearningCatalog(id: number) {
   return parse<{ ok: boolean }>(res);
 }
 
+export async function postAdminReceiptLearningCatalogRebuild(body: { confirm: true }) {
+  const res = await apiFetch(`${BASE}/admin/receipt-learning-catalog/rebuild`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<{
+    ok: boolean;
+    scanned: number;
+    upserted: number;
+    skipped_bad_json: number;
+    skipped_no_vendor: number;
+    catalog_rows: number;
+    catalog_samples_total: number;
+  }>(res);
+}
+
 export async function createAdminUser(body: {
   email: string;
   password: string;

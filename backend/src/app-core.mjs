@@ -1463,6 +1463,83 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
   return { id: bestId, name: bestName, source: "shared_learning" };
 }
 
+/**
+ * receipt_ocr_corrections を走査して receipt_learning_catalog を再構築する（管理者用）。
+ * 件数の正しさのため、常にカタログを TRUNCATE してから全件を再生する。
+ * @param {import("mysql2/promise").Pool} pool
+ */
+async function rebuildReceiptLearningCatalogFromCorrections(pool) {
+  await pool.query("TRUNCATE TABLE receipt_learning_catalog");
+  const [rows] = await pool.query(
+    `SELECT r.id, r.ocr_snapshot_json, r.category_id, c.name AS category_name
+     FROM receipt_ocr_corrections r
+     LEFT JOIN categories c ON c.id = r.category_id
+     ORDER BY r.id ASC`,
+  );
+  let scanned = 0;
+  let upserted = 0;
+  let skippedBadJson = 0;
+  let skippedNoVendor = 0;
+  for (const row of rows ?? []) {
+    scanned += 1;
+    let snap;
+    try {
+      snap = JSON.parse(String(row?.ocr_snapshot_json ?? "{}"));
+    } catch {
+      skippedBadJson += 1;
+      continue;
+    }
+    const items = Array.isArray(snap?.items) ? snap.items : [];
+    let categoryNameHint = null;
+    if (row?.category_name != null && String(row.category_name).trim() !== "") {
+      categoryNameHint = String(row.category_name).trim().slice(0, 100);
+    }
+    const catalogRow = buildReceiptLearningCatalogRow(snap, items, categoryNameHint);
+    if (!catalogRow?.vendorNorm) {
+      skippedNoVendor += 1;
+      continue;
+    }
+    await pool.query(
+      `INSERT INTO receipt_learning_catalog
+        (fingerprint, vendor_norm, vendor_label, \`year_month\`, total_amount, item_tokens, category_name_hint,
+         sample_count, is_disabled, last_seen_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW())
+       ON DUPLICATE KEY UPDATE
+         vendor_label = CASE
+           WHEN VALUES(vendor_label) IS NULL THEN vendor_label
+           WHEN vendor_label IS NULL OR CHAR_LENGTH(VALUES(vendor_label)) > CHAR_LENGTH(vendor_label)
+             THEN VALUES(vendor_label)
+           ELSE vendor_label
+         END,
+         category_name_hint = COALESCE(VALUES(category_name_hint), category_name_hint),
+         sample_count = sample_count + 1,
+         last_seen_at = NOW(),
+         updated_at = CURRENT_TIMESTAMP`,
+      [
+        catalogRow.fingerprint,
+        catalogRow.vendorNorm,
+        catalogRow.vendorLabel,
+        catalogRow.yearMonth,
+        catalogRow.totalAmount,
+        catalogRow.itemTokens,
+        catalogRow.categoryNameHint,
+      ],
+    );
+    upserted += 1;
+  }
+  const [[countRow]] = await pool.query(
+    `SELECT COUNT(*) AS row_count, COALESCE(SUM(sample_count), 0) AS sample_sum FROM receipt_learning_catalog`,
+  );
+  return {
+    scanned,
+    upserted,
+    skipped_bad_json: skippedBadJson,
+    skipped_no_vendor: skippedNoVendor,
+    catalog_rows: Number(countRow?.row_count ?? 0),
+    catalog_samples_total: Number(countRow?.sample_sum ?? 0),
+  };
+}
+
 async function suggestExpenseCategoryForReceipt(
   pool,
   userId,
@@ -3687,6 +3764,48 @@ export async function handleApiRequest(req, options = {}) {
         }
         logError("admin.receipt_learning_catalog.list", e);
         return json(500, { error: "AdminReceiptLearningCatalogListError" }, hdrs, skipCors);
+      }
+    }
+
+    if (routeKey(method, path) === "POST /admin/receipt-learning-catalog/rebuild") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "InvalidRequest", detail: "JSON が不正です。" }, hdrs, skipCors);
+      }
+      if (b.confirm !== true) {
+        return json(
+          400,
+          {
+            error: "InvalidRequest",
+            detail: '確認のため JSON に { "confirm": true } を含めてください。',
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+      try {
+        const stats = await rebuildReceiptLearningCatalogFromCorrections(pool);
+        return json(200, { ok: true, ...stats }, hdrs, skipCors);
+      } catch (e) {
+        const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+        if (code === "ER_NO_SUCH_TABLE") {
+          return json(
+            503,
+            {
+              error: "MigrationRequired",
+              detail:
+                "receipt_learning_catalog または receipt_ocr_corrections が未作成です。該当 migration を適用してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        logError("admin.receipt_learning_catalog.rebuild", e);
+        return json(500, { error: "AdminReceiptLearningCatalogRebuildError" }, hdrs, skipCors);
       }
     }
 

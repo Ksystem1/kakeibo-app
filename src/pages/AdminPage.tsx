@@ -24,6 +24,7 @@ import {
   resetAdminUserPassword,
   updateAdminUser,
   deleteAdminReceiptLearningCatalog,
+  postAdminReceiptLearningCatalogRebuild,
   downloadAdminSalesCsv,
   type AdminFeaturePermissionRow,
   type AdminImportFormatAuditRow,
@@ -366,6 +367,8 @@ export function AdminPage() {
   const [receiptLearningOrder, setReceiptLearningOrder] = useState<"asc" | "desc">("desc");
   const [receiptLearningError, setReceiptLearningError] = useState<string | null>(null);
   const [receiptLearningBusyId, setReceiptLearningBusyId] = useState<number | null>(null);
+  const [receiptLearningRebuildBusy, setReceiptLearningRebuildBusy] = useState(false);
+  const [receiptLearningRebuildMessage, setReceiptLearningRebuildMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1555,7 +1558,46 @@ export function AdminPage() {
           >
             {loading ? "読込中..." : "再検索"}
           </button>
+          <button
+            type="button"
+            disabled={loading || receiptLearningRebuildBusy}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  "補正データ（receipt_ocr_corrections）から学習カタログを作り直します。\n" +
+                    "現在のカタログ行はすべて削除され、補正テーブルから再計算されます。続行しますか？",
+                )
+              ) {
+                return;
+              }
+              void (async () => {
+                setReceiptLearningRebuildBusy(true);
+                setReceiptLearningRebuildMessage(null);
+                setReceiptLearningError(null);
+                try {
+                  const r = await postAdminReceiptLearningCatalogRebuild({ confirm: true });
+                  setReceiptLearningRebuildMessage(
+                    `再構築しました（補正走査 ${r.scanned} 件 / カタログ行 ${r.catalog_rows} 件 / 件数合計 ${r.catalog_samples_total}）。`,
+                  );
+                  await load();
+                } catch (e) {
+                  setReceiptLearningError(
+                    e instanceof Error ? e.message : "学習カタログの再構築に失敗しました。",
+                  );
+                } finally {
+                  setReceiptLearningRebuildBusy(false);
+                }
+              })();
+            }}
+          >
+            {receiptLearningRebuildBusy ? "再構築中…" : "補正から再構築"}
+          </button>
         </div>
+        {receiptLearningRebuildMessage ? (
+          <p style={{ margin: "0 0 0.55rem", fontSize: "0.86rem", color: "var(--text-muted)" }}>
+            {receiptLearningRebuildMessage}
+          </p>
+        ) : null}
         {receiptLearningError ? (
           <p style={{ margin: "0 0 0.55rem", color: "var(--danger, #c44)", fontSize: "0.86rem" }} role="alert">
             {receiptLearningError}

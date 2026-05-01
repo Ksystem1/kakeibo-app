@@ -1,6 +1,9 @@
 /**
  * v45 backfill: receipt_ocr_corrections -> receipt_learning_catalog
  * 実行: cd backend && npm run db:backfill-v45
+ *
+ * RESET_RECEIPT_LEARNING_CATALOG=1 は先頭で TRUNCATE する。
+ * プロセスを途中で止めるとカタログが空のまま残るので、必ず同一実行で最後まで完了させること。
  */
 import "dotenv/config";
 import crypto from "node:crypto";
