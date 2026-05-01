@@ -2,6 +2,7 @@ import { PiggyBank, Wallet, WalletCards } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { LoginHeroFeatureLists } from "../components/LoginHeroFeatureLists";
 import { MetricCard } from "../components/demo/MetricCard";
 import { RecentTransactions } from "../components/demo/RecentTransactions";
 import { SpendingChart } from "../components/demo/SpendingChart";
@@ -254,6 +255,10 @@ export function DashboardPage() {
       </header>
 
       {error ? <p className="mb-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+
+      <div className="mb-4">
+        <LoginHeroFeatureLists variant="dashboard" />
+      </div>
 
       <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <MetricCard
