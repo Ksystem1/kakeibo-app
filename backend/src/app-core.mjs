@@ -16,6 +16,7 @@ import { getPool, isRdsConfigured, pingDatabase } from "./db.mjs";
 import { createLogger } from "./logger.mjs";
 import {
   analyzeReceiptImageBytes,
+  applyOcrDoubleTaxTotalCorrection,
   decodeImageBuffer,
 } from "./textract-receipt.mjs";
 import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
@@ -1216,7 +1217,11 @@ function hybridTotalCanOverride(currentTotal, hybridTotal, ocrLines) {
   const diff = Math.abs(cand - curr);
   const ratio = diff / Math.max(1, curr);
   if (diff <= 1 || ratio <= 0.08) return true;
-  return totalAppearsInOcrTotalLine(ocrLines, cand);
+  const currOnTotal = totalAppearsInOcrTotalLine(ocrLines, curr);
+  const candOnTotal = totalAppearsInOcrTotalLine(ocrLines, cand);
+  // Textract 矯正後の合計が既に「合計」行と一致しているのに、ハイブリッドだけ別額のときは上書きしない
+  if (currOnTotal && !candOnTotal) return false;
+  return candOnTotal;
 }
 
 const RECEIPT_NORMALIZED_MEMO_EXPR =
@@ -8199,6 +8204,15 @@ export async function handleApiRequest(req, options = {}) {
             const inferredAfterLearn = inferVendorNameFromOcrLines(result?.ocrLines ?? []);
             if (inferredAfterLearn) {
               adjustedSummary.vendorName = inferredAfterLearn;
+            }
+          }
+
+          {
+            const ocrTl = result?.ocrLines ?? [];
+            const fixedTot = applyOcrDoubleTaxTotalCorrection(adjustedSummary?.totalAmount, ocrTl);
+            const curTot = Number(adjustedSummary?.totalAmount ?? NaN);
+            if (fixedTot != null && Number.isFinite(curTot) && Math.abs(fixedTot - curTot) >= 1) {
+              adjustedSummary = { ...adjustedSummary, totalAmount: fixedTot };
             }
           }
 

@@ -1102,6 +1102,22 @@ export function createReceiptAnalyzer(ctx = {}) {
 const defaultAnalyzer = createReceiptAnalyzer();
 
 /**
+ * Bedrock ハイブリッド後など、最終合計に対しても小計+税の二重計上を OCR から矯正する。
+ * @param {unknown} totalAmount
+ * @param {string[] | undefined} ocrLines
+ * @returns {number | null}
+ */
+export function applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines) {
+  if (totalAmount == null || totalAmount === "") return null;
+  const n = Number(totalAmount);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const pair = extractSubtotalTaxFromOcrLines(Array.isArray(ocrLines) ? ocrLines : []);
+  if (pair.subtotal == null || pair.tax == null) return Math.round(n * 100) / 100;
+  const next = reconcileTotalDoubleTaxError(n, pair.subtotal, pair.tax);
+  return typeof next === "number" && Number.isFinite(next) ? Math.round(next * 100) / 100 : Math.round(n * 100) / 100;
+}
+
+/**
  * @param {Buffer} imageBytes
  * @param {{ analyze?: (b: Buffer) => Promise<any> }} [ctx]
  */

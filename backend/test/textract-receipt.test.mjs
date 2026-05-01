@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createReceiptAnalyzer } from "../src/textract-receipt.mjs";
+import { applyOcrDoubleTaxTotalCorrection, createReceiptAnalyzer } from "../src/textract-receipt.mjs";
 
 function fakeAnalyzerWithExpenseDoc(doc) {
   return createReceiptAnalyzer({
@@ -138,6 +138,12 @@ test("analyzeReceiptImageBytes: 年なし日付(M/D)を日付ラベル付きで�
   const out = await analyze(Buffer.from("dummy"));
   assert.match(String(out.summary.date ?? ""), /^\d{4}-\d{2}-\d{2}$/);
   assert.ok(String(out.summary.date).endsWith(`-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`));
+});
+
+test("applyOcrDoubleTaxTotalCorrection: ハイブリッド後の誤合計を OCR 小計・税で矯正", () => {
+  const ocrLines = ["小計", "15100", "外税 10%", "1510", "合計", "18120"];
+  assert.equal(applyOcrDoubleTaxTotalCorrection(18120, ocrLines), 16610);
+  assert.equal(applyOcrDoubleTaxTotalCorrection(16610, ocrLines), 16610);
 });
 
 test("analyzeReceiptImageBytes: 合計が明細と大きく乖離する場合はOCR行候補で補正", async () => {
