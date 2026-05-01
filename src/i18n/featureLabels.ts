@@ -12,7 +12,7 @@ const LABEL_JA: Record<string, string> = {
   receipt_ai: "レシートAI",
   export_csv: "PayPay履歴などの取込・CSV書き出し",
   support_chat: "サポートチャット",
-  medical_deduction_csv: "医療費控除CSV（集計の書き出し）",
+  medical_deduction_csv: "医療費控除CSV（集計の書き出し） (Beta)",
 };
 
 /** 英語（将来用・未設定キーはフォールバック） */
@@ -20,7 +20,7 @@ const LABEL_EN: Record<string, string> = {
   receipt_ai: "Receipt AI",
   export_csv: "PayPay & other CSV import / export",
   support_chat: "Support chat",
-  medical_deduction_csv: "Medical expense deduction CSV export",
+  medical_deduction_csv: "Medical expense deduction CSV export (Beta)",
 };
 
 function normalizeFeatureKey(featureKey: string): string {

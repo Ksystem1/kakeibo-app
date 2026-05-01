@@ -106,29 +106,51 @@ export function ImportHubPage() {
           <div
             className={styles.categoryDetailDialog}
             role="dialog"
+            aria-labelledby="csv-paywall-title"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "min(100%, 26rem)" }}
           >
-            <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>
-              {csvFeatureLabel}
-            </h2>
+            <div className={styles.upgradeModalHeader}>
+              <h2 id="csv-paywall-title" className={styles.upgradeModalTitle}>
+                {csvFeatureLabel}
+              </h2>
+              <span className={styles.upgradePremiumPill} aria-hidden>
+                Premium
+              </span>
+            </div>
             <p className={styles.sub} style={{ marginBottom: "0.55rem" }}>
               <strong>プレミアム機能です。</strong>
               PayPayアプリなどから出力した利用履歴CSVをそのまま読み込み、スマホ決済の支出をまとめて反映できます。銀行・カードの明細CSVやPDFにも対応し、手入力や転記の手間を大きく減らせます。
             </p>
+            <div className={styles.upgradeTrialPanel}>
+              <span className={styles.upgradeTrialBadge}>3ヶ月無料お試し</span>
+              <p className={styles.upgradeTrialLead}>
+                はじめてプレミアムにご契約の場合、<strong>最大3ヶ月間の無料お試し</strong>が用意されていることがあります。
+              </p>
+              <p className={styles.upgradeTrialSub}>
+                お申し込みは設定の「契約・プラン」から。無料お試しの有無・条件は、決済画面（Stripe）に表示される内容が優先されます。
+              </p>
+            </div>
             <p className={styles.sub} style={{ marginBottom: 0 }}>
-              プレミアムにご加入いただくとご利用いただけます。レシートAIでの撮影取込や手入力は、これまでどおりご利用いただけます。
+              レシートAIでの撮影取込や手入力は、これまでどおりご利用いただけます。
             </p>
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.8rem" }}>
+            <p className={styles.upgradeModalFootnote}>
+              ※ キャンペーンや料金プランの変更により、無料期間が異なる場合があります。
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.95rem" }}>
               <button type="button" className={styles.btn} onClick={() => setShowUpgradeModal(false)}>
                 閉じる
               </button>
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnPrimary}`}
-                onClick={() => navigate("/settings")}
+                onClick={() => {
+                  setShowUpgradeModal(false);
+                  navigate("/settings");
+                }}
               >
-                契約・プランを確認
+                プラン・無料お試しを確認
               </button>
             </div>
           </div>

@@ -2869,3 +2869,86 @@
     margin-top: 0.15rem;
   }
 }
+
+/* プレミアム案内モーダル（おまかせ取込等） */
+.upgradeModalHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.upgradeModalTitle {
+  margin: 0;
+  font-size: 1.12rem;
+  line-height: 1.35;
+  font-weight: 700;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.upgradePremiumPill {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.28rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+  color: var(--accent);
+}
+
+.upgradeTrialPanel {
+  margin: 0.7rem 0 0.55rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-card));
+}
+
+.upgradeTrialBadge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.4rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+.upgradeTrialLead {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--text, inherit);
+}
+
+.upgradeTrialSub {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.upgradeModalFootnote {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.featureBetaMark {
+  display: inline;
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 0.25rem;
+  white-space: nowrap;
+}

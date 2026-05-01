@@ -482,6 +482,7 @@ export function SettingsPage() {
         >
           <h2 className={styles.sectionTitle} style={{ marginTop: 0, marginBottom: "0.45rem" }}>
             医療費控除
+            <span className={styles.featureBetaMark}>(Beta)</span>
           </h2>
           <div className={styles.medicalDeductionRow}>
             <p className={styles.sub}>

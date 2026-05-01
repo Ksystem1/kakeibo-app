@@ -193,7 +193,10 @@ function MedicalDeductionPageInner() {
           ← 設定へ戻る
         </Link>
       </div>
-      <h1 className={styles.title}>医療費集計</h1>
+      <h1 className={styles.title}>
+        医療費集計
+        <span className={styles.featureBetaMark}>(Beta)</span>
+      </h1>
       <p className={styles.sub}>
         1月1日〜12月31日の医療費控除対象データを集計して、国税庁の医療費集計フォーム向けCSVを出力できます。
       </p>
