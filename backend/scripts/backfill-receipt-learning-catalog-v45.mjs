@@ -115,21 +115,19 @@ try {
     const catalog = buildCatalogRow(snap, row?.category_name ?? null);
     if (!catalog) continue;
     await conn.query(
-      `INSERT INTO receipt_learning_catalog
-        (fingerprint, vendor_norm, vendor_label, ${SQL_Q_YEAR_MONTH_COL}, total_amount, item_tokens, category_name_hint,
-         sample_count, is_disabled, last_seen_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW())
-       ON DUPLICATE KEY UPDATE
-         vendor_label = CASE
-           WHEN VALUES(vendor_label) IS NULL THEN vendor_label
-           WHEN vendor_label IS NULL OR CHAR_LENGTH(VALUES(vendor_label)) > CHAR_LENGTH(vendor_label)
-             THEN VALUES(vendor_label)
-           ELSE vendor_label
-         END,
-         category_name_hint = COALESCE(VALUES(category_name_hint), category_name_hint),
-         sample_count = sample_count + 1,
-         last_seen_at = NOW(),
-         updated_at = CURRENT_TIMESTAMP`,
+      "INSERT INTO receipt_learning_catalog " +
+        "(fingerprint, vendor_norm, vendor_label, " +
+        SQL_Q_YEAR_MONTH_COL +
+        ", total_amount, item_tokens, category_name_hint, " +
+        "sample_count, is_disabled, last_seen_at, created_at, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW()) " +
+        "ON DUPLICATE KEY UPDATE " +
+        "vendor_label = CASE " +
+        "WHEN VALUES(vendor_label) IS NULL THEN vendor_label " +
+        "WHEN vendor_label IS NULL OR CHAR_LENGTH(VALUES(vendor_label)) > CHAR_LENGTH(vendor_label) " +
+        "THEN VALUES(vendor_label) ELSE vendor_label END, " +
+        "category_name_hint = COALESCE(VALUES(category_name_hint), category_name_hint), " +
+        "sample_count = sample_count + 1, last_seen_at = NOW(), updated_at = CURRENT_TIMESTAMP",
       [
         catalog.fingerprint,
         catalog.vendorNorm,

@@ -103,7 +103,7 @@ function logError(event, e, extra = {}) {
   logger.error(event, e, extra);
 }
 
-/** receipt_learning_catalog の列名（MySQL ではバッククォート必須）。テンプレ内の \\` 連結ミスを避ける。 */
+/** receipt_learning_catalog の列名（MySQL ではバッククォート必須）。外側テンプレートと混ぜず + で連結すること。 */
 const SQL_Q_YEAR_MONTH_COL = "`year_month`";
 
 async function cleanupStaleProcessingReceiptJobsOnce(pool) {
@@ -1407,13 +1407,11 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
   );
   const tokenSetNow = new Set(itemTokensNow);
   const [rows] = await pool.query(
-    `SELECT category_name_hint, sample_count, ${SQL_Q_YEAR_MONTH_COL} AS year_month, total_amount, item_tokens
-     FROM receipt_learning_catalog
-     WHERE is_disabled = 0
-       AND vendor_norm = ?
-       AND category_name_hint IS NOT NULL
-     ORDER BY sample_count DESC, updated_at DESC
-     LIMIT 400`,
+    "SELECT category_name_hint, sample_count, " +
+      SQL_Q_YEAR_MONTH_COL +
+      " AS year_month, total_amount, item_tokens FROM receipt_learning_catalog " +
+      "WHERE is_disabled = 0 AND vendor_norm = ? AND category_name_hint IS NOT NULL " +
+      "ORDER BY sample_count DESC, updated_at DESC LIMIT 400",
     [vendorNorm],
   );
   if (!Array.isArray(rows) || rows.length === 0) return null;
@@ -1503,21 +1501,19 @@ async function rebuildReceiptLearningCatalogFromCorrections(pool) {
       continue;
     }
     await pool.query(
-      `INSERT INTO receipt_learning_catalog
-        (fingerprint, vendor_norm, vendor_label, ${SQL_Q_YEAR_MONTH_COL}, total_amount, item_tokens, category_name_hint,
-         sample_count, is_disabled, last_seen_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW())
-       ON DUPLICATE KEY UPDATE
-         vendor_label = CASE
-           WHEN VALUES(vendor_label) IS NULL THEN vendor_label
-           WHEN vendor_label IS NULL OR CHAR_LENGTH(VALUES(vendor_label)) > CHAR_LENGTH(vendor_label)
-             THEN VALUES(vendor_label)
-           ELSE vendor_label
-         END,
-         category_name_hint = COALESCE(VALUES(category_name_hint), category_name_hint),
-         sample_count = sample_count + 1,
-         last_seen_at = NOW(),
-         updated_at = CURRENT_TIMESTAMP`,
+      "INSERT INTO receipt_learning_catalog " +
+        "(fingerprint, vendor_norm, vendor_label, " +
+        SQL_Q_YEAR_MONTH_COL +
+        ", total_amount, item_tokens, category_name_hint, " +
+        "sample_count, is_disabled, last_seen_at, created_at, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW()) " +
+        "ON DUPLICATE KEY UPDATE " +
+        "vendor_label = CASE " +
+        "WHEN VALUES(vendor_label) IS NULL THEN vendor_label " +
+        "WHEN vendor_label IS NULL OR CHAR_LENGTH(VALUES(vendor_label)) > CHAR_LENGTH(vendor_label) " +
+        "THEN VALUES(vendor_label) ELSE vendor_label END, " +
+        "category_name_hint = COALESCE(VALUES(category_name_hint), category_name_hint), " +
+        "sample_count = sample_count + 1, last_seen_at = NOW(), updated_at = CURRENT_TIMESTAMP",
       [
         catalogRow.fingerprint,
         catalogRow.vendorNorm,
@@ -3692,27 +3688,17 @@ export async function handleApiRequest(req, options = {}) {
            ${where}`,
           params,
         );
-        const [rows] = await pool.query(
-          `SELECT
-             rl.id,
-             rl.vendor_label,
-             rl.vendor_norm,
-             rl.${SQL_Q_YEAR_MONTH_COL} AS year_month,
-             rl.total_amount,
-             rl.item_tokens,
-             rl.category_name_hint,
-             rl.sample_count,
-             rl.is_disabled,
-             rl.admin_note,
-             rl.last_seen_at,
-             rl.created_at,
-             rl.updated_at
-           FROM receipt_learning_catalog rl
-           ${where}
-           ORDER BY ${orderClause}
-           LIMIT ? OFFSET ?`,
-          [...params, limit, offset],
-        );
+        const listSelectSql =
+          "SELECT rl.id, rl.vendor_label, rl.vendor_norm, rl." +
+          SQL_Q_YEAR_MONTH_COL +
+          " AS year_month, rl.total_amount, rl.item_tokens, rl.category_name_hint, rl.sample_count, " +
+          "rl.is_disabled, rl.admin_note, rl.last_seen_at, rl.created_at, rl.updated_at " +
+          "FROM receipt_learning_catalog rl " +
+          where +
+          " ORDER BY " +
+          orderClause +
+          " LIMIT ? OFFSET ?";
+        const [rows] = await pool.query(listSelectSql, [...params, limit, offset]);
         const c = Array.isArray(countRows) && countRows[0] ? countRows[0] : {};
         return json(
           200,
@@ -7603,21 +7589,19 @@ export async function handleApiRequest(req, options = {}) {
             const catalogRow = buildReceiptLearningCatalogRow(snapshot, items, categoryNameHint);
             if (catalogRow.vendorNorm) {
               await pool.query(
-                `INSERT INTO receipt_learning_catalog
-                  (fingerprint, vendor_norm, vendor_label, ${SQL_Q_YEAR_MONTH_COL}, total_amount, item_tokens, category_name_hint,
-                   sample_count, is_disabled, last_seen_at, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW())
-                 ON DUPLICATE KEY UPDATE
-                   vendor_label = CASE
-                     WHEN VALUES(vendor_label) IS NULL THEN vendor_label
-                     WHEN vendor_label IS NULL OR CHAR_LENGTH(VALUES(vendor_label)) > CHAR_LENGTH(vendor_label)
-                       THEN VALUES(vendor_label)
-                     ELSE vendor_label
-                   END,
-                   category_name_hint = COALESCE(VALUES(category_name_hint), category_name_hint),
-                   sample_count = sample_count + 1,
-                   last_seen_at = NOW(),
-                   updated_at = CURRENT_TIMESTAMP`,
+                "INSERT INTO receipt_learning_catalog " +
+                  "(fingerprint, vendor_norm, vendor_label, " +
+                  SQL_Q_YEAR_MONTH_COL +
+                  ", total_amount, item_tokens, category_name_hint, " +
+                  "sample_count, is_disabled, last_seen_at, created_at, updated_at) " +
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW()) " +
+                  "ON DUPLICATE KEY UPDATE " +
+                  "vendor_label = CASE " +
+                  "WHEN VALUES(vendor_label) IS NULL THEN vendor_label " +
+                  "WHEN vendor_label IS NULL OR CHAR_LENGTH(VALUES(vendor_label)) > CHAR_LENGTH(vendor_label) " +
+                  "THEN VALUES(vendor_label) ELSE vendor_label END, " +
+                  "category_name_hint = COALESCE(VALUES(category_name_hint), category_name_hint), " +
+                  "sample_count = sample_count + 1, last_seen_at = NOW(), updated_at = CURRENT_TIMESTAMP",
                 [
                   catalogRow.fingerprint,
                   catalogRow.vendorNorm,
