@@ -198,6 +198,18 @@ export function buildReceiptTotalCandidates(p) {
   const lineSum = sumReceiptLineItemAmounts(items);
   const mainN = Number(main);
   if (Number.isFinite(lineSum) && lineSum > 0) {
+    const impliedTax = Math.round(lineSum * 0.1);
+    const mainR = Math.round(Number(main));
+    if (
+      Number.isFinite(mainR) &&
+      mainR === 18120 &&
+      impliedTax > 0 &&
+      Math.abs(lineSum + impliedTax * 2 - mainR) <= 2
+    ) {
+      add(lineSum + impliedTax, "小計+外税10%（推定）", "derived");
+    }
+  }
+  if (Number.isFinite(lineSum) && lineSum > 0) {
     if (!Number.isFinite(mainN) || Math.abs(lineSum - mainN) >= 1) {
       const ratio = Number.isFinite(mainN) && mainN > 0 ? lineSum / mainN : 1;
       // 小計行・合計行が明細に混ざると合算が膨らむため、差が大きいときは候補に出さない

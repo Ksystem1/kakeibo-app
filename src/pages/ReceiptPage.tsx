@@ -309,7 +309,9 @@ export function ReceiptPage() {
     () =>
       lastParsePremium &&
       (totalCandidates.length >= 2 ||
-        totalCandidates.some((c) => c.source === "global" || c.source === "lines")),
+        totalCandidates.some(
+          (c) => c.source === "global" || c.source === "lines" || c.source === "derived",
+        )),
     [lastParsePremium, totalCandidates],
   );
   /** 登録時に POST /receipts/learn へ送る直近の取込スナップショット */

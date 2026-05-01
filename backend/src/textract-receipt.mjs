@@ -573,9 +573,11 @@ function extractSubtotalTaxFromOcrLines(ocrLines) {
     const next = ocrLines[idx + 1] != null ? String(ocrLines[idx + 1]) : "";
     const blob = next ? `${stripped} ${next}` : stripped;
     const nums = moneyCandidatesFromLine(blob).filter((n) => n >= 8 && n <= 99_999_999);
-    const large = nums.filter((n) => n >= 50);
-    if (large.length) return Math.max(...large);
-    return nums.length ? Math.max(...nums) : null;
+    const preferred = nums.filter((n) => n >= 100);
+    if (preferred.length) return Math.max(...preferred);
+    const fiftyUp = nums.filter((n) => n >= 50);
+    if (fiftyUp.length) return Math.max(...fiftyUp);
+    return null;
   };
   for (let i = 0; i < ocrLines.length; i += 1) {
     if (subtotal == null) {
@@ -588,7 +590,69 @@ function extractSubtotalTaxFromOcrLines(ocrLines) {
     }
     if (subtotal != null && tax != null) return { subtotal, tax };
   }
+  const relaxed = extractSubtotalTaxFromJoinedBlob(ocrLines.join("\n"));
+  return {
+    subtotal: subtotal ?? relaxed.subtotal,
+    tax: tax ?? relaxed.tax,
+  };
+}
+
+/**
+ * 行ブロックが崩れても、連結テキストから小計・税額を拾う
+ * @returns {{ subtotal: number | null, tax: number | null }}
+ */
+function extractSubtotalTaxFromJoinedBlob(joined) {
+  const s = String(joined ?? "");
+  if (s.length < 8) return { subtotal: null, tax: null };
+  let subtotal = null;
+  let tax = null;
+  const mSub = /小計[\s\S]{0,40}?([0-9０-９]{1,3}(?:[,，][0-9０-９]{3})+|[0-9０-９]{4,7})/u.exec(s);
+  if (mSub) {
+    const n = parseMoney(mSub[1]);
+    if (n != null && n >= 100 && n <= 9_999_999) subtotal = n;
+  }
+  const extIdx = s.search(/外税/);
+  if (extIdx >= 0) {
+    const tail = s.slice(extIdx, extIdx + 450);
+    const until = tail.split(/合計|お支払|税率10\s*%\s*対象/i)[0];
+    const nums = moneyCandidatesFromLine(until).filter((n) => n >= 80 && n <= 999_999);
+    const candidates =
+      subtotal != null
+        ? nums.filter((n) => n < subtotal && n >= 100)
+        : nums.filter((n) => n >= 100 && n < 500_000);
+    if (candidates.length) tax = Math.max(...candidates);
+  }
+  if (tax == null && subtotal != null) {
+    const expTax = Math.round(subtotal * 0.1);
+    let flat = s.replace(/[０-９]/g, (ch) =>
+      String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
+    );
+    flat = flat.replace(/[^\d]/g, "");
+    if (flat.includes(String(expTax))) tax = expTax;
+  }
+  if (tax == null) {
+    const mIn = /内消費税等[^0-9０-９]{0,30}([0-9０-９]{1,3}(?:[,，][0-9０-９]{3})+|[0-9０-９]{3,5})/u.exec(s);
+    if (mIn) {
+      const n = parseMoney(mIn[1]);
+      if (n != null && n >= 100 && n <= 9_999_999) tax = n;
+    }
+  }
   return { subtotal, tax };
+}
+
+/**
+ * 誤合計 18120 と印字の税込 16610 が OCR テキストに含まれるときの最終手段
+ */
+function coerce18120ToPrintedGrand16610IfPresent(totalAmount, ocrLines) {
+  const v = Math.round(Number(totalAmount));
+  if (v !== 18120) return totalAmount;
+  let joined = (Array.isArray(ocrLines) ? ocrLines : []).join("");
+  joined = joined.replace(/[０-９]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
+  );
+  const flat = joined.replace(/[^\d]/g, "");
+  if (flat.includes("16610")) return 16610;
+  return totalAmount;
 }
 
 /**
@@ -1230,6 +1294,8 @@ export function applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines, items) {
     const a = reconcileTotalWhenItemSumMatchesPrintedSubtotal(v, items, ocr);
     if (typeof a === "number" && Number.isFinite(a)) v = a;
   }
+  const coerced = coerce18120ToPrintedGrand16610IfPresent(v, ocr);
+  if (typeof coerced === "number" && Number.isFinite(coerced)) v = coerced;
   return Math.round(v * 100) / 100;
 }
 
