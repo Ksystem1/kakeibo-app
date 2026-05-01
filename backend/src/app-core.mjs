@@ -103,8 +103,8 @@ function logError(event, e, extra = {}) {
   logger.error(event, e, extra);
 }
 
-/** receipt_learning_catalog の列名（MySQL ではバッククォート必須）。外側テンプレートと混ぜず + で連結すること。 */
-const SQL_Q_YEAR_MONTH_COL = "`year_month`";
+/** receipt_learning_catalog の列名（MySQL では識別子としてバッククォート必須）。ASCII 96 のみで組み立て、ソース上の ` を使わない。 */
+const SQL_Q_YEAR_MONTH_COL = String.fromCharCode(96) + "year_month" + String.fromCharCode(96);
 
 async function cleanupStaleProcessingReceiptJobsOnce(pool) {
   if (receiptProcessingCleanupDone) return;

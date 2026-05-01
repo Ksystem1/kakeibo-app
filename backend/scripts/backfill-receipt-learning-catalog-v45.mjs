@@ -11,7 +11,7 @@ import mysql from "mysql2/promise";
 import { getMysqlSslConfig } from "../src/db.mjs";
 import { normalizeVendorForMatch } from "../src/receipt-learn.mjs";
 
-const SQL_Q_YEAR_MONTH_COL = "`year_month`";
+const SQL_Q_YEAR_MONTH_COL = String.fromCharCode(96) + "year_month" + String.fromCharCode(96);
 
 function requireEnv(name) {
   const v = process.env[name];
