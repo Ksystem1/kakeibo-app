@@ -1,6 +1,7 @@
 import {
   FileSpreadsheet,
   HeartPulse,
+  LayoutDashboard,
   MessageCircle,
   ScanLine,
   Smartphone,
@@ -73,8 +74,30 @@ export function LoginHeroFeatureLists({ variant = "hero" }: Props) {
 
   const titleId = isDashboard ? "dashboard-free-features-title" : "login-hero-features-title";
 
-  const freeList = (
-    <ul className={`space-y-2.5 leading-snug text-[#315a85] ${isDashboard ? "text-sm" : "text-[0.86rem]"}`}>
+  const freeListDashboardOnly = (
+    <ul className="space-y-2.5 leading-snug text-[#315a85] text-sm">
+      <li className="flex gap-2 min-w-0">
+        <ScanLine className="h-4 w-4 shrink-0 mt-0.5 text-[#2e9ff5]" aria-hidden strokeWidth={2} />
+        <span>レシートAI（撮影・解析）</span>
+      </li>
+      <li className="flex gap-2 min-w-0">
+        <UsersRound className="h-4 w-4 shrink-0 mt-0.5 text-[#2e9ff5]" aria-hidden strokeWidth={2} />
+        <span>家族で家計簿を共有</span>
+      </li>
+      <li className="flex gap-2 min-w-0">
+        <MessageCircle className="h-4 w-4 shrink-0 mt-0.5 text-[#2e9ff5]" aria-hidden strokeWidth={2} />
+        <span>サポートチャット</span>
+      </li>
+    </ul>
+  );
+
+  /** ログイン／トップの無料カードのみ：ダッシュボードをレシートAIより上に表示 */
+  const freeListHeroWithDashboard = (
+    <ul className="space-y-2.5 leading-snug text-[#315a85] text-[0.86rem]">
+      <li className="flex gap-2 min-w-0">
+        <LayoutDashboard className="h-4 w-4 shrink-0 mt-0.5 text-[#2e9ff5]" aria-hidden strokeWidth={2} />
+        <span>ダッシュボード</span>
+      </li>
       <li className="flex gap-2 min-w-0">
         <ScanLine className="h-4 w-4 shrink-0 mt-0.5 text-[#2e9ff5]" aria-hidden strokeWidth={2} />
         <span>レシートAI（撮影・解析）</span>
@@ -96,7 +119,7 @@ export function LoginHeroFeatureLists({ variant = "hero" }: Props) {
         <Sparkles className="h-4 w-4 shrink-0 text-[#2e9ff5]" aria-hidden strokeWidth={2.25} />
         <span className="font-bold text-[#0a2f5c] text-[0.82rem]">無料（登録後）</span>
       </div>
-      {freeList}
+      {freeListHeroWithDashboard}
     </div>
   );
 
@@ -116,7 +139,7 @@ export function LoginHeroFeatureLists({ variant = "hero" }: Props) {
         <Sparkles className="h-4 w-4 shrink-0 text-[#2e9ff5]" aria-hidden strokeWidth={2.25} />
         <span className="font-bold text-[#0a2f5c] text-sm">無料（登録後）</span>
       </div>
-      {freeList}
+      {freeListDashboardOnly}
     </div>
   );
 
