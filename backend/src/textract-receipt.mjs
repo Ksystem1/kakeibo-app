@@ -558,9 +558,10 @@ function lineHasTotalKeyword(line) {
 }
 
 function lineHasNonTotalKeyword(line) {
-  return /小計|税|内税|外税|値引|割引|ポイント|お釣|つり|釣銭|預り|お預かり|現金|cash|change|coupon/i.test(
-    String(line ?? ""),
-  );
+  const s = String(line ?? "");
+  // 「お支払(税込)」「合計(税込)」など、合計系キーワードと同じ行の表記は落とさない
+  if (lineHasTotalKeyword(s)) return false;
+  return /小計|税|内税|外税|値引|割引|ポイント|お釣|つり|釣銭|預り|お預かり|現金|cash|change|coupon/i.test(s);
 }
 
 function moneyCandidatesFromLine(line) {
@@ -907,7 +908,12 @@ export function createReceiptAnalyzer(ctx = {}) {
         if (byOcrLine != null) {
           const diffNow = Math.abs(currentTotalN - lineSumForCheck);
           const diffCandidate = Math.abs(byOcrLine - lineSumForCheck);
-          if (diffCandidate + 1 < diffNow) {
+          // 明細にノイズが混ざり lineSum が異常に大きいとき、Textract 合計に近い OCR 合計を優先する
+          const diffVsCurrent = Math.abs(byOcrLine - currentTotalN);
+          const preferOcrTotalNearTyped =
+            diffVsCurrent < diffCandidate &&
+            diffVsCurrent <= Math.max(2500, currentTotalN * 0.12);
+          if (diffCandidate + 1 < diffNow || preferOcrTotalNearTyped) {
             totalAmount = byOcrLine;
             fieldConfidence = { ...fieldConfidence, totalAmount: null };
             notice =

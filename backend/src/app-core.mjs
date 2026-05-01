@@ -1183,9 +1183,11 @@ function parseYenNumbersFromLine(line) {
 function totalAppearsInOcrTotalLine(ocrLines, total) {
   const t = Math.round(Number(total));
   if (!Number.isFinite(t) || t <= 0 || !Array.isArray(ocrLines)) return false;
-  for (const line of ocrLines) {
-    if (!lineLooksLikeTotal(line)) continue;
-    const nums = parseYenNumbersFromLine(line);
+  const lines = ocrLines.map((x) => String(x ?? "").trim());
+  for (let i = 0; i < lines.length; i += 1) {
+    const merged = [lines[i - 1], lines[i], lines[i + 1]].filter(Boolean).join(" ");
+    if (!merged || !lineLooksLikeTotal(merged)) continue;
+    const nums = parseYenNumbersFromLine(merged);
     if (nums.includes(t)) return true;
   }
   return false;
@@ -8157,25 +8159,23 @@ export async function handleApiRequest(req, options = {}) {
             }
           }
 
-          if (subscriptionActive) {
-            try {
-              const sl = await applySharedLearningCatalogParseHints(
-                pool,
-                adjustedSummary,
-                result?.items ?? [],
-                result?.ocrLines ?? [],
-              );
-              if (sl?.summary && typeof sl.summary === "object") {
-                adjustedSummary = sl.summary;
-              }
-              if (Array.isArray(sl?.hints) && sl.hints.length > 0) {
-                sharedLearningParseHints = sl.hints;
-              }
-            } catch (eSl) {
-              const cSl = eSl && typeof eSl === "object" && "code" in eSl ? String(eSl.code) : "";
-              if (cSl !== "ER_NO_SUCH_TABLE") {
-                logError("receipts.parse.shared_learning_hints", eSl);
-              }
+          try {
+            const sl = await applySharedLearningCatalogParseHints(
+              pool,
+              adjustedSummary,
+              result?.items ?? [],
+              result?.ocrLines ?? [],
+            );
+            if (sl?.summary && typeof sl.summary === "object") {
+              adjustedSummary = sl.summary;
+            }
+            if (Array.isArray(sl?.hints) && sl.hints.length > 0) {
+              sharedLearningParseHints = sl.hints;
+            }
+          } catch (eSl) {
+            const cSl = eSl && typeof eSl === "object" && "code" in eSl ? String(eSl.code) : "";
+            if (cSl !== "ER_NO_SUCH_TABLE") {
+              logError("receipts.parse.shared_learning_hints", eSl);
             }
           }
 
@@ -8201,12 +8201,6 @@ export async function handleApiRequest(req, options = {}) {
             if (reconcileAdjusted && reconcilePremiumNote) {
               receiptAdvancedParsingMessages.push(reconcilePremiumNote);
             }
-            if (Array.isArray(sharedLearningParseHints) && sharedLearningParseHints.length > 0) {
-              for (const line of sharedLearningParseHints) {
-                const t = String(line ?? "").trim();
-                if (t) receiptAdvancedParsingMessages.push(t);
-              }
-            }
             const vNow = String(adjustedSummary?.vendorName ?? "").trim();
             if (
               vNow &&
@@ -8216,6 +8210,22 @@ export async function handleApiRequest(req, options = {}) {
               receiptAdvancedParsingMessages.push(
                 `電話番号などの表記を手がかりに、店舗名を「${vNow.slice(0, 80)}」として補完しました。`,
               );
+            }
+            while (receiptAdvancedParsingMessages.length > 5) {
+              receiptAdvancedParsingMessages.pop();
+            }
+            for (let i = 0; i < receiptAdvancedParsingMessages.length; i += 1) {
+              receiptAdvancedParsingMessages[i] = String(receiptAdvancedParsingMessages[i]).slice(
+                0,
+                220,
+              );
+            }
+          }
+
+          if (Array.isArray(sharedLearningParseHints) && sharedLearningParseHints.length > 0) {
+            for (const line of sharedLearningParseHints) {
+              const t = String(line ?? "").trim();
+              if (t) receiptAdvancedParsingMessages.push(t);
             }
             while (receiptAdvancedParsingMessages.length > 5) {
               receiptAdvancedParsingMessages.pop();
