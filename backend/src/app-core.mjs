@@ -1473,6 +1473,125 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
 }
 
 /**
+ * 共有学習カタログで店名・合計を補正する（合計は OCR の合計行に載る値があるときを主に信頼する）。
+ * @returns {{ summary: Record<string, unknown>, hints: string[] }}
+ */
+async function applySharedLearningCatalogParseHints(pool, summary, items, ocrLines) {
+  const hints = [];
+  const base = summary && typeof summary === "object" ? { ...summary } : {};
+  const vendorNorm = normalizeVendorForMatch(base.vendorName ?? "");
+  if (!vendorNorm || vendorNorm.length < 2) {
+    return { summary: base, hints };
+  }
+  let rows;
+  try {
+    const [r] = await pool.query(
+      "SELECT vendor_label, total_amount, item_tokens, sample_count " +
+        "FROM receipt_learning_catalog " +
+        "WHERE is_disabled = 0 AND vendor_norm = ? " +
+        "ORDER BY sample_count DESC, updated_at DESC LIMIT 120",
+      [vendorNorm],
+    );
+    rows = r;
+  } catch (e) {
+    const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+    if (code === "ER_NO_SUCH_TABLE") return { summary: base, hints };
+    throw e;
+  }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { summary: base, hints };
+  }
+
+  const itemTokensNow = Array.from(
+    new Set(
+      (Array.isArray(items) ? items : [])
+        .map((it) => normalizeReceiptLearningToken(it?.name ?? ""))
+        .filter((t) => t.length >= 2 && !/^\d+$/.test(t))
+        .slice(0, 40),
+    ),
+  );
+  const tokenSetNow = new Set(itemTokensNow);
+
+  let bestVendorLabel = null;
+  let bestVendorScore = -1;
+  let bestTotal = null;
+  let bestTotalScore = -1;
+  let bestTotalSamples = 0;
+  let bestTotalInOcr = false;
+
+  for (const row of rows) {
+    const sc = Math.max(1, Number(row?.sample_count ?? 1));
+    const vLabel = row?.vendor_label != null ? String(row.vendor_label).trim() : "";
+    const rowTokens = String(row?.item_tokens ?? "")
+      .split("|")
+      .map((x) => String(x).trim())
+      .filter(Boolean);
+    let overlap = 0;
+    for (const tk of rowTokens) {
+      if (tokenSetNow.has(tk)) overlap += 1;
+    }
+    if (vLabel.length >= 2) {
+      const vScore = sc + overlap * 3 + (vLabel.length >= 6 ? 2 : 0);
+      if (vScore > bestVendorScore) {
+        bestVendorScore = vScore;
+        bestVendorLabel = vLabel.slice(0, 120);
+      }
+    }
+    const tRaw = Number(row?.total_amount ?? NaN);
+    if (!Number.isFinite(tRaw) || tRaw <= 0) continue;
+    const t = Math.round(tRaw);
+    const inOcr = totalAppearsInOcrTotalLine(ocrLines, t);
+    let tScore = sc + overlap * 5 + (inOcr ? 26 : 0);
+    if (overlap === 0 && sc < 6) tScore -= 8;
+    if (tScore > bestTotalScore) {
+      bestTotalScore = tScore;
+      bestTotal = t;
+      bestTotalSamples = sc;
+      bestTotalInOcr = inOcr;
+    }
+  }
+
+  const out = { ...base };
+  const vNow = String(out.vendorName ?? "").trim();
+  if (
+    bestVendorLabel &&
+    bestVendorScore >= 5 &&
+    (receiptVendorSignalWeak(vNow) ||
+      bestVendorLabel.length >= vNow.length + 2 ||
+      normalizeVendorForMatch(bestVendorLabel) === vendorNorm)
+  ) {
+    if (bestVendorLabel !== vNow) {
+      out.vendorName = bestVendorLabel;
+      hints.push("共有学習データの店名例に合わせて店名を整えました。");
+    }
+  }
+
+  const curr = Number(out.totalAmount ?? NaN);
+  const currR = Number.isFinite(curr) && curr > 0 ? Math.round(curr) : null;
+  if (
+    bestTotal != null &&
+    Number.isFinite(bestTotal) &&
+    bestTotal > 0 &&
+    bestTotalInOcr &&
+    bestTotalScore >= 14
+  ) {
+    const currInOcr = currR != null && totalAppearsInOcrTotalLine(ocrLines, currR);
+    const meaningfulDiff = currR == null || Math.abs(bestTotal - currR) >= 5;
+    const preferLearned =
+      meaningfulDiff &&
+      (!currInOcr || (currR != null && bestTotal !== currR && bestTotalSamples >= 2));
+    if (preferLearned) {
+      out.totalAmount = bestTotal;
+      hints.push(
+        `共有学習とレシート上の合計表記に基づき、合計を ${bestTotal.toLocaleString("ja-JP")} 円に調整しました。`,
+      );
+    }
+  }
+
+  return { summary: out, hints };
+}
+
+/**
  * receipt_ocr_corrections を走査して receipt_learning_catalog を再構築する（管理者用）。
  * 件数の正しさのため、常にカタログを TRUNCATE してから全件を再生する。
  * @param {import("mysql2/promise").Pool} pool
@@ -1662,7 +1781,11 @@ async function predictCategory({
     }
     const fromSharedLearning = await suggestExpenseCategoryFromSharedLearningCatalog(
       pool,
-      receiptSummary ?? { vendorName: vendor, totalAmount: null, date: null },
+      {
+        ...(typeof receiptSummary === "object" && receiptSummary != null ? receiptSummary : {}),
+        vendorName: String(vendor ?? receiptSummary?.vendorName ?? "").trim(),
+        items: Array.isArray(items) ? items : [],
+      },
       userExpenseCategories,
     );
     if (fromSharedLearning?.id != null) {
@@ -7974,6 +8097,7 @@ export async function handleApiRequest(req, options = {}) {
           let learnedMemoPresent = false;
           let learnedMemoValue = "";
           let learnedMode = null;
+          let sharedLearningParseHints = [];
           if (subscriptionActive) {
             try {
               const learned = await findLearnedReceiptCorrection(
@@ -8025,6 +8149,28 @@ export async function handleApiRequest(req, options = {}) {
             }
           }
 
+          if (subscriptionActive) {
+            try {
+              const sl = await applySharedLearningCatalogParseHints(
+                pool,
+                adjustedSummary,
+                result?.items ?? [],
+                result?.ocrLines ?? [],
+              );
+              if (sl?.summary && typeof sl.summary === "object") {
+                adjustedSummary = sl.summary;
+              }
+              if (Array.isArray(sl?.hints) && sl.hints.length > 0) {
+                sharedLearningParseHints = sl.hints;
+              }
+            } catch (eSl) {
+              const cSl = eSl && typeof eSl === "object" && "code" in eSl ? String(eSl.code) : "";
+              if (cSl !== "ER_NO_SUCH_TABLE") {
+                logError("receipts.parse.shared_learning_hints", eSl);
+              }
+            }
+          }
+
           const receiptAdvancedParsingMessages = [];
           if (subscriptionActive) {
             if (learnCorrectionHit && (learnedCategoryId != null || learnedMemoPresent)) {
@@ -8039,6 +8185,12 @@ export async function handleApiRequest(req, options = {}) {
             }
             if (reconcileAdjusted && reconcilePremiumNote) {
               receiptAdvancedParsingMessages.push(reconcilePremiumNote);
+            }
+            if (Array.isArray(sharedLearningParseHints) && sharedLearningParseHints.length > 0) {
+              for (const line of sharedLearningParseHints) {
+                const t = String(line ?? "").trim();
+                if (t) receiptAdvancedParsingMessages.push(t);
+              }
             }
             const vNow = String(adjustedSummary?.vendorName ?? "").trim();
             if (
