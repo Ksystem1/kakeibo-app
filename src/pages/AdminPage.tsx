@@ -26,6 +26,7 @@ import {
   deleteAdminReceiptLearningCatalog,
   postAdminReceiptLearningCatalogRebuild,
   downloadAdminSalesCsv,
+  type FeaturePermissionSummaryItem,
   type AdminFeaturePermissionRow,
   type AdminImportFormatAuditRow,
   type AdminSalesDailySummaryRow,
@@ -46,6 +47,7 @@ import {
   NEW_PASSWORD_TOOLTIP,
 } from "../lib/passwordPolicy";
 import apStyles from "./AdminPage.module.css";
+import { resolveFeatureDisplayName } from "../i18n/featureLabels";
 
 function salesSourceTypeLabel(t: string | null | undefined): string {
   const s = String(t || "").trim();
@@ -369,6 +371,16 @@ export function AdminPage() {
   const [receiptLearningBusyId, setReceiptLearningBusyId] = useState<number | null>(null);
   const [receiptLearningRebuildBusy, setReceiptLearningRebuildBusy] = useState(false);
   const [receiptLearningRebuildMessage, setReceiptLearningRebuildMessage] = useState<string | null>(null);
+
+  /** 管理画面「機能」列: i18n 辞書を優先し、未定義キーは DB の label_ja にフォールバック */
+  const featurePermSummaryItems = useMemo((): FeaturePermissionSummaryItem[] => {
+    return featurePermRows.map((r) => ({
+      feature: r.feature_key,
+      allowed: true,
+      minPlan: r.min_plan,
+      labelJa: r.label_ja,
+    }));
+  }, [featurePermRows]);
 
   const load = useCallback(
     async (loadOpts?: { receiptCatalogQ?: string }) => {
@@ -1013,7 +1025,10 @@ export function AdminPage() {
                         className={apStyles.featurePermColFeature}
                         style={adminTableTd}
                       >
-                        {r.label_ja ?? fk}
+                        {resolveFeatureDisplayName(fk, {
+                          locale: "ja",
+                          summaryItems: featurePermSummaryItems,
+                        })}
                       </td>
                       <td
                         className={apStyles.featurePermColKey}
