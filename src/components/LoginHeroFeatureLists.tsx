@@ -14,16 +14,15 @@ import {
 } from "../lib/api";
 import { resolveFeatureDisplayName } from "../i18n/featureLabels";
 
-export type LoginHeroFeatureListsVariant = "hero" | "dashboard" | "demo";
+export type LoginHeroFeatureListsVariant = "hero" | "demo";
 
 type Props = {
-  /** dashboard: 無料一覧のみ。demo: デモ最終スライド用（無料+Premium 2カラム、本番の主な機能と同じ） */
+  /** demo: デモ最終スライド用（無料+Premium 2カラム、ログイン画面と同じ） */
   variant?: LoginHeroFeatureListsVariant;
 };
 
 /**
  * ログイン画面ヒーロー左カラム：無料 / Premium の機能一覧（Tailwind）
- * variant=dashboard：無料ブロックのみ（家族ダッシュボード）
  * 文言は featureLabels と揃える（export_csv / medical_deduction_csv）
  */
 /** ログインヒーロー用 Premium 列（ラベル解決をこの子のみで行う） */
@@ -70,26 +69,7 @@ function LoginHeroPremiumColumn() {
 }
 
 export function LoginHeroFeatureLists({ variant = "hero" }: Props) {
-  const isDashboard = variant === "dashboard";
-
-  const titleId = isDashboard ? "dashboard-free-features-title" : "login-hero-features-title";
-
-  const freeListDashboardOnly = (
-    <ul className="space-y-2.5 leading-snug text-[#315a85] text-sm">
-      <li className="flex gap-2 min-w-0">
-        <ScanLine className="h-4 w-4 shrink-0 mt-0.5 text-[#2e9ff5]" aria-hidden strokeWidth={2} />
-        <span>レシートAI（撮影・解析）</span>
-      </li>
-      <li className="flex gap-2 min-w-0">
-        <UsersRound className="h-4 w-4 shrink-0 mt-0.5 text-[#2e9ff5]" aria-hidden strokeWidth={2} />
-        <span>家族で家計簿を共有</span>
-      </li>
-      <li className="flex gap-2 min-w-0">
-        <MessageCircle className="h-4 w-4 shrink-0 mt-0.5 text-[#2e9ff5]" aria-hidden strokeWidth={2} />
-        <span>サポートチャット</span>
-      </li>
-    </ul>
-  );
+  const titleId = "login-hero-features-title";
 
   /** ログイン／トップの無料カードのみ：ダッシュボードをレシートAIより上に表示 */
   const freeListHeroWithDashboard = (
@@ -122,34 +102,6 @@ export function LoginHeroFeatureLists({ variant = "hero" }: Props) {
       {freeListHeroWithDashboard}
     </div>
   );
-
-  /** 見出し・説明をレシートAI行の直上（カード内先頭）に置く */
-  const freeBlockDashboard = (
-    <div className="min-w-0 rounded-lg border border-slate-200/90 bg-slate-50/80 px-3 py-3 sm:px-4 md:max-w-xl">
-      <h2
-        id={titleId}
-        className="text-sm font-bold text-slate-800 tracking-tight mb-1.5"
-      >
-        無料で使える機能
-      </h2>
-      <p className="text-sm text-slate-600 mb-3 leading-relaxed">
-        ログイン済みのすべてのユーザーが、追加料金なしで利用できます。
-      </p>
-      <div className="flex items-center gap-2 mb-2.5">
-        <Sparkles className="h-4 w-4 shrink-0 text-[#2e9ff5]" aria-hidden strokeWidth={2.25} />
-        <span className="font-bold text-[#0a2f5c] text-sm">無料（登録後）</span>
-      </div>
-      {freeListDashboardOnly}
-    </div>
-  );
-
-  if (isDashboard) {
-    return (
-      <section className="w-full text-left" aria-labelledby={titleId}>
-        {freeBlockDashboard}
-      </section>
-    );
-  }
 
   if (variant === "demo") {
     return (
