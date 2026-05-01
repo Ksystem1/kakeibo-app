@@ -14,10 +14,10 @@ import {
 } from "../lib/api";
 import { resolveFeatureDisplayName } from "../i18n/featureLabels";
 
-export type LoginHeroFeatureListsVariant = "hero" | "dashboard";
+export type LoginHeroFeatureListsVariant = "hero" | "dashboard" | "demo";
 
 type Props = {
-  /** dashboard: 無料一覧のみ・家族ダッシュボード向けレイアウト */
+  /** dashboard: 無料一覧のみ。demo: デモ最終スライド用（無料+Premium 2カラム、本番の主な機能と同じ） */
   variant?: LoginHeroFeatureListsVariant;
 };
 
@@ -147,6 +147,33 @@ export function LoginHeroFeatureLists({ variant = "hero" }: Props) {
     return (
       <section className="w-full text-left" aria-labelledby={titleId}>
         {freeBlockDashboard}
+      </section>
+    );
+  }
+
+  if (variant === "demo") {
+    return (
+      <section
+        className="w-full max-w-4xl mx-auto text-left"
+        aria-labelledby="demo-feature-compare-title"
+      >
+        <h2
+          id="demo-feature-compare-title"
+          className="text-[0.78rem] font-bold uppercase tracking-[0.12em] text-[#315a85]/90 mb-2"
+        >
+          主な機能
+        </h2>
+        <p className="text-[0.88rem] leading-relaxed text-[#315a85] mb-4">
+          無料で始められることと、<strong className="font-semibold text-[#0a2f5c]">Premium</strong>
+          でさらに使えることを一覧できます。
+        </p>
+        <div className="grid min-w-0 grid-cols-1 gap-4 sm:gap-5 sm:grid-cols-2">
+          {freeBlockHero}
+          <LoginHeroPremiumColumn />
+        </div>
+        <p className="mt-3 text-center text-[0.7rem] text-slate-500">
+          左＝登録後すぐ使える無料枠、右＝有料の Premium 枠（イメージ）。実際の利用可否は契約内容に従います。
+        </p>
       </section>
     );
   }
