@@ -103,8 +103,16 @@ function logError(event, e, extra = {}) {
   logger.error(event, e, extra);
 }
 
-/** receipt_learning_catalog の列名（MySQL では識別子としてバッククォート必須）。ASCII 96 のみで組み立て、ソース上の ` を使わない。 */
-const SQL_Q_YEAR_MONTH_COL = String.fromCharCode(96) + "year_month" + String.fromCharCode(96);
+/** MySQL 識別子をバッククォート（ASCII 96）で囲む。ソースに ` を書かない。 */
+function sqlBacktickIdent(ident) {
+  const bt = String.fromCharCode(96);
+  return bt + String(ident).split(bt).join("") + bt;
+}
+
+/** receipt_learning_catalog の列名のみ（INSERT の列リスト用） */
+const SQL_Q_YEAR_MONTH_COL = sqlBacktickIdent("year_month");
+/** receipt_learning_catalog rl の year_month 列（SELECT 用・二重クォートで曖昧さを避ける） */
+const SQL_Q_RL_DOT_YEAR_MONTH = sqlBacktickIdent("rl") + "." + sqlBacktickIdent("year_month");
 
 async function cleanupStaleProcessingReceiptJobsOnce(pool) {
   if (receiptProcessingCleanupDone) return;
@@ -1409,7 +1417,7 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
   const [rows] = await pool.query(
     "SELECT category_name_hint, sample_count, " +
       SQL_Q_YEAR_MONTH_COL +
-      " AS year_month, total_amount, item_tokens FROM receipt_learning_catalog " +
+      " AS ym, total_amount, item_tokens FROM receipt_learning_catalog " +
       "WHERE is_disabled = 0 AND vendor_norm = ? AND category_name_hint IS NOT NULL " +
       "ORDER BY sample_count DESC, updated_at DESC LIMIT 400",
     [vendorNorm],
@@ -1427,7 +1435,7 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
     });
     if (!hit?.id) continue;
     let score = Math.max(1, Number(row?.sample_count ?? 1));
-    if (String(row?.year_month ?? "") === ym && ym !== "0000-00") score += 2;
+    if (String(row?.ym ?? row?.year_month ?? "") === ym && ym !== "0000-00") score += 2;
     const rowTotal = Number(row?.total_amount ?? NaN);
     if (total != null && Number.isFinite(rowTotal) && rowTotal > 0) {
       const diff = Math.abs(rowTotal - total);
@@ -3689,9 +3697,9 @@ export async function handleApiRequest(req, options = {}) {
           params,
         );
         const listSelectSql =
-          "SELECT rl.id, rl.vendor_label, rl.vendor_norm, rl." +
-          SQL_Q_YEAR_MONTH_COL +
-          " AS year_month, rl.total_amount, rl.item_tokens, rl.category_name_hint, rl.sample_count, " +
+          "SELECT rl.id, rl.vendor_label, rl.vendor_norm, " +
+          SQL_Q_RL_DOT_YEAR_MONTH +
+          " AS ym, rl.total_amount, rl.item_tokens, rl.category_name_hint, rl.sample_count, " +
           "rl.is_disabled, rl.admin_note, rl.last_seen_at, rl.created_at, rl.updated_at " +
           "FROM receipt_learning_catalog rl " +
           where +
@@ -3708,7 +3716,7 @@ export async function handleApiRequest(req, options = {}) {
                   id: Number(r.id),
                   vendor_label: r.vendor_label == null ? null : String(r.vendor_label),
                   vendor_norm: String(r.vendor_norm ?? ""),
-                  year_month: String(r.year_month ?? "0000-00"),
+                  year_month: String(r.ym ?? r.year_month ?? "0000-00"),
                   total_amount:
                     r.total_amount != null && Number.isFinite(Number(r.total_amount))
                       ? Math.round(Number(r.total_amount))

@@ -11,7 +11,11 @@ import mysql from "mysql2/promise";
 import { getMysqlSslConfig } from "../src/db.mjs";
 import { normalizeVendorForMatch } from "../src/receipt-learn.mjs";
 
-const SQL_Q_YEAR_MONTH_COL = String.fromCharCode(96) + "year_month" + String.fromCharCode(96);
+function sqlBacktickIdent(ident) {
+  const bt = String.fromCharCode(96);
+  return bt + String(ident).split(bt).join("") + bt;
+}
+const SQL_Q_YEAR_MONTH_COL = sqlBacktickIdent("year_month");
 
 function requireEnv(name) {
   const v = process.env[name];
