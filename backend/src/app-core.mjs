@@ -3750,6 +3750,9 @@ export async function handleApiRequest(req, options = {}) {
         );
       } catch (e) {
         const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+        const errno = e && typeof e === "object" && "errno" in e ? Number((/** @type {any} */ (e)).errno) : 0;
+        const sqlMessage =
+          e && typeof e === "object" && "sqlMessage" in e ? String((/** @type {any} */ (e)).sqlMessage) : "";
         if (code === "ER_NO_SUCH_TABLE") {
           return json(
             503,
@@ -3762,8 +3765,30 @@ export async function handleApiRequest(req, options = {}) {
             skipCors,
           );
         }
+        if (code === "ER_BAD_FIELD_ERROR" || errno === 1054) {
+          return json(
+            503,
+            {
+              error: "MigrationRequired",
+              detail:
+                "receipt_learning_catalog の列定義が古い可能性があります。backend で npm run db:migrate-v46 を実行してください。",
+              sqlMessage: sqlMessage || undefined,
+            },
+            hdrs,
+            skipCors,
+          );
+        }
         logError("admin.receipt_learning_catalog.list", e);
-        return json(500, { error: "AdminReceiptLearningCatalogListError" }, hdrs, skipCors);
+        return json(
+          500,
+          {
+            error: "AdminReceiptLearningCatalogListError",
+            detail: sqlMessage || (e instanceof Error ? e.message : String(e)),
+            sqlCode: code || undefined,
+          },
+          hdrs,
+          skipCors,
+        );
       }
     }
 
