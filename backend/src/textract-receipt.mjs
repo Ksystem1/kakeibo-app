@@ -661,6 +661,48 @@ function lineHasTotalKeyword(line) {
   );
 }
 
+/** 合計・支払・税込対象額など、税込総額が載りうる OCR ウィンドウ */
+function lineLooksLikeGrandTotalContext(line) {
+  const s = String(line ?? "");
+  return (
+    lineHasTotalKeyword(s) ||
+    /(?:税込(?:額)?|対象額|税率\s*\d+\s*%\s*対象)/i.test(s) ||
+    /(?:J[-\s]?Mups|クレジット).*(?:¥|￥)?\s*\d/i.test(s)
+  );
+}
+
+/** 上記文脈の OCR ウィンドウに、指定の金額が含まれるか（ブロック分割対策） */
+function ocrGrandTotalAmountMatched(ocrLines, amount) {
+  const t = Math.round(Number(amount));
+  if (!Number.isFinite(t) || t <= 0 || !Array.isArray(ocrLines)) return false;
+  const lines = ocrLines.map((x) => String(x ?? "").trim());
+  for (let i = 0; i < lines.length; i += 1) {
+    const merged = [lines[i - 1], lines[i], lines[i + 1]].filter(Boolean).join(" ");
+    if (!merged || !lineLooksLikeGrandTotalContext(merged)) continue;
+    const nums = moneyCandidatesFromLine(merged);
+    if (nums.includes(t)) return true;
+  }
+  return false;
+}
+
+/**
+ * 正しい税込合計 G に対し、誤って G+税 になったパターン（例 16610+1510=18120）を戻す
+ * @param {unknown} total
+ * @param {unknown} taxAmt
+ * @param {string[]} ocrLines
+ */
+function reconcileIfTotalEqualsGrandPlusTaxOnce(total, taxAmt, ocrLines) {
+  if (total == null || taxAmt == null) return total;
+  const tot = Math.round(Number(total) * 100) / 100;
+  const tx = Math.round(Number(taxAmt) * 100) / 100;
+  if (!Number.isFinite(tot) || tot <= 0 || !Number.isFinite(tx) || tx <= 0) return total;
+  const cand = Math.round((tot - tx) * 100) / 100;
+  if (cand < 100) return total;
+  if (!ocrGrandTotalAmountMatched(ocrLines, cand)) return total;
+  if (Math.abs(tot - (cand + tx)) > 2) return total;
+  return cand;
+}
+
 function lineHasNonTotalKeyword(line) {
   const s = String(line ?? "");
   // 「お支払(税込)」「合計(税込)」など、合計系キーワードと同じ行の表記は落とさない
@@ -1072,6 +1114,16 @@ export function createReceiptAnalyzer(ctx = {}) {
         }
       }
     }
+    if (totalAmount != null) {
+      const corr = applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines);
+      if (corr != null && Math.abs(corr - Number(totalAmount)) >= 1) {
+        totalAmount = corr;
+        fieldConfidence = { ...fieldConfidence, totalAmount: fieldConfidence.totalAmount ?? null };
+        notice =
+          (notice ? `${notice} ` : "") +
+          "合計と税額の OCR 表記から税込合計を再確認しました。";
+      }
+    }
     return {
       summary: {
         vendorName: summary.vendorName,
@@ -1103,18 +1155,26 @@ const defaultAnalyzer = createReceiptAnalyzer();
 
 /**
  * Bedrock ハイブリッド後など、最終合計に対しても小計+税の二重計上を OCR から矯正する。
+ * 小計ブロックが欠けても税額だけ取れた場合は「合計行の正額 + 税 = 誤合計」のパターンを直す。
  * @param {unknown} totalAmount
  * @param {string[] | undefined} ocrLines
  * @returns {number | null}
  */
 export function applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines) {
   if (totalAmount == null || totalAmount === "") return null;
-  const n = Number(totalAmount);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  const pair = extractSubtotalTaxFromOcrLines(Array.isArray(ocrLines) ? ocrLines : []);
-  if (pair.subtotal == null || pair.tax == null) return Math.round(n * 100) / 100;
-  const next = reconcileTotalDoubleTaxError(n, pair.subtotal, pair.tax);
-  return typeof next === "number" && Number.isFinite(next) ? Math.round(next * 100) / 100 : Math.round(n * 100) / 100;
+  let v = Math.round(Number(totalAmount) * 100) / 100;
+  if (!Number.isFinite(v) || v <= 0) return null;
+  const ocr = Array.isArray(ocrLines) ? ocrLines : [];
+  const pair = extractSubtotalTaxFromOcrLines(ocr);
+  if (pair.subtotal != null && pair.tax != null) {
+    const d = reconcileTotalDoubleTaxError(v, pair.subtotal, pair.tax);
+    if (typeof d === "number" && Number.isFinite(d)) v = d;
+  }
+  if (pair.tax != null) {
+    const g = reconcileIfTotalEqualsGrandPlusTaxOnce(v, pair.tax, ocr);
+    if (typeof g === "number" && Number.isFinite(g)) v = g;
+  }
+  return Math.round(v * 100) / 100;
 }
 
 /**

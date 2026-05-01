@@ -146,6 +146,11 @@ test("applyOcrDoubleTaxTotalCorrection: ハイブリッド後の誤合計を OCR
   assert.equal(applyOcrDoubleTaxTotalCorrection(16610, ocrLines), 16610);
 });
 
+test("applyOcrDoubleTaxTotalCorrection: 小計ブロックが無くても正税込+税の誤加算を矯正", () => {
+  const ocr = ["税率10%対象額", "16610", "（内消費税等10%）", "1510", "合計", "18120"];
+  assert.equal(applyOcrDoubleTaxTotalCorrection(18120, ocr), 16610);
+});
+
 test("analyzeReceiptImageBytes: 合計が明細と大きく乖離する場合はOCR行候補で補正", async () => {
   const analyze = fakeAnalyzerWithExpenseDoc({
     ExpenseIndex: 1,

@@ -1186,7 +1186,11 @@ function hybridVendorCanOverride(currentVendor, hybridVendor, ocrLines) {
   return false;
 }
 function lineLooksLikeTotal(line) {
-  return /合計|総額|お会計|お支払|支払金額|ご請求|TOTAL/i.test(String(line ?? ""));
+  const s = String(line ?? "");
+  return (
+    /合計|総額|お会計|お支払|支払金額|ご請求|TOTAL/i.test(s) ||
+    /(?:税込(?:額)?|対象額|税率\s*\d+\s*%\s*対象)/i.test(s)
+  );
 }
 function parseYenNumbersFromLine(line) {
   const s = String(line ?? "")
