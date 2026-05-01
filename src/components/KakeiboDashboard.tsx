@@ -234,6 +234,8 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       ? kidLedgerOpts.kidUserId
       : null;
   const [kidMemberRows, setKidMemberRows] = useState<FamilyMemberRow[]>([]);
+  /** 親向けで家族メンバーAPIの結果を一度反映済み（この間は kidMemberRows が [] でも「未確定」） */
+  const [kidMemberListLoaded, setKidMemberListLoaded] = useState(false);
   const [summaryAmountsVisible, setSummaryAmountsVisible] = useState(readSummaryAmountsVisible);
   const loadSeqRef = useRef(0);
   const [loading, setLoading] = useState(false);
@@ -406,8 +408,10 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       if (memRes && isParentForKidWatch) {
         const memItems = (memRes.items ?? []) as FamilyMemberRow[];
         setKidMemberRows(pickKidMemberRowsForWatch(memItems, user?.id));
+        setKidMemberListLoaded(true);
       } else if (!isParentForKidWatch) {
         setKidMemberRows([]);
+        setKidMemberListLoaded(false);
       }
     } catch (e) {
       if (seq !== loadSeqRef.current) return;
@@ -428,6 +432,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
   /** 子ども未登録時はお小遣い帳モードのクエリを外す（一覧にトグルを出さないため） */
   useEffect(() => {
     if (!isParentForKidWatch || loading) return;
+    if (!kidMemberListLoaded) return;
     if (kidMemberRows.length > 0) return;
     const p = new URLSearchParams(location.search);
     if (!p.get("kidWatch")) return;
@@ -437,6 +442,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     routerNavigate({ pathname: location.pathname, search: s ? `?${s}` : "" }, { replace: true });
   }, [
     isParentForKidWatch,
+    kidMemberListLoaded,
     kidMemberRows.length,
     loading,
     location.pathname,
