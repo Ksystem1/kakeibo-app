@@ -1079,9 +1079,14 @@ function detectReceiptPaymentLabel(ocrLines) {
 function buildReceiptSuggestedMemo(vendorName, ocrLines) {
   const vendor = String(vendorName ?? "").trim();
   const payment = detectReceiptPaymentLabel(ocrLines);
-  if (payment && vendor) return `${payment} ${vendor}`.slice(0, 500);
+  const vendorUsable = vendor.length > 0 && !isLikelyGarbledVendorName(vendor);
+  if (payment && vendorUsable) return `${payment} ${vendor}`.slice(0, 500);
   if (payment) return payment.slice(0, 500);
-  return vendor.slice(0, 500);
+  if (vendorUsable) return vendor.slice(0, 500);
+  const inferred = inferVendorNameFromOcrLines(ocrLines);
+  if (payment && inferred) return `${payment} ${inferred}`.slice(0, 500);
+  if (inferred) return inferred.slice(0, 500);
+  return "";
 }
 
 function normalizeReceiptLearningToken(s) {
@@ -8038,7 +8043,10 @@ export async function handleApiRequest(req, options = {}) {
               }
             }
           }
-          if (receiptVendorSignalWeak(adjustedSummary?.vendorName)) {
+          if (
+            receiptVendorSignalWeak(adjustedSummary?.vendorName) ||
+            isLikelyGarbledVendorName(adjustedSummary?.vendorName)
+          ) {
             const inferredVendor = inferVendorNameFromOcrLines(result?.ocrLines ?? []);
             if (inferredVendor) {
               adjustedSummary.vendorName = inferredVendor;
@@ -8168,6 +8176,13 @@ export async function handleApiRequest(req, options = {}) {
               if (cSl !== "ER_NO_SUCH_TABLE") {
                 logError("receipts.parse.shared_learning_hints", eSl);
               }
+            }
+          }
+
+          if (isLikelyGarbledVendorName(adjustedSummary?.vendorName)) {
+            const inferredAfterLearn = inferVendorNameFromOcrLines(result?.ocrLines ?? []);
+            if (inferredAfterLearn) {
+              adjustedSummary.vendorName = inferredAfterLearn;
             }
           }
 
@@ -8363,6 +8378,7 @@ export async function handleApiRequest(req, options = {}) {
             (Boolean(hybridReceipt?.ok) ||
               learnCorrectionHit ||
               reconcileAdjusted ||
+              (Array.isArray(sharedLearningParseHints) && sharedLearningParseHints.length > 0) ||
               finalSource === "history" ||
               finalSource === "chain_catalog" ||
               finalSource === "global_master" ||
@@ -8410,7 +8426,12 @@ export async function handleApiRequest(req, options = {}) {
             adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
             result?.ocrLines ?? [],
           );
-          if (learnCorrectionHit && learnedMemoPresent) {
+          const learnedMemoTrimmed = String(learnedMemoValue ?? "").trim();
+          const learnedMemoLooksNoise =
+            learnedMemoTrimmed.length > 0 &&
+            learnedMemoTrimmed.length <= 12 &&
+            isLikelyGarbledVendorName(learnedMemoTrimmed);
+          if (learnCorrectionHit && learnedMemoPresent && !learnedMemoLooksNoise) {
             body.suggestedMemo = learnedMemoValue;
           } else if (autoSuggestedMemo) {
             body.suggestedMemo = autoSuggestedMemo;
