@@ -425,6 +425,25 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
     void load();
   }, [load]);
 
+  /** 子ども未登録時はお小遣い帳モードのクエリを外す（一覧にトグルを出さないため） */
+  useEffect(() => {
+    if (!isParentForKidWatch || loading) return;
+    if (kidMemberRows.length > 0) return;
+    const p = new URLSearchParams(location.search);
+    if (!p.get("kidWatch")) return;
+    p.delete("kidWatch");
+    p.delete("kidUser");
+    const s = p.toString();
+    routerNavigate({ pathname: location.pathname, search: s ? `?${s}` : "" }, { replace: true });
+  }, [
+    isParentForKidWatch,
+    kidMemberRows.length,
+    loading,
+    location.pathname,
+    location.search,
+    routerNavigate,
+  ]);
+
   useEffect(() => {
     try {
       localStorage.setItem(SUMMARY_AMOUNTS_VISIBLE_KEY, summaryAmountsVisible ? "1" : "0");
@@ -1119,7 +1138,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
           </button>
         </div>
       </header>
-      {isParentForKidWatch ? (
+      {isParentForKidWatch && kidMemberRows.length > 0 ? (
         <div
           className={`${styles.kidWatchControls} ${kidWatchOn ? styles.kidWatchControlsActive : ""}`}
         >
