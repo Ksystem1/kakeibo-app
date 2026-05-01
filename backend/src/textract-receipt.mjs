@@ -639,12 +639,41 @@ function dedupeJunkSymbolDuplicateLineItems(rows) {
   return out;
 }
 
+/**
+ * 小計・合計・税・支払方法など「物販明細ではない」行を落とす（合算が63,420のように膨れるのを防ぐ）
+ */
+function looksLikeSummaryFooterOrPaymentLineName(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return false;
+  const c = s.replace(/\s/g, "").replace(/[　]/g, "");
+  if (
+    /(小計|合計|総額|お会計|外税|内税|消費税|税率|対象額|税額|お支払|ご利用金額|領収|内消費税等|登録番号)/i.test(c)
+  ) {
+    return true;
+  }
+  if (/J[-\s]?Mups|ムップス|クレジット|credit|visa|master|paypay|ペイペイ|クレジット決済/i.test(c)) {
+    return true;
+  }
+  if (/(?:^|[^a-z])SUBTOTAL|(?:^|[^a-z])TOTAL(?:[^A-Z]|$)/i.test(s)) return true;
+  // OCR ノイズだけが残る例: "1/1 it", "40 it"（小計・合計ブロック）
+  if (/^\d+\/\d+\s*it$/i.test(s.trim())) return true;
+  if (/^\d{1,3}\s*it$/i.test(s.trim())) return true;
+  return false;
+}
+
+function filterSummaryFooterLineItems(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+  return rows.filter((r) => !looksLikeSummaryFooterOrPaymentLineName(r?.name));
+}
+
 function fallbackTotalFromLineItems(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
   let sum = 0;
   let n = 0;
   for (const row of rows) {
-    if (looksLikeChangeOrTenderLabel(String(row?.name ?? ""))) continue;
+    const nm = String(row?.name ?? "");
+    if (looksLikeChangeOrTenderLabel(nm)) continue;
+    if (looksLikeSummaryFooterOrPaymentLineName(nm)) continue;
     const a = row?.amount;
     if (typeof a === "number" && Number.isFinite(a) && a > 0) {
       sum += a;
@@ -1036,6 +1065,7 @@ export function createReceiptAnalyzer(ctx = {}) {
     const summary = summaryFromFields(doc.SummaryFields);
     let items = lineItemsFromExpenseDoc(doc);
     items = dedupeJunkSymbolDuplicateLineItems(items);
+    items = filterSummaryFooterLineItems(items);
     const ocrTextBlocks = collectOcrTextBlocksFromExpenseDoc(doc);
     const ocrLines = ocrTextBlocks.map((x) => x.text).slice(0, 180);
     let notice = null;
