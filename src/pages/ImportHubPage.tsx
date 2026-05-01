@@ -7,8 +7,9 @@ import { useFeaturePermissions } from "../context/FeaturePermissionContext";
 
 export function ImportHubPage() {
   const navigate = useNavigate();
-  const { allowedFor } = useFeaturePermissions();
+  const { allowedFor, displayNameFor } = useFeaturePermissions();
   const canUseStatementImport = allowedFor(FEATURE_EXPORT_CSV);
+  const csvFeatureLabel = displayNameFor(FEATURE_EXPORT_CSV);
   const [msg, setMsg] = useState<string | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
@@ -38,7 +39,9 @@ export function ImportHubPage() {
           }
           if (!canUseStatementImport) {
             setShowUpgradeModal(true);
-            setMsg("この取込は現在ご利用いただけません。設定からご契約内容をご確認ください。");
+            setMsg(
+              `「${csvFeatureLabel}」は現在のプランではご利用いただけません。プランをご確認ください。`,
+            );
             return;
           }
           setMsg("CSV/PDF を検出しました。おまかせ解析を開始します。");
@@ -107,17 +110,25 @@ export function ImportHubPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className={styles.sectionTitle} style={{ marginTop: 0 }}>
-              この取込について
+              {csvFeatureLabel}
             </h2>
-            <p className={styles.sub}>
-              銀行・カードの CSV/PDF 取込は、ご契約内容に応じてご利用いただけます。レシート画像の取込や手入力は引き続きご利用いただけます。
+            <p className={styles.sub} style={{ marginBottom: "0.55rem" }}>
+              <strong>プレミアム機能です。</strong>
+              PayPayアプリなどから出力した利用履歴CSVをそのまま読み込み、スマホ決済の支出をまとめて反映できます。銀行・カードの明細CSVやPDFにも対応し、手入力や転記の手間を大きく減らせます。
+            </p>
+            <p className={styles.sub} style={{ marginBottom: 0 }}>
+              プレミアムにご加入いただくとご利用いただけます。レシートAIでの撮影取込や手入力は、これまでどおりご利用いただけます。
             </p>
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.8rem" }}>
               <button type="button" className={styles.btn} onClick={() => setShowUpgradeModal(false)}>
                 閉じる
               </button>
-              <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => navigate("/settings")}>
-                設定を開く
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnPrimary}`}
+                onClick={() => navigate("/settings")}
+              >
+                契約・プランを確認
               </button>
             </div>
           </div>

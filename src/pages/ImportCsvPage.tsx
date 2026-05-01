@@ -43,8 +43,9 @@ type PreviewRow = ImportedStatementRow & {
 export function ImportCsvPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { allowedFor } = useFeaturePermissions();
+  const { allowedFor, displayNameFor } = useFeaturePermissions();
   const canUseStatementImport = allowedFor(FEATURE_EXPORT_CSV);
+  const csvFeatureLabel = displayNameFor(FEATURE_EXPORT_CSV);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [text, setText] = useState("");
   const [rows, setRows] = useState<PreviewRow[]>([]);
@@ -183,7 +184,9 @@ export function ImportCsvPage() {
 
   async function parseFiles(files: FileList | File[]) {
     if (!canUseStatementImport) {
-      setErr("この取込は現在ご利用いただけません。設定画面からご契約内容をご確認ください。");
+      setErr(
+        `「${csvFeatureLabel}」は現在のプランではご利用いただけません。設定からプランをご確認ください。`,
+      );
       return;
     }
     const list = Array.from(files ?? []);
@@ -276,7 +279,7 @@ export function ImportCsvPage() {
     setLoading(true);
     try {
       if (!canUseStatementImport) {
-        setErr("この取込は現在ご利用いただけません。");
+        setErr(`「${csvFeatureLabel}」は現在のプランではご利用いただけません。`);
         return;
       }
       if (rows.length > 0) {
@@ -356,10 +359,12 @@ export function ImportCsvPage() {
       <h1 className={styles.title}>銀行・カード・各種決済明細 取込</h1>
       {!canUseStatementImport ? (
         <div className={styles.settingsPanel} style={{ marginBottom: "0.9rem" }}>
+          <p className={styles.sub} style={{ margin: "0 0 0.45rem" }}>
+            <strong>{csvFeatureLabel}</strong>はプレミアム機能です。PayPayの利用履歴CSVや銀行・カード明細を読み込み、まとめて家計簿へ反映できます。
+          </p>
           <p className={styles.sub} style={{ margin: 0 }}>
-            この機能は現在ご利用いただけません。{" "}
             <Link to="/settings" style={{ color: "var(--accent)" }}>
-              設定を開く
+              契約・プランを確認
             </Link>
           </p>
         </div>
