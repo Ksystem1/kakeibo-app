@@ -103,6 +103,9 @@ function logError(event, e, extra = {}) {
   logger.error(event, e, extra);
 }
 
+/** receipt_learning_catalog の列名（MySQL ではバッククォート必須）。テンプレ内の \\` 連結ミスを避ける。 */
+const SQL_Q_YEAR_MONTH_COL = "`year_month`";
+
 async function cleanupStaleProcessingReceiptJobsOnce(pool) {
   if (receiptProcessingCleanupDone) return;
   if (receiptProcessingCleanupPromise) {
@@ -1404,7 +1407,7 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
   );
   const tokenSetNow = new Set(itemTokensNow);
   const [rows] = await pool.query(
-    `SELECT category_name_hint, sample_count, \`year_month\` AS year_month, total_amount, item_tokens
+    `SELECT category_name_hint, sample_count, ${SQL_Q_YEAR_MONTH_COL} AS year_month, total_amount, item_tokens
      FROM receipt_learning_catalog
      WHERE is_disabled = 0
        AND vendor_norm = ?
@@ -1501,7 +1504,7 @@ async function rebuildReceiptLearningCatalogFromCorrections(pool) {
     }
     await pool.query(
       `INSERT INTO receipt_learning_catalog
-        (fingerprint, vendor_norm, vendor_label, \`year_month\`, total_amount, item_tokens, category_name_hint,
+        (fingerprint, vendor_norm, vendor_label, ${SQL_Q_YEAR_MONTH_COL}, total_amount, item_tokens, category_name_hint,
          sample_count, is_disabled, last_seen_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW())
        ON DUPLICATE KEY UPDATE
@@ -3694,7 +3697,7 @@ export async function handleApiRequest(req, options = {}) {
              rl.id,
              rl.vendor_label,
              rl.vendor_norm,
-             rl.\`year_month\` AS year_month,
+             rl.${SQL_Q_YEAR_MONTH_COL} AS year_month,
              rl.total_amount,
              rl.item_tokens,
              rl.category_name_hint,
@@ -7601,7 +7604,7 @@ export async function handleApiRequest(req, options = {}) {
             if (catalogRow.vendorNorm) {
               await pool.query(
                 `INSERT INTO receipt_learning_catalog
-                  (fingerprint, vendor_norm, vendor_label, \`year_month\`, total_amount, item_tokens, category_name_hint,
+                  (fingerprint, vendor_norm, vendor_label, ${SQL_Q_YEAR_MONTH_COL}, total_amount, item_tokens, category_name_hint,
                    sample_count, is_disabled, last_seen_at, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW())
                  ON DUPLICATE KEY UPDATE

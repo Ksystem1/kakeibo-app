@@ -11,6 +11,8 @@ import mysql from "mysql2/promise";
 import { getMysqlSslConfig } from "../src/db.mjs";
 import { normalizeVendorForMatch } from "../src/receipt-learn.mjs";
 
+const SQL_Q_YEAR_MONTH_COL = "`year_month`";
+
 function requireEnv(name) {
   const v = process.env[name];
   if (v === undefined || v === "") {
@@ -114,7 +116,7 @@ try {
     if (!catalog) continue;
     await conn.query(
       `INSERT INTO receipt_learning_catalog
-        (fingerprint, vendor_norm, vendor_label, \`year_month\`, total_amount, item_tokens, category_name_hint,
+        (fingerprint, vendor_norm, vendor_label, ${SQL_Q_YEAR_MONTH_COL}, total_amount, item_tokens, category_name_hint,
          sample_count, is_disabled, last_seen_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW(), NOW())
        ON DUPLICATE KEY UPDATE
