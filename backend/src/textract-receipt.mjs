@@ -732,6 +732,27 @@ function reconcileIfTotalEqualsGrandPlusTaxOnce(total, taxAmt, ocrLines) {
   return cand;
 }
 
+/**
+ * フィルタ後の明細合計が OCR の小計と一致するとき、税込は必ず 小計+税（外税レシートの定義）
+ */
+function reconcileTotalWhenItemSumMatchesPrintedSubtotal(totalAmount, items, ocrLines) {
+  if (!Array.isArray(items) || items.length === 0) return totalAmount;
+  const pair = extractSubtotalTaxFromOcrLines(Array.isArray(ocrLines) ? ocrLines : []);
+  if (pair.subtotal == null || pair.tax == null) return totalAmount;
+  const st = Math.round(Number(pair.subtotal) * 100) / 100;
+  const tx = Math.round(Number(pair.tax) * 100) / 100;
+  const lineSum = fallbackTotalFromLineItems(items);
+  const tot = Math.round(Number(totalAmount) * 100) / 100;
+  if (!Number.isFinite(lineSum) || lineSum <= 0 || !Number.isFinite(tot)) return totalAmount;
+  if (Math.abs(lineSum - st) > 3) return totalAmount;
+  const expected = Math.round((st + tx) * 100) / 100;
+  if (Math.abs(tot - expected) <= 2) return totalAmount;
+  if (Math.abs(tot - (expected + tx)) <= 2 || Math.abs(tot - (st + tx * 2)) <= 2) {
+    return expected;
+  }
+  return totalAmount;
+}
+
 function lineHasNonTotalKeyword(line) {
   const s = String(line ?? "");
   // 「お支払(税込)」「合計(税込)」など、合計系キーワードと同じ行の表記は落とさない
@@ -1145,7 +1166,7 @@ export function createReceiptAnalyzer(ctx = {}) {
       }
     }
     if (totalAmount != null) {
-      const corr = applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines);
+      const corr = applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines, items);
       if (corr != null && Math.abs(corr - Number(totalAmount)) >= 1) {
         totalAmount = corr;
         fieldConfidence = { ...fieldConfidence, totalAmount: fieldConfidence.totalAmount ?? null };
@@ -1188,9 +1209,10 @@ const defaultAnalyzer = createReceiptAnalyzer();
  * 小計ブロックが欠けても税額だけ取れた場合は「合計行の正額 + 税 = 誤合計」のパターンを直す。
  * @param {unknown} totalAmount
  * @param {string[] | undefined} ocrLines
+ * @param {Array<{ name?: string; amount?: unknown }> | undefined} [items]
  * @returns {number | null}
  */
-export function applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines) {
+export function applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines, items) {
   if (totalAmount == null || totalAmount === "") return null;
   let v = Math.round(Number(totalAmount) * 100) / 100;
   if (!Number.isFinite(v) || v <= 0) return null;
@@ -1203,6 +1225,10 @@ export function applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines) {
   if (pair.tax != null) {
     const g = reconcileIfTotalEqualsGrandPlusTaxOnce(v, pair.tax, ocr);
     if (typeof g === "number" && Number.isFinite(g)) v = g;
+  }
+  if (items != null) {
+    const a = reconcileTotalWhenItemSumMatchesPrintedSubtotal(v, items, ocr);
+    if (typeof a === "number" && Number.isFinite(a)) v = a;
   }
   return Math.round(v * 100) / 100;
 }

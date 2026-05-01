@@ -8213,7 +8213,11 @@ export async function handleApiRequest(req, options = {}) {
 
           {
             const ocrTl = result?.ocrLines ?? [];
-            const fixedTot = applyOcrDoubleTaxTotalCorrection(adjustedSummary?.totalAmount, ocrTl);
+            const fixedTot = applyOcrDoubleTaxTotalCorrection(
+              adjustedSummary?.totalAmount,
+              ocrTl,
+              result?.items ?? [],
+            );
             const curTot = Number(adjustedSummary?.totalAmount ?? NaN);
             if (fixedTot != null && Number.isFinite(curTot) && Math.abs(fixedTot - curTot) >= 1) {
               adjustedSummary = { ...adjustedSummary, totalAmount: fixedTot };
