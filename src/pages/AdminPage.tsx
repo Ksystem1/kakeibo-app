@@ -370,7 +370,10 @@ export function AdminPage() {
   const [receiptLearningRebuildBusy, setReceiptLearningRebuildBusy] = useState(false);
   const [receiptLearningRebuildMessage, setReceiptLearningRebuildMessage] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(
+    async (loadOpts?: { receiptCatalogQ?: string }) => {
+    const catalogFetchQ =
+      loadOpts?.receiptCatalogQ !== undefined ? loadOpts.receiptCatalogQ : receiptLearningQuery;
     setLoading(true);
     setError(null);
     setReconcileError(null);
@@ -434,12 +437,14 @@ export function AdminPage() {
         setImportFormatAuditError(msg && msg.trim() ? msg : "取込フォーマット監査ログの取得に失敗しました。");
         return { items: [] as AdminImportFormatAuditRow[] };
       });
+      let receiptLearningCatalogFetchFailed = false;
       const receiptLearning = await getAdminReceiptLearningCatalog({
         limit: 120,
-        q: receiptLearningQuery,
+        q: catalogFetchQ,
         sort: receiptLearningSort,
         order: receiptLearningOrder,
       }).catch((e) => {
+        receiptLearningCatalogFetchFailed = true;
         const msg = e instanceof Error ? e.message : String(e);
         setReceiptLearningError(
           msg && msg.trim()
@@ -474,7 +479,7 @@ export function AdminPage() {
       if (Array.isArray(importAudit.items)) {
         setImportFormatAuditError(null);
       }
-      if (Array.isArray(receiptLearning.items)) {
+      if (!receiptLearningCatalogFetchFailed) {
         setReceiptLearningError(null);
       }
       setPaypayImportSummary(Array.isArray(monitor.items) ? monitor.items : []);
@@ -527,7 +532,9 @@ export function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [salesFilterYm, receiptLearningOrder, receiptLearningQuery, receiptLearningSort]);
+  },
+  [salesFilterYm, receiptLearningOrder, receiptLearningQuery, receiptLearningSort],
+);
 
   useEffect(() => {
     void load();
@@ -1512,12 +1519,15 @@ export function AdminPage() {
           OCR結果とユーザー補正から抽出した必要最小限データを、fingerprint単位で統合保存しています。管理者のみ編集・無効化・削除できます。
         </p>
         <p style={{ margin: "0 0 0.55rem", fontSize: "0.86rem", color: "var(--text-muted)" }}>
-          全体: {receiptLearningMeta?.total_count ?? 0} 件 / 有効: {receiptLearningMeta?.active_count ?? 0} 件 / 無効:{" "}
-          {receiptLearningMeta?.disabled_count ?? 0} 件
+          {receiptLearningQuery.trim() ? "検索該当" : "全体"}: {receiptLearningMeta?.total_count ?? 0} 件 / 有効:{" "}
+          {receiptLearningMeta?.active_count ?? 0} 件 / 無効: {receiptLearningMeta?.disabled_count ?? 0} 件
+          {receiptLearningQuery.trim() ? "（検索を空にすると全件表示）" : ""}
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "end", marginBottom: "0.55rem" }}>
           <label style={{ display: "grid", gap: "0.2rem" }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>検索（店名/カテゴリ）</span>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+              検索（店名/カテゴリ）※入力中は件数・一覧ともに絞り込み
+            </span>
             <input
               type="text"
               value={receiptLearningQuery}
@@ -1579,7 +1589,8 @@ export function AdminPage() {
                   setReceiptLearningRebuildMessage(
                     `再構築しました（補正走査 ${r.scanned} 件 / カタログ行 ${r.catalog_rows} 件 / 件数合計 ${r.catalog_samples_total}）。`,
                   );
-                  await load();
+                  setReceiptLearningQuery("");
+                  await load({ receiptCatalogQ: "" });
                 } catch (e) {
                   setReceiptLearningError(
                     e instanceof Error ? e.message : "学習カタログの再構築に失敗しました。",
