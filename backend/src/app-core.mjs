@@ -1148,31 +1148,77 @@ function receiptLearningYearMonth(rawDate) {
 
 const RECEIPT_LEARNING_GENERIC_YM = "0000-00";
 
+/** C: sample_count に応じた行スコアへの乗数（1回 / 2回 / 3回以上） */
+const RECEIPT_LEARNING_SAMPLE_COUNT_WEIGHT = Object.freeze({
+  /** n === 1 */
+  ONE: 0.3,
+  /** n === 2 */
+  TWO: 0.55,
+  /** n >= 3 */
+  THREE_PLUS: 1.0,
+});
+
 /**
- * 共有カタログの件数に応じた重み。3 回未満は信頼度を下げる（誤学習の影響を抑える）。
+ * C: 件数によるノイズ低減（カテゴリ推測・parseHints 共通）。
  * @param {unknown} sampleCount
  * @returns {number}
  */
 function receiptLearningSampleCountWeight(sampleCount) {
   const n = Math.max(1, Math.floor(Number(sampleCount) || 0));
-  if (n >= 3) return 1;
-  if (n === 2) return 0.55;
-  return 0.3;
+  if (n >= 3) return RECEIPT_LEARNING_SAMPLE_COUNT_WEIGHT.THREE_PLUS;
+  if (n === 2) return RECEIPT_LEARNING_SAMPLE_COUNT_WEIGHT.TWO;
+  return RECEIPT_LEARNING_SAMPLE_COUNT_WEIGHT.ONE;
 }
 
+/** B: レシートが具体年月でカタログ行が汎用（0000-00）のときに行スコアへ乗算する係数 */
+const RECEIPT_LEARNING_GENERIC_YM_DECAY_MULTIPLIER = 0.45;
+
 /**
- * レシート側に具体年月があるときのみ、カタログ行が 0000-00（汎用）なら減衰する。
+ * B: レシート側に具体年月があるときのみ、カタログ行が汎用なら減衰する（汎用同士は 1.0）。
  * @param {unknown} rowYm
  * @param {string} receiptYm
  * @returns {number}
  */
-function receiptLearningGenericYmDecayMultiplier(rowYm, receiptYm) {
+function receiptLearningGenericYmRowScoreFactor(rowYm, receiptYm) {
   const row = String(rowYm ?? "").trim();
   const rec = String(receiptYm ?? "").trim();
   if (rec === RECEIPT_LEARNING_GENERIC_YM || rec === "") return 1;
   if (row !== RECEIPT_LEARNING_GENERIC_YM) return 1;
-  return 0.45;
+  return RECEIPT_LEARNING_GENERIC_YM_DECAY_MULTIPLIER;
 }
+
+/** A: 個人補正 exact（matchStrength 100 相当）時のカテゴリ合算スコア倍率 */
+const RECEIPT_LEARNING_PERSONAL_EXACT_SCORE_MULT = 2.45;
+
+/** A: vendor_fallback 時の倍率 = BASE + min(RANGE_MAX, max(0, matchStrength - STRENGTH_REF) / SPREAD) */
+const RECEIPT_LEARNING_PERSONAL_VENDOR_FB_MULT_BASE = 1.12;
+const RECEIPT_LEARNING_PERSONAL_VENDOR_FB_MULT_RANGE_MAX = 0.95;
+const RECEIPT_LEARNING_PERSONAL_VENDOR_FB_MATCH_STRENGTH_REF = 10;
+const RECEIPT_LEARNING_PERSONAL_VENDOR_FB_MATCH_STRENGTH_SPREAD = 18;
+
+/**
+ * A: vendor_fallback の matchStrength からカテゴリ合算スコア倍率（約 1.12〜2.07）。
+ * @param {number} matchStrength
+ * @returns {number}
+ */
+function receiptLearningPersonalVendorFallbackScoreMult(matchStrength) {
+  const ms = Number(matchStrength);
+  const base = RECEIPT_LEARNING_PERSONAL_VENDOR_FB_MATCH_STRENGTH_REF;
+  const delta = Number.isFinite(ms) ? Math.max(0, ms - base) : 0;
+  return (
+    RECEIPT_LEARNING_PERSONAL_VENDOR_FB_MULT_BASE +
+    Math.min(
+      RECEIPT_LEARNING_PERSONAL_VENDOR_FB_MULT_RANGE_MAX,
+      delta / RECEIPT_LEARNING_PERSONAL_VENDOR_FB_MATCH_STRENGTH_SPREAD,
+    )
+  );
+}
+
+/** parseHints 側で加重後の「有効件数」が極端に小さいときのスコア下限（チューニング用） */
+const RECEIPT_LEARNING_PARSE_HINT_WEIGHTED_SCORE_FLOOR = 0.35;
+
+/** 共有カタログのカテゴリ素点: 具体年月が行と一致したときの加点（B の減衰とは別） */
+const RECEIPT_LEARNING_CATEGORY_SCORE_YM_MATCH_BONUS = 2;
 
 function buildReceiptLearningCatalogRow(summary, items, categoryNameHint) {
   const vendorLabel = String(summary?.vendorName ?? "").trim().slice(0, 120);
@@ -1545,7 +1591,9 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
     if (!hit?.id) continue;
     const rowYm = String(row?.ym ?? row?.year_month ?? "");
     let score = Math.max(1, Number(row?.sample_count ?? 1));
-    if (rowYm === ym && ym !== RECEIPT_LEARNING_GENERIC_YM) score += 2;
+    if (rowYm === ym && ym !== RECEIPT_LEARNING_GENERIC_YM) {
+      score += RECEIPT_LEARNING_CATEGORY_SCORE_YM_MATCH_BONUS;
+    }
     const rowTotal = Number(row?.total_amount ?? NaN);
     if (total != null && Number.isFinite(rowTotal) && rowTotal > 0) {
       const diff = Math.abs(rowTotal - total);
@@ -1566,7 +1614,7 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
     }
     const scRow = Math.max(1, Number(row?.sample_count ?? 1));
     score *= receiptLearningSampleCountWeight(scRow);
-    score *= receiptLearningGenericYmDecayMultiplier(rowYm, ym);
+    score *= receiptLearningGenericYmRowScoreFactor(rowYm, ym);
     const cur = scoreByCategoryId.get(Number(hit.id)) ?? { name: String(hit.name), score: 0 };
     cur.score += score;
     scoreByCategoryId.set(Number(hit.id), cur);
@@ -1582,10 +1630,11 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
     if (st) {
       let mult = 1;
       if (learnedPersonal.mode === "exact") {
-        mult = 2.45;
+        mult = RECEIPT_LEARNING_PERSONAL_EXACT_SCORE_MULT;
       } else if (learnedPersonal.mode === "vendor_fallback") {
-        const ms = Number(learnedPersonal.matchStrength ?? 10);
-        mult = 1.12 + Math.min(0.95, Math.max(0, ms - 10) / 18);
+        mult = receiptLearningPersonalVendorFallbackScoreMult(
+          learnedPersonal.matchStrength ?? RECEIPT_LEARNING_PERSONAL_VENDOR_FB_MATCH_STRENGTH_REF,
+        );
       }
       st.score *= mult;
     }
@@ -1660,8 +1709,8 @@ async function applySharedLearningCatalogParseHints(pool, summary, items, ocrLin
     const rowYm = String(row?.ym ?? row?.year_month ?? "");
     const rowTrust =
       receiptLearningSampleCountWeight(scBase) *
-      receiptLearningGenericYmDecayMultiplier(rowYm, receiptYm);
-    const sc = Math.max(0.35, scBase * rowTrust);
+      receiptLearningGenericYmRowScoreFactor(rowYm, receiptYm);
+    const sc = Math.max(RECEIPT_LEARNING_PARSE_HINT_WEIGHTED_SCORE_FLOOR, scBase * rowTrust);
     const vLabel = row?.vendor_label != null ? String(row.vendor_label).trim() : "";
     const rowTokens = String(row?.item_tokens ?? "")
       .split("|")
