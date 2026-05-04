@@ -650,7 +650,7 @@ export function scoreReceiptLearningCatalogRow(row, ctx) {
 
 /**
  * レシート取込のメモ欄用。オブジェクトが渡っても `vendorName` / `name` 等から文字列を取り出す。
- * 表示は `normalizeVendorForMatch` 済みキー（DB の vendor_norm と同系）を「今回は、」に続ける。
+ * 値は `normalizeVendorForMatch` 済みキー（DB の vendor_norm と同系）。
  *
  * @param {unknown} vendorNorm 文字列または店名を含むオブジェクト
  * @returns {string} 正規化キーが 2 文字未満なら空
@@ -659,6 +659,5 @@ export function formatReceiptSuggestedMemoFromVendorNorm(vendorNorm) {
   const plain = coerceVendorNameInputToPlainString(vendorNorm);
   const norm = normalizeVendorForMatch(plain);
   if (norm.length < 2) return "";
-  const memoText = `今回は、${norm}`;
-  return memoText.slice(0, 500);
+  return norm.slice(0, 500);
 }
