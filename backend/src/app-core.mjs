@@ -474,7 +474,7 @@ const RECEIPT_CATEGORY_KEYWORDS = {
   transport: ["電車", "バス", "タクシー", "駐車", "ガソリン", "高速", "ic"],
   utility: ["電気", "ガス", "水道", "通信", "wifi", "インターネット", "携帯"],
   medical: ["薬", "病院", "診療", "処方", "クリニック"],
-  leisure: ["映画", "カフェ", "外食", "レジャー", "趣味", "書籍"],
+  leisure: ["映画", "カフェ", "外食", "レジャー", "趣味", "書籍", "割烹", "鰻", "うなぎ", "食堂"],
 };
 
 const RECEIPT_CATEGORY_ALIASES = {
@@ -672,6 +672,16 @@ const RECEIPT_LINE_ITEM_KEYWORDS = {
     "文房具",
     "ノート",
     "ペン",
+    "割烹",
+    "鰻重",
+    "うな重",
+    "うな丼",
+    "丼",
+    "定食",
+    "御膳",
+    "コース",
+    "お食事",
+    "飲食",
   ],
   transport: ["定期", "チャージ", "１０００円券", "回数券", "パーク券", "駐車券", "etc"],
   utility: ["電気代", "ガス代", "水道代", "通信料", "プロバイダ", "ひかり", "ドコモ", "au", "ソフトバンク"],
@@ -689,7 +699,9 @@ function suggestExpenseCategoryFromPremiumLineItems(items, userExpenseCategories
   if (!itemCorpus || itemCorpus.length < 2) return null;
 
   const vendorWeak =
-    receiptVendorSignalWeak(vendor) || normalizeVendorName(vendor).length < 4;
+    receiptVendorSignalWeak(vendor) ||
+    normalizeVendorName(vendor).length < 4 ||
+    isLikelyGarbledVendorName(vendor);
 
   /** @type {Record<string, { score: number; hits: number }>} */
   const tagStats = {};
@@ -1108,7 +1120,13 @@ function detectReceiptPaymentLabel(ocrLines) {
   const text = Array.isArray(ocrLines) ? ocrLines.map((x) => String(x ?? "")).join("\n") : "";
   if (!text) return null;
   if (/paypay|ペイペイ/i.test(text)) return "PayPay支払い";
-  if (/クレジット|credit|visa|master|jcb|amex|diners/i.test(text)) return "クレジット払い";
+  if (
+    /クレジット|credit|visa|master|jcb|amex|diners|mups|ムップ|デビット|クレジットカード|デビットカード|ギャラ|支払い方法/i.test(
+      text,
+    )
+  ) {
+    return "クレジット払い";
+  }
   return null;
 }
 
@@ -1253,6 +1271,51 @@ function inferVendorNameFromOcrLines(ocrLines) {
     if (row.pattern.test(joined)) return row.vendorName;
   }
   return null;
+}
+
+/**
+ * Textract の VENDOR_NAME が英数字ノイズのとき、先頭付近の OCR 行から店名らしい日本語行を推定する。
+ * @param {string[]|undefined} ocrLines
+ * @returns {string|null}
+ */
+function inferVendorLabelFromJapaneseReceiptOcr(ocrLines) {
+  if (!Array.isArray(ocrLines) || ocrLines.length === 0) return null;
+  const lines = ocrLines.map((x) => String(x ?? "").trim()).filter(Boolean);
+  /** @param {string} s */
+  const countJp = (s) => (s.match(/[ぁ-んァ-ヶ一-龥]/g) ?? []).length;
+  const storeHints =
+    /店|館|亭|屋|堂|割烹|寿司|食堂|レストラン|カフェ|珈琲|うなぎ|鰻|ラーメン|焼肉|スーパー|コンビニ|ドラッグ/i;
+  const addrLike = /丁目|番地|〒|\d{3}-\d{4}$/;
+  let best = null;
+  let bestScore = -Infinity;
+  const maxLine = Math.min(lines.length, 24);
+  for (let i = 0; i < maxLine; i += 1) {
+    const line = lines[i];
+    if (line.length > 96) continue;
+    if (JP_PHONE_IN_OCR_RE.test(line)) continue;
+    if (lineLooksLikeTotal(line) || itemNameLooksLikeAggregateReceiptLine(line)) continue;
+    const jp = countJp(line);
+    if (jp < 2) continue;
+    if (addrLike.test(line) && jp < 8) continue;
+    const core = line.replace(/[¥￥,\s]/g, "");
+    if (/^[0-9０-９.:：]+$/.test(core)) continue;
+    let score = jp * 4 + Math.min(line.length, 48);
+    if (storeHints.test(line)) score += 28;
+    if (i <= 5) score += 14;
+    if (i <= 2) score += 10;
+    if (/株式会社|\(株\)|有限会社|\(有\)/.test(line)) score -= 6;
+    if (/^[A-Za-z0-9\s\-_/]{2,20}$/.test(line.replace(/\s/g, ""))) score -= 120;
+    if (isLikelyGarbledVendorName(line) && jp < 6) score -= 40;
+    if (score > bestScore) {
+      bestScore = score;
+      best = line;
+    }
+  }
+  if (!best || bestScore < 22) return null;
+  const trimmed = best.replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!trimmed) return null;
+  if (isLikelyGarbledVendorName(trimmed) && countJp(trimmed) < 4) return null;
+  return trimmed;
 }
 function isLikelyGarbledVendorName(raw) {
   const s = String(raw ?? "").trim();
@@ -8508,7 +8571,9 @@ export async function handleApiRequest(req, options = {}) {
             receiptVendorSignalWeak(adjustedSummary?.vendorName) ||
             isLikelyGarbledVendorName(adjustedSummary?.vendorName)
           ) {
-            const inferredVendor = inferVendorNameFromOcrLines(result?.ocrLines ?? []);
+            const lines = result?.ocrLines ?? [];
+            let inferredVendor = inferVendorNameFromOcrLines(lines);
+            if (!inferredVendor) inferredVendor = inferVendorLabelFromJapaneseReceiptOcr(lines);
             if (inferredVendor) {
               adjustedSummary.vendorName = inferredVendor;
             }
@@ -8600,7 +8665,9 @@ export async function handleApiRequest(req, options = {}) {
           }
 
           if (isLikelyGarbledVendorName(adjustedSummary?.vendorName)) {
-            const inferredAfterLearn = inferVendorNameFromOcrLines(result?.ocrLines ?? []);
+            const ol = result?.ocrLines ?? [];
+            let inferredAfterLearn = inferVendorNameFromOcrLines(ol);
+            if (!inferredAfterLearn) inferredAfterLearn = inferVendorLabelFromJapaneseReceiptOcr(ol);
             if (inferredAfterLearn) {
               adjustedSummary.vendorName = inferredAfterLearn;
             }
@@ -8943,7 +9010,13 @@ export async function handleApiRequest(req, options = {}) {
             const vnRaw = String(
               adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
             ).trim();
-            if (vnRaw) body.suggestedMemo = vnRaw.slice(0, 500);
+            if (vnRaw && !isLikelyGarbledVendorName(vnRaw)) {
+              body.suggestedMemo = vnRaw.slice(0, 500);
+            }
+          }
+          if (!String(body.suggestedMemo ?? "").trim()) {
+            const fromOcrVendor = inferVendorLabelFromJapaneseReceiptOcr(result?.ocrLines ?? []);
+            if (fromOcrVendor) body.suggestedMemo = fromOcrVendor.slice(0, 500);
           }
           const memoFromLinesFallback = buildReceiptMemoFromParsedLineItems(result?.items ?? []);
           if (
