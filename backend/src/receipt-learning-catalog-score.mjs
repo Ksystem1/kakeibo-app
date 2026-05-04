@@ -1,10 +1,11 @@
 /**
- * 共有レシート学習カタログ（receipt_learning_catalog）のスコアリング用定数と純粋関数。
+ * 共有レシート学習カタログ（receipt_learning_catalog）のスコアリング・ヒント解決用の純粋関数。
  * B/C（汎用年月減衰・件数重み）の単体テスト用に app-core から分離。
  *
- * カテゴリ ID の決定は行わない。DB 行の category_name_hint をユーザー家計簿のカテゴリへ
- * 紐づける処理は app-core の suggestExpenseCategoryFromSharedLearningCatalog 側で行う。
+ * category_name_hint → ユーザー支出カテゴリ ID は {@link resolveSharedLearningCatalogHintToUserCategory} で解決する。
  */
+
+import { normalizeCategoryNameKey } from "./category-utils.mjs";
 
 export const RECEIPT_LEARNING_GENERIC_YM = "0000-00";
 
@@ -94,6 +95,162 @@ export const RECEIPT_LEARNING_CATEGORY_LINE_OVERLAP_SCORE_PER_TOKEN = 3;
 
 /** カテゴリ推測用の共有カタログ取得件数上限 */
 export const RECEIPT_LEARNING_CATEGORY_CATALOG_QUERY_LIMIT = 400;
+
+/**
+ * `category_name_hint` とユーザー支出カテゴリ名の文字列類似度しきい値（0〜1、レーベンシュタイン正規化）。
+ * これ未満は部分一致に頼らずフォールバックカテゴリへ誘導する。
+ */
+export const RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_THRESHOLD = 0.68;
+
+/**
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function levenshteinDistance(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const v0 = new Array(n + 1);
+  const v1 = new Array(n + 1);
+  for (let j = 0; j <= n; j += 1) v0[j] = j;
+  for (let i = 0; i < m; i += 1) {
+    v1[0] = i + 1;
+    for (let j = 0; j < n; j += 1) {
+      const cost = a[i] === b[j] ? 0 : 1;
+      v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+    }
+    for (let j = 0; j <= n; j += 1) v0[j] = v1[j];
+  }
+  return v0[n];
+}
+
+/**
+ * 正規化済み同士の簡易類似度 0〜1
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function normalizedStringSimilarity01(a, b) {
+  if (a.length === 0 && b.length === 0) return 1;
+  if (a.length === 0 || b.length === 0) return 0;
+  const d = levenshteinDistance(a, b);
+  return 1 - d / Math.max(a.length, b.length, 1);
+}
+
+/**
+ * ヒントがどのカテゴリにもマッチしないときの支出フォールバック（その他系 → 一覧末尾）。
+ * @param {Array<{ id: unknown, name: unknown }>} userExpenseCategories ORDER BY sort_order 済みを推奨
+ * @returns {{ id: number, name: string, match: string } | null}
+ */
+export function pickFallbackSharedLearningExpenseCategory(userExpenseCategories) {
+  const cats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
+  if (cats.length === 0) return null;
+  const nk = (x) => normalizeCategoryNameKey(x);
+  for (const label of ["その他（支出）", "その他", "雑費"]) {
+    const want = nk(label);
+    const hit = cats.find((c) => nk(c?.name ?? "") === want);
+    if (hit?.id != null) {
+      return { id: Number(hit.id), name: String(hit.name), match: "fallback_exact_label" };
+    }
+  }
+  const misc = cats.find((c) => {
+    const k = nk(c?.name ?? "");
+    return (
+      k.includes("その他") ||
+      k.includes("雑費") ||
+      k === "other" ||
+      /^misc\b/i.test(String(c?.name ?? ""))
+    );
+  });
+  if (misc?.id != null) {
+    return { id: Number(misc.id), name: String(misc.name), match: "fallback_misc_keyword" };
+  }
+  const last = cats[cats.length - 1];
+  return { id: Number(last.id), name: String(last.name), match: "fallback_list_tail" };
+}
+
+/**
+ * 共有カタログの category_name_hint を、ユーザー支出カテゴリ一覧へマッピングする。
+ * 優先度: 正規化名の完全一致 → 部分一致（長い一致を優先）→ 類似度が閾値以上 → フォールバック。
+ *
+ * @param {unknown} hint
+ * @param {Array<{ id: unknown, name: unknown }>} userExpenseCategories
+ * @param {{ similarityThreshold?: number }} [options]
+ * @returns {{ id: number, name: string, match: string, similarity?: number } | null}
+ */
+export function resolveSharedLearningCatalogHintToUserCategory(
+  hint,
+  userExpenseCategories,
+  options = {},
+) {
+  const cats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
+  if (cats.length === 0) return null;
+  const threshold =
+    options.similarityThreshold ?? RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_THRESHOLD;
+
+  const hintRaw = String(hint ?? "").trim();
+  if (!hintRaw) {
+    return pickFallbackSharedLearningExpenseCategory(cats);
+  }
+
+  const hintKey = normalizeCategoryNameKey(hintRaw);
+  if (!hintKey) {
+    return pickFallbackSharedLearningExpenseCategory(cats);
+  }
+
+  for (const c of cats) {
+    const ck = normalizeCategoryNameKey(c?.name ?? "");
+    if (ck === hintKey && c?.id != null) {
+      return {
+        id: Number(c.id),
+        name: String(c.name),
+        match: "exact",
+        similarity: 1,
+      };
+    }
+  }
+
+  let bestSub = null;
+  let bestOverlapRatio = -1;
+  for (const c of cats) {
+    const ck = normalizeCategoryNameKey(c?.name ?? "");
+    if (!ck || c?.id == null) continue;
+    if (ck.includes(hintKey) || hintKey.includes(ck)) {
+      const overlapRatio =
+        Math.min(ck.length, hintKey.length) / Math.max(ck.length, hintKey.length, 1);
+      if (overlapRatio > bestOverlapRatio) {
+        bestOverlapRatio = overlapRatio;
+        bestSub = { id: Number(c.id), name: String(c.name) };
+      }
+    }
+  }
+  if (bestSub != null) {
+    return {
+      ...bestSub,
+      match: "substring",
+      similarity: bestOverlapRatio,
+    };
+  }
+
+  let bestSim = -1;
+  let bestSimCat = null;
+  for (const c of cats) {
+    const ck = normalizeCategoryNameKey(c?.name ?? "");
+    if (!ck || c?.id == null) continue;
+    const sim = normalizedStringSimilarity01(hintKey, ck);
+    if (sim >= threshold && sim > bestSim) {
+      bestSim = sim;
+      bestSimCat = { id: Number(c.id), name: String(c.name) };
+    }
+  }
+  if (bestSimCat != null) {
+    return { ...bestSimCat, match: "similarity", similarity: bestSim };
+  }
+
+  return pickFallbackSharedLearningExpenseCategory(cats);
+}
 
 /**
  * @typedef {{

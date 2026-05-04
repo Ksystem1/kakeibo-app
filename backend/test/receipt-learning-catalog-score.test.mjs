@@ -4,8 +4,10 @@ import {
   RECEIPT_LEARNING_GENERIC_YM,
   explainReceiptLearningCatalogRowScore,
   normalizeReceiptLearningToken,
+  pickFallbackSharedLearningExpenseCategory,
   receiptLearningGenericYmRowScoreFactor,
   receiptLearningSampleCountWeight,
+  resolveSharedLearningCatalogHintToUserCategory,
   scoreReceiptLearningCatalogRow,
 } from "../src/receipt-learning-catalog-score.mjs";
 
@@ -142,6 +144,49 @@ test("パターン: カタログ item_tokens と OCR 明細の表記ゆれ → n
     tokenSet,
   });
   assert.equal(ex.steps.overlapCount, 1);
+});
+
+test("resolveSharedLearningCatalogHintToUserCategory: 完全一致", () => {
+  const cats = [
+    { id: 1, name: "食費" },
+    { id: 2, name: "医療・健康" },
+  ];
+  const r = resolveSharedLearningCatalogHintToUserCategory("食費", cats, {});
+  assert.equal(r.id, 1);
+  assert.equal(r.match, "exact");
+});
+
+test("resolveSharedLearningCatalogHintToUserCategory: 部分一致（学習ヒントが短い）", () => {
+  const cats = [{ id: 10, name: "食費・日用品" }];
+  const r = resolveSharedLearningCatalogHintToUserCategory("食費", cats, {});
+  assert.equal(r.id, 10);
+  assert.equal(r.match, "substring");
+});
+
+test("resolveSharedLearningCatalogHintToUserCategory: 類似度（部分一致が無いとき編集距離）", () => {
+  const cats = [{ id: 99, name: "カテゴリabcd" }];
+  const r = resolveSharedLearningCatalogHintToUserCategory("カテゴリabce", cats, {});
+  assert.equal(r.id, 99);
+  assert.equal(r.match, "similarity");
+  assert.ok((r.similarity ?? 0) >= 0.68);
+});
+
+test("resolveSharedLearningCatalogHintToUserCategory: 合致なし → その他系フォールバック", () => {
+  const cats = [
+    { id: 1, name: "食費" },
+    { id: 2, name: "その他（支出）" },
+  ];
+  const r = resolveSharedLearningCatalogHintToUserCategory("存在しないカテゴリ名ZZZ", cats, {
+    similarityThreshold: 0.99,
+  });
+  assert.equal(r.id, 2);
+  assert.ok(r.match.startsWith("fallback_"));
+});
+
+test("pickFallbackSharedLearningExpenseCategory: 末尾カテゴリ", () => {
+  const r = pickFallbackSharedLearningExpenseCategory([{ id: 7, name: "A" }]);
+  assert.equal(r.id, 7);
+  assert.equal(r.match, "fallback_list_tail");
 });
 
 test("explainReceiptLearningCatalogRowScore は category_name_hint を見ない（caller がカテゴリ解決）", () => {

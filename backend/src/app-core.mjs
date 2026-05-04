@@ -34,6 +34,7 @@ import {
   normalizeReceiptLearningToken,
   receiptLearningSampleCountWeight,
   receiptLearningGenericYmRowScoreFactor,
+  resolveSharedLearningCatalogHintToUserCategory,
   scoreReceiptLearningCatalogRow,
 } from "./receipt-learning-catalog-score.mjs";
 import {
@@ -1538,12 +1539,9 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
   for (const row of rows) {
     const hint = String(row?.category_name_hint ?? "").trim();
     if (!hint) continue;
-    const hintKey = normalizeCategoryNameKey(hint);
-    const hit = userCats.find((c) => {
-      const ck = normalizeCategoryNameKey(c?.name ?? "");
-      return ck === hintKey || ck.includes(hintKey) || hintKey.includes(ck);
-    });
-    if (!hit?.id) continue;
+    const mapped = resolveSharedLearningCatalogHintToUserCategory(hint, userCats, {});
+    if (mapped == null || mapped.id == null) continue;
+    const hit = { id: mapped.id, name: mapped.name };
     const score = scoreReceiptLearningCatalogRow(row, {
       receiptYm: ym,
       receiptTotal: total,
