@@ -5,6 +5,7 @@ import {
   explainReceiptLearningCatalogRowScore,
   normalizeReceiptLearningToken,
   pickFallbackSharedLearningExpenseCategory,
+  receiptCatalogAmountDiffBest,
   receiptLearningGenericYmRowScoreFactor,
   receiptLearningSampleCountWeight,
   resolveSharedLearningCatalogHintToUserCategory,
@@ -103,7 +104,7 @@ test("パターン: 金額が大きくずれる → 近接ボーナスなし（�
   assert.equal(e1.steps.amountBonus, 0);
   assert.equal(e1.steps.amountPenalty, 0);
 
-  const rowFar = { ...rowNear, total_amount: 12000 };
+  const rowFar = { ...rowNear, total_amount: 12501 };
   const e2 = explainReceiptLearningCatalogRowScore(rowFar, {
     receiptYm: "2026-05",
     receiptTotal: 500,
@@ -163,12 +164,28 @@ test("resolveSharedLearningCatalogHintToUserCategory: 部分一致（学習ヒ�
   assert.equal(r.match, "substring");
 });
 
+test("resolveSharedLearningCatalogHintToUserCategory: セグメント（食費・日用品 → 食費）", () => {
+  const cats = [
+    { id: 1, name: "食費" },
+    { id: 2, name: "日用品" },
+  ];
+  const r = resolveSharedLearningCatalogHintToUserCategory("食費・日用品", cats, {});
+  assert.ok(r.id === 1 || r.id === 2);
+  assert.equal(r.match, "segment");
+});
+
+test("receiptCatalogAmountDiffBest: 支払と明細が離れていてもカタログに近い方を採用", () => {
+  const b = receiptCatalogAmountDiffBest(1000, 5000, 1000);
+  assert.equal(b.diff, 0);
+  assert.equal(b.used, "lines_vs_catalog");
+});
+
 test("resolveSharedLearningCatalogHintToUserCategory: 類似度（部分一致が無いとき編集距離）", () => {
   const cats = [{ id: 99, name: "カテゴリabcd" }];
   const r = resolveSharedLearningCatalogHintToUserCategory("カテゴリabce", cats, {});
   assert.equal(r.id, 99);
   assert.equal(r.match, "similarity");
-  assert.ok((r.similarity ?? 0) >= 0.68);
+  assert.ok((r.similarity ?? 0) >= 0.58);
 });
 
 test("resolveSharedLearningCatalogHintToUserCategory: 合致なし → その他系フォールバック", () => {

@@ -1497,6 +1497,9 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
   const ym = receiptLearningYearMonth(summary?.date);
   const totalRaw = Number(summary?.totalAmount ?? NaN);
   const total = Number.isFinite(totalRaw) && totalRaw > 0 ? Math.round(totalRaw) : null;
+  const linesSumRaw = sumReceiptLineItemAmounts(Array.isArray(summary?.items) ? summary.items : []);
+  const receiptTotalLinesSum =
+    Number.isFinite(linesSumRaw) && linesSumRaw > 0 ? Math.round(linesSumRaw) : null;
   const itemTokensNow = Array.from(
     new Set(
       (Array.isArray(summary?.items) ? summary.items : [])
@@ -1545,6 +1548,7 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
     const score = scoreReceiptLearningCatalogRow(row, {
       receiptYm: ym,
       receiptTotal: total,
+      receiptTotalLinesSum,
       tokenSet: tokenSetNow,
       vendorNorm,
     });
@@ -1583,7 +1587,7 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
       bestScore = st.score;
     }
   }
-  if (bestId == null || bestScore <= 0) return null;
+  if (bestId == null || !Number.isFinite(bestScore) || bestScore <= 0) return null;
   return { id: bestId, name: bestName, source: "shared_learning" };
 }
 
@@ -8228,45 +8232,6 @@ export async function handleApiRequest(req, options = {}) {
           let learnedMemoValue = "";
           let learnedMode = null;
           let sharedLearningParseHints = [];
-          if (subscriptionActive) {
-            try {
-              const learned = await findLearnedReceiptCorrection(
-                pool,
-                userId,
-                catWhere,
-                result?.summary,
-                result?.items ?? [],
-              );
-              if (learned?.hit) {
-                const hasCat = learned.categoryId != null;
-                const hasMemo = learned.memoPresent;
-                if (hasCat || hasMemo) {
-                  learnCorrectionHit = true;
-                  learnedMode = learned.mode;
-                  if (hasCat) {
-                    learnedCategoryId = Number(learned.categoryId);
-                    const [cn] = await pool.query(
-                      `SELECT c.name FROM categories c
-                       WHERE ${catWhere} AND c.id = ? AND c.is_archived = 0 LIMIT 1`,
-                      [userId, userId, learnedCategoryId],
-                    );
-                    if (Array.isArray(cn) && cn[0]?.name) {
-                      learnedCategoryName = String(cn[0].name);
-                    }
-                  }
-                  if (hasMemo) {
-                    learnedMemoPresent = true;
-                    learnedMemoValue = learned.memoValue;
-                  }
-                }
-              }
-            } catch (e) {
-              const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
-              if (code !== "ER_NO_SUCH_TABLE") {
-                logError("receipts.parse.correction_lookup", e);
-              }
-            }
-          }
 
           let reconcileAdjusted = false;
           let reconcilePremiumNote = null;
@@ -8316,6 +8281,46 @@ export async function handleApiRequest(req, options = {}) {
             const curTot = Number(adjustedSummary?.totalAmount ?? NaN);
             if (fixedTot != null && Number.isFinite(curTot) && Math.abs(fixedTot - curTot) >= 1) {
               adjustedSummary = { ...adjustedSummary, totalAmount: fixedTot };
+            }
+          }
+
+          if (subscriptionActive) {
+            try {
+              const learned = await findLearnedReceiptCorrection(
+                pool,
+                userId,
+                catWhere,
+                adjustedSummary,
+                result?.items ?? [],
+              );
+              if (learned?.hit) {
+                const hasCat = learned.categoryId != null;
+                const hasMemo = learned.memoPresent;
+                if (hasCat || hasMemo) {
+                  learnCorrectionHit = true;
+                  learnedMode = learned.mode;
+                  if (hasCat) {
+                    learnedCategoryId = Number(learned.categoryId);
+                    const [cn] = await pool.query(
+                      `SELECT c.name FROM categories c
+                       WHERE ${catWhere} AND c.id = ? AND c.is_archived = 0 LIMIT 1`,
+                      [userId, userId, learnedCategoryId],
+                    );
+                    if (Array.isArray(cn) && cn[0]?.name) {
+                      learnedCategoryName = String(cn[0].name);
+                    }
+                  }
+                  if (hasMemo) {
+                    learnedMemoPresent = true;
+                    learnedMemoValue = learned.memoValue;
+                  }
+                }
+              }
+            } catch (e) {
+              const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+              if (code !== "ER_NO_SUCH_TABLE") {
+                logError("receipts.parse.correction_lookup", e);
+              }
             }
           }
 

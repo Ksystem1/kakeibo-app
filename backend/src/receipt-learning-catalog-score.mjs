@@ -82,13 +82,15 @@ export const RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_MAX_DIFF = 1;
 /** ほぼ一致時の加点 */
 export const RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_BONUS = 5;
 
-/** 差がこれ以下なら粗一致加点（ほぼ一致より緩い） */
-export const RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_MAX_DIFF = 20;
-export const RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_BONUS = 2;
+/** 差がこれ以下なら粗一致加点（ほぼ一致より緩い）— 支払と明細でズレるレシート向けに広め */
+export const RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_MAX_DIFF = 120;
 
 /** 差がこれ以上ならペナルティ（大口ずれのノイズ抑制） */
-export const RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_MIN_DIFF = 5000;
+export const RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_MIN_DIFF = 12000;
 export const RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_PENALTY = 1;
+
+/** 支払合計と明細合計の両方があるとき、カタログ total がどちらかに寄れば加点対象にするための最小乖離（これ以上離れたら別系とみなす） */
+export const RECEIPT_LEARNING_AMOUNT_PAY_VS_LINES_DIVERGENCE_WARN = 80;
 
 /** 明細トークン重複 1 件あたりの素点加点係数（overlap に乗算） */
 export const RECEIPT_LEARNING_CATEGORY_LINE_OVERLAP_SCORE_PER_TOKEN = 3;
@@ -100,7 +102,32 @@ export const RECEIPT_LEARNING_CATEGORY_CATALOG_QUERY_LIMIT = 400;
  * `category_name_hint` とユーザー支出カテゴリ名の文字列類似度しきい値（0〜1、レーベンシュタイン正規化）。
  * これ未満は部分一致に頼らずフォールバックカテゴリへ誘導する。
  */
-export const RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_THRESHOLD = 0.68;
+export const RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_THRESHOLD = 0.58;
+
+/**
+ * 学習カタログ行の合計と、支払合計・明細合計の近い方を採用して差分（円）を得る。
+ * 明細合計と支払合計が大きく違うレシートでも、片方に合えば金額加点の対象にする。
+ *
+ * @param {number} rowTotalParsed
+ * @param {number | null} receiptPayment
+ * @param {number | null} receiptLinesSum
+ * @returns {{ diff: number, used: string, altDiff: number | null } | null}
+ */
+export function receiptCatalogAmountDiffBest(rowTotalParsed, receiptPayment, receiptLinesSum) {
+  const payOk =
+    receiptPayment != null && Number.isFinite(receiptPayment) && receiptPayment > 0;
+  const lineOk =
+    receiptLinesSum != null && Number.isFinite(receiptLinesSum) && receiptLinesSum > 0;
+  const dPay = payOk ? Math.abs(rowTotalParsed - Math.round(receiptPayment)) : null;
+  const dLine = lineOk ? Math.abs(rowTotalParsed - Math.round(receiptLinesSum)) : null;
+  if (dPay == null && dLine == null) return null;
+  if (dPay != null && dLine != null) {
+    if (dPay <= dLine) return { diff: dPay, used: "payment_vs_catalog", altDiff: dLine };
+    return { diff: dLine, used: "lines_vs_catalog", altDiff: dPay };
+  }
+  if (dPay != null) return { diff: dPay, used: "payment_vs_catalog", altDiff: null };
+  return { diff: /** @type {number} */ (dLine), used: "lines_vs_catalog", altDiff: null };
+}
 
 /**
  * @param {string} a
@@ -212,6 +239,32 @@ export function resolveSharedLearningCatalogHintToUserCategory(
     }
   }
 
+  const segmentSplit = /[・／/｜|]/;
+  if (segmentSplit.test(hintRaw)) {
+    const parts = hintRaw
+      .split(segmentSplit)
+      .map((x) => normalizeCategoryNameKey(x))
+      .filter((x) => x.length >= 2);
+    let bestSegCat = null;
+    let bestSegR = -1;
+    for (const seg of parts) {
+      for (const c of cats) {
+        const ck = normalizeCategoryNameKey(c?.name ?? "");
+        if (!ck || c?.id == null) continue;
+        if (ck === seg || ck.includes(seg) || seg.includes(ck)) {
+          const r = Math.min(ck.length, seg.length) / Math.max(ck.length, seg.length, 1);
+          if (r > bestSegR) {
+            bestSegR = r;
+            bestSegCat = { id: Number(c.id), name: String(c.name) };
+          }
+        }
+      }
+    }
+    if (bestSegCat != null) {
+      return { ...bestSegCat, match: "segment", similarity: bestSegR };
+    }
+  }
+
   let bestSub = null;
   let bestOverlapRatio = -1;
   for (const c of cats) {
@@ -256,10 +309,12 @@ export function resolveSharedLearningCatalogHintToUserCategory(
  * @typedef {{
  *   receiptYm: string,
  *   receiptTotal: number | null,
+ *   receiptTotalLinesSum?: number | null,
  *   tokenSet: Set<string>,
  *   vendorNorm?: string | null,
  * }} ReceiptLearningCatalogScoreCtx
  * tokenSet は OCR 明細名を normalizeReceiptLearningToken 済みの集合。
+ * receiptTotalLinesSum は明細金額の合算（支払合計と乖離する場合のスコア用）。
  */
 
 /**
@@ -282,12 +337,20 @@ export function resolveSharedLearningCatalogHintToUserCategory(
  *     rowYm: string,
  *     rowTotalParsed: number | null,
  *     receiptTotalUsed: number | null,
+ *     receiptTotalLinesSum: number | null,
+ *     amountDiffBest: number | null,
+ *     amountDiffSource: string | null,
+ *     payVsLinesGap: number | null,
  *   }
  * }}
  */
 export function explainReceiptLearningCatalogRowScore(row, ctx) {
   const receiptYm = ctx.receiptYm;
   const total = ctx.receiptTotal;
+  const linesSum =
+    ctx.receiptTotalLinesSum != null && Number.isFinite(Number(ctx.receiptTotalLinesSum))
+      ? Math.round(Number(ctx.receiptTotalLinesSum))
+      : null;
   const tokenSetNow = ctx.tokenSet;
 
   const rowYm = String(row?.ym ?? row?.year_month ?? "");
@@ -305,19 +368,48 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
   const rowTotal = Number(row?.total_amount ?? NaN);
   const rowTotalParsed = Number.isFinite(rowTotal) && rowTotal > 0 ? Math.round(rowTotal) : null;
 
-  if (total != null && rowTotalParsed != null) {
-    const diff = Math.abs(rowTotalParsed - total);
-    if (diff <= RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_MAX_DIFF) {
-      amountBonus = RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_BONUS;
-      subtotal += amountBonus;
-    } else if (diff <= RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_MAX_DIFF) {
-      amountBonus = RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_BONUS;
-      subtotal += amountBonus;
-    } else if (diff >= RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_MIN_DIFF) {
-      amountPenalty = RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_PENALTY;
-      subtotal -= amountPenalty;
+  let amountDiffBest = null;
+  /** @type {string | null} */
+  let amountDiffSource = null;
+  let payVsLinesGap = null;
+  if (
+    total != null &&
+    Number.isFinite(total) &&
+    total > 0 &&
+    linesSum != null &&
+    linesSum > 0
+  ) {
+    payVsLinesGap = Math.abs(Math.round(total) - linesSum);
+  }
+
+  if (rowTotalParsed != null) {
+    const payOk = total != null && Number.isFinite(total) && total > 0;
+    const lineOk = linesSum != null && linesSum > 0;
+    if (payOk || lineOk) {
+      const best = receiptCatalogAmountDiffBest(
+        rowTotalParsed,
+        payOk ? total : null,
+        lineOk ? linesSum : null,
+      );
+      if (best != null) {
+        amountDiffBest = best.diff;
+        amountDiffSource = best.used;
+        const diff = best.diff;
+        if (diff <= RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_MAX_DIFF) {
+          amountBonus = RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_BONUS;
+          subtotal += amountBonus;
+        } else if (diff <= RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_MAX_DIFF) {
+          amountBonus = RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_BONUS;
+          subtotal += amountBonus;
+        } else if (diff >= RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_MIN_DIFF) {
+          amountPenalty = RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_PENALTY;
+          subtotal -= amountPenalty;
+        }
+      }
     }
   }
+
+  subtotal = Math.max(0.25, subtotal);
 
   const rowTokensRaw = String(row?.item_tokens ?? "")
     .split("|")
@@ -354,14 +446,23 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
     rowYm,
     rowTotalParsed,
     receiptTotalUsed: total,
+    receiptTotalLinesSum: linesSum,
+    amountDiffBest,
+    amountDiffSource,
+    payVsLinesGap,
     rowItemTokensRawSample: rowTokensRaw.slice(0, 8),
   };
 
+  const payLineMismatch =
+    payVsLinesGap != null && payVsLinesGap >= RECEIPT_LEARNING_AMOUNT_PAY_VS_LINES_DIVERGENCE_WARN;
   debugScoreLog({
     vendorNorm: ctx.vendorNorm ?? null,
     rowSampleCount: row?.sample_count,
     steps,
     finalScore,
+    payLineMismatch,
+    warnVeryLowScore: finalScore < 0.15,
+    warnSubtotalBeforeWeights: subtotalBeforeWeights < 1,
   });
 
   return { finalScore, steps };
