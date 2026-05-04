@@ -28,6 +28,14 @@ import {
   receiptOcrSnapshotContentEqualForLearn,
 } from "./receipt-learn.mjs";
 import {
+  RECEIPT_LEARNING_GENERIC_YM,
+  RECEIPT_LEARNING_CATEGORY_CATALOG_QUERY_LIMIT,
+  RECEIPT_LEARNING_PARSE_HINT_WEIGHTED_SCORE_FLOOR,
+  receiptLearningSampleCountWeight,
+  receiptLearningGenericYmRowScoreFactor,
+  scoreReceiptLearningCatalogRow,
+} from "./receipt-learning-catalog-score.mjs";
+import {
   buildReceiptTotalCandidates,
   fetchGlobalReceiptTotalsBySummaryWindow,
   mergeSummaryForGlobalFingerprint,
@@ -1143,48 +1151,7 @@ function receiptLearningYearMonth(rawDate) {
     const y = Number(ymd.slice(0, 4));
     if (Number.isFinite(y) && y >= 2000 && y <= 2100) return ymd.slice(0, 7);
   }
-  return "0000-00";
-}
-
-const RECEIPT_LEARNING_GENERIC_YM = "0000-00";
-
-/** C: sample_count に応じた行スコアへの乗数（1回 / 2回 / 3回以上） */
-const RECEIPT_LEARNING_SAMPLE_COUNT_WEIGHT = Object.freeze({
-  /** n === 1 */
-  ONE: 0.3,
-  /** n === 2 */
-  TWO: 0.55,
-  /** n >= 3 */
-  THREE_PLUS: 1.0,
-});
-
-/**
- * C: 件数によるノイズ低減（カテゴリ推測・parseHints 共通）。
- * @param {unknown} sampleCount
- * @returns {number}
- */
-function receiptLearningSampleCountWeight(sampleCount) {
-  const n = Math.max(1, Math.floor(Number(sampleCount) || 0));
-  if (n >= 3) return RECEIPT_LEARNING_SAMPLE_COUNT_WEIGHT.THREE_PLUS;
-  if (n === 2) return RECEIPT_LEARNING_SAMPLE_COUNT_WEIGHT.TWO;
-  return RECEIPT_LEARNING_SAMPLE_COUNT_WEIGHT.ONE;
-}
-
-/** B: レシートが具体年月でカタログ行が汎用（0000-00）のときに行スコアへ乗算する係数 */
-const RECEIPT_LEARNING_GENERIC_YM_DECAY_MULTIPLIER = 0.45;
-
-/**
- * B: レシート側に具体年月があるときのみ、カタログ行が汎用なら減衰する（汎用同士は 1.0）。
- * @param {unknown} rowYm
- * @param {string} receiptYm
- * @returns {number}
- */
-function receiptLearningGenericYmRowScoreFactor(rowYm, receiptYm) {
-  const row = String(rowYm ?? "").trim();
-  const rec = String(receiptYm ?? "").trim();
-  if (rec === RECEIPT_LEARNING_GENERIC_YM || rec === "") return 1;
-  if (row !== RECEIPT_LEARNING_GENERIC_YM) return 1;
-  return RECEIPT_LEARNING_GENERIC_YM_DECAY_MULTIPLIER;
+  return RECEIPT_LEARNING_GENERIC_YM;
 }
 
 /** A: 個人補正 exact（matchStrength 100 相当）時のカテゴリ合算スコア倍率 */
@@ -1213,12 +1180,6 @@ function receiptLearningPersonalVendorFallbackScoreMult(matchStrength) {
     )
   );
 }
-
-/** parseHints 側で加重後の「有効件数」が極端に小さいときのスコア下限（チューニング用） */
-const RECEIPT_LEARNING_PARSE_HINT_WEIGHTED_SCORE_FLOOR = 0.35;
-
-/** 共有カタログのカテゴリ素点: 具体年月が行と一致したときの加点（B の減衰とは別） */
-const RECEIPT_LEARNING_CATEGORY_SCORE_YM_MATCH_BONUS = 2;
 
 function buildReceiptLearningCatalogRow(summary, items, categoryNameHint) {
   const vendorLabel = String(summary?.vendorName ?? "").trim().slice(0, 120);
@@ -1574,7 +1535,8 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
       SQL_Q_YEAR_MONTH_COL +
       " AS ym, total_amount, item_tokens FROM receipt_learning_catalog " +
       "WHERE is_disabled = 0 AND vendor_norm = ? AND category_name_hint IS NOT NULL " +
-      "ORDER BY sample_count DESC, updated_at DESC LIMIT 400",
+      "ORDER BY sample_count DESC, updated_at DESC LIMIT " +
+      String(RECEIPT_LEARNING_CATEGORY_CATALOG_QUERY_LIMIT),
     [vendorNorm],
   );
   if (!Array.isArray(rows) || rows.length === 0) return null;
@@ -1589,32 +1551,11 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
       return ck === hintKey || ck.includes(hintKey) || hintKey.includes(ck);
     });
     if (!hit?.id) continue;
-    const rowYm = String(row?.ym ?? row?.year_month ?? "");
-    let score = Math.max(1, Number(row?.sample_count ?? 1));
-    if (rowYm === ym && ym !== RECEIPT_LEARNING_GENERIC_YM) {
-      score += RECEIPT_LEARNING_CATEGORY_SCORE_YM_MATCH_BONUS;
-    }
-    const rowTotal = Number(row?.total_amount ?? NaN);
-    if (total != null && Number.isFinite(rowTotal) && rowTotal > 0) {
-      const diff = Math.abs(rowTotal - total);
-      if (diff <= 1) score += 5;
-      else if (diff <= 20) score += 2;
-      else if (diff >= 5000) score -= 1;
-    }
-    const rowTokens = String(row?.item_tokens ?? "")
-      .split("|")
-      .map((x) => String(x).trim())
-      .filter(Boolean);
-    if (rowTokens.length > 0 && tokenSetNow.size > 0) {
-      let overlap = 0;
-      for (const tk of rowTokens) {
-        if (tokenSetNow.has(tk)) overlap += 1;
-      }
-      if (overlap >= 1) score += overlap * 3;
-    }
-    const scRow = Math.max(1, Number(row?.sample_count ?? 1));
-    score *= receiptLearningSampleCountWeight(scRow);
-    score *= receiptLearningGenericYmRowScoreFactor(rowYm, ym);
+    const score = scoreReceiptLearningCatalogRow(row, {
+      receiptYm: ym,
+      receiptTotal: total,
+      tokenSet: tokenSetNow,
+    });
     const cur = scoreByCategoryId.get(Number(hit.id)) ?? { name: String(hit.name), score: 0 };
     cur.score += score;
     scoreByCategoryId.set(Number(hit.id), cur);
