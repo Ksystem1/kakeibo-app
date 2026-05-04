@@ -14,10 +14,10 @@ import {
   scoreReceiptLearningCatalogRow,
 } from "../src/receipt-learning-catalog-score.mjs";
 
-test("formatReceiptSuggestedMemoFromVendorNorm: 定型メモ（vendor_norm キー）", () => {
+test("formatReceiptSuggestedMemoFromVendorNorm: メモは vendor_norm キーそのまま", () => {
   assert.equal(
     formatReceiptSuggestedMemoFromVendorNorm("うなぎ割烹竹江"),
-    "今回は、うなぎ割烹竹江",
+    "うなぎ割烹竹江",
   );
   assert.equal(formatReceiptSuggestedMemoFromVendorNorm(""), "");
   assert.equal(formatReceiptSuggestedMemoFromVendorNorm("x"), "");

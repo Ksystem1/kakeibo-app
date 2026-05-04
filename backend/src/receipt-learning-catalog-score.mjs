@@ -645,7 +645,7 @@ export function scoreReceiptLearningCatalogRow(row, ctx) {
 }
 
 /**
- * レシート取込のメモ欄用: `normalizeVendorForMatch` 済みの店名キー（= DB の vendor_norm と同系）を定型文にする。
+ * レシート取込のメモ欄用: `normalizeVendorForMatch` 済みの店名キー（= DB の vendor_norm と同系）をそのまま返す。
  * カテゴリ・明細が得られない場合のフェイルセーフでも同じ式を使う。
  *
  * @param {unknown} vendorNorm
@@ -654,5 +654,5 @@ export function scoreReceiptLearningCatalogRow(row, ctx) {
 export function formatReceiptSuggestedMemoFromVendorNorm(vendorNorm) {
   const v = String(vendorNorm ?? "").trim();
   if (v.length < 2) return "";
-  return `今回は、${v}`.slice(0, 500);
+  return v.slice(0, 500);
 }
