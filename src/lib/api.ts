@@ -2164,6 +2164,16 @@ export async function postAdminReceiptLearningCatalogRebuild(body: { confirm: tr
   }>(res);
 }
 
+/** 管理画面: 共有学習スコアの内訳プレビュー（カタログ照合・ヒントマッピング） */
+export async function postAdminReceiptLearningScorePreview(body: Record<string, unknown>) {
+  const res = await apiFetch(`${BASE}/admin/receipt-learning-score-preview`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parse<Record<string, unknown>>(res);
+}
+
 export async function createAdminUser(body: {
   email: string;
   password: string;

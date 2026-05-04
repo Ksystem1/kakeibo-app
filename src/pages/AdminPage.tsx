@@ -8,7 +8,6 @@ import {
   getAdminImportFormatAudit,
   getAdminMonitorRecruitmentSettings,
   getAdminPayPayImportSummary,
-  getAdminReceiptLearningCatalog,
   getAdminSalesLogs,
   getAdminSalesDailySummaryWithFallback,
   getAdminSalesMonthlySummary,
@@ -16,15 +15,13 @@ import {
   getAdminUsers,
   getReconcileDismissedKeys,
   patchAdminFeaturePermission,
-  patchAdminReceiptLearningCatalog,
   postAdminSubscriptionReconcileApply,
   putAdminAnnouncement,
   setReconcileDismissedKeys,
   putAdminMonitorRecruitmentSettings,
   resetAdminUserPassword,
   updateAdminUser,
-  deleteAdminReceiptLearningCatalog,
-  postAdminReceiptLearningCatalogRebuild,
+  postAdminReceiptLearningScorePreview,
   downloadAdminSalesCsv,
   type FeaturePermissionSummaryItem,
   type AdminFeaturePermissionRow,
@@ -32,7 +29,6 @@ import {
   type AdminSalesDailySummaryRow,
   type AdminSalesLogRow,
   type AdminSalesMonthlySummaryRow,
-  type AdminReceiptLearningCatalogRow,
 } from "../lib/api";
 import { AdminSalesCharts } from "../components/AdminSalesCharts";
 import { buildAdminSalesAdvancedAnalysis } from "../lib/adminSalesAdvancedAnalysis";
@@ -356,21 +352,29 @@ export function AdminPage() {
   const [featurePermSaving, setFeaturePermSaving] = useState<string | null>(null);
   const [importFormatAuditRows, setImportFormatAuditRows] = useState<AdminImportFormatAuditRow[]>([]);
   const [importFormatAuditError, setImportFormatAuditError] = useState<string | null>(null);
-  const [receiptLearningRows, setReceiptLearningRows] = useState<AdminReceiptLearningCatalogRow[]>([]);
-  const [receiptLearningMeta, setReceiptLearningMeta] = useState<{
-    total_count: number;
-    active_count: number;
-    disabled_count: number;
-  } | null>(null);
-  const [receiptLearningQuery, setReceiptLearningQuery] = useState("");
-  const [receiptLearningSort, setReceiptLearningSort] = useState<"sample_count" | "last_seen_at" | "updated_at">(
-    "sample_count",
+  const [receiptScorePreviewJson, setReceiptScorePreviewJson] = useState(
+    [
+      "{",
+      '  "vendorName": "うなぎ割烹 竹江",',
+      '  "date": "2026-04-29",',
+      '  "totalAmount": 16610,',
+      '  "items": [',
+      '    { "name": "鰻重(松)", "amount": 9100 },',
+      '    { "name": "大盛", "amount": 150 }',
+      "  ],",
+      '  "expenseCategories": [',
+      '    { "id": 1, "name": "食費" },',
+      '    { "id": 2, "name": "外食" }',
+      "  ]",
+      "}",
+    ].join("\n"),
   );
-  const [receiptLearningOrder, setReceiptLearningOrder] = useState<"asc" | "desc">("desc");
-  const [receiptLearningError, setReceiptLearningError] = useState<string | null>(null);
-  const [receiptLearningBusyId, setReceiptLearningBusyId] = useState<number | null>(null);
-  const [receiptLearningRebuildBusy, setReceiptLearningRebuildBusy] = useState(false);
-  const [receiptLearningRebuildMessage, setReceiptLearningRebuildMessage] = useState<string | null>(null);
+  const [receiptScorePreviewResult, setReceiptScorePreviewResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [receiptScorePreviewError, setReceiptScorePreviewError] = useState<string | null>(null);
+  const [receiptScorePreviewBusy, setReceiptScorePreviewBusy] = useState(false);
 
   /** 管理画面「機能」列: i18n 辞書を優先し、未定義キーは DB の label_ja にフォールバック */
   const featurePermSummaryItems = useMemo((): FeaturePermissionSummaryItem[] => {
@@ -382,10 +386,7 @@ export function AdminPage() {
     }));
   }, [featurePermRows]);
 
-  const load = useCallback(
-    async (loadOpts?: { receiptCatalogQ?: string }) => {
-    const catalogFetchQ =
-      loadOpts?.receiptCatalogQ !== undefined ? loadOpts.receiptCatalogQ : receiptLearningQuery;
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     setReconcileError(null);
@@ -449,25 +450,6 @@ export function AdminPage() {
         setImportFormatAuditError(msg && msg.trim() ? msg : "取込フォーマット監査ログの取得に失敗しました。");
         return { items: [] as AdminImportFormatAuditRow[] };
       });
-      let receiptLearningCatalogFetchFailed = false;
-      const receiptLearning = await getAdminReceiptLearningCatalog({
-        limit: 120,
-        q: catalogFetchQ,
-        sort: receiptLearningSort,
-        order: receiptLearningOrder,
-      }).catch((e) => {
-        receiptLearningCatalogFetchFailed = true;
-        const msg = e instanceof Error ? e.message : String(e);
-        setReceiptLearningError(
-          msg && msg.trim()
-            ? msg
-            : "レシート学習カタログの取得に失敗しました。migration v45 の適用を確認してください。",
-        );
-        return {
-          items: [] as AdminReceiptLearningCatalogRow[],
-          meta: { total_count: 0, active_count: 0, disabled_count: 0, limit: 120, offset: 0 },
-        };
-      });
       const list = Array.isArray(res.items) ? res.items : [];
       setFeaturePermError(null);
       try {
@@ -491,23 +473,10 @@ export function AdminPage() {
       if (Array.isArray(importAudit.items)) {
         setImportFormatAuditError(null);
       }
-      if (!receiptLearningCatalogFetchFailed) {
-        setReceiptLearningError(null);
-      }
       setPaypayImportSummary(Array.isArray(monitor.items) ? monitor.items : []);
       setSalesMonthlySummary(Array.isArray(monthlySales.items) ? monthlySales.items : []);
       setSalesLogs(Array.isArray(sales.items) ? sales.items : []);
       setImportFormatAuditRows(Array.isArray(importAudit.items) ? importAudit.items : []);
-      setReceiptLearningRows(Array.isArray(receiptLearning.items) ? receiptLearning.items : []);
-      setReceiptLearningMeta(
-        receiptLearning.meta
-          ? {
-              total_count: Number(receiptLearning.meta.total_count ?? 0),
-              active_count: Number(receiptLearning.meta.active_count ?? 0),
-              disabled_count: Number(receiptLearning.meta.disabled_count ?? 0),
-            }
-          : { total_count: 0, active_count: 0, disabled_count: 0 },
-      );
       setSubscriptionStatusWritable(res.meta?.subscriptionStatusWritable !== false);
       setDisplayNameDrafts(
         Object.fromEntries(
@@ -545,7 +514,7 @@ export function AdminPage() {
       setLoading(false);
     }
   },
-  [salesFilterYm, receiptLearningOrder, receiptLearningQuery, receiptLearningSort],
+  [salesFilterYm],
 );
 
   useEffect(() => {
@@ -844,47 +813,6 @@ export function AdminPage() {
       setSavingUserId(null);
     }
   }, []);
-
-  const onPatchReceiptLearning = useCallback(
-    async (
-      rowId: number,
-      body: {
-        vendor_label?: string | null;
-        category_name_hint?: string | null;
-        admin_note?: string | null;
-        is_disabled?: boolean;
-      },
-    ) => {
-      setReceiptLearningBusyId(rowId);
-      setError(null);
-      try {
-        await patchAdminReceiptLearningCatalog(rowId, body);
-        await load();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "学習カタログの更新に失敗しました");
-      } finally {
-        setReceiptLearningBusyId(null);
-      }
-    },
-    [load],
-  );
-
-  const onDeleteReceiptLearning = useCallback(
-    async (rowId: number) => {
-      if (!window.confirm("この学習データを削除します。よろしいですか？")) return;
-      setReceiptLearningBusyId(rowId);
-      setError(null);
-      try {
-        await deleteAdminReceiptLearningCatalog(rowId);
-        await load();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "学習カタログの削除に失敗しました");
-      } finally {
-        setReceiptLearningBusyId(null);
-      }
-    },
-    [load],
-  );
 
   const onCreateUser = useCallback(async () => {
     const email = newEmail.trim().toLowerCase();
@@ -1529,195 +1457,95 @@ export function AdminPage() {
           background: "var(--bg-card)",
         }}
       >
-        <h2 style={{ margin: "0 0 0.45rem", fontSize: "1.02rem" }}>レシート学習データ（重複統合）</h2>
+        <h2 style={{ margin: "0 0 0.45rem", fontSize: "1.02rem" }}>レシート共有学習スコア（プレビュー）</h2>
         <p style={{ margin: "0 0 0.65rem", fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
-          OCR結果とユーザー補正から抽出した必要最小限データを、fingerprint単位で統合保存しています。管理者のみ編集・無効化・削除できます。
+          店名・日付・合計・明細・支出カテゴリ一覧を JSON で渡し、共有カタログ照合時の{" "}
+          <code style={{ fontSize: "0.82rem" }}>finalScore</code>・<code style={{ fontSize: "0.82rem" }}>steps</code>{" "}
+          （加点内訳）、<code style={{ fontSize: "0.82rem" }}>category_name_hint</code> → ユーザー
+          カテゴリ ID のマッピングを確認します（本番の suggest と同じ式）。以前の「レシート学習データ（重複統合）」一覧は非表示にしています。
         </p>
-        <p style={{ margin: "0 0 0.55rem", fontSize: "0.86rem", color: "var(--text-muted)" }}>
-          {receiptLearningQuery.trim() ? "検索該当" : "全体"}: {receiptLearningMeta?.total_count ?? 0} 件 / 有効:{" "}
-          {receiptLearningMeta?.active_count ?? 0} 件 / 無効: {receiptLearningMeta?.disabled_count ?? 0} 件
-          {receiptLearningQuery.trim() ? "（検索を空にすると全件表示）" : ""}
-        </p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "end", marginBottom: "0.55rem" }}>
-          <label style={{ display: "grid", gap: "0.2rem" }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-              検索（店名/カテゴリ）※入力中は件数・一覧ともに絞り込み
-            </span>
-            <input
-              type="text"
-              value={receiptLearningQuery}
-              onChange={(e) => setReceiptLearningQuery(e.target.value)}
-              placeholder="例: くら / 外食 / FamilyMart"
-              style={{ minWidth: 220 }}
-            />
-          </label>
-          <label style={{ display: "grid", gap: "0.2rem" }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>並び替え</span>
-            <select
-              value={receiptLearningSort}
-              onChange={(e) =>
-                setReceiptLearningSort(e.target.value as "sample_count" | "last_seen_at" | "updated_at")
-              }
-            >
-              <option value="sample_count">件数</option>
-              <option value="last_seen_at">最終参照</option>
-              <option value="updated_at">更新日時</option>
-            </select>
-          </label>
-          <label style={{ display: "grid", gap: "0.2rem" }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>順序</span>
-            <select
-              value={receiptLearningOrder}
-              onChange={(e) => setReceiptLearningOrder(e.target.value as "asc" | "desc")}
-            >
-              <option value="desc">降順</option>
-              <option value="asc">昇順</option>
-            </select>
-          </label>
+        <textarea
+          value={receiptScorePreviewJson}
+          onChange={(e) => setReceiptScorePreviewJson(e.target.value)}
+          spellCheck={false}
+          rows={16}
+          disabled={receiptScorePreviewBusy}
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            fontFamily: "ui-monospace, monospace",
+            fontSize: "0.82rem",
+            padding: "0.5rem 0.6rem",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "var(--input-bg)",
+            color: "var(--text)",
+            resize: "vertical",
+          }}
+        />
+        <div style={{ marginTop: "0.55rem", display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
           <button
             type="button"
-            disabled={loading}
+            disabled={receiptScorePreviewBusy || loading}
             onClick={() => {
-              void load();
-            }}
-          >
-            {loading ? "読込中..." : "再検索"}
-          </button>
-          <button
-            type="button"
-            disabled={loading || receiptLearningRebuildBusy}
-            onClick={() => {
-              if (
-                !window.confirm(
-                  "補正データ（receipt_ocr_corrections）から学習カタログを作り直します。\n" +
-                    "現在のカタログ行はすべて削除され、補正テーブルから再計算されます。続行しますか？",
-                )
-              ) {
-                return;
-              }
               void (async () => {
-                setReceiptLearningRebuildBusy(true);
-                setReceiptLearningRebuildMessage(null);
-                setReceiptLearningError(null);
+                setReceiptScorePreviewBusy(true);
+                setReceiptScorePreviewError(null);
+                setReceiptScorePreviewResult(null);
                 try {
-                  const r = await postAdminReceiptLearningCatalogRebuild({ confirm: true });
-                  setReceiptLearningRebuildMessage(
-                    `再構築しました（補正走査 ${r.scanned} 件 / カタログ行 ${r.catalog_rows} 件 / 件数合計 ${r.catalog_samples_total}）。`,
-                  );
-                  setReceiptLearningQuery("");
-                  await load({ receiptCatalogQ: "" });
+                  const parsed = JSON.parse(receiptScorePreviewJson) as Record<string, unknown>;
+                  const r = await postAdminReceiptLearningScorePreview(parsed);
+                  setReceiptScorePreviewResult(r);
                 } catch (e) {
-                  setReceiptLearningError(
-                    e instanceof Error ? e.message : "学習カタログの再構築に失敗しました。",
-                  );
+                  setReceiptScorePreviewError(e instanceof Error ? e.message : "プレビューに失敗しました");
                 } finally {
-                  setReceiptLearningRebuildBusy(false);
+                  setReceiptScorePreviewBusy(false);
                 }
               })();
             }}
           >
-            {receiptLearningRebuildBusy ? "再構築中…" : "補正から再構築"}
+            {receiptScorePreviewBusy ? "計算中…" : "スコア詳細を取得"}
           </button>
+          {receiptScorePreviewError ? (
+            <span style={{ fontSize: "0.86rem", color: "var(--danger, #c44)" }} role="alert">
+              {receiptScorePreviewError}
+            </span>
+          ) : null}
         </div>
-        {receiptLearningRebuildMessage ? (
-          <p style={{ margin: "0 0 0.55rem", fontSize: "0.86rem", color: "var(--text-muted)" }}>
-            {receiptLearningRebuildMessage}
-          </p>
+        {receiptScorePreviewResult ? (
+          <div style={{ marginTop: "0.75rem" }}>
+            <p style={{ margin: "0 0 0.35rem", fontSize: "0.86rem", color: "var(--text-muted)" }}>
+              識別年月: {String(receiptScorePreviewResult.receiptYm ?? "—")} / 支払合計:{" "}
+              {receiptScorePreviewResult.receiptPaymentTotal != null
+                ? `¥${Number(receiptScorePreviewResult.receiptPaymentTotal as number).toLocaleString("ja-JP")}`
+                : "—"}{" "}
+              / 明細合計:{" "}
+              {receiptScorePreviewResult.receiptLinesSum != null
+                ? `¥${Number(receiptScorePreviewResult.receiptLinesSum as number).toLocaleString("ja-JP")}`
+                : "—"}{" "}
+              / 乖離:{" "}
+              {receiptScorePreviewResult.payVsLinesGap != null
+                ? `¥${Number(receiptScorePreviewResult.payVsLinesGap as number).toLocaleString("ja-JP")}`
+                : "—"}
+            </p>
+            <pre
+              style={{
+                margin: 0,
+                padding: "0.65rem 0.75rem",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--panel-bg)",
+                fontSize: "0.78rem",
+                overflow: "auto",
+                maxHeight: "min(70vh, 520px)",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+            >
+              {JSON.stringify(receiptScorePreviewResult, null, 2)}
+            </pre>
+          </div>
         ) : null}
-        {receiptLearningError ? (
-          <p style={{ margin: "0 0 0.55rem", color: "var(--danger, #c44)", fontSize: "0.86rem" }} role="alert">
-            {receiptLearningError}
-          </p>
-        ) : null}
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
-            <thead>
-              <tr style={{ background: "var(--bg-card)" }}>
-                <th style={adminTableTh}>ID</th>
-                <th style={adminTableTh}>店名</th>
-                <th style={adminTableTh}>カテゴリヒント</th>
-                <th style={adminTableTh}>年月</th>
-                <th style={adminTableTh}>合計</th>
-                <th style={adminTableTh}>件数</th>
-                <th style={adminTableTh}>最終更新</th>
-                <th style={adminTableTh}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {receiptLearningRows.map((row) => {
-                const busy = receiptLearningBusyId === row.id;
-                return (
-                  <tr key={`receipt-learn-${row.id}`} style={{ borderTop: "1px solid var(--border)" }}>
-                    <td style={adminTableTd}>{row.id}</td>
-                    <td style={adminTableTd}>
-                      <input
-                        type="text"
-                        defaultValue={row.vendor_label ?? ""}
-                        disabled={busy}
-                        onBlur={(e) => {
-                          const next = e.target.value.trim();
-                          if (next === (row.vendor_label ?? "")) return;
-                          void onPatchReceiptLearning(row.id, { vendor_label: next || null });
-                        }}
-                        style={{ minWidth: 140, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
-                      />
-                    </td>
-                    <td style={adminTableTd}>
-                      <input
-                        type="text"
-                        defaultValue={row.category_name_hint ?? ""}
-                        disabled={busy}
-                        onBlur={(e) => {
-                          const next = e.target.value.trim();
-                          if (next === (row.category_name_hint ?? "")) return;
-                          void onPatchReceiptLearning(row.id, { category_name_hint: next || null });
-                        }}
-                        style={{ minWidth: 140, padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
-                      />
-                    </td>
-                    <td style={adminTableTd}>{row.year_month}</td>
-                    <td style={adminTableTd}>
-                      {row.total_amount != null ? `¥${Number(row.total_amount).toLocaleString("ja-JP")}` : "—"}
-                    </td>
-                    <td style={adminTableTd}>{Number(row.sample_count ?? 0).toLocaleString("ja-JP")}</td>
-                    <td style={adminTableTd}>{formatDateTime(row.updated_at)}</td>
-                    <td style={adminTableTd}>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            void onPatchReceiptLearning(row.id, { is_disabled: !row.is_disabled });
-                          }}
-                          style={adminTableBtn}
-                        >
-                          {row.is_disabled ? "有効化" : "無効化"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            void onDeleteReceiptLearning(row.id);
-                          }}
-                          style={{ ...adminTableBtn, color: "#b42318" }}
-                        >
-                          削除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {receiptLearningRows.length === 0 ? (
-                <tr>
-                  <td style={adminTableTd} colSpan={8}>
-                    学習データはまだありません。
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
       </div>
       <div
         style={{

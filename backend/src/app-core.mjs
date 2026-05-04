@@ -1706,6 +1706,181 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
 }
 
 /**
+ * 管理画面: 共有学習カタログ行ごとの素点内訳を返す（本番 suggest と同じ式）。
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {Record<string, unknown>} body
+ */
+async function buildAdminReceiptLearningScorePreview(pool, body) {
+  const vendorName = String(body?.vendorName ?? "").trim();
+  const vendorNorm = normalizeVendorForMatch(vendorName);
+  if (!vendorNorm || vendorNorm.length < 2) {
+    throw Object.assign(new Error("vendorName を2文字以上で指定してください。"), { statusCode: 400 });
+  }
+  const expenseCatsRaw = Array.isArray(body?.expenseCategories) ? body.expenseCategories : [];
+  const expenseRows = expenseCatsRaw
+    .filter((c) => c && c.id != null)
+    .map((c) => ({ id: Number(c.id), name: String(c.name ?? "") }));
+  if (expenseRows.length === 0) {
+    throw Object.assign(
+      new Error(
+        "expenseCategories に少なくとも1件の { id, name }（ユーザーの支出カテゴリ）を含めてください。",
+      ),
+      { statusCode: 400 },
+    );
+  }
+
+  const ym = receiptLearningYearMonth(body?.date);
+  const totalRaw = Number(body?.totalAmount ?? NaN);
+  const total = Number.isFinite(totalRaw) && totalRaw > 0 ? Math.round(totalRaw) : null;
+  const items = Array.isArray(body?.items) ? body.items : [];
+  const linesSumRaw = sumReceiptLineItemAmounts(items);
+  const receiptTotalLinesSum =
+    Number.isFinite(linesSumRaw) && linesSumRaw > 0 ? Math.round(linesSumRaw) : null;
+
+  const itemTokensNow = Array.from(
+    new Set(
+      items
+        .map((it) => normalizeReceiptLearningToken(it?.name ?? ""))
+        .filter((t) => t.length >= 2 && !/^\d+$/.test(t))
+        .slice(0, 40),
+    ),
+  );
+  const tokenSetNow = new Set(itemTokensNow);
+
+  let rows;
+  try {
+    const [r] = await pool.query(
+      "SELECT category_name_hint, sample_count, " +
+        SQL_Q_YEAR_MONTH_COL +
+        " AS ym, total_amount, item_tokens FROM receipt_learning_catalog " +
+        "WHERE is_disabled = 0 AND vendor_norm = ? AND category_name_hint IS NOT NULL " +
+        "ORDER BY sample_count DESC, updated_at DESC LIMIT " +
+        String(RECEIPT_LEARNING_CATEGORY_CATALOG_QUERY_LIMIT),
+      [vendorNorm],
+    );
+    rows = r;
+  } catch (e) {
+    const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+    if (code === "ER_NO_SUCH_TABLE") {
+      throw Object.assign(
+        new Error("receipt_learning_catalog がありません。migration v45 を適用してください。"),
+        { statusCode: 503 },
+      );
+    }
+    throw e;
+  }
+
+  const catalogRows = Array.isArray(rows) ? rows : [];
+  /** @type {Array<Record<string, unknown>>} */
+  const outRows = [];
+  /** @type {Map<number, { score: number }>} */
+  const scoreByCategoryId = new Map();
+
+  for (const row of catalogRows) {
+    const hint = String(row?.category_name_hint ?? "").trim();
+    if (!hint) continue;
+    const mapped = resolveSharedLearningCatalogHintToUserCategory(hint, expenseRows, {});
+    const ctx = {
+      receiptYm: ym,
+      receiptTotal: total,
+      receiptTotalLinesSum,
+      tokenSet: tokenSetNow,
+      vendorNorm,
+      catalogCategoryHintDebug:
+        mapped?.id != null
+          ? {
+              hintRaw: hint,
+              mappedCategoryId: Number(mapped.id),
+              mappedCategoryName: String(mapped.name),
+              matchKind: String(mapped.match),
+              similarity: mapped.similarity,
+            }
+          : null,
+    };
+    const ex = explainReceiptLearningCatalogRowScore(row, ctx);
+    outRows.push({
+      catalog: {
+        ym: String(row?.ym ?? row?.year_month ?? ""),
+        sample_count: row?.sample_count,
+        total_amount: row?.total_amount,
+        item_tokens: row?.item_tokens == null ? null : String(row.item_tokens),
+        category_name_hint: hint,
+      },
+      mapping:
+        mapped?.id != null
+          ? {
+              mappedCategoryId: Number(mapped.id),
+              mappedCategoryName: String(mapped.name),
+              matchKind: String(mapped.match),
+              similarity: mapped.similarity,
+            }
+          : null,
+      mappingNote: mapped?.id == null ? "category_name_hint をユーザーカテゴリに解決できませんでした" : null,
+      finalScore: ex.finalScore,
+      steps: ex.steps,
+    });
+    if (mapped?.id != null) {
+      const cur = scoreByCategoryId.get(Number(mapped.id)) ?? { score: 0 };
+      cur.score += ex.finalScore;
+      scoreByCategoryId.set(Number(mapped.id), cur);
+    }
+  }
+
+  let bestId = null;
+  let bestScore = -1;
+  for (const [id, st] of scoreByCategoryId.entries()) {
+    if (st.score > bestScore) {
+      bestId = id;
+      bestScore = st.score;
+    }
+  }
+
+  let hintFallback = null;
+  if (bestId == null || !Number.isFinite(bestScore) || bestScore <= 0) {
+    for (const row of catalogRows) {
+      const hint = String(row?.category_name_hint ?? "").trim();
+      if (!hint) continue;
+      const mapped = resolveSharedLearningCatalogHintToUserCategory(hint, expenseRows, {});
+      if (mapped?.id != null) {
+        hintFallback = {
+          mappedCategoryId: Number(mapped.id),
+          mappedCategoryName: String(mapped.name),
+          matchKind: String(mapped.match),
+          similarity: mapped.similarity,
+        };
+        break;
+      }
+    }
+  }
+
+  const payVsLinesGap =
+    total != null &&
+    receiptTotalLinesSum != null &&
+    Number.isFinite(total) &&
+    Number.isFinite(receiptTotalLinesSum)
+      ? Math.abs(Math.round(Number(total)) - receiptTotalLinesSum)
+      : null;
+
+  return {
+    vendorNorm,
+    receiptYm: ym,
+    receiptDate: body?.date != null ? String(body.date) : null,
+    receiptPaymentTotal: total,
+    receiptLinesSum: receiptTotalLinesSum,
+    payVsLinesGap,
+    tokenSetSize: tokenSetNow.size,
+    catalogRowCount: catalogRows.length,
+    evaluatedExplainRowCount: outRows.length,
+    suggestedFromScores:
+      bestId != null && Number.isFinite(bestScore) && bestScore > 0
+        ? { categoryId: bestId, totalScore: bestScore }
+        : null,
+    hintOnlyFallback: hintFallback,
+    rows: outRows,
+  };
+}
+
+/**
  * 共有学習カタログで店名・合計を補正する（合計は OCR の合計行に載る値があるときを主に信頼する）。
  * @returns {{ summary: Record<string, unknown>, hints: string[] }}
  */
@@ -3322,6 +3497,7 @@ export async function handleApiRequest(req, options = {}) {
             adminMonitorRecruitmentSettings: "/admin/monitor-recruitment-settings",
             adminImportFormatAudit: "/admin/import-formats/audit",
             adminReceiptLearningCatalog: "/admin/receipt-learning-catalog",
+            adminReceiptLearningScorePreview: "POST /admin/receipt-learning-score-preview",
             supportChatMessages: "/support/chat/messages",
             supportChatRead: "/support/chat/read",
             familyChatMessages: "/family/chat/messages",
@@ -4209,6 +4385,38 @@ export async function handleApiRequest(req, options = {}) {
         }
         logError("admin.receipt_learning_catalog.rebuild", e);
         return json(500, { error: "AdminReceiptLearningCatalogRebuildError" }, hdrs, skipCors);
+      }
+    }
+
+    if (routeKey(method, path) === "POST /admin/receipt-learning-score-preview") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      let b = {};
+      try {
+        b = JSON.parse(req.body || "{}");
+      } catch {
+        return json(400, { error: "InvalidRequest", detail: "JSON が不正です。" }, hdrs, skipCors);
+      }
+      try {
+        const out = await buildAdminReceiptLearningScorePreview(pool, b);
+        return json(200, out, hdrs, skipCors);
+      } catch (e) {
+        const sc =
+          e && typeof e === "object" && "statusCode" in e && Number.isFinite(Number(e.statusCode))
+            ? Number(e.statusCode)
+            : 500;
+        const detail =
+          e && typeof e === "object" && "message" in e && e.message != null
+            ? String(e.message)
+            : "プレビューに失敗しました。";
+        if (sc === 400) {
+          return json(400, { error: "InvalidRequest", detail }, hdrs, skipCors);
+        }
+        if (sc === 503) {
+          return json(503, { error: "MigrationRequired", detail }, hdrs, skipCors);
+        }
+        logError("admin.receipt_learning_score_preview", e);
+        return json(500, { error: "AdminReceiptLearningScorePreviewError", detail }, hdrs, skipCors);
       }
     }
 
