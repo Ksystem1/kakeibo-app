@@ -846,12 +846,20 @@ async function findLearnedReceiptCorrection(pool, userId, catWhere, summary, ite
       memoPresent: exact.memo != null,
       memoValue: exact.memo != null ? String(exact.memo).slice(0, 500) : "",
       mode: "exact",
+      matchStrength: 100,
     };
   }
 
   const vendorNorm = normalizeReceiptVendor(summary?.vendorName ?? "");
   if (!vendorNorm) {
-    return { hit: false, categoryId: null, memoPresent: false, memoValue: "", mode: null };
+    return {
+      hit: false,
+      categoryId: null,
+      memoPresent: false,
+      memoValue: "",
+      mode: null,
+      matchStrength: 0,
+    };
   }
   const [candRows] = await pool.query(
     `SELECT category_id, memo, ocr_snapshot_json
@@ -863,7 +871,14 @@ async function findLearnedReceiptCorrection(pool, userId, catWhere, summary, ite
     [userId],
   );
   if (!Array.isArray(candRows) || candRows.length === 0) {
-    return { hit: false, categoryId: null, memoPresent: false, memoValue: "", mode: null };
+    return {
+      hit: false,
+      categoryId: null,
+      memoPresent: false,
+      memoValue: "",
+      mode: null,
+      matchStrength: 0,
+    };
   }
   let best = null;
   for (const row of candRows) {
@@ -884,7 +899,14 @@ async function findLearnedReceiptCorrection(pool, userId, catWhere, summary, ite
     }
   }
   if (!best || best.score < 10.5) {
-    return { hit: false, categoryId: null, memoPresent: false, memoValue: "", mode: null };
+    return {
+      hit: false,
+      categoryId: null,
+      memoPresent: false,
+      memoValue: "",
+      mode: null,
+      matchStrength: 0,
+    };
   }
   return {
     hit: true,
@@ -895,6 +917,7 @@ async function findLearnedReceiptCorrection(pool, userId, catWhere, summary, ite
     memoPresent: best.row.memo != null,
     memoValue: best.row.memo != null ? String(best.row.memo).slice(0, 500) : "",
     mode: "vendor_fallback",
+    matchStrength: best.score,
   };
 }
 
@@ -1121,6 +1144,34 @@ function receiptLearningYearMonth(rawDate) {
     if (Number.isFinite(y) && y >= 2000 && y <= 2100) return ymd.slice(0, 7);
   }
   return "0000-00";
+}
+
+const RECEIPT_LEARNING_GENERIC_YM = "0000-00";
+
+/**
+ * 共有カタログの件数に応じた重み。3 回未満は信頼度を下げる（誤学習の影響を抑える）。
+ * @param {unknown} sampleCount
+ * @returns {number}
+ */
+function receiptLearningSampleCountWeight(sampleCount) {
+  const n = Math.max(1, Math.floor(Number(sampleCount) || 0));
+  if (n >= 3) return 1;
+  if (n === 2) return 0.55;
+  return 0.3;
+}
+
+/**
+ * レシート側に具体年月があるときのみ、カタログ行が 0000-00（汎用）なら減衰する。
+ * @param {unknown} rowYm
+ * @param {string} receiptYm
+ * @returns {number}
+ */
+function receiptLearningGenericYmDecayMultiplier(rowYm, receiptYm) {
+  const row = String(rowYm ?? "").trim();
+  const rec = String(receiptYm ?? "").trim();
+  if (rec === RECEIPT_LEARNING_GENERIC_YM || rec === "") return 1;
+  if (row !== RECEIPT_LEARNING_GENERIC_YM) return 1;
+  return 0.45;
 }
 
 function buildReceiptLearningCatalogRow(summary, items, categoryNameHint) {
@@ -1428,8 +1479,16 @@ async function suggestExpenseCategoryFromGlobalMaster(pool, vendor, userExpenseC
   return null;
 }
 
-/** 全ユーザー共有の学習カタログ（匿名集約）からカテゴリ候補を引く */
-async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, userExpenseCategories) {
+/**
+ * 全ユーザー共有の学習カタログ（匿名集約）からカテゴリ候補を引く。
+ * @param {{ userId?: number, catWhere?: string, items?: unknown[] }} [personalOpts] 個人補正との合成用（任意）
+ */
+async function suggestExpenseCategoryFromSharedLearningCatalog(
+  pool,
+  summary,
+  userExpenseCategories,
+  personalOpts = {},
+) {
   const userCats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
   if (userCats.length === 0) return null;
   const vendorNorm = normalizeVendorForMatch(summary?.vendorName ?? "");
@@ -1446,6 +1505,24 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
     ),
   );
   const tokenSetNow = new Set(itemTokensNow);
+
+  let learnedPersonal = null;
+  const uid = personalOpts.userId;
+  const cw = personalOpts.catWhere;
+  if (uid != null && typeof cw === "string" && cw.length > 0) {
+    try {
+      learnedPersonal = await findLearnedReceiptCorrection(
+        pool,
+        uid,
+        cw,
+        summary,
+        Array.isArray(personalOpts.items) ? personalOpts.items : [],
+      );
+    } catch {
+      learnedPersonal = null;
+    }
+  }
+
   const [rows] = await pool.query(
     "SELECT category_name_hint, sample_count, " +
       SQL_Q_YEAR_MONTH_COL +
@@ -1466,8 +1543,9 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
       return ck === hintKey || ck.includes(hintKey) || hintKey.includes(ck);
     });
     if (!hit?.id) continue;
+    const rowYm = String(row?.ym ?? row?.year_month ?? "");
     let score = Math.max(1, Number(row?.sample_count ?? 1));
-    if (String(row?.ym ?? row?.year_month ?? "") === ym && ym !== "0000-00") score += 2;
+    if (rowYm === ym && ym !== RECEIPT_LEARNING_GENERIC_YM) score += 2;
     const rowTotal = Number(row?.total_amount ?? NaN);
     if (total != null && Number.isFinite(rowTotal) && rowTotal > 0) {
       const diff = Math.abs(rowTotal - total);
@@ -1486,10 +1564,33 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(pool, summary, us
       }
       if (overlap >= 1) score += overlap * 3;
     }
+    const scRow = Math.max(1, Number(row?.sample_count ?? 1));
+    score *= receiptLearningSampleCountWeight(scRow);
+    score *= receiptLearningGenericYmDecayMultiplier(rowYm, ym);
     const cur = scoreByCategoryId.get(Number(hit.id)) ?? { name: String(hit.name), score: 0 };
     cur.score += score;
     scoreByCategoryId.set(Number(hit.id), cur);
   }
+
+  if (
+    learnedPersonal?.hit &&
+    learnedPersonal.categoryId != null &&
+    Number.isFinite(Number(learnedPersonal.categoryId))
+  ) {
+    const pid = Number(learnedPersonal.categoryId);
+    const st = scoreByCategoryId.get(pid);
+    if (st) {
+      let mult = 1;
+      if (learnedPersonal.mode === "exact") {
+        mult = 2.45;
+      } else if (learnedPersonal.mode === "vendor_fallback") {
+        const ms = Number(learnedPersonal.matchStrength ?? 10);
+        mult = 1.12 + Math.min(0.95, Math.max(0, ms - 10) / 18);
+      }
+      st.score *= mult;
+    }
+  }
+
   let bestId = null;
   let bestName = "";
   let bestScore = -1;
@@ -1515,10 +1616,13 @@ async function applySharedLearningCatalogParseHints(pool, summary, items, ocrLin
   if (!vendorNorm || vendorNorm.length < 2) {
     return { summary: base, hints };
   }
+  const receiptYm = receiptLearningYearMonth(base.date);
   let rows;
   try {
     const [r] = await pool.query(
-      "SELECT vendor_label, total_amount, item_tokens, sample_count " +
+      "SELECT vendor_label, total_amount, item_tokens, sample_count, " +
+        SQL_Q_YEAR_MONTH_COL +
+        " AS ym " +
         "FROM receipt_learning_catalog " +
         "WHERE is_disabled = 0 AND vendor_norm = ? " +
         "ORDER BY sample_count DESC, updated_at DESC LIMIT 120",
@@ -1552,7 +1656,12 @@ async function applySharedLearningCatalogParseHints(pool, summary, items, ocrLin
   let bestTotalInOcr = false;
 
   for (const row of rows) {
-    const sc = Math.max(1, Number(row?.sample_count ?? 1));
+    const scBase = Math.max(1, Number(row?.sample_count ?? 1));
+    const rowYm = String(row?.ym ?? row?.year_month ?? "");
+    const rowTrust =
+      receiptLearningSampleCountWeight(scBase) *
+      receiptLearningGenericYmDecayMultiplier(rowYm, receiptYm);
+    const sc = Math.max(0.35, scBase * rowTrust);
     const vLabel = row?.vendor_label != null ? String(row.vendor_label).trim() : "";
     const rowTokens = String(row?.item_tokens ?? "")
       .split("|")
@@ -1574,11 +1683,11 @@ async function applySharedLearningCatalogParseHints(pool, summary, items, ocrLin
     const t = Math.round(tRaw);
     const inOcr = totalAppearsInOcrTotalLine(ocrLines, t);
     let tScore = sc + overlap * 5 + (inOcr ? 26 : 0);
-    if (overlap === 0 && sc < 6) tScore -= 8;
+    if (overlap === 0 && scBase < 6) tScore -= 8;
     if (tScore > bestTotalScore) {
       bestTotalScore = tScore;
       bestTotal = t;
-      bestTotalSamples = sc;
+      bestTotalSamples = scBase;
       bestTotalInOcr = inOcr;
     }
   }
@@ -1781,6 +1890,7 @@ async function predictCategory({
   userExpenseCategories,
   subscriptionActive,
   aiCategoryName,
+  catWhere,
 }) {
   const twp =
     Array.isArray(txWhereParams) && txWhereParams.length > 0 ? txWhereParams : [userId, userId];
@@ -1819,6 +1929,9 @@ async function predictCategory({
         items: Array.isArray(items) ? items : [],
       },
       userExpenseCategories,
+      typeof catWhere === "string" && catWhere.length > 0
+        ? { userId, catWhere, items: Array.isArray(items) ? items : [] }
+        : {},
     );
     if (fromSharedLearning?.id != null) {
       return { ...fromSharedLearning, lowConfidence: false };
@@ -8288,6 +8401,7 @@ export async function handleApiRequest(req, options = {}) {
             userExpenseCategories: expenseCatRows,
             subscriptionActive,
             aiCategoryName,
+            catWhere,
           });
           let placePreferredCategoryId = null;
           let placePreferredCategoryName = null;
