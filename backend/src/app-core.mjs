@@ -31,6 +31,7 @@ import {
   RECEIPT_LEARNING_GENERIC_YM,
   RECEIPT_LEARNING_CATEGORY_CATALOG_QUERY_LIMIT,
   RECEIPT_LEARNING_PARSE_HINT_WEIGHTED_SCORE_FLOOR,
+  normalizeReceiptLearningToken,
   receiptLearningSampleCountWeight,
   receiptLearningGenericYmRowScoreFactor,
   scoreReceiptLearningCatalogRow,
@@ -1137,14 +1138,6 @@ function buildReceiptSuggestedMemo(vendorName, ocrLines) {
   return "";
 }
 
-function normalizeReceiptLearningToken(s) {
-  return String(s ?? "")
-    .toLowerCase()
-    .replace(/\s+/g, "")
-    .replace(/[　]/g, "")
-    .replace(/[()（）【】\[\]{}「」『』<>＜＞:：;；,，.。・]/g, "");
-}
-
 function receiptLearningYearMonth(rawDate) {
   const ymd = String(rawDate ?? "").trim().replace(/\//g, "-");
   if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
@@ -1555,6 +1548,7 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
       receiptYm: ym,
       receiptTotal: total,
       tokenSet: tokenSetNow,
+      vendorNorm,
     });
     const cur = scoreByCategoryId.get(Number(hit.id)) ?? { name: String(hit.name), score: 0 };
     cur.score += score;

@@ -1,9 +1,35 @@
 /**
  * 共有レシート学習カタログ（receipt_learning_catalog）のスコアリング用定数と純粋関数。
  * B/C（汎用年月減衰・件数重み）の単体テスト用に app-core から分離。
+ *
+ * カテゴリ ID の決定は行わない。DB 行の category_name_hint をユーザー家計簿のカテゴリへ
+ * 紐づける処理は app-core の suggestExpenseCategoryFromSharedLearningCatalog 側で行う。
  */
 
 export const RECEIPT_LEARNING_GENERIC_YM = "0000-00";
+
+/** 環境変数 RECEIPT_LEARNING_SCORE_DEBUG=1|true で素点計算の内訳を console.log */
+const RECEIPT_LEARNING_SCORE_DEBUG =
+  process.env.RECEIPT_LEARNING_SCORE_DEBUG === "1" ||
+  process.env.RECEIPT_LEARNING_SCORE_DEBUG === "true";
+
+/**
+ * 明細名・カタログ item_tokens の突合用（app-core と同一ルール）。
+ * @param {unknown} s
+ * @returns {string}
+ */
+export function normalizeReceiptLearningToken(s) {
+  return String(s ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[　]/g, "")
+    .replace(/[()（）【】\[\]{}「」『』<>＜＞:：;；,，.。・]/g, "");
+}
+
+function debugScoreLog(payload) {
+  if (!RECEIPT_LEARNING_SCORE_DEBUG) return;
+  console.log("[receiptLearningCatalogScore]", JSON.stringify(payload));
+}
 
 /** C: sample_count に応じた行スコアへの乗数（1回 / 2回 / 3回以上） */
 export const RECEIPT_LEARNING_SAMPLE_COUNT_WEIGHT = Object.freeze({
@@ -70,47 +96,128 @@ export const RECEIPT_LEARNING_CATEGORY_LINE_OVERLAP_SCORE_PER_TOKEN = 3;
 export const RECEIPT_LEARNING_CATEGORY_CATALOG_QUERY_LIMIT = 400;
 
 /**
- * 共有カタログ 1 行の素点（個人補正の倍率適用前）。
- * @param {object} row DB 行（ym/year_month, sample_count, total_amount, item_tokens）
- * @param {{ receiptYm: string, receiptTotal: number | null, tokenSet: Set<string> }} ctx
- * @returns {number}
+ * @typedef {{
+ *   receiptYm: string,
+ *   receiptTotal: number | null,
+ *   tokenSet: Set<string>,
+ *   vendorNorm?: string | null,
+ * }} ReceiptLearningCatalogScoreCtx
+ * tokenSet は OCR 明細名を normalizeReceiptLearningToken 済みの集合。
  */
-export function scoreReceiptLearningCatalogRow(row, ctx) {
+
+/**
+ * 共有カタログ 1 行の素点の内訳（個人補正・カテゴリ ID 解決の前）。
+ * @param {object} row DB 行（ym/year_month, sample_count, total_amount, item_tokens）
+ * @param {ReceiptLearningCatalogScoreCtx} ctx
+ * @returns {{
+ *   finalScore: number,
+ *   steps: {
+ *     rawSampleBase: number,
+ *     ymMatchBonus: number,
+ *     amountBonus: number,
+ *     amountPenalty: number,
+ *     overlapCount: number,
+ *     overlapBonus: number,
+ *     subtotalBeforeWeights: number,
+ *     sampleCount: number,
+ *     sampleCountWeight: number,
+ *     genericYmFactor: number,
+ *     rowYm: string,
+ *     rowTotalParsed: number | null,
+ *     receiptTotalUsed: number | null,
+ *   }
+ * }}
+ */
+export function explainReceiptLearningCatalogRowScore(row, ctx) {
   const receiptYm = ctx.receiptYm;
   const total = ctx.receiptTotal;
   const tokenSetNow = ctx.tokenSet;
 
   const rowYm = String(row?.ym ?? row?.year_month ?? "");
-  let score = Math.max(1, Number(row?.sample_count ?? 1));
+  const rawSampleBase = Math.max(1, Number(row?.sample_count ?? 1));
+  let subtotal = rawSampleBase;
+
+  let ymMatchBonus = 0;
   if (rowYm === receiptYm && receiptYm !== RECEIPT_LEARNING_GENERIC_YM) {
-    score += RECEIPT_LEARNING_CATEGORY_SCORE_YM_MATCH_BONUS;
+    ymMatchBonus = RECEIPT_LEARNING_CATEGORY_SCORE_YM_MATCH_BONUS;
+    subtotal += ymMatchBonus;
   }
+
+  let amountBonus = 0;
+  let amountPenalty = 0;
   const rowTotal = Number(row?.total_amount ?? NaN);
-  if (total != null && Number.isFinite(rowTotal) && rowTotal > 0) {
-    const diff = Math.abs(rowTotal - total);
+  const rowTotalParsed = Number.isFinite(rowTotal) && rowTotal > 0 ? Math.round(rowTotal) : null;
+
+  if (total != null && rowTotalParsed != null) {
+    const diff = Math.abs(rowTotalParsed - total);
     if (diff <= RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_MAX_DIFF) {
-      score += RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_BONUS;
+      amountBonus = RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_BONUS;
+      subtotal += amountBonus;
     } else if (diff <= RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_MAX_DIFF) {
-      score += RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_BONUS;
+      amountBonus = RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_BONUS;
+      subtotal += amountBonus;
     } else if (diff >= RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_MIN_DIFF) {
-      score -= RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_PENALTY;
+      amountPenalty = RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_PENALTY;
+      subtotal -= amountPenalty;
     }
   }
-  const rowTokens = String(row?.item_tokens ?? "")
+
+  const rowTokensRaw = String(row?.item_tokens ?? "")
     .split("|")
     .map((x) => String(x).trim())
     .filter(Boolean);
-  if (rowTokens.length > 0 && tokenSetNow.size > 0) {
-    let overlap = 0;
-    for (const tk of rowTokens) {
-      if (tokenSetNow.has(tk)) overlap += 1;
-    }
-    if (overlap >= 1) {
-      score += overlap * RECEIPT_LEARNING_CATEGORY_LINE_OVERLAP_SCORE_PER_TOKEN;
+  let overlapCount = 0;
+  if (rowTokensRaw.length > 0 && tokenSetNow.size > 0) {
+    for (const tk of rowTokensRaw) {
+      const nk = normalizeReceiptLearningToken(tk);
+      if (nk && tokenSetNow.has(nk)) overlapCount += 1;
     }
   }
+  const overlapBonus =
+    overlapCount >= 1 ? overlapCount * RECEIPT_LEARNING_CATEGORY_LINE_OVERLAP_SCORE_PER_TOKEN : 0;
+  subtotal += overlapBonus;
+
+  const subtotalBeforeWeights = subtotal;
   const scRow = Math.max(1, Number(row?.sample_count ?? 1));
-  score *= receiptLearningSampleCountWeight(scRow);
-  score *= receiptLearningGenericYmRowScoreFactor(rowYm, receiptYm);
-  return score;
+  const sampleCountWeight = receiptLearningSampleCountWeight(scRow);
+  const genericYmFactor = receiptLearningGenericYmRowScoreFactor(rowYm, receiptYm);
+  const finalScore = subtotalBeforeWeights * sampleCountWeight * genericYmFactor;
+
+  const steps = {
+    rawSampleBase,
+    ymMatchBonus,
+    amountBonus,
+    amountPenalty,
+    overlapCount,
+    overlapBonus,
+    subtotalBeforeWeights,
+    sampleCount: scRow,
+    sampleCountWeight,
+    genericYmFactor,
+    rowYm,
+    rowTotalParsed,
+    receiptTotalUsed: total,
+    rowItemTokensRawSample: rowTokensRaw.slice(0, 8),
+  };
+
+  debugScoreLog({
+    vendorNorm: ctx.vendorNorm ?? null,
+    rowSampleCount: row?.sample_count,
+    steps,
+    finalScore,
+  });
+
+  return { finalScore, steps };
+}
+
+/**
+ * 共有カタログ 1 行の素点（個人補正の倍率適用前）。
+ * 戻り値は数値のみ。カテゴリ ID / メモは caller が担当（category_name_hint の解決は app-core）。
+ *
+ * @param {object} row
+ * @param {ReceiptLearningCatalogScoreCtx} ctx
+ * @returns {number}
+ */
+export function scoreReceiptLearningCatalogRow(row, ctx) {
+  return explainReceiptLearningCatalogRowScore(row, ctx).finalScore;
 }
