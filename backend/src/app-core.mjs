@@ -1136,6 +1136,7 @@ function buildReceiptSuggestedMemo(vendorName, ocrLines) {
   if (payment && inferred) return withParty(`${payment} ${inferred}`);
   if (inferred) return withParty(inferred);
   if (party) return party.slice(0, 500);
+  if (vendor.length > 0) return vendor.slice(0, 500);
   return "";
 }
 
@@ -8584,6 +8585,12 @@ export async function handleApiRequest(req, options = {}) {
             body.suggestedMemo = learnedMemoValue;
           } else if (autoSuggestedMemo) {
             body.suggestedMemo = autoSuggestedMemo;
+          }
+          if (!String(body.suggestedMemo ?? "").trim()) {
+            const vnRaw = String(
+              adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
+            ).trim();
+            if (vnRaw) body.suggestedMemo = vnRaw.slice(0, 500);
           }
           if (duplicateWarning) {
             body.duplicateWarning = duplicateWarning;

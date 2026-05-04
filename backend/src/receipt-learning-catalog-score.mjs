@@ -84,6 +84,8 @@ export const RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_BONUS = 5;
 
 /** 差がこれ以下なら粗一致加点（ほぼ一致より緩い）— 支払と明細でズレるレシート向けに広め */
 export const RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_MAX_DIFF = 120;
+/** 粗一致時の加点（ほぼ一致より低め） */
+export const RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_BONUS = 2;
 
 /** 差がこれ以上ならペナルティ（大口ずれのノイズ抑制） */
 export const RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_MIN_DIFF = 12000;
@@ -100,9 +102,12 @@ export const RECEIPT_LEARNING_CATEGORY_CATALOG_QUERY_LIMIT = 400;
 
 /**
  * `category_name_hint` とユーザー支出カテゴリ名の文字列類似度しきい値（0〜1、レーベンシュタイン正規化）。
- * これ未満は部分一致に頼らずフォールバックカテゴリへ誘導する。
+ * これ未満は弱い類似度ルートかフォールバックを試す。
  */
-export const RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_THRESHOLD = 0.58;
+export const RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_THRESHOLD = 0.45;
+
+/** 上記でマッチしなくても、最良候補がこの値以上なら採用（弱い類似度） */
+export const RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_WEAK_THRESHOLD = 0.32;
 
 /**
  * 学習カタログ行の合計と、支払合計・明細合計の近い方を採用して差分（円）を得る。
@@ -200,11 +205,11 @@ export function pickFallbackSharedLearningExpenseCategory(userExpenseCategories)
 
 /**
  * 共有カタログの category_name_hint を、ユーザー支出カテゴリ一覧へマッピングする。
- * 優先度: 正規化名の完全一致 → 部分一致（長い一致を優先）→ 類似度が閾値以上 → フォールバック。
+ * 優先度: 正規化名の完全一致 → 全体の部分一致（indexOf）→ セグメント分割 → 類似度（主閾値）→ 弱い類似度 → フォールバック。
  *
  * @param {unknown} hint
  * @param {Array<{ id: unknown, name: unknown }>} userExpenseCategories
- * @param {{ similarityThreshold?: number }} [options]
+ * @param {{ similarityThreshold?: number, similarityWeakThreshold?: number }} [options]
  * @returns {{ id: number, name: string, match: string, similarity?: number } | null}
  */
 export function resolveSharedLearningCatalogHintToUserCategory(
@@ -216,6 +221,8 @@ export function resolveSharedLearningCatalogHintToUserCategory(
   if (cats.length === 0) return null;
   const threshold =
     options.similarityThreshold ?? RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_THRESHOLD;
+  const weakTh =
+    options.similarityWeakThreshold ?? RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_WEAK_THRESHOLD;
 
   const hintRaw = String(hint ?? "").trim();
   if (!hintRaw) {
@@ -237,6 +244,28 @@ export function resolveSharedLearningCatalogHintToUserCategory(
         similarity: 1,
       };
     }
+  }
+
+  let bestSub = null;
+  let bestOverlapRatio = -1;
+  for (const c of cats) {
+    const ck = normalizeCategoryNameKey(c?.name ?? "");
+    if (!ck || c?.id == null) continue;
+    if (ck.includes(hintKey) || hintKey.includes(ck)) {
+      const overlapRatio =
+        Math.min(ck.length, hintKey.length) / Math.max(ck.length, hintKey.length, 1);
+      if (overlapRatio > bestOverlapRatio) {
+        bestOverlapRatio = overlapRatio;
+        bestSub = { id: Number(c.id), name: String(c.name) };
+      }
+    }
+  }
+  if (bestSub != null) {
+    return {
+      ...bestSub,
+      match: "substring",
+      similarity: bestOverlapRatio,
+    };
   }
 
   const segmentSplit = /[・／/｜|]/;
@@ -265,28 +294,6 @@ export function resolveSharedLearningCatalogHintToUserCategory(
     }
   }
 
-  let bestSub = null;
-  let bestOverlapRatio = -1;
-  for (const c of cats) {
-    const ck = normalizeCategoryNameKey(c?.name ?? "");
-    if (!ck || c?.id == null) continue;
-    if (ck.includes(hintKey) || hintKey.includes(ck)) {
-      const overlapRatio =
-        Math.min(ck.length, hintKey.length) / Math.max(ck.length, hintKey.length, 1);
-      if (overlapRatio > bestOverlapRatio) {
-        bestOverlapRatio = overlapRatio;
-        bestSub = { id: Number(c.id), name: String(c.name) };
-      }
-    }
-  }
-  if (bestSub != null) {
-    return {
-      ...bestSub,
-      match: "substring",
-      similarity: bestOverlapRatio,
-    };
-  }
-
   let bestSim = -1;
   let bestSimCat = null;
   for (const c of cats) {
@@ -300,6 +307,21 @@ export function resolveSharedLearningCatalogHintToUserCategory(
   }
   if (bestSimCat != null) {
     return { ...bestSimCat, match: "similarity", similarity: bestSim };
+  }
+
+  let weakBest = -1;
+  let weakCat = null;
+  for (const c of cats) {
+    const ck = normalizeCategoryNameKey(c?.name ?? "");
+    if (!ck || c?.id == null) continue;
+    const sim = normalizedStringSimilarity01(hintKey, ck);
+    if (sim >= weakTh && sim > weakBest) {
+      weakBest = sim;
+      weakCat = { id: Number(c.id), name: String(c.name) };
+    }
+  }
+  if (weakCat != null) {
+    return { ...weakCat, match: "similarity_weak", similarity: weakBest };
   }
 
   return pickFallbackSharedLearningExpenseCategory(cats);
@@ -339,11 +361,28 @@ export function resolveSharedLearningCatalogHintToUserCategory(
  *     receiptTotalUsed: number | null,
  *     receiptTotalLinesSum: number | null,
  *     amountDiffBest: number | null,
+ *     amountDiffPayment: number | null,
+ *     amountDiffLines: number | null,
  *     amountDiffSource: string | null,
+ *     amountBonusFrom: 'payment' | 'lines' | 'both' | null,
  *     payVsLinesGap: number | null,
  *   }
  * }}
  */
+function amountBonusPenaltyFromDiff(d) {
+  if (d == null || !Number.isFinite(d)) return { bonus: 0, penalty: 0 };
+  if (d <= RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_MAX_DIFF) {
+    return { bonus: RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_BONUS, penalty: 0 };
+  }
+  if (d <= RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_MAX_DIFF) {
+    return { bonus: RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_BONUS, penalty: 0 };
+  }
+  if (d >= RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_MIN_DIFF) {
+    return { bonus: 0, penalty: RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_PENALTY };
+  }
+  return { bonus: 0, penalty: 0 };
+}
+
 export function explainReceiptLearningCatalogRowScore(row, ctx) {
   const receiptYm = ctx.receiptYm;
   const total = ctx.receiptTotal;
@@ -371,6 +410,12 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
   let amountDiffBest = null;
   /** @type {string | null} */
   let amountDiffSource = null;
+  /** @type {'payment' | 'lines' | 'both' | null} */
+  let amountBonusFrom = null;
+  /** @type {number | null} */
+  let amountDiffPayment = null;
+  /** @type {number | null} */
+  let amountDiffLines = null;
   let payVsLinesGap = null;
   if (
     total != null &&
@@ -394,18 +439,35 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
       if (best != null) {
         amountDiffBest = best.diff;
         amountDiffSource = best.used;
-        const diff = best.diff;
-        if (diff <= RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_MAX_DIFF) {
-          amountBonus = RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_BONUS;
-          subtotal += amountBonus;
-        } else if (diff <= RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_MAX_DIFF) {
-          amountBonus = RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_ROUGH_BONUS;
-          subtotal += amountBonus;
-        } else if (diff >= RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_MIN_DIFF) {
-          amountPenalty = RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_PENALTY;
-          subtotal -= amountPenalty;
-        }
       }
+      if (payOk) {
+        amountDiffPayment = Math.abs(rowTotalParsed - Math.round(Number(total)));
+      }
+      if (lineOk) {
+        amountDiffLines = Math.abs(rowTotalParsed - Math.round(Number(linesSum)));
+      }
+      const tp = amountBonusPenaltyFromDiff(amountDiffPayment);
+      const tl = amountBonusPenaltyFromDiff(amountDiffLines);
+      if (amountDiffPayment != null && amountDiffLines != null) {
+        amountBonus = Math.max(tp.bonus, tl.bonus);
+        if (amountBonus > 0) {
+          if (tp.bonus === tl.bonus) amountBonusFrom = "both";
+          else if (tp.bonus > tl.bonus) amountBonusFrom = "payment";
+          else amountBonusFrom = "lines";
+        }
+        amountPenalty =
+          tp.penalty > 0 && tl.penalty > 0 ? RECEIPT_LEARNING_CATEGORY_AMOUNT_FAR_PENALTY : 0;
+      } else if (amountDiffPayment != null) {
+        amountBonus = tp.bonus;
+        amountPenalty = tp.penalty;
+        if (tp.bonus > 0) amountBonusFrom = "payment";
+      } else if (amountDiffLines != null) {
+        amountBonus = tl.bonus;
+        amountPenalty = tl.penalty;
+        if (tl.bonus > 0) amountBonusFrom = "lines";
+      }
+      subtotal += amountBonus;
+      subtotal -= amountPenalty;
     }
   }
 
@@ -448,7 +510,10 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
     receiptTotalUsed: total,
     receiptTotalLinesSum: linesSum,
     amountDiffBest,
+    amountDiffPayment,
+    amountDiffLines,
     amountDiffSource,
+    amountBonusFrom,
     payVsLinesGap,
     rowItemTokensRawSample: rowTokensRaw.slice(0, 8),
   };
