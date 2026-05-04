@@ -107,7 +107,7 @@ export const RECEIPT_LEARNING_CATEGORY_CATALOG_QUERY_LIMIT = 400;
 export const RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_THRESHOLD = 0.45;
 
 /** 上記でマッチしなくても、最良候補がこの値以上なら採用（弱い類似度） */
-export const RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_WEAK_THRESHOLD = 0.32;
+export const RECEIPT_LEARNING_CATEGORY_HINT_SIMILARITY_WEAK_THRESHOLD = 0.28;
 
 /**
  * 学習カタログ行の合計と、支払合計・明細合計の近い方を採用して差分（円）を得る。
@@ -205,7 +205,8 @@ export function pickFallbackSharedLearningExpenseCategory(userExpenseCategories)
 
 /**
  * 共有カタログの category_name_hint を、ユーザー支出カテゴリ一覧へマッピングする。
- * 優先度: 正規化名の完全一致 → 全体の部分一致（indexOf）→ セグメント分割 → 類似度（主閾値）→ 弱い類似度 → フォールバック。
+ * 優先度: 正規化名の完全一致 → セグメント分割（左から最初にマッチしたセグメントを優先）→ 全体の部分一致（indexOf）
+ * → 区切り除去後の部分一致 → 類似度（主閾値）→ 弱い類似度 → フォールバック。
  *
  * @param {unknown} hint
  * @param {Array<{ id: unknown, name: unknown }>} userExpenseCategories
@@ -246,6 +247,32 @@ export function resolveSharedLearningCatalogHintToUserCategory(
     }
   }
 
+  const segmentSplit = /[・／/｜|]/;
+  if (segmentSplit.test(hintRaw)) {
+    const parts = hintRaw
+      .split(segmentSplit)
+      .map((x) => normalizeCategoryNameKey(x))
+      .filter((x) => x.length >= 2);
+    for (const seg of parts) {
+      let bestSegCat = null;
+      let bestSegR = -1;
+      for (const c of cats) {
+        const ck = normalizeCategoryNameKey(c?.name ?? "");
+        if (!ck || c?.id == null) continue;
+        if (ck === seg || ck.includes(seg) || seg.includes(ck)) {
+          const r = Math.min(ck.length, seg.length) / Math.max(ck.length, seg.length, 1);
+          if (r > bestSegR) {
+            bestSegR = r;
+            bestSegCat = { id: Number(c.id), name: String(c.name) };
+          }
+        }
+      }
+      if (bestSegCat != null) {
+        return { ...bestSegCat, match: "segment", similarity: bestSegR };
+      }
+    }
+  }
+
   let bestSub = null;
   let bestOverlapRatio = -1;
   for (const c of cats) {
@@ -268,29 +295,28 @@ export function resolveSharedLearningCatalogHintToUserCategory(
     };
   }
 
-  const segmentSplit = /[・／/｜|]/;
-  if (segmentSplit.test(hintRaw)) {
-    const parts = hintRaw
-      .split(segmentSplit)
-      .map((x) => normalizeCategoryNameKey(x))
-      .filter((x) => x.length >= 2);
-    let bestSegCat = null;
-    let bestSegR = -1;
-    for (const seg of parts) {
-      for (const c of cats) {
-        const ck = normalizeCategoryNameKey(c?.name ?? "");
-        if (!ck || c?.id == null) continue;
-        if (ck === seg || ck.includes(seg) || seg.includes(ck)) {
-          const r = Math.min(ck.length, seg.length) / Math.max(ck.length, seg.length, 1);
-          if (r > bestSegR) {
-            bestSegR = r;
-            bestSegCat = { id: Number(c.id), name: String(c.name) };
-          }
+  const compact = hintKey.replace(/[・／/｜|、,，。\s]+/g, "");
+  if (compact.length >= 2 && compact !== hintKey) {
+    let bestCompact = null;
+    let bestCompactRatio = -1;
+    for (const c of cats) {
+      const ck = normalizeCategoryNameKey(c?.name ?? "");
+      if (!ck || ck.length < 2 || c?.id == null) continue;
+      if (compact.includes(ck) || ck.includes(compact)) {
+        const overlapRatio =
+          Math.min(ck.length, compact.length) / Math.max(ck.length, compact.length, 1);
+        if (overlapRatio > bestCompactRatio) {
+          bestCompactRatio = overlapRatio;
+          bestCompact = { id: Number(c.id), name: String(c.name) };
         }
       }
     }
-    if (bestSegCat != null) {
-      return { ...bestSegCat, match: "segment", similarity: bestSegR };
+    if (bestCompact != null) {
+      return {
+        ...bestCompact,
+        match: "substring_compact",
+        similarity: bestCompactRatio,
+      };
     }
   }
 
@@ -334,9 +360,17 @@ export function resolveSharedLearningCatalogHintToUserCategory(
  *   receiptTotalLinesSum?: number | null,
  *   tokenSet: Set<string>,
  *   vendorNorm?: string | null,
+ *   catalogCategoryHintDebug?: {
+ *     hintRaw: string,
+ *     mappedCategoryId: number,
+ *     mappedCategoryName: string,
+ *     matchKind: string,
+ *     similarity?: number,
+ *   } | null,
  * }} ReceiptLearningCatalogScoreCtx
  * tokenSet は OCR 明細名を normalizeReceiptLearningToken 済みの集合。
  * receiptTotalLinesSum は明細金額の合算（支払合計と乖離する場合のスコア用）。
+ * catalogCategoryHintDebug は suggest 側で category_name_hint → ユーザー category 解決後に付与（デバッグ用）。
  */
 
 /**
@@ -366,6 +400,13 @@ export function resolveSharedLearningCatalogHintToUserCategory(
  *     amountDiffSource: string | null,
  *     amountBonusFrom: 'payment' | 'lines' | 'both' | null,
  *     payVsLinesGap: number | null,
+ *     categoryHintResolve: {
+ *       hintRaw: string,
+ *       mappedCategoryId: number,
+ *       mappedCategoryName: string,
+ *       matchKind: string,
+ *       similarity?: number,
+ *     } | null,
  *   }
  * }}
  */
@@ -516,13 +557,27 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
     amountBonusFrom,
     payVsLinesGap,
     rowItemTokensRawSample: rowTokensRaw.slice(0, 8),
+    categoryHintResolve: ctx.catalogCategoryHintDebug ?? null,
   };
 
   const payLineMismatch =
     payVsLinesGap != null && payVsLinesGap >= RECEIPT_LEARNING_AMOUNT_PAY_VS_LINES_DIVERGENCE_WARN;
+  const catDbg = ctx.catalogCategoryHintDebug;
   debugScoreLog({
     vendorNorm: ctx.vendorNorm ?? null,
+    categoryResolution:
+      catDbg == null
+        ? null
+        : {
+            hintRaw: catDbg.hintRaw,
+            mappedCategoryId: catDbg.mappedCategoryId,
+            mappedCategoryName: catDbg.mappedCategoryName,
+            matchKind: catDbg.matchKind,
+            similarity: catDbg.similarity,
+          },
     rowSampleCount: row?.sample_count,
+    rowYm,
+    rowTotalFromDb: row?.total_amount,
     steps,
     finalScore,
     payLineMismatch,

@@ -1117,7 +1117,30 @@ function inferPartyCountMemoFromOcr(ocrLines) {
   return `${m[1]}名`;
 }
 
-function buildReceiptSuggestedMemo(vendorName, ocrLines) {
+function itemNameLooksLikeAggregateReceiptLine(name) {
+  const s = String(name ?? "").trim();
+  if (!s) return true;
+  return (
+    /合計|総額|お会計|お支払|支払金額|ご請求|^小計|^税\s*|消費税|TOTAL/i.test(s) ||
+    /(?:税込(?:額)?|対象額|税率\s*\d+)/i.test(s)
+  );
+}
+
+function buildReceiptMemoFromParsedLineItems(items) {
+  if (!Array.isArray(items) || items.length === 0) return "";
+  const out = [];
+  for (const it of items) {
+    const raw = String(it?.name ?? "").trim();
+    if (!raw) continue;
+    if (itemNameLooksLikeAggregateReceiptLine(raw)) continue;
+    out.push(raw);
+    if (out.length >= 14) break;
+  }
+  if (out.length === 0) return "";
+  return out.join("、").slice(0, 500);
+}
+
+function buildReceiptSuggestedMemo(vendorName, ocrLines, items) {
   const vendor = String(vendorName ?? "").trim();
   const payment = detectReceiptPaymentLabel(ocrLines);
   const party = inferPartyCountMemoFromOcr(ocrLines);
@@ -1136,7 +1159,9 @@ function buildReceiptSuggestedMemo(vendorName, ocrLines) {
   if (payment && inferred) return withParty(`${payment} ${inferred}`);
   if (inferred) return withParty(inferred);
   if (party) return party.slice(0, 500);
-  if (vendor.length > 0) return vendor.slice(0, 500);
+  const fromItems = buildReceiptMemoFromParsedLineItems(Array.isArray(items) ? items : []);
+  if (fromItems) return withParty(fromItems);
+  if (vendor.length > 0 && !isLikelyGarbledVendorName(vendor)) return withParty(vendor);
   return "";
 }
 
@@ -1552,6 +1577,13 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
       receiptTotalLinesSum,
       tokenSet: tokenSetNow,
       vendorNorm,
+      catalogCategoryHintDebug: {
+        hintRaw: hint,
+        mappedCategoryId: Number(mapped.id),
+        mappedCategoryName: String(mapped.name),
+        matchKind: String(mapped.match),
+        similarity: mapped.similarity,
+      },
     });
     const cur = scoreByCategoryId.get(Number(hit.id)) ?? { name: String(hit.name), score: 0 };
     cur.score += score;
@@ -8575,6 +8607,7 @@ export async function handleApiRequest(req, options = {}) {
           const autoSuggestedMemo = buildReceiptSuggestedMemo(
             adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
             result?.ocrLines ?? [],
+            result?.items ?? [],
           );
           const learnedMemoTrimmed = String(learnedMemoValue ?? "").trim();
           const learnedMemoLooksNoise =
@@ -8591,6 +8624,13 @@ export async function handleApiRequest(req, options = {}) {
               adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
             ).trim();
             if (vnRaw) body.suggestedMemo = vnRaw.slice(0, 500);
+          }
+          const memoFromLinesFallback = buildReceiptMemoFromParsedLineItems(result?.items ?? []);
+          if (
+            memoFromLinesFallback &&
+            isLikelyGarbledVendorName(String(body.suggestedMemo ?? "").trim())
+          ) {
+            body.suggestedMemo = memoFromLinesFallback;
           }
           if (duplicateWarning) {
             body.duplicateWarning = duplicateWarning;
