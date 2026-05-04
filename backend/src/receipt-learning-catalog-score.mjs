@@ -14,6 +14,11 @@ const RECEIPT_LEARNING_SCORE_DEBUG =
   process.env.RECEIPT_LEARNING_SCORE_DEBUG === "1" ||
   process.env.RECEIPT_LEARNING_SCORE_DEBUG === "true";
 
+/** app-core の共有学習サジェスト側ログと共用 */
+export function receiptLearningCatalogScoreDebugEnabled() {
+  return RECEIPT_LEARNING_SCORE_DEBUG;
+}
+
 /**
  * 明細名・カタログ item_tokens の突合用（app-core と同一ルール）。
  * @param {unknown} s
@@ -407,6 +412,8 @@ export function resolveSharedLearningCatalogHintToUserCategory(
  *       matchKind: string,
  *       similarity?: number,
  *     } | null,
+ *     amountScoringSkippedReason: string | null,
+ *     payLineMismatchNote: string | null,
  *   }
  * }}
  */
@@ -468,9 +475,19 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
     payVsLinesGap = Math.abs(Math.round(total) - linesSum);
   }
 
+  const payOkForGate = total != null && Number.isFinite(total) && total > 0;
+  const lineOkForGate = linesSum != null && linesSum > 0;
+  /** @type {string | null} */
+  let amountScoringSkippedReason = null;
+  if (rowTotalParsed == null) {
+    amountScoringSkippedReason = "catalog_row_total_missing_or_invalid";
+  } else if (!payOkForGate && !lineOkForGate) {
+    amountScoringSkippedReason = "receipt_payment_and_lines_sum_unavailable";
+  }
+
   if (rowTotalParsed != null) {
-    const payOk = total != null && Number.isFinite(total) && total > 0;
-    const lineOk = linesSum != null && linesSum > 0;
+    const payOk = payOkForGate;
+    const lineOk = lineOkForGate;
     if (payOk || lineOk) {
       const best = receiptCatalogAmountDiffBest(
         rowTotalParsed,
@@ -535,6 +552,12 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
   const genericYmFactor = receiptLearningGenericYmRowScoreFactor(rowYm, receiptYm);
   const finalScore = subtotalBeforeWeights * sampleCountWeight * genericYmFactor;
 
+  const payLineMismatch =
+    payVsLinesGap != null && payVsLinesGap >= RECEIPT_LEARNING_AMOUNT_PAY_VS_LINES_DIVERGENCE_WARN;
+  const payLineMismatchNote = payLineMismatch
+    ? "pay_vs_lines_gap_is_informational_only_does_not_clear_hints_or_overlap"
+    : null;
+
   const steps = {
     rawSampleBase,
     ymMatchBonus,
@@ -556,12 +579,13 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
     amountDiffSource,
     amountBonusFrom,
     payVsLinesGap,
+    payLineMismatch,
+    payLineMismatchNote,
+    amountScoringSkippedReason,
     rowItemTokensRawSample: rowTokensRaw.slice(0, 8),
     categoryHintResolve: ctx.catalogCategoryHintDebug ?? null,
   };
 
-  const payLineMismatch =
-    payVsLinesGap != null && payVsLinesGap >= RECEIPT_LEARNING_AMOUNT_PAY_VS_LINES_DIVERGENCE_WARN;
   const catDbg = ctx.catalogCategoryHintDebug;
   debugScoreLog({
     vendorNorm: ctx.vendorNorm ?? null,
@@ -575,6 +599,20 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
             matchKind: catDbg.matchKind,
             similarity: catDbg.similarity,
           },
+    amountGate: {
+      rowTotalParsed,
+      receiptPaymentTotal: total,
+      receiptLinesSum: linesSum,
+      payOk: payOkForGate,
+      lineOk: lineOkForGate,
+      payVsLinesGap,
+      payLineMismatch,
+      payLineMismatchNote,
+      amountScoringSkippedReason,
+      ymMatchApplied: ymMatchBonus > 0,
+      receiptYm,
+      rowYmCatalog: rowYm,
+    },
     rowSampleCount: row?.sample_count,
     rowYm,
     rowTotalFromDb: row?.total_amount,
@@ -583,6 +621,12 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
     payLineMismatch,
     warnVeryLowScore: finalScore < 0.15,
     warnSubtotalBeforeWeights: subtotalBeforeWeights < 1,
+    skipOrWeakHints: {
+      tokenSetEmpty: tokenSetNow.size === 0,
+      catalogItemTokensEmpty: rowTokensRaw.length === 0,
+      overlapZeroWithNonEmptyTokens:
+        overlapCount === 0 && rowTokensRaw.length > 0 && tokenSetNow.size > 0,
+    },
   });
 
   return { finalScore, steps };

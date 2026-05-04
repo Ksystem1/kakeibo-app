@@ -31,7 +31,9 @@ import {
   RECEIPT_LEARNING_GENERIC_YM,
   RECEIPT_LEARNING_CATEGORY_CATALOG_QUERY_LIMIT,
   RECEIPT_LEARNING_PARSE_HINT_WEIGHTED_SCORE_FLOOR,
+  explainReceiptLearningCatalogRowScore,
   normalizeReceiptLearningToken,
+  receiptLearningCatalogScoreDebugEnabled,
   receiptLearningSampleCountWeight,
   receiptLearningGenericYmRowScoreFactor,
   resolveSharedLearningCatalogHintToUserCategory,
@@ -1126,13 +1128,24 @@ function itemNameLooksLikeAggregateReceiptLine(name) {
   );
 }
 
+/** OCR 破損で記号だけの行をメモ連結から除外する */
+function lineItemDisplayNameLooksLikeNoise(name) {
+  const raw = String(name ?? "").trim();
+  if (raw.length < 2) return true;
+  if (itemNameLooksLikeAggregateReceiptLine(raw)) return true;
+  const noSym = raw.replace(/[()\s*・、,，\-#¥￥0-9０-９.:：]/g, "");
+  if (noSym.length < 2) return true;
+  if (isLikelyGarbledVendorName(raw) && raw.length <= 24) return true;
+  return false;
+}
+
 function buildReceiptMemoFromParsedLineItems(items) {
   if (!Array.isArray(items) || items.length === 0) return "";
   const out = [];
   for (const it of items) {
     const raw = String(it?.name ?? "").trim();
     if (!raw) continue;
-    if (itemNameLooksLikeAggregateReceiptLine(raw)) continue;
+    if (lineItemDisplayNameLooksLikeNoise(raw)) continue;
     out.push(raw);
     if (out.length >= 14) break;
   }
@@ -1571,7 +1584,7 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
     const mapped = resolveSharedLearningCatalogHintToUserCategory(hint, userCats, {});
     if (mapped == null || mapped.id == null) continue;
     const hit = { id: mapped.id, name: mapped.name };
-    const score = scoreReceiptLearningCatalogRow(row, {
+    const ctx = {
       receiptYm: ym,
       receiptTotal: total,
       receiptTotalLinesSum,
@@ -1584,7 +1597,10 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
         matchKind: String(mapped.match),
         similarity: mapped.similarity,
       },
-    });
+    };
+    const score = receiptLearningCatalogScoreDebugEnabled()
+      ? explainReceiptLearningCatalogRowScore(row, ctx).finalScore
+      : scoreReceiptLearningCatalogRow(row, ctx);
     const cur = scoreByCategoryId.get(Number(hit.id)) ?? { name: String(hit.name), score: 0 };
     cur.score += score;
     scoreByCategoryId.set(Number(hit.id), cur);
@@ -1620,8 +1636,73 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
       bestScore = st.score;
     }
   }
-  if (bestId == null || !Number.isFinite(bestScore) || bestScore <= 0) return null;
-  return { id: bestId, name: bestName, source: "shared_learning" };
+
+  const pickHintOnlyFallback = () => {
+    for (const row of rows) {
+      const hint = String(row?.category_name_hint ?? "").trim();
+      if (!hint) continue;
+      const mapped = resolveSharedLearningCatalogHintToUserCategory(hint, userCats, {});
+      if (mapped?.id != null) {
+        return {
+          id: Number(mapped.id),
+          name: String(mapped.name),
+          source: "shared_learning",
+          lowConfidence: true,
+          hintMatchKind: mapped.match,
+        };
+      }
+    }
+    return null;
+  };
+
+  const payVsLinesGapDbg =
+    total != null &&
+    receiptTotalLinesSum != null &&
+    Number.isFinite(total) &&
+    Number.isFinite(receiptTotalLinesSum)
+      ? Math.abs(Math.round(Number(total)) - receiptTotalLinesSum)
+      : null;
+
+  if (bestId == null || !Number.isFinite(bestScore) || bestScore <= 0) {
+    const fb = pickHintOnlyFallback();
+    if (receiptLearningCatalogScoreDebugEnabled()) {
+      console.log(
+        "[sharedLearningSuggest]",
+        JSON.stringify({
+          outcome: fb ? "hint_only_fallback" : "null_no_usable_score",
+          vendorNorm,
+          ym,
+          receiptPaymentTotal: total,
+          receiptLinesSum: receiptTotalLinesSum,
+          payVsLinesGap: payVsLinesGapDbg,
+          bestScoreBeforeFallback: bestScore,
+          fallbackCategoryId: fb?.id ?? null,
+          mappedCategoriesAggregated: scoreByCategoryId.size,
+        }),
+      );
+    }
+    if (fb) return fb;
+    return null;
+  }
+
+  if (receiptLearningCatalogScoreDebugEnabled()) {
+    console.log(
+      "[sharedLearningSuggest]",
+      JSON.stringify({
+        outcome: "score_aggregate",
+        vendorNorm,
+        ym,
+        receiptPaymentTotal: total,
+        receiptLinesSum: receiptTotalLinesSum,
+        payVsLinesGap: payVsLinesGapDbg,
+        bestId,
+        bestScore,
+        lowConfidence: false,
+      }),
+    );
+  }
+
+  return { id: bestId, name: bestName, source: "shared_learning", lowConfidence: false };
 }
 
 /**
@@ -1897,6 +1978,10 @@ async function suggestExpenseCategoryForReceipt(
   return { id: best.id, name: best.name, source: "keywords" };
 }
 
+/**
+ * @param {Array<{ id: unknown, name: unknown }>} userExpenseCategories 支出カテゴリ（id / name）— 共有学習の category_name_hint 解決に必須
+ * @param {unknown} [prefetchedSharedLearningCategory] receipts.parse が先に取得した共有学習候補（undefined=未実施、null=該当なし）
+ */
 async function predictCategory({
   pool,
   userId,
@@ -1910,6 +1995,7 @@ async function predictCategory({
   subscriptionActive,
   aiCategoryName,
   catWhere,
+  prefetchedSharedLearningCategory,
 }) {
   const twp =
     Array.isArray(txWhereParams) && txWhereParams.length > 0 ? txWhereParams : [userId, userId];
@@ -1940,20 +2026,28 @@ async function predictCategory({
     if (fromGlobal?.id != null) {
       return { ...fromGlobal, lowConfidence: false };
     }
-    const fromSharedLearning = await suggestExpenseCategoryFromSharedLearningCatalog(
-      pool,
-      {
-        ...(typeof receiptSummary === "object" && receiptSummary != null ? receiptSummary : {}),
-        vendorName: String(vendor ?? receiptSummary?.vendorName ?? "").trim(),
-        items: Array.isArray(items) ? items : [],
-      },
-      userExpenseCategories,
-      typeof catWhere === "string" && catWhere.length > 0
-        ? { userId, catWhere, items: Array.isArray(items) ? items : [] }
-        : {},
-    );
+    let fromSharedLearning;
+    if (prefetchedSharedLearningCategory !== undefined) {
+      fromSharedLearning = prefetchedSharedLearningCategory;
+    } else {
+      fromSharedLearning = await suggestExpenseCategoryFromSharedLearningCatalog(
+        pool,
+        {
+          ...(typeof receiptSummary === "object" && receiptSummary != null ? receiptSummary : {}),
+          vendorName: String(vendor ?? receiptSummary?.vendorName ?? "").trim(),
+          items: Array.isArray(items) ? items : [],
+        },
+        userExpenseCategories,
+        typeof catWhere === "string" && catWhere.length > 0
+          ? { userId, catWhere, items: Array.isArray(items) ? items : [] }
+          : {},
+      );
+    }
     if (fromSharedLearning?.id != null) {
-      return { ...fromSharedLearning, lowConfidence: false };
+      return {
+        ...fromSharedLearning,
+        lowConfidence: Boolean(fromSharedLearning.lowConfidence),
+      };
     }
     const fromLineItems = suggestExpenseCategoryFromPremiumLineItems(
       items,
@@ -8409,6 +8503,21 @@ export async function handleApiRequest(req, options = {}) {
             }
           }
 
+          let prefetchedSharedLearningCategory = undefined;
+          if (subscriptionActive && expenseCatRows.length > 0) {
+            try {
+              prefetchedSharedLearningCategory = await suggestExpenseCategoryFromSharedLearningCatalog(
+                pool,
+                { ...adjustedSummary, items: result?.items ?? [] },
+                expenseCatRows,
+                { userId, catWhere, items: result?.items ?? [] },
+              );
+            } catch (ePrefetchSl) {
+              prefetchedSharedLearningCategory = null;
+              logError("receipts.parse.shared_learning_category_prefetch", ePrefetchSl);
+            }
+          }
+
           const predicted = await predictCategory({
             pool,
             userId,
@@ -8422,6 +8531,9 @@ export async function handleApiRequest(req, options = {}) {
             subscriptionActive,
             aiCategoryName,
             catWhere,
+            prefetchedSharedLearningCategory: subscriptionActive
+              ? prefetchedSharedLearningCategory
+              : undefined,
           });
           let placePreferredCategoryId = null;
           let placePreferredCategoryName = null;

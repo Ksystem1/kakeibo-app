@@ -308,4 +308,17 @@ test("explainReceiptLearningCatalogRowScore: categoryHintResolve にヒント解
   });
   assert.equal(ex.steps.categoryHintResolve?.mappedCategoryId, 42);
   assert.equal(ex.steps.categoryHintResolve?.matchKind, "segment");
+  assert.equal(ex.steps.payLineMismatch, true);
+  assert.ok(String(ex.steps.payLineMismatchNote ?? "").includes("informational_only"));
+});
+
+test("explainReceiptLearningCatalogRowScore: レシート金額が無いとき amountScoringSkippedReason", () => {
+  const row = { ym: "2026-03", sample_count: 2, total_amount: 1000, item_tokens: "" };
+  const ex = explainReceiptLearningCatalogRowScore(row, {
+    receiptYm: "2026-03",
+    receiptTotal: null,
+    receiptTotalLinesSum: null,
+    tokenSet: new Set(),
+  });
+  assert.equal(ex.steps.amountScoringSkippedReason, "receipt_payment_and_lines_sum_unavailable");
 });
