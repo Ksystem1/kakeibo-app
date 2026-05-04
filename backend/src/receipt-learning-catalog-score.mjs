@@ -643,3 +643,16 @@ export function explainReceiptLearningCatalogRowScore(row, ctx) {
 export function scoreReceiptLearningCatalogRow(row, ctx) {
   return explainReceiptLearningCatalogRowScore(row, ctx).finalScore;
 }
+
+/**
+ * レシート取込のメモ欄用: `normalizeVendorForMatch` 済みの店名キー（= DB の vendor_norm と同系）を定型文にする。
+ * カテゴリ・明細が得られない場合のフェイルセーフでも同じ式を使う。
+ *
+ * @param {unknown} vendorNorm
+ * @returns {string} 2 文字未満は空
+ */
+export function formatReceiptSuggestedMemoFromVendorNorm(vendorNorm) {
+  const v = String(vendorNorm ?? "").trim();
+  if (v.length < 2) return "";
+  return `今回は、${v}`.slice(0, 500);
+}

@@ -38,6 +38,7 @@ import {
   receiptLearningGenericYmRowScoreFactor,
   resolveSharedLearningCatalogHintToUserCategory,
   scoreReceiptLearningCatalogRow,
+  formatReceiptSuggestedMemoFromVendorNorm,
 } from "./receipt-learning-catalog-score.mjs";
 import {
   buildReceiptTotalCandidates,
@@ -1926,6 +1927,8 @@ async function buildAdminReceiptLearningScorePreview(pool, body) {
 
   return {
     vendorNorm,
+    /** 取込メモと同じ定型（vendor_norm ベース） */
+    memo: formatReceiptSuggestedMemoFromVendorNorm(vendorNorm),
     receiptYm: ym,
     receiptDate: body?.date != null ? String(body.date) : null,
     receiptPaymentTotal: total,
@@ -9024,6 +9027,32 @@ export async function handleApiRequest(req, options = {}) {
             isLikelyGarbledVendorName(String(body.suggestedMemo ?? "").trim())
           ) {
             body.suggestedMemo = memoFromLinesFallback;
+          }
+          {
+            const vendorNormMemoKey = normalizeVendorForMatch(
+              String(adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "").trim(),
+            );
+            const memoFromVendorNorm = formatReceiptSuggestedMemoFromVendorNorm(vendorNormMemoKey);
+            if (memoFromVendorNorm) {
+              const learnedMemoOk =
+                learnCorrectionHit &&
+                learnedMemoPresent &&
+                !learnedMemoLooksNoise &&
+                String(learnedMemoValue ?? "").trim().length > 0;
+              const curMemo = String(body.suggestedMemo ?? "").trim();
+              const normCur = normalizeVendorForMatch(curMemo);
+              const memoHasVendorNormKey =
+                vendorNormMemoKey.length >= 2 &&
+                (normCur.includes(vendorNormMemoKey) || vendorNormMemoKey.includes(normCur));
+              const memoWeak = !curMemo || isLikelyGarbledVendorName(curMemo);
+              if (!learnedMemoOk && (memoWeak || !memoHasVendorNormKey)) {
+                if (!memoWeak && curMemo && !memoHasVendorNormKey) {
+                  body.suggestedMemo = `${memoFromVendorNorm} ${curMemo}`.trim().slice(0, 500);
+                } else {
+                  body.suggestedMemo = memoFromVendorNorm;
+                }
+              }
+            }
           }
           if (duplicateWarning) {
             body.duplicateWarning = duplicateWarning;

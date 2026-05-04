@@ -4,6 +4,7 @@ import {
   RECEIPT_LEARNING_CATEGORY_AMOUNT_NEAR_EXACT_BONUS,
   RECEIPT_LEARNING_GENERIC_YM,
   explainReceiptLearningCatalogRowScore,
+  formatReceiptSuggestedMemoFromVendorNorm,
   normalizeReceiptLearningToken,
   pickFallbackSharedLearningExpenseCategory,
   receiptCatalogAmountDiffBest,
@@ -12,6 +13,15 @@ import {
   resolveSharedLearningCatalogHintToUserCategory,
   scoreReceiptLearningCatalogRow,
 } from "../src/receipt-learning-catalog-score.mjs";
+
+test("formatReceiptSuggestedMemoFromVendorNorm: 定型メモ（vendor_norm キー）", () => {
+  assert.equal(
+    formatReceiptSuggestedMemoFromVendorNorm("うなぎ割烹竹江"),
+    "今回は、うなぎ割烹竹江",
+  );
+  assert.equal(formatReceiptSuggestedMemoFromVendorNorm(""), "");
+  assert.equal(formatReceiptSuggestedMemoFromVendorNorm("x"), "");
+});
 
 test("receiptLearningSampleCountWeight: 1 / 2 / 3+", () => {
   assert.equal(receiptLearningSampleCountWeight(1), 0.3);
