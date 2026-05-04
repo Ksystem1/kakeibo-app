@@ -1515,7 +1515,9 @@ export function AdminPage() {
         {receiptScorePreviewResult ? (
           <div style={{ marginTop: "0.75rem" }}>
             <p style={{ margin: "0 0 0.35rem", fontSize: "0.86rem", color: "var(--text-muted)" }}>
-              識別年月: {String(receiptScorePreviewResult.receiptYm ?? "—")} / 支払合計:{" "}
+              メモ（vendorName）:{" "}
+              {String(receiptScorePreviewResult.memo ?? receiptScorePreviewResult.vendorNorm ?? "—")}{" "}
+              / 識別年月: {String(receiptScorePreviewResult.receiptYm ?? "—")} / 支払合計:{" "}
               {receiptScorePreviewResult.receiptPaymentTotal != null
                 ? `¥${Number(receiptScorePreviewResult.receiptPaymentTotal as number).toLocaleString("ja-JP")}`
                 : "—"}{" "}
