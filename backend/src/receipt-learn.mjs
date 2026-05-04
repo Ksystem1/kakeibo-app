@@ -7,9 +7,48 @@ function normalizeToken(s) {
     .replace(/[　]/g, "");
 }
 
+/**
+ * vendorName がネストオブジェクト・メタデータ付きで渡る場合に、[object Object] にならないよう文字列へ潰す。
+ * @param {unknown} input
+ * @param {number} depth
+ * @returns {string}
+ */
+export function coerceVendorNameInputToPlainString(input, depth = 0) {
+  if (input == null) return "";
+  if (typeof input === "string") return input.trim();
+  if (typeof input === "number" && Number.isFinite(input)) return String(input);
+  if (typeof input === "boolean") return input ? "true" : "false";
+  if (typeof input === "object" && depth <= 2) {
+    const o = /** @type {Record<string, unknown>} */ (input);
+    const keys = [
+      "vendorName",
+      "name",
+      "storeName",
+      "label",
+      "displayName",
+      "value",
+      "text",
+      "vendorNorm",
+    ];
+    for (const k of keys) {
+      if (!(k in o)) continue;
+      const sub = o[k];
+      if (typeof sub === "string" && sub.trim()) return sub.trim();
+      if (typeof sub === "number" && Number.isFinite(sub)) return String(sub);
+      if (typeof sub === "object" && sub != null) {
+        const inner = coerceVendorNameInputToPlainString(sub, depth + 1);
+        if (inner) return inner;
+      }
+    }
+    return "";
+  }
+  return String(input).trim();
+}
+
 /** グローバル辞書の照合・学習で共有する正規化（個人メモは使わない） */
 export function normalizeVendorForMatch(s) {
-  return normalizeToken(s)
+  const plain = coerceVendorNameInputToPlainString(s);
+  return normalizeToken(plain)
     .replace(/株式会社/g, "")
     .replace(/\(株\)/g, "")
     .replace(/有限会社/g, "")
@@ -36,7 +75,10 @@ export function buildReceiptOcrSnapshot(summary, items) {
       ? Math.round(Number(totalRaw) * 100) / 100
       : null;
   return {
-    vendorName: summary?.vendorName != null ? String(summary.vendorName) : null,
+    vendorName:
+      summary?.vendorName != null
+        ? coerceVendorNameInputToPlainString(summary.vendorName) || null
+        : null,
     totalAmount: total,
     date: summary?.date != null ? String(summary.date) : null,
     items: Array.isArray(items)

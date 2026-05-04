@@ -22,6 +22,7 @@ import {
 import { seedDefaultCategoriesIfEmpty } from "./category-defaults.mjs";
 import {
   buildReceiptOcrSnapshot,
+  coerceVendorNameInputToPlainString,
   receiptOcrMatchKey,
   lineItemLearnKey,
   normalizeVendorForMatch,
@@ -1234,7 +1235,7 @@ function receiptLearningPersonalVendorFallbackScoreMult(matchStrength) {
 }
 
 function buildReceiptLearningCatalogRow(summary, items, categoryNameHint) {
-  const vendorLabel = String(summary?.vendorName ?? "").trim().slice(0, 120);
+  const vendorLabel = coerceVendorNameInputToPlainString(summary?.vendorName).slice(0, 120);
   const vendorNorm = normalizeVendorForMatch(vendorLabel).slice(0, 191);
   const ym = receiptLearningYearMonth(summary?.date);
   const totalRaw = Number(summary?.totalAmount ?? NaN);
@@ -1775,7 +1776,7 @@ async function suggestExpenseCategoryFromSharedLearningCatalog(
  * @param {Record<string, unknown>} body
  */
 async function buildAdminReceiptLearningScorePreview(pool, body) {
-  const vendorName = String(body?.vendorName ?? "").trim();
+  const vendorName = coerceVendorNameInputToPlainString(body?.vendorName);
   const vendorNorm = normalizeVendorForMatch(vendorName);
   if (!vendorNorm || vendorNorm.length < 2) {
     throw Object.assign(new Error("vendorName を2文字以上で指定してください。"), { statusCode: 400 });
@@ -8467,13 +8468,13 @@ export async function handleApiRequest(req, options = {}) {
             id: Number(c.id),
             name: String(c.name),
           }));
-          const textractVendorBaseline = String(result?.summary?.vendorName ?? "").trim();
+          const textractVendorBaseline = coerceVendorNameInputToPlainString(result?.summary?.vendorName);
           const suggestedCategory = await suggestExpenseCategoryForReceipt(
             pool,
             userId,
             catWhere,
             txWhere,
-            result?.summary?.vendorName ?? "",
+            coerceVendorNameInputToPlainString(result?.summary?.vendorName),
             result?.items ?? [],
             { usePersonalHistory: true, expenseCategories: expenseCatRows, txWhereParams: txP2 },
           );
@@ -8505,6 +8506,10 @@ export async function handleApiRequest(req, options = {}) {
             }
           }
           let adjustedSummary = { ...(result?.summary ?? {}) };
+          if (adjustedSummary.vendorName != null && adjustedSummary.vendorName !== "") {
+            const vPlain = coerceVendorNameInputToPlainString(adjustedSummary.vendorName);
+            adjustedSummary.vendorName = vPlain ? vPlain.slice(0, 120) : "";
+          }
           if (hybridReceipt?.ok && hybridReceipt.data) {
             const hs = hybridReceipt.data;
             if (
@@ -9030,7 +9035,7 @@ export async function handleApiRequest(req, options = {}) {
           }
           {
             const vendorNormMemoKey = normalizeVendorForMatch(
-              String(adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "").trim(),
+              adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
             );
             const memoFromVendorNorm = formatReceiptSuggestedMemoFromVendorNorm(vendorNormMemoKey);
             if (memoFromVendorNorm) {

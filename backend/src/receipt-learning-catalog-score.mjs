@@ -6,6 +6,10 @@
  */
 
 import { normalizeCategoryNameKey } from "./category-utils.mjs";
+import {
+  coerceVendorNameInputToPlainString,
+  normalizeVendorForMatch,
+} from "./receipt-learn.mjs";
 
 export const RECEIPT_LEARNING_GENERIC_YM = "0000-00";
 
@@ -645,14 +649,16 @@ export function scoreReceiptLearningCatalogRow(row, ctx) {
 }
 
 /**
- * レシート取込のメモ欄用: `normalizeVendorForMatch` 済みの店名キー（= DB の vendor_norm と同系）をそのまま返す。
- * カテゴリ・明細が得られない場合のフェイルセーフでも同じ式を使う。
+ * レシート取込のメモ欄用。オブジェクトが渡っても `vendorName` / `name` 等から文字列を取り出す。
+ * 表示は `normalizeVendorForMatch` 済みキー（DB の vendor_norm と同系）を「今回は、」に続ける。
  *
- * @param {unknown} vendorNorm
- * @returns {string} 2 文字未満は空
+ * @param {unknown} vendorNorm 文字列または店名を含むオブジェクト
+ * @returns {string} 正規化キーが 2 文字未満なら空
  */
 export function formatReceiptSuggestedMemoFromVendorNorm(vendorNorm) {
-  const v = String(vendorNorm ?? "").trim();
-  if (v.length < 2) return "";
-  return v.slice(0, 500);
+  const plain = coerceVendorNameInputToPlainString(vendorNorm);
+  const norm = normalizeVendorForMatch(plain);
+  if (norm.length < 2) return "";
+  const memoText = `今回は、${norm}`;
+  return memoText.slice(0, 500);
 }

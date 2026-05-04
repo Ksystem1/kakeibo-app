@@ -13,11 +13,25 @@ import {
   resolveSharedLearningCatalogHintToUserCategory,
   scoreReceiptLearningCatalogRow,
 } from "../src/receipt-learning-catalog-score.mjs";
+import {
+  coerceVendorNameInputToPlainString,
+  normalizeVendorForMatch,
+} from "../src/receipt-learn.mjs";
 
-test("formatReceiptSuggestedMemoFromVendorNorm: メモは vendor_norm キーそのまま", () => {
+test("coerceVendorNameInputToPlainString: オブジェクトを店名字列へ", () => {
+  assert.equal(coerceVendorNameInputToPlainString({ name: "テスト店" }), "テスト店");
+  assert.equal(coerceVendorNameInputToPlainString({ vendorNorm: { name: "ネスト" } }), "ネスト");
+  assert.equal(normalizeVendorForMatch({ storeName: "うなぎ割烹 竹江" }), "うなぎ割烹竹江");
+});
+
+test("formatReceiptSuggestedMemoFromVendorNorm: 今回は、+ vendor_norm（オブジェクトも展開）", () => {
   assert.equal(
     formatReceiptSuggestedMemoFromVendorNorm("うなぎ割烹竹江"),
-    "うなぎ割烹竹江",
+    "今回は、うなぎ割烹竹江",
+  );
+  assert.equal(
+    formatReceiptSuggestedMemoFromVendorNorm({ name: "うなぎ割烹 竹江" }),
+    "今回は、うなぎ割烹竹江",
   );
   assert.equal(formatReceiptSuggestedMemoFromVendorNorm(""), "");
   assert.equal(formatReceiptSuggestedMemoFromVendorNorm("x"), "");
