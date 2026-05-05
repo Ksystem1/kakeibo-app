@@ -8,6 +8,21 @@
   font-size: 1.02rem;
 }
 
+/* 特商法・利用規約など（/legal）: タブレット以上でカラムを広げ、表・長文を読みやすく */
+@media (min-width: 900px) {
+  .wrap.legalPageWrap {
+    max-width: min(1280px, 100%);
+    padding-left: clamp(1.1rem, 3vw, 2.25rem);
+    padding-right: clamp(1.1rem, 3vw, 2.25rem);
+  }
+}
+
+@media (min-width: 1320px) {
+  .wrap.legalPageWrap {
+    max-width: min(1360px, 96vw);
+  }
+}
+
 /* レシート取込: 上記 min-height で余白だけが大きいモバイルを圧縮 */
 .receiptImportWrap {
   min-height: 0;

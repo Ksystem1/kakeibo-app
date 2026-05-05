@@ -33,7 +33,7 @@ export function LegalInfoPage() {
     }) as const;
 
   return (
-    <div className={styles.wrap}>
+    <div className={`${styles.wrap} ${styles.legalPageWrap}`}>
       <header className={styles.header}>
         <h1 className={styles.title}>特商法の表記・利用規約・よくある質問</h1>
         <p className={styles.sub}>
@@ -71,8 +71,8 @@ export function LegalInfoPage() {
         <h2 className={styles.title} style={{ marginTop: 0, fontSize: "clamp(1.15rem, 3.5vw, 1.4rem)" }}>
           特定商取引法に基づく表記
         </h2>
-        <div style={{ overflowX: "auto", margin: "0.55rem 0 0.85rem" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+        <div style={{ overflowX: "auto", margin: "0.55rem 0 0.85rem", WebkitOverflowScrolling: "touch" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "min(100%, 42rem)" }}>
             <tbody>
               {[
                 ["販売価格", "各プランのページに表示"],
@@ -97,7 +97,16 @@ export function LegalInfoPage() {
                   >
                     {k}
                   </th>
-                  <td style={{ padding: "0.52rem 0.65rem", lineHeight: 1.6 }}>{v}</td>
+                  <td
+                    style={{
+                      padding: "0.52rem 0.65rem",
+                      lineHeight: 1.6,
+                      wordBreak: "break-word",
+                      overflowWrap: "break-word",
+                    }}
+                  >
+                    {v}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -115,7 +124,7 @@ export function LegalInfoPage() {
         >
           備考（取り込みデータの仕様）
         </h3>
-        <ul style={{ lineHeight: 1.75, maxWidth: "50rem", margin: 0, paddingLeft: "1.2rem" }}>
+        <ul style={{ lineHeight: 1.75, maxWidth: "min(56rem, 100%)", margin: 0, paddingLeft: "1.2rem" }}>
           <li style={{ marginBottom: "0.65rem" }}>
             本サービスは、<strong>銀行口座等との接続</strong>による
             取引明細の<strong>自動取得</strong>、金融機関等のウェブ上に当社が代わりに接続（ログイン）し
