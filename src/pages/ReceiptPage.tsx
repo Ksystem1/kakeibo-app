@@ -265,6 +265,21 @@ function pickInitialTotalAmount(
   return "";
 }
 
+function looksGarbledAutoMemo(raw: string): boolean {
+  const s = String(raw ?? "").trim();
+  if (!s) return true;
+  const alnum = s.replace(/[\s\-_/]/g, "");
+  if (/^[A-Za-z0-9]{2,8}$/.test(alnum) && /\d/.test(alnum)) return true;
+  if (/^[A-Z]{2,6}$/.test(alnum)) return true;
+  return false;
+}
+
+function suggestedStoreNameFromHint(hint: string | null): string {
+  const h = String(hint ?? "").trim();
+  if (!h) return "";
+  return h.split("/")[0]?.trim() ?? "";
+}
+
 /** API 等から来る id を number | null に揃え、比較で学習が取りこぼされないようにする */
 function normalizeReceiptCategoryId(id: unknown): number | null {
   if (id == null || id === "") return null;
@@ -362,6 +377,7 @@ export function ReceiptPage() {
   const [receiptBedrockVendorLow, setReceiptBedrockVendorLow] = useState(false);
   const [receiptOcrVendorKey, setReceiptOcrVendorKey] = useState<string | null>(null);
   const memoTouchedByUserRef = useRef(false);
+  const amountTouchedByUserRef = useRef(false);
   const [receiptAiTaxHint, setReceiptAiTaxHint] = useState<string | null>(null);
   const showTotalCandidateChips = useMemo(
     () =>
@@ -1005,6 +1021,7 @@ export function ReceiptPage() {
     setReceiptOcrVendorKey(null);
     setReceiptBedrockVendorLow(false);
     memoTouchedByUserRef.current = false;
+    amountTouchedByUserRef.current = false;
     categoryTouchedByUserRef.current = false;
     setUserEditedCategory(false);
     setReceiptFieldConfidence(null);
@@ -1119,6 +1136,45 @@ export function ReceiptPage() {
       )}
     </>
   );
+
+  useEffect(() => {
+    if (amountTouchedByUserRef.current) return;
+    if (!receiptLineSumCheck.mismatch) return;
+    const line = Math.round(Number(receiptLineSumCheck.lineSum));
+    const total = Math.round(Number(receiptLineSumCheck.total));
+    if (!Number.isFinite(line) || !Number.isFinite(total) || line <= 0 || total <= 0) return;
+    const likelyDigitDrop = line === total * 10 || line === total * 100;
+    if (!likelyDigitDrop) return;
+    setDraftTotal(String(line));
+  }, [receiptLineSumCheck]);
+
+  useEffect(() => {
+    if (memoTouchedByUserRef.current) return;
+    const memo = String(draftMemo ?? "").trim();
+    if (!memo || !looksGarbledAutoMemo(memo)) return;
+    const hintedStore = suggestedStoreNameFromHint(suggestedVendorHint);
+    if (hintedStore) {
+      setDraftMemo(hintedStore);
+      return;
+    }
+    const vendor = String(ocrVendor ?? "").trim();
+    if (vendor && !looksGarbledAutoMemo(vendor)) {
+      setDraftMemo(vendor);
+    }
+  }, [draftMemo, suggestedVendorHint, ocrVendor]);
+
+  useEffect(() => {
+    if (draftCategoryId != null) return;
+    const vendorCandidate =
+      suggestedStoreNameFromHint(suggestedVendorHint) || String(draftMemo || ocrVendor || "").trim();
+    if (!vendorCandidate) return;
+    let next = suggestExpenseCategoryId(categories, vendorCandidate, items);
+    if (next == null && /うなぎ|寿司|すし|ラーメン|焼肉|居酒屋|食堂|レストラン|カフェ|喫茶/i.test(vendorCandidate)) {
+      const foodLike = categories.find((c) => /食費|外食|食|飲食/i.test(String(c.name)));
+      next = normalizeReceiptCategoryId(foodLike?.id);
+    }
+    if (next != null) setDraftCategoryId(normalizeReceiptCategoryId(next));
+  }, [categories, draftCategoryId, suggestedVendorHint, draftMemo, ocrVendor, items]);
 
   return (
     <div className={`${styles.wrap} ${styles.receiptImportWrap}`}>
@@ -1580,7 +1636,10 @@ export function ReceiptPage() {
             placeholder="1200"
             value={draftTotal}
             title={fieldTooltip(amountFieldLowConfidence)}
-            onChange={(e) => setDraftTotal(e.target.value)}
+            onChange={(e) => {
+              amountTouchedByUserRef.current = true;
+              setDraftTotal(e.target.value);
+            }}
           />
           {receiptAiTaxHint ? (
             <p className={styles.receiptCategoryHint} style={{ marginTop: "0.35rem" }}>
