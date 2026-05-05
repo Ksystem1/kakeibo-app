@@ -27,9 +27,9 @@ function LoginHeroSectionImpl({ onRequestDemoExit }: Props) {
       <span className={styles.badge}>KAKEIBO ✨</span>
       <div className={styles.heroBody}>
         <section className={styles.heroText}>
-          <h1 className={styles.heroTitle}>みんなの家計簿</h1>
+          <h1 className={styles.heroTitle}>夫婦家計簿</h1>
           <p className={styles.heroDesc}>
-            家計簿を共有できます。医療費控除の集計・固定費・おまかせ取込のイメージは
+            夫婦で家計簿を共有できます。医療費控除の集計・固定費・おまかせ取込のイメージは
             <strong className={styles.heroDescCtaEm}>「デモを見る」</strong>
             で体験できます。
           </p>

@@ -62,9 +62,9 @@ export default defineConfig(({ mode }) => {
         includeAssets: ["robots.txt", "og-image.png", "top-hero.png"],
         manifest: {
           id: pwaScope,
-          name: "Kakeibo 家計簿",
+          name: "Kakeibo 夫婦家計簿",
           short_name: "Kakeibo",
-          description: "家族で共有できる家計簿アプリ",
+          description: "夫婦で共有できる家計簿アプリ",
           lang: "ja",
           start_url: pwaStartUrl,
           scope: pwaScope,
