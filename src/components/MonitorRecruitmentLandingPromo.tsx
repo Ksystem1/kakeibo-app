@@ -1,8 +1,9 @@
 import { memo } from "react";
 import { Link } from "react-router-dom";
-import monitorRecruitPromoUrl from "../assets/monitor-recruit-promo.svg?url";
 import { usePublicMonitorSettings } from "../hooks/usePublicMonitorSettings";
 import styles from "./LoginScreen.module.css";
+
+const monitorRecruitPromoUrl = `${import.meta.env.BASE_URL}monitor-recruit-promo.svg?v=20260505b`;
 
 function MonitorRecruitmentLandingPromoImpl() {
   const { settings, loading, showLimitedLandingPromo } = usePublicMonitorSettings();
