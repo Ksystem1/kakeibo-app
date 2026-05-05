@@ -3293,26 +3293,70 @@ async function getHeaderAnnouncement(pool) {
   }
 }
 
+/** モニター枠で登録したユーザー数（v46 未適用時は 0 扱い） */
+async function countMonitorRecruitSignups(pool) {
+  try {
+    const [[row]] = await pool.query(`SELECT COUNT(*) AS c FROM users WHERE is_monitor_recruit = 1`);
+    return Math.max(0, Number(row?.c ?? 0));
+  } catch (e) {
+    const code = e && typeof e === "object" ? e.code : "";
+    const errno = Number(e?.errno);
+    if (code === "ER_BAD_FIELD_ERROR" || errno === 1054) return 0;
+    throw e;
+  }
+}
+
+function normalizeMonitorRecruitmentCapacity(raw) {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(5000, n);
+}
+
 /** 管理画面: モニター募集設定（未マイグレーション時は既定値） */
 async function getMonitorRecruitmentSettings(pool) {
   try {
     const [[row]] = await pool.query(
-      `SELECT monitor_recruitment_enabled, monitor_recruitment_text
+      `SELECT monitor_recruitment_enabled, monitor_recruitment_text,
+              COALESCE(monitor_recruitment_capacity, 0) AS monitor_recruitment_capacity
        FROM site_settings WHERE id = 1 LIMIT 1`,
     );
     if (!row) {
-      return { enabled: false, text: "" };
+      return { enabled: false, text: "", capacity: 0 };
     }
     return {
       enabled:
         row.monitor_recruitment_enabled === true ||
         Number(row.monitor_recruitment_enabled) === 1,
       text: String(row.monitor_recruitment_text ?? "").trim(),
+      capacity: normalizeMonitorRecruitmentCapacity(row.monitor_recruitment_capacity),
     };
   } catch (e) {
     const code = e && typeof e === "object" ? e.code : "";
-    if (code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_FIELD_ERROR") {
-      return { enabled: false, text: "", migrationMissing: true };
+    if (code === "ER_NO_SUCH_TABLE") {
+      return { enabled: false, text: "", capacity: 0, migrationMissing: true };
+    }
+    if (code === "ER_BAD_FIELD_ERROR") {
+      try {
+        const [[row2]] = await pool.query(
+          `SELECT monitor_recruitment_enabled, monitor_recruitment_text
+           FROM site_settings WHERE id = 1 LIMIT 1`,
+        );
+        if (!row2) return { enabled: false, text: "", capacity: 0, migrationMissing: true };
+        return {
+          enabled:
+            row2.monitor_recruitment_enabled === true ||
+            Number(row2.monitor_recruitment_enabled) === 1,
+          text: String(row2.monitor_recruitment_text ?? "").trim(),
+          capacity: 0,
+          migrationMissing: true,
+        };
+      } catch (e2) {
+        const c2 = e2 && typeof e2 === "object" ? e2.code : "";
+        if (c2 === "ER_NO_SUCH_TABLE") {
+          return { enabled: false, text: "", capacity: 0, migrationMissing: true };
+        }
+        throw e2;
+      }
     }
     throw e;
   }
@@ -3484,19 +3528,21 @@ function rowToSharedImportFormatProfile(row) {
 /**
  * モニター募集設定の保存（INSERT … ON DUPLICATE KEY UPDATE）。主キー id=1、header は触らない。
  * @param {import("mysql2/promise").Pool} pool
- * @param {{ enabled: boolean, normalizedText: string }} param1
+ * @param {{ enabled: boolean, normalizedText: string, capacity: number }} param1
  * @returns {Promise<{ mode: "upsert" }>}
  */
-async function saveMonitorRecruitmentSettings(pool, { enabled, normalizedText }) {
+async function saveMonitorRecruitmentSettings(pool, { enabled, normalizedText, capacity }) {
+  const cap = normalizeMonitorRecruitmentCapacity(capacity);
   await pool.query(
     `INSERT INTO site_settings
-       (id, header_announcement, monitor_recruitment_enabled, monitor_recruitment_text)
-     VALUES (1, '', ?, ?)
+       (id, header_announcement, monitor_recruitment_enabled, monitor_recruitment_text, monitor_recruitment_capacity)
+     VALUES (1, '', ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        monitor_recruitment_enabled = VALUES(monitor_recruitment_enabled),
        monitor_recruitment_text = VALUES(monitor_recruitment_text),
+       monitor_recruitment_capacity = VALUES(monitor_recruitment_capacity),
        updated_at = NOW()`,
-    [enabled ? 1 : 0, normalizedText],
+    [enabled ? 1 : 0, normalizedText, cap],
   );
   return { mode: "upsert" };
 }
@@ -3725,11 +3771,17 @@ export async function handleApiRequest(req, options = {}) {
       if (rk === "GET /public/settings") {
         try {
           const settings = await getMonitorRecruitmentSettings(pool);
+          const cap = normalizeMonitorRecruitmentCapacity(settings.capacity);
+          const filled = cap > 0 ? await countMonitorRecruitSignups(pool) : 0;
+          const remaining = cap > 0 ? Math.max(0, cap - filled) : null;
           return json(
             200,
             {
               is_monitor_mode: settings.enabled === true,
               monitor_recruitment_text: String(settings.text ?? "").trim(),
+              monitor_recruitment_capacity: cap,
+              monitor_recruitment_filled: cap > 0 ? filled : 0,
+              monitor_recruitment_remaining: remaining,
             },
             hdrs,
             skipCors,
@@ -3738,7 +3790,13 @@ export async function handleApiRequest(req, options = {}) {
           logError("public.settings.read", e, { method, path });
           return json(
             200,
-            { is_monitor_mode: false, monitor_recruitment_text: "" },
+            {
+              is_monitor_mode: false,
+              monitor_recruitment_text: "",
+              monitor_recruitment_capacity: 0,
+              monitor_recruitment_filled: 0,
+              monitor_recruitment_remaining: null,
+            },
             hdrs,
             skipCors,
           );
@@ -5280,11 +5338,17 @@ export async function handleApiRequest(req, options = {}) {
       const admin = await ensureAdmin(pool, userId);
       if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
       const settings = await getMonitorRecruitmentSettings(pool);
+      const cap = normalizeMonitorRecruitmentCapacity(settings.capacity);
+      const filled = cap > 0 ? await countMonitorRecruitSignups(pool) : 0;
+      const remaining = cap > 0 ? Math.max(0, cap - filled) : null;
       return json(
         200,
         {
           enabled: settings.enabled === true,
           text: String(settings.text ?? ""),
+          capacity: cap,
+          filled,
+          remaining,
           migrationMissing: settings.migrationMissing === true,
         },
         hdrs,
@@ -5328,11 +5392,13 @@ export async function handleApiRequest(req, options = {}) {
       const enabled = parseMonitorRecruitmentEnabled(b.enabled);
       const rawText = b.text != null ? String(b.text) : "";
       const normalizedText = rawText.replace(/\s+/g, " ").trim().slice(0, 512);
+      const capacity = normalizeMonitorRecruitmentCapacity(b.capacity ?? b.monitor_recruitment_capacity);
       let saveMode = "update";
       try {
         const result = await saveMonitorRecruitmentSettings(pool, {
           enabled,
           normalizedText,
+          capacity,
         });
         saveMode = result.mode;
       } catch (e) {
@@ -5343,7 +5409,7 @@ export async function handleApiRequest(req, options = {}) {
             {
               error: "モニター募集設定の DB 未適用",
               detail:
-                "db/migration_v25_monitor_recruitment_settings.sql を RDS に適用してください。",
+                "db/migration_v25_monitor_recruitment_settings.sql および db/migration_v46_monitor_recruitment_capacity.sql を RDS に適用してください。",
             },
             hdrs,
             skipCors,
@@ -5351,14 +5417,22 @@ export async function handleApiRequest(req, options = {}) {
         }
         throw e;
       }
+      const filled = capacity > 0 ? await countMonitorRecruitSignups(pool) : 0;
+      const remaining = capacity > 0 ? Math.max(0, capacity - filled) : null;
       logger.info("admin.monitor_recruitment.saved", {
         userId,
         method,
         mode: saveMode,
         enabled,
         textLength: normalizedText.length,
+        capacity,
       });
-      return json(200, { ok: true, enabled, text: normalizedText, saveMode }, hdrs, skipCors);
+      return json(
+        200,
+        { ok: true, enabled, text: normalizedText, capacity, filled, remaining, saveMode },
+        hdrs,
+        skipCors,
+      );
     }
 
     if (routeKey(method, path) === "GET /support/chat/messages") {

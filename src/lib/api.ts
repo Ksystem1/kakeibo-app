@@ -1956,6 +1956,9 @@ export async function getPublicSettings() {
   return parse<{
     is_monitor_mode: boolean;
     monitor_recruitment_text: string;
+    monitor_recruitment_capacity?: number;
+    monitor_recruitment_filled?: number;
+    monitor_recruitment_remaining?: number | null;
   }>(res);
 }
 
@@ -1988,6 +1991,9 @@ export async function getAdminMonitorRecruitmentSettings() {
   const data = await parse<{
     enabled: boolean;
     text: string;
+    capacity?: number;
+    filled?: number;
+    remaining?: number | null;
     migrationMissing?: boolean;
   }>(res);
   if (import.meta.env.DEV) {
@@ -2023,6 +2029,7 @@ export async function getAdminImportFormatAudit(params?: { limit?: number }) {
 export async function putAdminMonitorRecruitmentSettings(body: {
   enabled: boolean;
   text: string;
+  capacity?: number;
 }) {
   if (import.meta.env.DEV) {
     // eslint-disable-next-line no-console
@@ -2037,6 +2044,9 @@ export async function putAdminMonitorRecruitmentSettings(body: {
     ok: boolean;
     enabled: boolean;
     text: string;
+    capacity?: number;
+    filled?: number;
+    remaining?: number | null;
     saveMode?: string;
   }>(res);
   if (import.meta.env.DEV) {

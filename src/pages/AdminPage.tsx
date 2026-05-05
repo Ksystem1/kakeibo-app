@@ -306,6 +306,9 @@ export function AdminPage() {
   const [announcementMessage, setAnnouncementMessage] = useState<string | null>(null);
   const [monitorRecruitmentEnabled, setMonitorRecruitmentEnabled] = useState(false);
   const [monitorRecruitmentText, setMonitorRecruitmentText] = useState("");
+  const [monitorRecruitmentCapacity, setMonitorRecruitmentCapacity] = useState(0);
+  const [monitorRecruitmentFilled, setMonitorRecruitmentFilled] = useState(0);
+  const [monitorRecruitmentRemaining, setMonitorRecruitmentRemaining] = useState<number | null>(null);
   const [monitorRecruitmentBusy, setMonitorRecruitmentBusy] = useState(false);
   const [monitorRecruitmentMessage, setMonitorRecruitmentMessage] = useState<string | null>(null);
   const [monitorRecruitmentLoadError, setMonitorRecruitmentLoadError] = useState<string | null>(null);
@@ -407,7 +410,14 @@ export function AdminPage() {
         );
       }
       setMonitorRecruitmentLoadError(null);
-      let monitorRecruitment: { enabled: boolean; text: string; migrationMissing?: boolean } = {
+      let monitorRecruitment: {
+        enabled: boolean;
+        text: string;
+        capacity?: number;
+        filled?: number;
+        remaining?: number | null;
+        migrationMissing?: boolean;
+      } = {
         enabled: false,
         text: "",
       };
@@ -415,7 +425,7 @@ export function AdminPage() {
         monitorRecruitment = await getAdminMonitorRecruitmentSettings();
         if (monitorRecruitment.migrationMissing) {
           setMonitorRecruitmentLoadError(
-            "DB に db/migration_v25_monitor_recruitment_settings.sql が未適用の可能性があります。",
+            "DB に db/migration_v25_monitor_recruitment_settings.sql または db/migration_v46_monitor_recruitment_capacity.sql が未適用の可能性があります。",
           );
         }
       } catch (e) {
@@ -506,6 +516,12 @@ export function AdminPage() {
       setAnnouncementDraft(typeof ann.text === "string" ? ann.text : "");
       setMonitorRecruitmentEnabled(monitorRecruitment.enabled === true);
       setMonitorRecruitmentText(typeof monitorRecruitment.text === "string" ? monitorRecruitment.text : "");
+      const capN = Math.max(0, Math.min(5000, Number(monitorRecruitment.capacity) || 0));
+      setMonitorRecruitmentCapacity(capN);
+      setMonitorRecruitmentFilled(Math.max(0, Number(monitorRecruitment.filled) || 0));
+      setMonitorRecruitmentRemaining(
+        monitorRecruitment.remaining == null ? null : Math.max(0, Number(monitorRecruitment.remaining)),
+      );
     } catch (e) {
       setSubscriptionStatusWritable(true);
       setReconcileData(null);
@@ -1900,7 +1916,8 @@ export function AdminPage() {
       >
         <h2 style={{ margin: "0 0 0.5rem", fontSize: "1.02rem" }}>モニター募集設定</h2>
         <p style={{ margin: "0 0 0.65rem", fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
-          管理者向けのモニター募集案内をON/OFFできます。募集文は最大512文字です。
+          管理者向けのモニター募集案内をON/OFFできます。募集文は最大512文字です。定員に数値を入れるとログイン前トップに「限定募集」バナーが出て、残席が表示されます（0
+          ＝定員なし・バナーなし）。
         </p>
         {monitorRecruitmentLoadError ? (
           <p style={{ margin: "0 0 0.55rem", fontSize: "0.86rem", color: "var(--danger, #c44)" }} role="alert">
@@ -1916,6 +1933,62 @@ export function AdminPage() {
           />
           モニター募集を表示する
         </label>
+        <div style={{ marginBottom: "0.65rem" }}>
+          <label
+            htmlFor="monitor-recruitment-capacity"
+            style={{ display: "block", fontSize: "0.86rem", fontWeight: 600, marginBottom: "0.35rem" }}
+          >
+            募集定員（名）
+          </label>
+          <input
+            id="monitor-recruitment-capacity"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={5000}
+            step={1}
+            value={Number.isFinite(monitorRecruitmentCapacity) ? monitorRecruitmentCapacity : 0}
+            disabled={monitorRecruitmentBusy || loading}
+            onChange={(e) => {
+              const n = Math.floor(Number(e.target.value));
+              if (!Number.isFinite(n)) {
+                setMonitorRecruitmentCapacity(0);
+                return;
+              }
+              setMonitorRecruitmentCapacity(Math.max(0, Math.min(5000, n)));
+            }}
+            style={{
+              width: "100%",
+              maxWidth: "12rem",
+              boxSizing: "border-box",
+              font: "inherit",
+              fontSize: "0.95rem",
+              padding: "0.45rem 0.55rem",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--input-bg)",
+              color: "var(--text)",
+            }}
+          />
+          <p style={{ margin: "0.35rem 0 0", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+            例: 20 と入力すると「先着 20 名限定」としてトップに表示されます。登録でモニター特典が付いたユーザーを自動でカウントします。
+          </p>
+        </div>
+        {monitorRecruitmentCapacity > 0 ? (
+          <p style={{ margin: "0 0 0.6rem", fontSize: "0.86rem", color: "var(--text-muted)" }}>
+            現在のエントリー:{" "}
+            <strong style={{ color: "var(--text)" }}>
+              {monitorRecruitmentFilled.toLocaleString("ja-JP")} / {monitorRecruitmentCapacity.toLocaleString("ja-JP")}{" "}
+              名
+            </strong>
+            {monitorRecruitmentRemaining != null ? (
+              <>
+                {" "}
+                （残り <strong style={{ color: "var(--text)" }}>{monitorRecruitmentRemaining}</strong> 名）
+              </>
+            ) : null}
+          </p>
+        ) : null}
         <textarea
           value={monitorRecruitmentText}
           onChange={(e) => setMonitorRecruitmentText(e.target.value)}
@@ -1947,16 +2020,19 @@ export function AdminPage() {
               setError(null);
               try {
                 const normalized = monitorRecruitmentText.replace(/\s+/g, " ").trim().slice(0, 512);
+                const capSave = Math.max(0, Math.min(5000, Math.floor(Number(monitorRecruitmentCapacity) || 0)));
                 if (import.meta.env.DEV) {
                   // eslint-disable-next-line no-console
                   console.log("[Admin] save monitor recruitment (request)", {
                     enabled: monitorRecruitmentEnabled,
                     textLength: normalized.length,
+                    capacity: capSave,
                   });
                 }
                 const putOut = await putAdminMonitorRecruitmentSettings({
                   enabled: monitorRecruitmentEnabled,
                   text: normalized,
+                  capacity: capSave,
                 });
                 if (import.meta.env.DEV) {
                   // eslint-disable-next-line no-console
@@ -1971,9 +2047,15 @@ export function AdminPage() {
                 setMonitorRecruitmentText(
                   typeof verify.text === "string" ? verify.text : normalized,
                 );
+                const vCap = Math.max(0, Math.min(5000, Number(verify.capacity) || 0));
+                setMonitorRecruitmentCapacity(vCap);
+                setMonitorRecruitmentFilled(Math.max(0, Number(verify.filled) || 0));
+                setMonitorRecruitmentRemaining(
+                  verify.remaining == null ? null : Math.max(0, Number(verify.remaining)),
+                );
                 setMonitorRecruitmentLoadError(
                   verify.migrationMissing
-                    ? "DB に db/migration_v25_monitor_recruitment_settings.sql が未適用の可能性があります。"
+                    ? "DB に db/migration_v25_monitor_recruitment_settings.sql または db/migration_v46_monitor_recruitment_capacity.sql が未適用の可能性があります。"
                     : null,
                 );
                 setMonitorRecruitmentMessage("保存しました。");

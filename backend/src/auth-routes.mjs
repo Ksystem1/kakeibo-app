@@ -197,13 +197,14 @@ function isErBadFieldError(e) {
 }
 
 /**
- * 新規登録時のモニター募集判定（表示条件と同一: enabled + text 非空）
+ * 新規登録時のモニター募集判定（enabled + 案内文 + 定員に空きがあれば付与）
  * @param {import("mysql2/promise").PoolConnection} conn
  */
 async function shouldGrantMonitorOnRegister(conn) {
   try {
     const [[row]] = await conn.query(
-      `SELECT monitor_recruitment_enabled, monitor_recruitment_text
+      `SELECT monitor_recruitment_enabled, monitor_recruitment_text,
+              COALESCE(monitor_recruitment_capacity, 0) AS cap
        FROM site_settings
        WHERE id = 1
        LIMIT 1`,
@@ -212,10 +213,35 @@ async function shouldGrantMonitorOnRegister(conn) {
       row?.monitor_recruitment_enabled === true ||
       Number(row?.monitor_recruitment_enabled) === 1;
     const text = String(row?.monitor_recruitment_text ?? "").trim();
-    return enabled && text !== "";
+    if (!enabled || text === "") return false;
+    const cap = Math.floor(Number(row?.cap ?? 0));
+    if (!Number.isFinite(cap) || cap <= 0) return true;
+    const [[cRow]] = await conn.query(`SELECT COUNT(*) AS n FROM users WHERE is_monitor_recruit = 1`);
+    const filled = Math.max(0, Number(cRow?.n ?? 0));
+    return filled < cap;
   } catch (e) {
     const code = String(e?.code ?? "");
-    if (code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_FIELD_ERROR") {
+    const errno = Number(e?.errno);
+    if (code === "ER_BAD_FIELD_ERROR" || errno === 1054) {
+      try {
+        const [[row2]] = await conn.query(
+          `SELECT monitor_recruitment_enabled, monitor_recruitment_text
+           FROM site_settings
+           WHERE id = 1
+           LIMIT 1`,
+        );
+        const enabled =
+          row2?.monitor_recruitment_enabled === true ||
+          Number(row2?.monitor_recruitment_enabled) === 1;
+        const text = String(row2?.monitor_recruitment_text ?? "").trim();
+        return enabled && text !== "";
+      } catch (e2) {
+        const c2 = String(e2?.code ?? "");
+        if (c2 === "ER_NO_SUCH_TABLE" || c2 === "ER_BAD_FIELD_ERROR") return false;
+        throw e2;
+      }
+    }
+    if (code === "ER_NO_SUCH_TABLE") {
       return false;
     }
     throw e;
@@ -756,11 +782,28 @@ export async function tryAuthRoutes(req, ctx) {
           const regEmail = `passkey-reg-${crypto.randomBytes(10).toString("hex")}@register.kakeibo.internal`;
           const ph = await hashPassword(USERS_NO_PASSWORD_PLACEHOLDER);
 
-          const [ur] = await conn.query(
-            `INSERT INTO users (email, login_name, password_hash, display_name, subscription_status, auth_method)
-             VALUES (?, NULL, ?, ?, ?, 'passkey')`,
-            [regEmail, ph, displayName, grantedSubscriptionStatus],
-          );
+          let ur;
+          try {
+            [ur] = await conn.query(
+              `INSERT INTO users (email, login_name, password_hash, display_name, subscription_status, auth_method, is_monitor_recruit)
+               VALUES (?, NULL, ?, ?, ?, 'passkey', ?)`,
+              [regEmail, ph, displayName, grantedSubscriptionStatus, monitorGranted ? 1 : 0],
+            );
+          } catch (insPk) {
+            if (!isErBadFieldError(insPk)) throw insPk;
+            [ur] = await conn.query(
+              `INSERT INTO users (email, login_name, password_hash, display_name, subscription_status, auth_method)
+               VALUES (?, NULL, ?, ?, ?, 'passkey')`,
+              [regEmail, ph, displayName, grantedSubscriptionStatus],
+            );
+            if (monitorGranted) {
+              try {
+                await conn.query(`UPDATE users SET is_monitor_recruit = 1 WHERE id = ?`, [ur.insertId]);
+              } catch {
+                /* v46 未適用時はスキップ */
+              }
+            }
+          }
           const userId = Number(ur.insertId);
           let familyId = null;
           let role = "owner";
@@ -1441,9 +1484,9 @@ export async function tryAuthRoutes(req, ctx) {
         let ur;
         try {
           [ur] = await conn.query(
-            `INSERT INTO users (email, login_name, password_hash, display_name, subscription_status)
-             VALUES (?, ?, ?, ?, ?)`,
-            [email, loginName, ph, displayName, grantedSubscriptionStatus],
+            `INSERT INTO users (email, login_name, password_hash, display_name, subscription_status, is_monitor_recruit)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [email, loginName, ph, displayName, grantedSubscriptionStatus, monitorGranted ? 1 : 0],
           );
         } catch (insErr) {
           if (isErBadFieldError(insErr)) {
@@ -1456,12 +1499,18 @@ export async function tryAuthRoutes(req, ctx) {
               try {
                 await conn.query(
                   `UPDATE users
-                   SET subscription_status = 'admin_free', updated_at = NOW()
+                   SET subscription_status = 'admin_free', is_monitor_recruit = 1, updated_at = NOW()
                    WHERE id = ?`,
                   [ur.insertId],
                 );
               } catch (e) {
                 if (!isErBadFieldError(e)) throw e;
+                await conn.query(
+                  `UPDATE users
+                   SET subscription_status = 'admin_free', updated_at = NOW()
+                   WHERE id = ?`,
+                  [ur.insertId],
+                );
               }
             }
           } else if (isDuplicateKeyError(insErr)) {

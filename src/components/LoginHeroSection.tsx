@@ -2,6 +2,7 @@ import { memo, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AuthHeroAside } from "./AuthHeroAside";
 import { LoginHeroFeatureLists } from "./LoginHeroFeatureLists";
+import { MonitorRecruitmentLandingPromo } from "./MonitorRecruitmentLandingPromo";
 import { useLoginHeroLiveCount } from "../hooks/useLoginHeroLiveCount";
 import styles from "./LoginScreen.module.css";
 
@@ -35,6 +36,7 @@ function LoginHeroSectionImpl({ onRequestDemoExit }: Props) {
         </section>
       </div>
       <LoginHeroFeatureLists />
+      <MonitorRecruitmentLandingPromo />
       <div className={styles.heroCtaBlock}>
         <Link
           to="/demo-dashboard"

@@ -1204,6 +1204,182 @@
   }
 }
 
+/* モニター限定募集バナー（ログイン左カラム・定員>0 のときのみ） */
+.monitorPromoWrap {
+  width: 100%;
+  max-width: min(36rem, 100%);
+  margin: 0.35rem 0 0.85rem;
+  box-sizing: border-box;
+}
+
+.monitorPromoCard {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.9rem 1rem;
+  padding: 0.85rem 1rem 1rem;
+  border-radius: 20px;
+  text-decoration: none;
+  color: inherit;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.97) 0%, rgba(255, 250, 252, 0.99) 100%);
+  border: 1px solid color-mix(in srgb, #fb7185 42%, white 58%);
+  box-shadow:
+    0 8px 28px rgba(244, 114, 182, 0.14),
+    0 2px 8px rgba(30, 27, 75, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+@media (hover: hover) {
+  .monitorPromoCard:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 14px 36px rgba(244, 114, 182, 0.2),
+      0 4px 12px rgba(30, 27, 75, 0.08);
+  }
+}
+
+.monitorPromoCardClosed {
+  opacity: 0.9;
+  filter: saturate(0.82);
+}
+
+.monitorPromoVisual {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.monitorPromoImg {
+  display: block;
+  width: min(168px, 38vw);
+  height: auto;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+}
+
+.monitorPromoBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.monitorPromoKicker {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #db2777;
+  text-transform: uppercase;
+}
+
+.monitorPromoTitle {
+  margin: 0;
+  font-size: clamp(1.2rem, 3.5vw, 1.45rem);
+  font-weight: 800;
+  line-height: 1.2;
+  color: #9d174d;
+}
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .monitorPromoTitle {
+    background: linear-gradient(100deg, #ea580c, #db2777 55%, #a855f7);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+.monitorPromoText {
+  margin: 0;
+  font-size: clamp(0.82rem, 2.4vw, 0.9rem);
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--text, #0f172a) 90%, #64748b);
+}
+
+.monitorPromoMeter {
+  margin-top: 0.2rem;
+}
+
+.monitorPromoMeterLabels {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-muted, #64748b);
+}
+
+.monitorPromoRemain {
+  font-size: clamp(1.45rem, 5vw, 1.75rem);
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.monitorPromoRemainUnit {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-left: 0.12rem;
+}
+
+.monitorPromoBarTrack {
+  height: 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #cbd5e1 45%, white);
+  overflow: hidden;
+}
+
+.monitorPromoBarFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #fb923c, #f472b6 55%, #c084fc);
+  transition: width 0.45s ease;
+}
+
+.monitorPromoMeterFoot {
+  margin: 0.4rem 0 0;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--text-muted, #64748b);
+}
+
+.monitorPromoCta {
+  margin-top: 0.3rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #a21caf;
+}
+
+@media (max-width: 900px) {
+  .monitorPromoWrap {
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .monitorPromoCard {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 1rem 1.1rem 1.15rem;
+  }
+
+  .monitorPromoImg {
+    width: min(200px, 72vw);
+  }
+
+  .monitorPromoMeterLabels {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .monitorPromoMeterFoot {
+    text-align: center;
+  }
+}
+
 /* デモ遷移オーバーレイ（LoginPage で参照; 未指定だと層の解釈が曖昧になるため明示） */
 .demoExitLayer {
   position: fixed;

@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
   subscription_period_end_at DATETIME NULL COMMENT 'Stripe current_period_end UTC 請求サイクル終了',
   subscription_cancel_at_period_end TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Stripe cancel_at_period_end',
   is_premium      TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=プレミアム（任意。active と併用可）',
+  is_monitor_recruit TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'モニター募集枠で登録特典を付与したユーザー',
   display_name    VARCHAR(100) NULL,
   is_child        TINYINT(1) NOT NULL DEFAULT 0 COMMENT '子供サブプロファイル（1=true）',
   parent_id       BIGINT UNSIGNED NULL COMMENT '親ユーザーID（users.id）',
@@ -275,6 +276,7 @@ CREATE TABLE IF NOT EXISTS site_settings (
   header_announcement  VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'ヘッダー1行お知らせ（プレーンテキスト）',
   monitor_recruitment_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'モニター募集表示フラグ（1=表示）',
   monitor_recruitment_text VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'モニター募集案内文（管理者設定）',
+  monitor_recruitment_capacity INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'モニター募集の定員（0=定員表示なし・枠制限なし）',
   updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
