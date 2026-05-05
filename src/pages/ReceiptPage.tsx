@@ -348,6 +348,8 @@ export function ReceiptPage() {
   );
   /** レシート: Worker 圧縮＋非同期アップロード中（カメラ直後のフリーズ抑止用オーバーレイ） */
   const [receiptIngestPhase, setReceiptIngestPhase] = useState<null | "compress" | "upload">(null);
+  /** スマホ: 解析結果を反映した直後に内容確認フォームへスクロールするためのトリガ */
+  const [mobileReceiptRevealSeq, setMobileReceiptRevealSeq] = useState(0);
   const isBusy = paypayLoading || Boolean(receiptIngestPhase);
   const displayMainCategory = useMemo(() => {
     const score = new Map<ReceiptItemCategory, number>();
@@ -593,9 +595,22 @@ export function ReceiptPage() {
         if (r.notice) parts.push(r.notice);
         setNotice(parts.length ? parts.join(" ") : null);
       }
+      if (touchUi) {
+        setMobileReceiptRevealSeq((n) => n + 1);
+      }
     },
-    [categories],
+    [categories, touchUi],
   );
+
+  useEffect(() => {
+    if (mobileReceiptRevealSeq === 0) return;
+    if (!touchUi) return;
+    const t = window.setTimeout(() => {
+      const el = document.querySelector<HTMLElement>("[data-receipt-form]");
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+    return () => clearTimeout(t);
+  }, [mobileReceiptRevealSeq, touchUi]);
 
   useReceiptJob(
     receiptImportQueue,
@@ -1123,9 +1138,26 @@ export function ReceiptPage() {
                       </button>
                     </div>
                   ) : (
-                    <span className={styles.receiptImportQueueOk}>
-                      解析が完了しました（下のプレビューに反映）
-                    </span>
+                    <div style={{ display: "grid", gap: "0.4rem" }}>
+                      <span className={styles.receiptImportQueueOk}>
+                        {touchUi
+                          ? "解析が完了しました。内容を確認・修正してから登録してください。"
+                          : "解析が完了しました（下のプレビューに反映）"}
+                      </span>
+                      {touchUi ? (
+                        <button
+                          type="button"
+                          className={`${styles.btn} ${styles.btnSm}`}
+                          onClick={() => {
+                            document
+                              .querySelector<HTMLElement>("[data-receipt-form]")
+                              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }}
+                        >
+                          内容確認へ
+                        </button>
+                      ) : null}
+                    </div>
                   )}
                   {busy && row.timeoutExceeded ? (
                     <div className={styles.modeRow} style={{ gap: "0.4rem", flexWrap: "wrap" }}>

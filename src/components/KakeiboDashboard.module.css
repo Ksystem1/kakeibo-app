@@ -54,6 +54,13 @@
     position: static;
   }
 }
+
+/* スマホ: 解析完了後に scrollIntoView したとき固定ナビと被りにくくする */
+@media (max-width: 1024px) {
+  .form[data-receipt-form] {
+    scroll-margin-top: 4.85rem;
+  }
+}
 .receiptFieldLowConfidence > input,
 .receiptFieldLowConfidence > select {
   box-shadow: 0 0 0 2px color-mix(in srgb, #e85d2a 55%, transparent);
