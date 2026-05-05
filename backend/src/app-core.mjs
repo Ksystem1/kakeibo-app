@@ -1348,6 +1348,17 @@ function inferVendorLabelFromJapaneseReceiptOcrLoose(ocrLines) {
   }
   return null;
 }
+
+function receiptSuggestedMemoLooksUninformative(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return true;
+  const n = normalizeKeyword(s);
+  if (!n) return true;
+  if (/^(内容|明細|商品|品目|レシート|購入|お買上|お会計)$/.test(s)) return true;
+  if (/^(ない|なし|不明|unknown)$/i.test(s)) return true;
+  if (n.length <= 2) return true;
+  return false;
+}
 function isLikelyGarbledVendorName(raw) {
   const s = String(raw ?? "").trim();
   if (!s) return true;
@@ -1619,6 +1630,24 @@ function suggestExpenseCategoryFromVendorHeuristic(vendor, userExpenseCategories
   const userCats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
   if (userCats.length === 0) return null;
   const foodLike = /(うなぎ|鰻|寿司|すし|鮨|ラーメン|焼肉|居酒屋|食堂|レストラン|カフェ|喫茶|弁当|定食)/.test(v);
+  if (!foodLike) return null;
+  const hit = userCats.find((c) => /(食費|外食|食|飲食)/.test(String(c?.name ?? "")));
+  if (!hit?.id) return null;
+  return { id: Number(hit.id), name: String(hit.name), source: "keywords", lowConfidence: false };
+}
+
+function suggestExpenseCategoryFromReceiptTextHeuristic(vendor, ocrLines, items, userExpenseCategories) {
+  const text = [
+    String(vendor ?? ""),
+    ...(Array.isArray(ocrLines) ? ocrLines.map((x) => String(x ?? "")) : []),
+    ...(Array.isArray(items) ? items.map((it) => String(it?.name ?? "")) : []),
+  ].join(" ");
+  const norm = normalizeKeyword(text);
+  if (!norm) return null;
+  const userCats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
+  if (userCats.length === 0) return null;
+  const foodLike =
+    /(うなぎ|鰻|寿司|すし|鮨|ラーメン|焼肉|居酒屋|食堂|レストラン|カフェ|喫茶|弁当|定食|飲食)/.test(norm);
   if (!foodLike) return null;
   const hit = userCats.find((c) => /(食費|外食|食|飲食)/.test(String(c?.name ?? "")));
   if (!hit?.id) return null;
@@ -9005,10 +9034,17 @@ export async function handleApiRequest(req, options = {}) {
                 ? "vendor_key_learn"
                 : predicted.source;
           if (finalSuggestedId == null) {
-            const vh = suggestExpenseCategoryFromVendorHeuristic(
-              adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
-              expenseCatRows,
-            );
+            const vh =
+              suggestExpenseCategoryFromVendorHeuristic(
+                adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
+                expenseCatRows,
+              ) ??
+              suggestExpenseCategoryFromReceiptTextHeuristic(
+                adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
+                result?.ocrLines ?? [],
+                result?.items ?? [],
+                expenseCatRows,
+              );
             if (vh?.id != null) {
               finalSuggestedId = Number(vh.id);
               finalSuggestedName = String(vh.name);
@@ -9191,7 +9227,10 @@ export async function handleApiRequest(req, options = {}) {
               const fromOcrVendor = inferVendorLabelFromJapaneseReceiptOcr(result?.ocrLines ?? []);
               if (fromOcrVendor) body.suggestedMemo = fromOcrVendor.slice(0, 500);
             }
-            if (isLikelyGarbledVendorName(String(body.suggestedMemo ?? "").trim())) {
+            if (
+              receiptSuggestedMemoLooksUninformative(body.suggestedMemo) ||
+              isLikelyGarbledVendorName(String(body.suggestedMemo ?? "").trim())
+            ) {
               const rescueLoose =
                 inferVendorLabelFromJapaneseReceiptOcr(result?.ocrLines ?? []) ||
                 inferVendorLabelFromJapaneseReceiptOcrLoose(result?.ocrLines ?? []) ||

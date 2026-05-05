@@ -769,7 +769,7 @@ function fallbackTotalFromLineItems(rows) {
 }
 
 function lineHasTotalKeyword(line) {
-  return /合計|税込(?:額)?|総額|お会計|ご請求|ご利用金額|お支払(?:金額)?|(?:^|[^A-Z])TOTAL(?:[^A-Z]|$)/i.test(
+  return /合\s*計|税込(?:額)?|総額|お会計|ご請求|ご利用金額|お支払(?:金額)?|(?:^|[^A-Z])TOTAL(?:[^A-Z]|$)/i.test(
     String(line ?? ""),
   );
 }
@@ -890,6 +890,10 @@ function reconcileTotalWhenItemSumMatchesPrintedSubtotal(totalAmount, items, ocr
   const lineTol = grandOnOcr ? Math.max(3, Math.min(600, Math.round(st * 0.035))) : 3;
   if (Math.abs(lineSum - st) > lineTol) return totalAmount;
   if (Math.abs(tot - expected) <= 2) return totalAmount;
+  // TOTAL が小計を拾ってしまう店舗（外税表記あり）では、OCR 上に税込合計が印字されていれば税込へ補正。
+  if (Math.abs(tot - st) <= Math.max(2, lineTol) && grandOnOcr) {
+    return expected;
+  }
   if (Math.abs(tot - (expected + tx)) <= 2 || Math.abs(tot - (st + tx * 2)) <= 2) {
     return expected;
   }
