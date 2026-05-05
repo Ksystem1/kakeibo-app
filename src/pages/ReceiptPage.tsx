@@ -219,12 +219,12 @@ function pickReceiptMemo(params: {
   vendorName?: string | null;
 }): string {
   const store = String(params.suggestedStoreName ?? "").trim();
-  if (store) return store;
+  if (store && !looksGarbledAutoMemo(store)) return store;
   const vendor = String(params.vendorName ?? "").trim();
-  if (vendor && !isGenericPaymentMemo(vendor)) return vendor;
+  if (vendor && !isGenericPaymentMemo(vendor) && !looksGarbledAutoMemo(vendor)) return vendor;
   const memo = String(params.suggestedMemo ?? "").trim();
-  if (memo && !isGenericPaymentMemo(memo)) return memo;
-  return store || vendor || memo;
+  if (memo && !isGenericPaymentMemo(memo) && !looksGarbledAutoMemo(memo)) return memo;
+  return "";
 }
 
 function pickInitialTotalAmount(
