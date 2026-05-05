@@ -2056,6 +2056,25 @@ export async function putAdminMonitorRecruitmentSettings(body: {
   return out;
 }
 
+/** 管理者向け: アクセス指標（last_accessed_at ベース） */
+export async function getAdminAccessStats() {
+  const res = await apiFetch(`${BASE}/admin/access-stats`, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  return parse<{
+    as_of: string;
+    total_users: number;
+    active_5m: number | null;
+    active_1h: number | null;
+    active_24h: number | null;
+    active_7d: number | null;
+    active_30d: number | null;
+    users_with_access_timestamp: number | null;
+    migration_missing_last_accessed_at?: boolean;
+  }>(res);
+}
+
 export async function getAdminUsers() {
   const res = await apiFetch(`${BASE}/admin/users`, {
     headers: buildHeaders(),

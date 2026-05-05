@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   createAdminUser,
   deleteAdminUser,
+  getAdminAccessStats,
   getAdminAnnouncement,
   getAdminFeaturePermissions,
   getAdminImportFormatAudit,
@@ -273,6 +274,11 @@ function formatDateOnly(value: string | null | undefined): string {
   }).format(d);
 }
 
+function formatAccessCount(n: number | null | undefined): string {
+  if (n == null) return "—";
+  return n.toLocaleString("ja-JP");
+}
+
 function thisMonthDateRange() {
   const d = new Date();
   const y = d.getFullYear();
@@ -378,6 +384,10 @@ export function AdminPage() {
   > | null>(null);
   const [receiptScorePreviewError, setReceiptScorePreviewError] = useState<string | null>(null);
   const [receiptScorePreviewBusy, setReceiptScorePreviewBusy] = useState(false);
+  const [accessStats, setAccessStats] = useState<Awaited<
+    ReturnType<typeof getAdminAccessStats>
+  > | null>(null);
+  const [accessStatsError, setAccessStatsError] = useState<string | null>(null);
 
   /** 管理画面「機能」列: i18n 辞書を優先し、未定義キーは DB の label_ja にフォールバック */
   const featurePermSummaryItems = useMemo((): FeaturePermissionSummaryItem[] => {
@@ -393,11 +403,22 @@ export function AdminPage() {
     setLoading(true);
     setError(null);
     setReconcileError(null);
+    setAccessStatsError(null);
     try {
       const [res, ann] = await Promise.all([
         getAdminUsers(),
         getAdminAnnouncement().catch(() => ({ text: "" })),
       ]);
+      try {
+        const stats = await getAdminAccessStats();
+        setAccessStats(stats);
+        setAccessStatsError(null);
+      } catch (e) {
+        setAccessStats(null);
+        setAccessStatsError(
+          e instanceof Error ? e.message : "アクセス指標の取得に失敗しました。",
+        );
+      }
       try {
         const rec = await getAdminSubscriptionReconcile();
         setReconcileData(rec);
@@ -525,6 +546,8 @@ export function AdminPage() {
     } catch (e) {
       setSubscriptionStatusWritable(true);
       setReconcileData(null);
+      setAccessStats(null);
+      setAccessStatsError(null);
       setError(formatAdminApiError(e));
     } finally {
       setLoading(false);
@@ -900,6 +923,94 @@ export function AdminPage() {
   return (
     <section style={{ padding: "1rem", maxWidth: 1400, margin: "0 auto" }}>
       <h1 style={{ margin: 0 }}>管理者ダッシュボード</h1>
+      <div
+        style={{
+          margin: "0.65rem 0 1rem",
+          padding: "0.9rem 1rem",
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+        }}
+      >
+        <h2 style={{ margin: "0 0 0.4rem", fontSize: "1.02rem" }}>アクセス指標</h2>
+        <p
+          style={{
+            margin: "0 0 0.55rem",
+            fontSize: "0.84rem",
+            color: "var(--text-muted)",
+            lineHeight: 1.45,
+          }}
+        >
+          認証済み API 利用時に <code>last_accessed_at</code> が更新されます（同一ユーザーは最大約
+          15 分に 1 回まで）。
+        </p>
+        {accessStatsError ? (
+          <p role="alert" style={{ margin: 0, fontSize: "0.86rem", color: "var(--danger, #b44)" }}>
+            {accessStatsError}
+          </p>
+        ) : accessStats ? (
+          <>
+            <p style={{ margin: "0 0 0.65rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+              集計時刻: {formatDateTime(accessStats.as_of)}
+            </p>
+            {accessStats.migration_missing_last_accessed_at ? (
+              <p
+                role="status"
+                style={{
+                  margin: "0 0 0.65rem",
+                  fontSize: "0.86rem",
+                  color: "var(--danger, #a63)",
+                  lineHeight: 1.45,
+                }}
+              >
+                <code>users.last_accessed_at</code> 列がありません。{" "}
+                <code>db/migration_v33_users_last_accessed_at.sql</code> を RDS に適用すると、直近アクティブ数が表示されます。
+              </p>
+            ) : null}
+            <div className={apStyles.salesKpiRow} style={{ marginBottom: 0 }}>
+              <div className={apStyles.salesKpiCard}>
+                登録ユーザー
+                <br />
+                <strong>{formatAccessCount(accessStats.total_users)}</strong>
+              </div>
+              <div className={apStyles.salesKpiCard}>
+                直近 5 分
+                <br />
+                <strong>{formatAccessCount(accessStats.active_5m)}</strong>
+              </div>
+              <div className={apStyles.salesKpiCard}>
+                直近 1 時間
+                <br />
+                <strong>{formatAccessCount(accessStats.active_1h)}</strong>
+              </div>
+              <div className={apStyles.salesKpiCard}>
+                直近 24 時間
+                <br />
+                <strong>{formatAccessCount(accessStats.active_24h)}</strong>
+              </div>
+              <div className={apStyles.salesKpiCard}>
+                直近 7 日
+                <br />
+                <strong>{formatAccessCount(accessStats.active_7d)}</strong>
+              </div>
+              <div className={apStyles.salesKpiCard}>
+                直近 30 日
+                <br />
+                <strong>{formatAccessCount(accessStats.active_30d)}</strong>
+              </div>
+              <div className={apStyles.salesKpiCard}>
+                アクセス記録あり
+                <br />
+                <strong>{formatAccessCount(accessStats.users_with_access_timestamp)}</strong>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p style={{ margin: 0, fontSize: "0.86rem", color: "var(--text-muted)" }}>
+            指標を読み込み中…
+          </p>
+        )}
+      </div>
       <p style={{ color: "var(--text-muted)" }}>
         管理者数: {adminCount} / 全ユーザー: {items.length}
       </p>

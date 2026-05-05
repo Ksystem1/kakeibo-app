@@ -101,6 +101,7 @@ import {
 } from "./stripe-subscription-reconcile-core.mjs";
 import { applyEstimatedFeeToLogRowForDisplay } from "./stripe-sales-fee-estimate.mjs";
 import { getPublicUserStatsPayload } from "./user-stats-public.mjs";
+import { getAdminAccessStatsPayload } from "./admin-access-stats.mjs";
 import {
   evaluateAllFeaturesForUser,
   evaluateFeatureForUser,
@@ -3619,6 +3620,7 @@ export async function handleApiRequest(req, options = {}) {
             billingCancelSubscription: "/billing/cancel-subscription",
             announcement: "/announcement",
             adminAnnouncement: "/admin/announcement",
+            adminAccessStats: "/admin/access-stats",
             adminMonitorRecruitmentSettings: "/admin/monitor-recruitment-settings",
             adminImportFormatAudit: "/admin/import-formats/audit",
             adminReceiptLearningCatalog: "/admin/receipt-learning-catalog",
@@ -4629,6 +4631,23 @@ export async function handleApiRequest(req, options = {}) {
       } catch (e) {
         logError("admin.receipt_learning_catalog.delete", e);
         return json(500, { error: "AdminReceiptLearningCatalogDeleteError" }, hdrs, skipCors);
+      }
+    }
+
+    if (routeKey(method, path) === "GET /admin/access-stats") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      try {
+        const payload = await getAdminAccessStatsPayload(pool);
+        return json(200, payload, hdrs, skipCors);
+      } catch (e) {
+        logError("admin.access_stats.read", e, { userId });
+        return json(
+          500,
+          { error: "InternalError", detail: "アクセス統計の取得に失敗しました" },
+          hdrs,
+          skipCors,
+        );
       }
     }
 
