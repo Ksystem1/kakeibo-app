@@ -649,15 +649,22 @@ export function scoreReceiptLearningCatalogRow(row, ctx) {
 }
 
 /**
- * レシート取込のメモ欄用。オブジェクトが渡っても `vendorName` / `name` 等から文字列を取り出す。
- * 値は `normalizeVendorForMatch` 済みキー（DB の vendor_norm と同系）。
+ * レシート取込のメモ欄用。オブジェクトを `String()` だけすると `[object Object]` になるため、
+ * 型に応じて `name` 等を辿る（詳細は {@link coerceVendorNameInputToPlainString}）。
+ * 値は `normalizeVendorForMatch` 済みキー（DB の vendor_norm と同系）。プレフィックスは付けない。
  *
  * @param {unknown} vendorNorm 文字列または店名を含むオブジェクト
  * @returns {string} 正規化キーが 2 文字未満なら空
  */
 export function formatReceiptSuggestedMemoFromVendorNorm(vendorNorm) {
-  const plain = coerceVendorNameInputToPlainString(vendorNorm);
-  const norm = normalizeVendorForMatch(plain);
+  let memoText = "";
+  if (vendorNorm == null || vendorNorm === "") return "";
+  if (typeof vendorNorm === "object") {
+    memoText = coerceVendorNameInputToPlainString(vendorNorm);
+  } else {
+    memoText = String(vendorNorm).trim();
+  }
+  const norm = normalizeVendorForMatch(memoText);
   if (norm.length < 2) return "";
   return norm.slice(0, 500);
 }

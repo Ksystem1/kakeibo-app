@@ -9009,54 +9009,46 @@ export async function handleApiRequest(req, options = {}) {
             learnedMemoTrimmed.length > 0 &&
             learnedMemoTrimmed.length <= 12 &&
             isLikelyGarbledVendorName(learnedMemoTrimmed);
-          if (learnCorrectionHit && learnedMemoPresent && !learnedMemoLooksNoise) {
+          const learnedMemoOk =
+            learnCorrectionHit && learnedMemoPresent && !learnedMemoLooksNoise;
+          if (learnedMemoOk) {
             body.suggestedMemo = learnedMemoValue;
-          } else if (autoSuggestedMemo) {
-            body.suggestedMemo = autoSuggestedMemo;
-          }
-          if (!String(body.suggestedMemo ?? "").trim()) {
-            const vnRaw = String(
-              adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
-            ).trim();
-            if (vnRaw && !isLikelyGarbledVendorName(vnRaw)) {
-              body.suggestedMemo = vnRaw.slice(0, 500);
+          } else {
+            const vendorRaw = adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "";
+            const vendorPlain = coerceVendorNameInputToPlainString(vendorRaw);
+            let storeMemoFromNorm = "";
+            if (vendorPlain.length >= 2 && !isLikelyGarbledVendorName(vendorPlain)) {
+              storeMemoFromNorm = formatReceiptSuggestedMemoFromVendorNorm(vendorRaw);
             }
-          }
-          if (!String(body.suggestedMemo ?? "").trim()) {
-            const fromOcrVendor = inferVendorLabelFromJapaneseReceiptOcr(result?.ocrLines ?? []);
-            if (fromOcrVendor) body.suggestedMemo = fromOcrVendor.slice(0, 500);
-          }
-          const memoFromLinesFallback = buildReceiptMemoFromParsedLineItems(result?.items ?? []);
-          if (
-            memoFromLinesFallback &&
-            isLikelyGarbledVendorName(String(body.suggestedMemo ?? "").trim())
-          ) {
-            body.suggestedMemo = memoFromLinesFallback;
-          }
-          {
-            const vendorNormMemoKey = normalizeVendorForMatch(
-              adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
-            );
-            const memoFromVendorNorm = formatReceiptSuggestedMemoFromVendorNorm(vendorNormMemoKey);
-            if (memoFromVendorNorm) {
-              const learnedMemoOk =
-                learnCorrectionHit &&
-                learnedMemoPresent &&
-                !learnedMemoLooksNoise &&
-                String(learnedMemoValue ?? "").trim().length > 0;
-              const curMemo = String(body.suggestedMemo ?? "").trim();
-              const normCur = normalizeVendorForMatch(curMemo);
-              const memoHasVendorNormKey =
-                vendorNormMemoKey.length >= 2 &&
-                (normCur.includes(vendorNormMemoKey) || vendorNormMemoKey.includes(normCur));
-              const memoWeak = !curMemo || isLikelyGarbledVendorName(curMemo);
-              if (!learnedMemoOk && (memoWeak || !memoHasVendorNormKey)) {
-                if (!memoWeak && curMemo && !memoHasVendorNormKey) {
-                  body.suggestedMemo = `${memoFromVendorNorm} ${curMemo}`.trim().slice(0, 500);
-                } else {
-                  body.suggestedMemo = memoFromVendorNorm;
-                }
+            if (!storeMemoFromNorm) {
+              const ocrStoreLine = inferVendorLabelFromJapaneseReceiptOcr(result?.ocrLines ?? []);
+              if (ocrStoreLine) {
+                storeMemoFromNorm = formatReceiptSuggestedMemoFromVendorNorm(ocrStoreLine);
               }
+            }
+            if (storeMemoFromNorm) {
+              body.suggestedMemo = storeMemoFromNorm;
+            } else if (autoSuggestedMemo) {
+              body.suggestedMemo = autoSuggestedMemo;
+            }
+            if (!String(body.suggestedMemo ?? "").trim()) {
+              const vnPlain = coerceVendorNameInputToPlainString(
+                adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
+              );
+              if (vnPlain && !isLikelyGarbledVendorName(vnPlain)) {
+                body.suggestedMemo = vnPlain.slice(0, 500);
+              }
+            }
+            if (!String(body.suggestedMemo ?? "").trim()) {
+              const fromOcrVendor = inferVendorLabelFromJapaneseReceiptOcr(result?.ocrLines ?? []);
+              if (fromOcrVendor) body.suggestedMemo = fromOcrVendor.slice(0, 500);
+            }
+            const memoFromLinesFallback = buildReceiptMemoFromParsedLineItems(result?.items ?? []);
+            if (
+              memoFromLinesFallback &&
+              isLikelyGarbledVendorName(String(body.suggestedMemo ?? "").trim())
+            ) {
+              body.suggestedMemo = memoFromLinesFallback;
             }
           }
           if (duplicateWarning) {

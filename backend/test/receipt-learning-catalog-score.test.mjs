@@ -35,6 +35,11 @@ test("formatReceiptSuggestedMemoFromVendorNorm: vendor_norm のみ（オブジ�
   );
   assert.equal(formatReceiptSuggestedMemoFromVendorNorm(""), "");
   assert.equal(formatReceiptSuggestedMemoFromVendorNorm("x"), "");
+  assert.equal(
+    formatReceiptSuggestedMemoFromVendorNorm({ notAString: 1 }),
+    "",
+    "メタデータだけのオブジェクトは空（[object Object] にしない）",
+  );
 });
 
 test("receiptLearningSampleCountWeight: 1 / 2 / 3+", () => {
