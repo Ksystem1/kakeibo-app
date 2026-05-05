@@ -34,6 +34,19 @@
   align-self: start;
 }
 
+/* PC: 左右を 1fr で極端に引き伸ばさず、ヒーロー＋ログインをまとめてビューポート中央へ */
+@media (min-width: 901px) {
+  .page {
+    grid-template-columns: minmax(260px, 460px) minmax(320px, 440px);
+    justify-content: center;
+    column-gap: clamp(1.25rem, 3.5vw, 2.75rem);
+    padding-top: max(0px, var(--login-chrome-top, 0px), env(safe-area-inset-top, 0px));
+    padding-right: max(env(safe-area-inset-right, 0px), clamp(0.75rem, 2.5vw, 1.75rem));
+    padding-bottom: max(0px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(env(safe-area-inset-left, 0px), clamp(0.75rem, 2.5vw, 1.75rem));
+  }
+}
+
 @media (max-width: 900px) {
   .page {
     position: relative;
