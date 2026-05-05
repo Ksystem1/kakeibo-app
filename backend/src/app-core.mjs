@@ -1132,6 +1132,13 @@ function detectReceiptPaymentLabel(ocrLines) {
   return null;
 }
 
+/** メモが支払手段ラベルのみ（店名なし）のとき OCR から店名を救済する */
+function receiptSuggestedMemoIsPaymentOnly(memo) {
+  const t = String(memo ?? "").trim();
+  if (!t) return false;
+  return t === "クレジット払い" || t === "PayPay支払い";
+}
+
 function inferPartyCountMemoFromOcr(ocrLines) {
   const j = Array.isArray(ocrLines) ? ocrLines.join("\n") : "";
   const m = /(\d{1,3})\s*名/.exec(j);
@@ -1174,10 +1181,13 @@ function buildReceiptMemoFromParsedLineItems(items) {
 }
 
 function buildReceiptSuggestedMemo(vendorName, ocrLines, items) {
-  const vendor = String(vendorName ?? "").trim();
+  const vendor = coerceVendorNameInputToPlainString(vendorName ?? "");
   const payment = detectReceiptPaymentLabel(ocrLines);
   const party = inferPartyCountMemoFromOcr(ocrLines);
   const vendorUsable = vendor.length > 0 && !isLikelyGarbledVendorName(vendor);
+  const inferredCanon = inferVendorNameFromOcrLines(ocrLines);
+  const inferredJp =
+    inferredCanon || inferVendorLabelFromJapaneseReceiptOcr(ocrLines);
   const withParty = (base) => {
     const b = String(base ?? "").trim();
     if (!party) return b.slice(0, 500);
@@ -1186,11 +1196,12 @@ function buildReceiptSuggestedMemo(vendorName, ocrLines, items) {
     return `${b} ${party}`.slice(0, 500);
   };
   if (payment && vendorUsable) return withParty(`${payment} ${vendor}`);
-  if (payment) return withParty(payment);
   if (vendorUsable) return withParty(vendor);
-  const inferred = inferVendorNameFromOcrLines(ocrLines);
-  if (payment && inferred) return withParty(`${payment} ${inferred}`);
-  if (inferred) return withParty(inferred);
+  if (inferredJp) {
+    if (payment) return withParty(`${payment} ${inferredJp}`);
+    return withParty(inferredJp);
+  }
+  if (payment) return withParty(payment);
   if (party) return party.slice(0, 500);
   const fromItems = buildReceiptMemoFromParsedLineItems(Array.isArray(items) ? items : []);
   if (fromItems) return withParty(fromItems);
@@ -1292,9 +1303,10 @@ function inferVendorLabelFromJapaneseReceiptOcr(ocrLines) {
   let bestScore = -Infinity;
   const maxLine = Math.min(lines.length, 24);
   for (let i = 0; i < maxLine; i += 1) {
-    const line = lines[i];
-    if (line.length > 96) continue;
-    if (JP_PHONE_IN_OCR_RE.test(line)) continue;
+    const rawLine = lines[i];
+    if (rawLine.length > 96) continue;
+    const line = rawLine.replace(JP_PHONE_IN_OCR_RE, " ").replace(/\s+/g, " ").trim();
+    if (!line || line.length > 96) continue;
     if (lineLooksLikeTotal(line) || itemNameLooksLikeAggregateReceiptLine(line)) continue;
     const jp = countJp(line);
     if (jp < 2) continue;
@@ -9049,6 +9061,14 @@ export async function handleApiRequest(req, options = {}) {
               isLikelyGarbledVendorName(String(body.suggestedMemo ?? "").trim())
             ) {
               body.suggestedMemo = memoFromLinesFallback;
+            }
+            if (!learnedMemoOk && receiptSuggestedMemoIsPaymentOnly(body.suggestedMemo)) {
+              const ol = result?.ocrLines ?? [];
+              const rescue =
+                inferVendorNameFromOcrLines(ol) || inferVendorLabelFromJapaneseReceiptOcr(ol);
+              if (rescue) {
+                body.suggestedMemo = formatReceiptSuggestedMemoFromVendorNorm(rescue);
+              }
             }
           }
           if (duplicateWarning) {
