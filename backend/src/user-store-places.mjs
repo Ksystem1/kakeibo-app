@@ -11,7 +11,7 @@ import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
 function userHintForBedrockFailure(code) {
   const c = String(code || "");
   if (c === "AccessDeniedException" || c === "AccessDenied" || c === "UnauthorizedOperation") {
-    return "解析中ですが、店名推論をスキップしました。手入力のままご利用ください。（AI 権限・モデル利用設定のご確認が必要な場合があります）。";
+    return "解析中ですが、店名推論をスキップしました。手入力のままご利用ください。";
   }
   if (c === "ThrottlingException" || c === "TooManyRequestsException" || c === "ServiceQuotaExceededException") {
     return "解析中ですが、店名推論を一時的にスキップしました。少し時間を空けて再度お試しください。";
