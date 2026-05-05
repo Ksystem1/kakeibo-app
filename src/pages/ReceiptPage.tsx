@@ -251,9 +251,11 @@ function pickInitialTotalAmount(
 
   // 典型: OCR の桁落ち（15100 -> 1510）。明細合計や候補が明確に大きい場合はそちらを優先。
   if (initialTotal != null && lineSum > 0) {
+    const ratio = lineSum / Math.max(1, initialTotal);
     const digitDropLikely =
       lineSum === initialTotal * 10 ||
       lineSum === initialTotal * 100 ||
+      (ratio >= 8.5 && ratio <= 12.5) ||
       lineSum >= Math.round(initialTotal * 1.6);
     if (digitDropLikely) {
       return String(bestLineLike ?? lineSum);
@@ -272,6 +274,12 @@ function looksGarbledAutoMemo(raw: string): boolean {
   if (/^[A-Za-z0-9]{2,8}$/.test(alnum) && /\d/.test(alnum)) return true;
   if (/^[A-Z]{2,6}$/.test(alnum)) return true;
   return false;
+}
+
+function looksUninformativeAutoMemo(raw: string): boolean {
+  const s = String(raw ?? "").trim();
+  if (!s) return true;
+  return /^(内容|明細|商品|品目|レシート|購入|お買上|お会計|なし|不明)$/i.test(s);
 }
 
 function suggestedStoreNameFromHint(hint: string | null): string {
@@ -1143,7 +1151,8 @@ export function ReceiptPage() {
     const line = Math.round(Number(receiptLineSumCheck.lineSum));
     const total = Math.round(Number(receiptLineSumCheck.total));
     if (!Number.isFinite(line) || !Number.isFinite(total) || line <= 0 || total <= 0) return;
-    const likelyDigitDrop = line === total * 10 || line === total * 100;
+    const ratio = line / Math.max(1, total);
+    const likelyDigitDrop = line === total * 10 || line === total * 100 || (ratio >= 8.5 && ratio <= 12.5);
     if (!likelyDigitDrop) return;
     setDraftTotal(String(line));
   }, [receiptLineSumCheck]);
@@ -1151,7 +1160,7 @@ export function ReceiptPage() {
   useEffect(() => {
     if (memoTouchedByUserRef.current) return;
     const memo = String(draftMemo ?? "").trim();
-    if (!memo || !looksGarbledAutoMemo(memo)) return;
+    if (!memo || (!looksGarbledAutoMemo(memo) && !looksUninformativeAutoMemo(memo))) return;
     const hintedStore = suggestedStoreNameFromHint(suggestedVendorHint);
     if (hintedStore) {
       setDraftMemo(hintedStore);
@@ -1165,8 +1174,14 @@ export function ReceiptPage() {
 
   useEffect(() => {
     if (draftCategoryId != null) return;
+    const namesFromItems = (Array.isArray(items) ? items : [])
+      .map((it) => String(it?.name ?? "").trim())
+      .filter(Boolean)
+      .join(" ");
     const vendorCandidate =
-      suggestedStoreNameFromHint(suggestedVendorHint) || String(draftMemo || ocrVendor || "").trim();
+      suggestedStoreNameFromHint(suggestedVendorHint) ||
+      String(draftMemo || ocrVendor || "").trim() ||
+      namesFromItems;
     if (!vendorCandidate) return;
     let next = suggestExpenseCategoryId(categories, vendorCandidate, items);
     if (next == null && /うなぎ|寿司|すし|ラーメン|焼肉|居酒屋|食堂|レストラン|カフェ|喫茶/i.test(vendorCandidate)) {
