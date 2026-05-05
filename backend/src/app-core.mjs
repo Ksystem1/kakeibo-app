@@ -1332,6 +1332,22 @@ function inferVendorLabelFromJapaneseReceiptOcr(ocrLines) {
   if (isLikelyGarbledVendorName(trimmed) && countJp(trimmed) < 4) return null;
   return trimmed;
 }
+
+function inferVendorLabelFromJapaneseReceiptOcrLoose(ocrLines) {
+  if (!Array.isArray(ocrLines) || ocrLines.length === 0) return null;
+  const lines = ocrLines.map((x) => String(x ?? "").trim()).filter(Boolean).slice(0, 18);
+  for (const raw of lines) {
+    const line = raw.replace(JP_PHONE_IN_OCR_RE, " ").replace(/\s+/g, " ").trim();
+    if (!line || line.length > 96) continue;
+    if (lineLooksLikeTotal(line) || itemNameLooksLikeAggregateReceiptLine(line)) continue;
+    const jpCount = (line.match(/[ぁ-んァ-ヶ一-龥]/g) ?? []).length;
+    if (jpCount < 2) continue;
+    if (isLikelyGarbledVendorName(line) && jpCount < 5) continue;
+    if (/丁目|番地|〒/.test(line) && jpCount < 7) continue;
+    return line.slice(0, 120);
+  }
+  return null;
+}
 function isLikelyGarbledVendorName(raw) {
   const s = String(raw ?? "").trim();
   if (!s) return true;
@@ -1595,6 +1611,18 @@ async function suggestExpenseCategoryFromGlobalMaster(pool, vendor, userExpenseC
     }
   }
   return null;
+}
+
+function suggestExpenseCategoryFromVendorHeuristic(vendor, userExpenseCategories) {
+  const v = normalizeKeyword(String(vendor ?? ""));
+  if (!v) return null;
+  const userCats = Array.isArray(userExpenseCategories) ? userExpenseCategories : [];
+  if (userCats.length === 0) return null;
+  const foodLike = /(うなぎ|鰻|寿司|すし|鮨|ラーメン|焼肉|居酒屋|食堂|レストラン|カフェ|喫茶|弁当|定食)/.test(v);
+  if (!foodLike) return null;
+  const hit = userCats.find((c) => /(食費|外食|食|飲食)/.test(String(c?.name ?? "")));
+  if (!hit?.id) return null;
+  return { id: Number(hit.id), name: String(hit.name), source: "keywords", lowConfidence: false };
 }
 
 /**
@@ -8948,7 +8976,7 @@ export async function handleApiRequest(req, options = {}) {
             expenseCatRows,
           );
           /* 明細の最頻カテゴリ > 個別辞書 > 店名キー学習 > 予測/AI */
-          const finalSuggestedId =
+          let finalSuggestedId =
             dominantItemCategory?.id != null
               ? Number(dominantItemCategory.id)
               : learnedCategoryId != null
@@ -8958,7 +8986,7 @@ export async function handleApiRequest(req, options = {}) {
                 : predicted.id != null
                   ? predicted.id
                   : null;
-          const finalSuggestedName =
+          let finalSuggestedName =
             dominantItemCategory?.name != null
               ? String(dominantItemCategory.name)
               : learnedCategoryId != null
@@ -8968,7 +8996,7 @@ export async function handleApiRequest(req, options = {}) {
                 : predicted.name != null
                   ? predicted.name
                   : null;
-          const finalSource =
+          let finalSource =
             dominantItemCategory?.id != null
               ? "line_items"
               : learnCorrectionHit && (learnedCategoryId != null || learnedMemoPresent)
@@ -8976,8 +9004,19 @@ export async function handleApiRequest(req, options = {}) {
               : placePreferredCategoryId != null
                 ? "vendor_key_learn"
                 : predicted.source;
+          if (finalSuggestedId == null) {
+            const vh = suggestExpenseCategoryFromVendorHeuristic(
+              adjustedSummary?.vendorName ?? result?.summary?.vendorName ?? "",
+              expenseCatRows,
+            );
+            if (vh?.id != null) {
+              finalSuggestedId = Number(vh.id);
+              finalSuggestedName = String(vh.name);
+              finalSource = "keywords";
+            }
+          }
           const suggestedCategoryLowConfidence =
-            learnedCategoryId != null || placePreferredCategoryId != null
+            learnedCategoryId != null || placePreferredCategoryId != null || finalSource === "keywords"
               ? false
               : Boolean(predicted.lowConfidence);
 
@@ -9151,6 +9190,15 @@ export async function handleApiRequest(req, options = {}) {
             if (!String(body.suggestedMemo ?? "").trim()) {
               const fromOcrVendor = inferVendorLabelFromJapaneseReceiptOcr(result?.ocrLines ?? []);
               if (fromOcrVendor) body.suggestedMemo = fromOcrVendor.slice(0, 500);
+            }
+            if (isLikelyGarbledVendorName(String(body.suggestedMemo ?? "").trim())) {
+              const rescueLoose =
+                inferVendorLabelFromJapaneseReceiptOcr(result?.ocrLines ?? []) ||
+                inferVendorLabelFromJapaneseReceiptOcrLoose(result?.ocrLines ?? []) ||
+                inferVendorNameFromOcrLines(result?.ocrLines ?? []);
+              if (rescueLoose) {
+                body.suggestedMemo = formatReceiptSuggestedMemoFromVendorNorm(rescueLoose);
+              }
             }
             const memoFromLinesFallback = buildReceiptMemoFromParsedLineItems(result?.items ?? []);
             if (

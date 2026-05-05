@@ -927,16 +927,19 @@ function fallbackTotalFromOcrLines(lines, expectedTotal = null) {
   if (!Array.isArray(lines) || lines.length === 0) return null;
   /** @type {Array<{ amount: number; score: number }>} */
   const candidates = [];
-  for (const line of lines) {
-    const amounts = moneyCandidatesFromLine(line);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const merged = [lines[i - 1], line, lines[i + 1]].filter(Boolean).join(" ");
+    const amounts = moneyCandidatesFromLine(merged);
     if (amounts.length === 0) continue;
-    const hasTotal = lineHasTotalKeyword(line);
+    const hasTotal = lineHasTotalKeyword(line) || lineHasTotalKeyword(merged);
     if (!hasTotal) continue;
-    if (lineHasNonTotalKeyword(line)) continue;
+    if (lineHasNonTotalKeyword(line) && lineHasNonTotalKeyword(merged)) continue;
     for (const amount of amounts) {
       let score = 3;
-      if (/合計|総額|TOTAL/i.test(String(line))) score += 2;
-      if (/お支払|支払|ご請求|請求額/i.test(String(line))) score += 1.5;
+      if (/合計|総額|TOTAL/i.test(String(merged))) score += 3;
+      if (/小計|対象額/.test(String(merged))) score -= 2;
+      if (/お支払|支払|ご請求|請求額/i.test(String(merged))) score += 1.5;
       const expected = Number(expectedTotal);
       if (Number.isFinite(expected) && expected > 0) {
         const diff = Math.abs(amount - expected);
