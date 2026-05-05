@@ -89,7 +89,9 @@ export function LoginPage() {
   }
 
   return (
-    <div className={`${styles.page}${demoExiting ? ` ${styles.pageDemoExit}` : ""}`}>
+    <div
+      className={`${styles.page} ${styles.pageLogin}${demoExiting ? ` ${styles.pageDemoExit}` : ""}`}
+    >
       {demoExiting ? <div className={styles.demoExitLayer} role="status" aria-live="assertive" aria-label="デモに移行中" /> : null}
       <LoginHeroSection onRequestDemoExit={() => setDemoExiting(true)} />
       <main className={styles.panel}>

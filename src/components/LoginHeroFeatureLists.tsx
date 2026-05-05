@@ -132,7 +132,7 @@ export function LoginHeroFeatureLists({ variant = "hero" }: Props) {
 
   return (
     <section
-      className="w-full max-w-xl mx-auto mt-5 px-1 sm:px-2 text-left"
+      className="w-full max-w-xl mt-5 px-1 sm:px-2 text-left"
       aria-labelledby={titleId}
     >
       <h2

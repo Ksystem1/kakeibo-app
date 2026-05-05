@@ -45,6 +45,59 @@
     padding-bottom: max(0px, env(safe-area-inset-bottom, 0px));
     padding-left: max(env(safe-area-inset-left, 0px), clamp(0.75rem, 2.5vw, 1.75rem));
   }
+
+  /* ログインページ: 中央に細長く寄らないよう余白を使い、左カラムは左詰めで読みやすく */
+  .page.pageLogin {
+    grid-template-columns: minmax(320px, 1.2fr) minmax(300px, 400px);
+    justify-content: stretch;
+    width: 100%;
+    max-width: min(1120px, 100%);
+    margin-inline: auto;
+    column-gap: clamp(1.5rem, 3.5vw, 2.75rem);
+  }
+
+  .page.pageLogin > .hero .heroInner,
+  .page.pageLogin > .hero .heroContent {
+    max-width: 100%;
+  }
+
+  .page.pageLogin > .hero .heroContent {
+    align-items: flex-start;
+    text-align: left;
+    margin: 0;
+    padding: 3.25rem 0.35rem 1.5rem 0;
+  }
+
+  .page.pageLogin > .hero .heroBody {
+    margin: 0;
+    text-align: left;
+  }
+
+  .page.pageLogin > .hero .heroCtaBlock {
+    align-items: flex-start;
+  }
+
+  .page.pageLogin > .hero .heroStatsBlock {
+    align-items: flex-start;
+    max-width: min(32rem, 100%);
+  }
+
+  .page.pageLogin > .hero .heroStatsLiveRow {
+    justify-content: flex-start;
+  }
+
+  .page.pageLogin > .hero .heroStatLine {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .page.pageLogin > .hero .heroOnBody {
+    justify-content: flex-start;
+  }
+
+  .page.pageLogin .monitorPromoWrap {
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 900px) {

@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { Link } from "react-router-dom";
+import monitorRecruitPromoUrl from "../assets/monitor-recruit-promo.svg?url";
 import { usePublicMonitorSettings } from "../hooks/usePublicMonitorSettings";
 import styles from "./LoginScreen.module.css";
 
@@ -24,7 +25,7 @@ function MonitorRecruitmentLandingPromoImpl() {
       >
         <div className={styles.monitorPromoVisual} aria-hidden>
           <img
-            src={`${import.meta.env.BASE_URL}monitor-recruit-promo.svg`}
+            src={monitorRecruitPromoUrl}
             alt=""
             width={200}
             height={134}
