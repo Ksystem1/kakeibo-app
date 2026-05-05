@@ -4,6 +4,44 @@
 import { bedrockResolveSuggestedVendor } from "./ai-advisor-service.mjs";
 import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
 
+let vendorResolveBackoffUntilMs = 0;
+let vendorResolveBackoffCode = "";
+
+function isPersistentVendorResolveFailureCode(code) {
+  const c = String(code || "");
+  return (
+    c === "AccessDeniedException" ||
+    c === "AccessDenied" ||
+    c === "UnauthorizedOperation" ||
+    c === "ResourceNotFoundException" ||
+    c === "ValidationException" ||
+    c === "NoModelConfig"
+  );
+}
+
+function vendorResolveBackoffMsForCode(code) {
+  const c = String(code || "");
+  if (isPersistentVendorResolveFailureCode(c)) return 30 * 60 * 1000;
+  if (c === "ThrottlingException" || c === "TooManyRequestsException" || c === "ServiceQuotaExceededException") {
+    return 2 * 60 * 1000;
+  }
+  return 0;
+}
+
+function setVendorResolveBackoff(code) {
+  const ms = vendorResolveBackoffMsForCode(code);
+  if (ms <= 0) return;
+  vendorResolveBackoffUntilMs = Date.now() + ms;
+  vendorResolveBackoffCode = String(code || "");
+}
+
+function currentVendorResolveBackoffCode() {
+  if (Date.now() < vendorResolveBackoffUntilMs) {
+    return vendorResolveBackoffCode || "Backoff";
+  }
+  return "";
+}
+
 /**
  * @param {string} [code]
  * @returns {string}
@@ -11,15 +49,16 @@ import { ocrVendorFingerprintHex } from "./vendor-fingerprint.mjs";
 function userHintForBedrockFailure(code) {
   const c = String(code || "");
   if (c === "AccessDeniedException" || c === "AccessDenied" || c === "UnauthorizedOperation") {
-    return "解析中ですが、店名推論をスキップしました。手入力のままご利用ください。";
+    return "";
   }
   if (c === "ThrottlingException" || c === "TooManyRequestsException" || c === "ServiceQuotaExceededException") {
     return "解析中ですが、店名推論を一時的にスキップしました。少し時間を空けて再度お試しください。";
   }
   if (c === "ResourceNotFoundException" || c === "ValidationException") {
-    return "解析中ですが、店名推論をスキップしました（利用モデル設定をご確認ください）。";
+    return "";
   }
-  return "解析中ですが、店名推論をスキップしました。手入力のままご利用ください。";
+  if (c === "NoModelConfig" || c === "Backoff") return "";
+  return "解析中ですが、店名推論をスキップしました。";
 }
 
 /** `app-core` の `catWhere` と同一（家族/本人の支出カテゴリ名の取得用） */
@@ -136,9 +175,20 @@ export async function resolveAndPersistUserStorePlace(pool, userId, vendorName) 
       inferenceLowConfidence: false,
     };
   }
+  const backoffCode = currentVendorResolveBackoffCode();
+  if (backoffCode) {
+    return {
+      ok: false,
+      reason: "bedrock",
+      ocrVendorKey,
+      bedrockCode: backoffCode,
+      userHint: userHintForBedrockFailure(backoffCode),
+    };
+  }
   const expenseCategoryNames = await loadUserExpenseCategoryNameList(pool, userId);
   const br = await bedrockResolveSuggestedVendor(v, { expenseCategoryNames });
   if (!br.ok) {
+    setVendorResolveBackoff(br.code);
     return {
       ok: false,
       reason: "bedrock",

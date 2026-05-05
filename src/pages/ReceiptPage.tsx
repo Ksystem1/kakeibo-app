@@ -386,6 +386,7 @@ export function ReceiptPage() {
   const [receiptOcrVendorKey, setReceiptOcrVendorKey] = useState<string | null>(null);
   const memoTouchedByUserRef = useRef(false);
   const amountTouchedByUserRef = useRef(false);
+  const vendorResolveBackoffUntilRef = useRef(0);
   const [receiptAiTaxHint, setReceiptAiTaxHint] = useState<string | null>(null);
   const showTotalCandidateChips = useMemo(
     () =>
@@ -520,13 +521,36 @@ export function ReceiptPage() {
           setReceiptBedrockVendorLow(false);
         }
         if (sp?.deferred && sp.rawVendorName) {
-          const rawV = String(sp.rawVendorName).trim();
-          void (async () => {
+          if (Date.now() < vendorResolveBackoffUntilRef.current) {
+            setReceiptBedrockVendorLow(false);
+          } else {
+            const rawV = String(sp.rawVendorName).trim();
+            void (async () => {
             try {
               const res = await resolveReceiptSuggestedVendor({ vendorName: rawV });
+              if (res.vendorResolveSkipped) {
+                const reason = String(res.reasonCode ?? "");
+                if (
+                  reason === "AccessDeniedException" ||
+                  reason === "AccessDenied" ||
+                  reason === "UnauthorizedOperation" ||
+                  reason === "ResourceNotFoundException" ||
+                  reason === "ValidationException" ||
+                  reason === "NoModelConfig" ||
+                  reason === "Backoff"
+                ) {
+                  vendorResolveBackoffUntilRef.current = Date.now() + 30 * 60 * 1000;
+                } else if (
+                  reason === "ThrottlingException" ||
+                  reason === "TooManyRequestsException" ||
+                  reason === "ServiceQuotaExceededException"
+                ) {
+                  vendorResolveBackoffUntilRef.current = Date.now() + 2 * 60 * 1000;
+                }
+              }
               if (res.vendorResolveSkipped && res.userHint) {
-                const u = String(res.userHint);
-                setNotice((prev) => (prev ? `${u} ${prev}` : u));
+                const u = String(res.userHint).trim();
+                if (u) setNotice((prev) => (prev ? `${u} ${prev}` : u));
               }
               if (!res.found || !res.suggestedVendor) {
                 if (res.vendorResolveSkipped) {
@@ -553,10 +577,11 @@ export function ReceiptPage() {
               } else {
                 setReceiptBedrockVendorLow(false);
               }
-            } catch {
-              setNotice("解析中ですが、店名推論に接続できませんでした。手入力のまま登録できます。");
-            }
-          })();
+              } catch {
+                setNotice("解析中ですが、店名推論に接続できませんでした。手入力のまま登録できます。");
+              }
+            })();
+          }
         }
         const rd = r.receiptAiDetail;
         if (rd && rd.taxAmount != null && Number.isFinite(rd.taxAmount)) {
