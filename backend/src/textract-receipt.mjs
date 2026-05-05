@@ -399,7 +399,14 @@ function valueOrLabelSuggestsChange(text, label) {
 }
 
 function summaryFromFields(summaryFields) {
-  const out = { vendorName: null, totalAmount: null, date: null, fieldConfidence: {} };
+  const out = {
+    vendorName: null,
+    totalAmount: null,
+    date: null,
+    fieldConfidence: {},
+    subtotalAmount: null,
+    taxAmount: null,
+  };
   if (!Array.isArray(summaryFields)) return out;
   /** @type {Array<{ amt: number; conf: number | null; label: string; preferred: boolean }>} */
   const totalCandidates = [];
@@ -540,6 +547,19 @@ function summaryFromFields(summaryFields) {
       out.fieldConfidence.totalAmount = out.fieldConfidence.totalAmount ?? null;
     }
   }
+  // TOTAL 候補が税額フィールドの値だけを拾った場合は税込（小計+税）へ
+  if (out.totalAmount != null && subtotal != null && tax != null) {
+    const tot = Math.round(Number(out.totalAmount) * 100) / 100;
+    const txN = Math.round(Number(tax) * 100) / 100;
+    const stN = Math.round(Number(subtotal) * 100) / 100;
+    const expected = Math.round((stN + txN) * 100) / 100;
+    if (Math.abs(tot - txN) <= 2 && Math.abs(tot - expected) > 2) {
+      out.totalAmount = expected;
+      out.fieldConfidence.totalAmount = out.fieldConfidence.totalAmount ?? null;
+    }
+  }
+  out.subtotalAmount = subtotal;
+  out.taxAmount = tax;
   return out;
 }
 
@@ -784,11 +804,22 @@ function ocrGrandTotalAmountMatched(ocrLines, amount) {
  * @param {unknown} taxAmt
  * @param {string[]} ocrLines
  */
-function reconcileIfTotalEqualsGrandPlusTaxOnce(total, taxAmt, ocrLines) {
+/**
+ * tot が「正しい税込 G」に見えるのに G+税 と誤解して G-tx（＝小計）へ落とす誤りを防ぐ。
+ * @param {{ subtotal: number | null, tax: number | null } | null | undefined} pair
+ */
+function reconcileIfTotalEqualsGrandPlusTaxOnce(total, taxAmt, ocrLines, pair) {
   if (total == null || taxAmt == null) return total;
   const tot = Math.round(Number(total) * 100) / 100;
   const tx = Math.round(Number(taxAmt) * 100) / 100;
   if (!Number.isFinite(tot) || tot <= 0 || !Number.isFinite(tx) || tx <= 0) return total;
+  if (pair?.subtotal != null && pair?.tax != null) {
+    const st = Math.round(Number(pair.subtotal) * 100) / 100;
+    const txP = Math.round(Number(pair.tax) * 100) / 100;
+    const expectedGrand = Math.round((st + txP) * 100) / 100;
+    if (Math.abs(tot - expectedGrand) <= 2) return total;
+    if (tot <= expectedGrand + 1) return total;
+  }
   const cand = Math.round((tot - tx) * 100) / 100;
   if (cand < 100) return total;
   if (!ocrGrandTotalAmountMatched(ocrLines, cand)) return total;
@@ -796,20 +827,68 @@ function reconcileIfTotalEqualsGrandPlusTaxOnce(total, taxAmt, ocrLines) {
   return cand;
 }
 
+function finiteSubtotalTaxOrNull(v) {
+  const n = Math.round(Number(v) * 100) / 100;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * OCR 行から拾った小計・税に、Textract Summary の SUBTOTAL/TAX を補完する（行ブロック欠損対策）
+ * @param {{ subtotal: number | null, tax: number | null }} ocrPair
+ * @param {{ subtotalAmount?: unknown, taxAmount?: unknown } | null | undefined} hint
+ */
+function mergeSubtotalTaxHints(ocrPair, hint) {
+  const oSub = finiteSubtotalTaxOrNull(ocrPair?.subtotal);
+  const oTax = finiteSubtotalTaxOrNull(ocrPair?.tax);
+  if (!hint || typeof hint !== "object") {
+    return { subtotal: oSub, tax: oTax };
+  }
+  const hSub = finiteSubtotalTaxOrNull(hint.subtotalAmount);
+  const hTax = finiteSubtotalTaxOrNull(hint.taxAmount);
+  return {
+    subtotal: hSub ?? oSub,
+    tax: hTax ?? oTax,
+  };
+}
+
+/**
+ * 合計が税額と同一に誤認識されているが、OCR 上に税込（小計+税）が印字されている場合
+ */
+function reconcileTotalWhenMisreadTotalEqualsTaxButGrandOnOcr(totalAmount, ocrLines, pair) {
+  if (pair.subtotal == null || pair.tax == null) return totalAmount;
+  const st = Math.round(Number(pair.subtotal) * 100) / 100;
+  const tx = Math.round(Number(pair.tax) * 100) / 100;
+  const tot = Math.round(Number(totalAmount) * 100) / 100;
+  if (!Number.isFinite(st) || !Number.isFinite(tx) || !Number.isFinite(tot)) return totalAmount;
+  const expected = Math.round((st + tx) * 100) / 100;
+  if (Math.abs(tot - expected) <= 2) return totalAmount;
+  if (Math.abs(tot - tx) > 2) return totalAmount;
+  if (tot >= st - 1) return totalAmount;
+  if (!ocrGrandTotalAmountMatched(ocrLines, expected)) return totalAmount;
+  return expected;
+}
+
 /**
  * フィルタ後の明細合計が OCR の小計と一致するとき、税込は必ず 小計+税（外税レシートの定義）
+ * @param {{ subtotal: number | null, tax: number | null } | null} [precomputedPair]
  */
-function reconcileTotalWhenItemSumMatchesPrintedSubtotal(totalAmount, items, ocrLines) {
+function reconcileTotalWhenItemSumMatchesPrintedSubtotal(totalAmount, items, ocrLines, precomputedPair) {
   if (!Array.isArray(items) || items.length === 0) return totalAmount;
-  const pair = extractSubtotalTaxFromOcrLines(Array.isArray(ocrLines) ? ocrLines : []);
+  const ocr = Array.isArray(ocrLines) ? ocrLines : [];
+  const pair =
+    precomputedPair != null
+      ? precomputedPair
+      : extractSubtotalTaxFromOcrLines(ocr);
   if (pair.subtotal == null || pair.tax == null) return totalAmount;
   const st = Math.round(Number(pair.subtotal) * 100) / 100;
   const tx = Math.round(Number(pair.tax) * 100) / 100;
   const lineSum = fallbackTotalFromLineItems(items);
   const tot = Math.round(Number(totalAmount) * 100) / 100;
   if (!Number.isFinite(lineSum) || lineSum <= 0 || !Number.isFinite(tot)) return totalAmount;
-  if (Math.abs(lineSum - st) > 3) return totalAmount;
   const expected = Math.round((st + tx) * 100) / 100;
+  const grandOnOcr = ocrGrandTotalAmountMatched(ocr, expected);
+  const lineTol = grandOnOcr ? Math.max(3, Math.min(600, Math.round(st * 0.035))) : 3;
+  if (Math.abs(lineSum - st) > lineTol) return totalAmount;
   if (Math.abs(tot - expected) <= 2) return totalAmount;
   if (Math.abs(tot - (expected + tx)) <= 2 || Math.abs(tot - (st + tx * 2)) <= 2) {
     return expected;
@@ -1137,7 +1216,14 @@ export function createReceiptAnalyzer(ctx = {}) {
     const docs = response?.ExpenseDocuments;
     if (!Array.isArray(docs) || docs.length === 0) {
       return {
-        summary: { vendorName: null, totalAmount: null, date: null, fieldConfidence: {} },
+        summary: {
+          vendorName: null,
+          totalAmount: null,
+          date: null,
+          fieldConfidence: {},
+          subtotalAmount: null,
+          taxAmount: null,
+        },
         items: [],
         notice: "Textract は応答しましたが、経費ドキュメントを検出できませんでした。",
         expenseIndex: null,
@@ -1234,7 +1320,10 @@ export function createReceiptAnalyzer(ctx = {}) {
       }
     }
     if (totalAmount != null) {
-      const corr = applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines, items);
+      const corr = applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines, items, {
+        subtotalAmount: summary.subtotalAmount,
+        taxAmount: summary.taxAmount,
+      });
       if (corr != null && Math.abs(corr - Number(totalAmount)) >= 1) {
         totalAmount = corr;
         fieldConfidence = { ...fieldConfidence, totalAmount: fieldConfidence.totalAmount ?? null };
@@ -1249,6 +1338,8 @@ export function createReceiptAnalyzer(ctx = {}) {
         totalAmount,
         date: dateVal,
         fieldConfidence,
+        subtotalAmount: summary.subtotalAmount,
+        taxAmount: summary.taxAmount,
       },
       items,
       ocrLines,
@@ -1278,25 +1369,31 @@ const defaultAnalyzer = createReceiptAnalyzer();
  * @param {unknown} totalAmount
  * @param {string[] | undefined} ocrLines
  * @param {Array<{ name?: string; amount?: unknown }> | undefined} [items]
+ * @param {{ subtotalAmount?: unknown, taxAmount?: unknown } | null | undefined} [textractSummaryHint] Textract Summary の SUBTOTAL/TAX（行 OCR 欠損時の補完）
  * @returns {number | null}
  */
-export function applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines, items) {
+export function applyOcrDoubleTaxTotalCorrection(totalAmount, ocrLines, items, textractSummaryHint) {
   if (totalAmount == null || totalAmount === "") return null;
   let v = Math.round(Number(totalAmount) * 100) / 100;
   if (!Number.isFinite(v) || v <= 0) return null;
   const ocr = Array.isArray(ocrLines) ? ocrLines : [];
-  const pair = extractSubtotalTaxFromOcrLines(ocr);
+  const ocrPair = extractSubtotalTaxFromOcrLines(ocr);
+  const pair = mergeSubtotalTaxHints(ocrPair, textractSummaryHint);
   if (pair.subtotal != null && pair.tax != null) {
     const d = reconcileTotalDoubleTaxError(v, pair.subtotal, pair.tax);
     if (typeof d === "number" && Number.isFinite(d)) v = d;
   }
   if (pair.tax != null) {
-    const g = reconcileIfTotalEqualsGrandPlusTaxOnce(v, pair.tax, ocr);
+    const g = reconcileIfTotalEqualsGrandPlusTaxOnce(v, pair.tax, ocr, pair);
     if (typeof g === "number" && Number.isFinite(g)) v = g;
   }
   if (items != null) {
-    const a = reconcileTotalWhenItemSumMatchesPrintedSubtotal(v, items, ocr);
+    const a = reconcileTotalWhenItemSumMatchesPrintedSubtotal(v, items, ocr, pair);
     if (typeof a === "number" && Number.isFinite(a)) v = a;
+  }
+  if (pair.subtotal != null && pair.tax != null) {
+    const b = reconcileTotalWhenMisreadTotalEqualsTaxButGrandOnOcr(v, ocr, pair);
+    if (typeof b === "number" && Number.isFinite(b)) v = b;
   }
   const coerced = coerce18120ToPrintedGrand16610IfPresent(v, ocr);
   if (typeof coerced === "number" && Number.isFinite(coerced)) v = coerced;

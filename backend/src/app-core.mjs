@@ -8699,6 +8699,10 @@ export async function handleApiRequest(req, options = {}) {
               adjustedSummary?.totalAmount,
               ocrTl,
               result?.items ?? [],
+              {
+                subtotalAmount: result?.summary?.subtotalAmount,
+                taxAmount: result?.summary?.taxAmount,
+              },
             );
             const curTot = Number(adjustedSummary?.totalAmount ?? NaN);
             if (fixedTot != null && Number.isFinite(curTot) && Math.abs(fixedTot - curTot) >= 1) {
