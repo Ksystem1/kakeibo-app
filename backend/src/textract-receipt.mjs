@@ -814,6 +814,10 @@ function reconcileTotalWhenItemSumMatchesPrintedSubtotal(totalAmount, items, ocr
   if (Math.abs(tot - (expected + tx)) <= 2 || Math.abs(tot - (st + tx * 2)) <= 2) {
     return expected;
   }
+  // Summary の TOTAL が消費税額と同一に誤認識されることがある（明細合計≒小計のとき税込に戻す）
+  if (Math.abs(tot - tx) <= 2 && tot < st - 1) {
+    return expected;
+  }
   return totalAmount;
 }
 
