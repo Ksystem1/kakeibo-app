@@ -1,5 +1,7 @@
 /**
- * v46: receipt_learning_catalog.admin_note 列の欠落を修復
+ * receipt_learning_catalog に admin_note 列を追加（カタログ用）。
+ * モニター募集の定員・users.is_monitor_recruit は db/migration_v46_monitor_recruitment_capacity.sql
+ * → npm run db:migrate-v46-monitor-capacity
  * 実行: cd backend && npm run db:migrate-v46
  */
 import "dotenv/config";
