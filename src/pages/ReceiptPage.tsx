@@ -207,6 +207,64 @@ function pickCategoryIdByName(
   return partial ? partial.id : null;
 }
 
+function isGenericPaymentMemo(raw: string): boolean {
+  const s = normalizeJa(raw);
+  if (!s) return false;
+  return /(クレジット|カード|決済|支払|支払い|現金|電子マネー|paypay|visa|master|jcb)/i.test(s);
+}
+
+function pickReceiptMemo(params: {
+  suggestedMemo?: string | null;
+  suggestedStoreName?: string | null;
+  vendorName?: string | null;
+}): string {
+  const store = String(params.suggestedStoreName ?? "").trim();
+  if (store) return store;
+  const vendor = String(params.vendorName ?? "").trim();
+  if (vendor && !isGenericPaymentMemo(vendor)) return vendor;
+  const memo = String(params.suggestedMemo ?? "").trim();
+  if (memo && !isGenericPaymentMemo(memo)) return memo;
+  return store || vendor || memo;
+}
+
+function pickInitialTotalAmount(
+  summaryTotal: unknown,
+  items: Array<{ amount: number | null }>,
+  totalCandidates: Array<{ total: number; source: string }>,
+): string {
+  const parsedTotal = Number(summaryTotal);
+  const initialTotal =
+    Number.isFinite(parsedTotal) && parsedTotal > 0 ? Math.round(parsedTotal) : null;
+  const lineSum = Math.round(
+    items.reduce(
+      (acc, it) => acc + (Number.isFinite(Number(it.amount)) ? Math.max(0, Number(it.amount)) : 0),
+      0,
+    ),
+  );
+  const candidateTotals = totalCandidates
+    .map((c) => Math.round(Number(c.total)))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const bestLineLike =
+    candidateTotals.find(
+      (n) => lineSum > 0 && Math.abs(n - lineSum) <= Math.max(10, Math.round(lineSum * 0.05)),
+    ) ?? null;
+
+  // 典型: OCR の桁落ち（15100 -> 1510）。明細合計や候補が明確に大きい場合はそちらを優先。
+  if (initialTotal != null && lineSum > 0) {
+    const digitDropLikely =
+      lineSum === initialTotal * 10 ||
+      lineSum === initialTotal * 100 ||
+      lineSum >= Math.round(initialTotal * 1.6);
+    if (digitDropLikely) {
+      return String(bestLineLike ?? lineSum);
+    }
+  }
+  if (initialTotal != null) return String(initialTotal);
+  if (bestLineLike != null) return String(bestLineLike);
+  if (lineSum > 0) return String(lineSum);
+  return "";
+}
+
 /** API 等から来る id を number | null に揃え、比較で学習が取りこぼされないようにする */
 function normalizeReceiptCategoryId(id: unknown): number | null {
   if (id == null || id === "") return null;
@@ -519,20 +577,19 @@ export function ReceiptPage() {
       const vendorTrim = s?.vendorName?.trim() ?? "";
       setOcrVendor(vendorTrim);
       const spNow = r.suggestedVendor;
-      if (r.suggestedMemo != null && String(r.suggestedMemo).trim() !== "") {
-        setDraftMemo(String(r.suggestedMemo).trim());
-      } else if (
-        spNow &&
-        !spNow.deferred &&
-        spNow.suggestedStoreName != null &&
-        String(spNow.suggestedStoreName).trim() !== ""
-      ) {
-        setDraftMemo(String(spNow.suggestedStoreName).trim());
-      } else {
-        setDraftMemo(vendorTrim);
-      }
+      const initialMemo = pickReceiptMemo({
+        suggestedMemo: r.suggestedMemo,
+        suggestedStoreName:
+          spNow && !spNow.deferred ? String(spNow.suggestedStoreName ?? "").trim() : "",
+        vendorName: vendorTrim,
+      });
+      setDraftMemo(initialMemo);
       setDraftTotal(
-        s?.totalAmount != null && Number.isFinite(Number(s.totalAmount)) ? String(s.totalAmount) : "",
+        pickInitialTotalAmount(
+          s?.totalAmount,
+          Array.isArray(r.items) ? r.items : [],
+          Array.isArray(r.totalCandidates) ? r.totalCandidates : [],
+        ),
       );
       {
         const raw = s?.date?.trim() ?? "";
@@ -555,7 +612,7 @@ export function ReceiptPage() {
           ? pickCategoryIdByName(categories, r.suggestedCategoryName)
           : null;
       const initialCategoryId = normalizeReceiptCategoryId(
-        r.suggestedCategoryId ?? aiNameMatchedId ?? localSuggested,
+        r.suggestedCategoryId ?? spNow?.preferredCategoryId ?? aiNameMatchedId ?? localSuggested,
       );
       setDraftCategoryId(initialCategoryId);
       setSuggestedCategoryLowConfidence(Boolean(r.suggestedCategoryLowConfidence));
@@ -568,15 +625,6 @@ export function ReceiptPage() {
             ? "keywords"
             : null),
       );
-      const initialMemo =
-        r.suggestedMemo != null && String(r.suggestedMemo).trim() !== ""
-          ? String(r.suggestedMemo).trim()
-          : r.suggestedVendor &&
-              !r.suggestedVendor.deferred &&
-              r.suggestedVendor.suggestedStoreName != null &&
-              String(r.suggestedVendor.suggestedStoreName).trim() !== ""
-            ? String(r.suggestedVendor.suggestedStoreName).trim()
-            : vendorTrim;
       loadedReceiptBaselineRef.current = {
         memo: initialMemo,
         categoryId: initialCategoryId,
