@@ -1367,6 +1367,14 @@ export async function getAdminSalesLogs(params?: { ym?: string; from?: string; t
   return parse<{ items: AdminSalesLogRow[] }>(res);
 }
 
+export async function deleteAdminSalesLog(id: number) {
+  const res = await apiFetch(`${BASE}/admin/payments/sales-logs/${id}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+  });
+  return parse<{ ok: boolean; deletedId: number }>(res);
+}
+
 export async function downloadAdminSalesCsv(params?: { from?: string; to?: string }) {
   const sp = new URLSearchParams();
   if (params?.from) sp.set("from", params.from);

@@ -9,6 +9,7 @@ import {
   getAdminImportFormatAudit,
   getAdminMonitorRecruitmentSettings,
   getAdminPayPayImportSummary,
+  deleteAdminSalesLog,
   getAdminSalesLogs,
   getAdminSalesDailySummaryWithFallback,
   getAdminSalesMonthlySummary,
@@ -335,6 +336,7 @@ export function AdminPage() {
   const [paypayMonitorError, setPaypayMonitorError] = useState<string | null>(null);
   const [salesMonthlySummary, setSalesMonthlySummary] = useState<AdminSalesMonthlySummaryRow[]>([]);
   const [salesLogs, setSalesLogs] = useState<AdminSalesLogRow[]>([]);
+  const [deletingSalesLogId, setDeletingSalesLogId] = useState<number | null>(null);
   const [salesError, setSalesError] = useState<string | null>(null);
   const [salesFilterYm, setSalesFilterYm] = useState("");
   const monthRange = useMemo(() => thisMonthDateRange(), []);
@@ -919,6 +921,26 @@ export function AdminPage() {
       setSalesCsvBusy(false);
     }
   }, [salesCsvFrom, salesCsvTo]);
+
+  const onDeleteSalesLog = useCallback(
+    async (row: AdminSalesLogRow) => {
+      const label = `${salesSourceTypeLabel(row.stripe_source_type)} / ${formatDateTime(row.occurred_at)} / ${formatSalesNumber(Number(row.gross_amount ?? 0))} ${String(row.currency ?? "JPY").toUpperCase()}`;
+      const ok = window.confirm(`この明細を削除しますか？\n${label}\n\nこの操作は元に戻せません。`);
+      if (!ok) return;
+      setDeletingSalesLogId(row.id);
+      setSalesError(null);
+      try {
+        await deleteAdminSalesLog(row.id);
+        setSalesLogs((prev) => prev.filter((x) => x.id !== row.id));
+        await load();
+      } catch (e) {
+        setSalesError(e instanceof Error ? e.message : "売上明細の削除に失敗しました");
+      } finally {
+        setDeletingSalesLogId(null);
+      }
+    },
+    [load],
+  );
 
   return (
     <section style={{ padding: "1rem", maxWidth: 1400, margin: "0 auto" }}>
@@ -1951,6 +1973,7 @@ export function AdminPage() {
                   純利益
                 </th>
                 <th style={adminTableTh}>通貨</th>
+                <th style={adminTableTh}>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -1996,6 +2019,16 @@ export function AdminPage() {
                       {formatSalesNumber(netL)}
                     </td>
                     <td style={adminTableTd}>{String(r.currency ?? "").toUpperCase() || "JPY"}</td>
+                    <td style={adminTableTd}>
+                      <button
+                        type="button"
+                        onClick={() => void onDeleteSalesLog(r)}
+                        disabled={deletingSalesLogId === r.id}
+                        style={{ ...adminTableBtn, minWidth: "5.5rem" }}
+                      >
+                        {deletingSalesLogId === r.id ? "削除中..." : "削除"}
+                      </button>
+                    </td>
                   </tr>
                 );
               })}

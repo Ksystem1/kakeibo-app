@@ -3992,6 +3992,7 @@ export async function handleApiRequest(req, options = {}) {
     const categoryOneMatch = /^\/categories\/(\d+)$/.exec(normPath);
     const adminUserOneMatch = /^\/admin\/users\/(\d+)$/.exec(normPath);
     const adminUserResetPasswordMatch = /^\/admin\/users\/(\d+)\/reset-password$/.exec(normPath);
+    const adminSalesLogOneMatch = /^\/admin\/payments\/sales-logs\/(\d+)$/.exec(normPath);
     const adminSupportChatMessageOneMatch =
       /^\/admin\/support\/chat\/messages\/(\d+)$/.exec(normPath);
     const supportChatMessageOneMatch = /^\/support\/chat\/messages\/(\d+)$/.exec(normPath);
@@ -6728,6 +6729,37 @@ export async function handleApiRequest(req, options = {}) {
         return json(404, { error: "カテゴリが見つかりません" }, hdrs, skipCors);
       }
       return json(200, { ok: true }, hdrs, skipCors);
+    }
+
+    if (adminSalesLogOneMatch && method === "DELETE") {
+      const admin = await ensureAdmin(pool, userId);
+      if (!admin.ok) return json(admin.status, admin.body, hdrs, skipCors);
+      const logId = Number(adminSalesLogOneMatch[1], 10);
+      if (!Number.isFinite(logId) || logId <= 0) {
+        return json(400, { error: "logId が不正です" }, hdrs, skipCors);
+      }
+      try {
+        const [res] = await pool.query(`DELETE FROM sales_logs WHERE id = ? LIMIT 1`, [logId]);
+        const deleted = Number(res?.affectedRows ?? 0);
+        if (deleted <= 0) {
+          return json(404, { error: "SalesLogNotFound", detail: "対象の明細が見つかりません" }, hdrs, skipCors);
+        }
+        return json(200, { ok: true, deletedId: logId }, hdrs, skipCors);
+      } catch (e) {
+        logError("admin.payments.sales_logs.delete", e, { userId, logId });
+        if (String(e?.code || "") === "ER_NO_SUCH_TABLE") {
+          return json(
+            503,
+            {
+              error: "SalesLogsUnavailable",
+              detail: "sales_logs テーブルがありません。db/migration_v37_sales_logs.sql を適用してください。",
+            },
+            hdrs,
+            skipCors,
+          );
+        }
+        return json(500, { error: "SalesLogsDeleteError" }, hdrs, skipCors);
+      }
     }
 
     switch (routeKey(method, path)) {
