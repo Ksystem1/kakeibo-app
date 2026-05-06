@@ -42,6 +42,7 @@
     "db:migrate-v37": "node scripts/run-migration-v37.mjs",
     "db:migrate-v38": "node scripts/run-migration-v38.mjs",
     "stripe:cleanup-ghost-customers": "node scripts/stripe-cleanup-ghost-customers.mjs",
+    "stripe:cleanup-test-sales-logs": "node scripts/cleanup-stripe-test-sales-logs.mjs",
     "stripe:reconcile": "node scripts/stripe-subscription-reconcile.mjs",
     "db:dev-user": "node scripts/ensure-dev-user.mjs",
     "test:unit": "node --test test/**/*.test.mjs",
