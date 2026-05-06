@@ -7404,6 +7404,78 @@ export async function handleApiRequest(req, options = {}) {
         );
       }
 
+      case "GET /summary/year-categories": {
+        const yRaw = String(q.year ?? q.y ?? "").trim();
+        if (!/^\d{4}$/.test(yRaw)) {
+          return json(400, { error: "year=YYYY が必要です" }, hdrs, skipCors);
+        }
+        const familyScopeOnly = String(q.scope ?? "").toLowerCase() === "family";
+        const useKidWatchLedger = familyScopeOnly && kidWatchLedger.active;
+        const txWhereForScope = familyScopeOnly
+          ? useKidWatchLedger
+            ? txWhereFamilyKidWatch
+            : txWhereFamily
+          : txWhere;
+        const txScopeParams = familyScopeOnly
+          ? useKidWatchLedger
+            ? txP1KidWatch
+            : txP1
+          : txP2;
+        const from = `${yRaw}-01-01`;
+        const to = `${yRaw}-12-31`;
+        const [expRows] = await pool.query(
+          `SELECT c.id AS category_id, c.name AS category_name, COALESCE(SUM(t.amount),0) AS total
+           FROM transactions t
+           LEFT JOIN categories c ON c.id = t.category_id
+           WHERE ${txWhereForScope}
+           AND t.transaction_date >= ? AND t.transaction_date <= ?
+           AND t.kind = 'expense'
+           AND (t.category_id IS NULL OR TRIM(IFNULL(c.name, '')) <> ?)
+           GROUP BY c.id, c.name
+           ORDER BY total DESC`,
+          [...txScopeParams, from, to, RESERVED_LEDGER_FIXED_COST_CATEGORY],
+        );
+        const [incRows] = await pool.query(
+          `SELECT c.id AS category_id, c.name AS category_name, COALESCE(SUM(t.amount),0) AS total
+           FROM transactions t
+           LEFT JOIN categories c ON c.id = t.category_id
+           WHERE ${txWhereForScope}
+           AND t.transaction_date >= ? AND t.transaction_date <= ?
+           AND t.kind = 'income'
+           GROUP BY c.id, c.name
+           ORDER BY total DESC`,
+          [...txScopeParams, from, to],
+        );
+        const [[sumE]] = await pool.query(
+          `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
+           LEFT JOIN categories c ON c.id = t.category_id
+           WHERE ${txWhereForScope}
+           AND t.transaction_date >= ? AND t.transaction_date <= ? AND t.kind = 'expense'
+           AND (t.category_id IS NULL OR TRIM(IFNULL(c.name, '')) <> ?)`,
+          [...txScopeParams, from, to, RESERVED_LEDGER_FIXED_COST_CATEGORY],
+        );
+        const [[sumI]] = await pool.query(
+          `SELECT COALESCE(SUM(t.amount),0) AS total FROM transactions t
+           WHERE ${txWhereForScope}
+           AND t.transaction_date >= ? AND t.transaction_date <= ? AND t.kind = 'income'`,
+          [...txScopeParams, from, to],
+        );
+        return json(
+          200,
+          {
+            year: Number(yRaw),
+            from,
+            to,
+            expenseTotal: sumE.total,
+            incomeTotal: sumI.total,
+            expensesByCategory: expRows,
+            incomesByCategory: incRows,
+          },
+          hdrs,
+          skipCors,
+        );
+      }
+
       case "GET /summary/balance": {
         const to = String(q.to ?? "").slice(0, 10);
         if (!to || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {

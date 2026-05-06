@@ -18,6 +18,7 @@ import {
   getCategories,
   getFamilyMembers,
   getMonthSummary,
+  getYearCategorySummary,
   getTransactions,
   ledgerKidWatchApiOptionsFromSearch,
   type MedicalType,
@@ -258,6 +259,21 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       total: unknown;
     }>;
   } | null>(null);
+  const [yearCategorySummary, setYearCategorySummary] = useState<{
+    year: number;
+    expenseTotal: unknown;
+    incomeTotal: unknown;
+    expensesByCategory: Array<{
+      category_id: number | null;
+      category_name: string | null;
+      total: unknown;
+    }>;
+    incomesByCategory: Array<{
+      category_id: number | null;
+      category_name: string | null;
+      total: unknown;
+    }>;
+  } | null>(null);
 
   const { from, to } = useMemo(() => ymToRange(ym), [ym]);
 
@@ -386,9 +402,13 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         scope: "family" as const,
         ...(kidLedgerOpts ?? {}),
       };
-      const [txRes, sumRes, memRes] = await Promise.all([
+      const summaryYear = Number(String(ym).slice(0, 4));
+      const [txRes, sumRes, yearRes, memRes] = await Promise.all([
         getTransactions(from, to, familyFetchOpts),
         getMonthSummary(ym, familyFetchOpts),
+        Number.isFinite(summaryYear) && summaryYear >= 2000 && summaryYear <= 2100
+          ? getYearCategorySummary(summaryYear, familyFetchOpts)
+          : Promise.resolve(null),
         isParentForKidWatch ? getFamilyMembers() : Promise.resolve(null),
       ]);
       if (seq !== loadSeqRef.current) return;
@@ -405,6 +425,21 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         setTransactions(fetchedTransactions);
       }
       setSummary(sumRes);
+      setYearCategorySummary(
+        yearRes
+          ? {
+              year: Number(yearRes.year),
+              expenseTotal: yearRes.expenseTotal,
+              incomeTotal: yearRes.incomeTotal,
+              expensesByCategory: Array.isArray(yearRes.expensesByCategory)
+                ? yearRes.expensesByCategory
+                : [],
+              incomesByCategory: Array.isArray(yearRes.incomesByCategory)
+                ? yearRes.incomesByCategory
+                : [],
+            }
+          : null,
+      );
       if (memRes && isParentForKidWatch) {
         const memItems = (memRes.items ?? []) as FamilyMemberRow[];
         setKidMemberRows(pickKidMemberRowsForWatch(memItems, user?.id));
@@ -418,6 +453,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       setError(e instanceof Error ? e.message : String(e));
       setTransactions([]);
       setSummary(null);
+      setYearCategorySummary(null);
     } finally {
       if (seq === loadSeqRef.current) {
         setLoading(false);
@@ -1432,6 +1468,66 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
             </section>
           ) : null}
         </div>
+      ) : null}
+
+      {yearCategorySummary ? (
+        <section className={styles.settingsPanel} style={{ marginTop: "0.9rem" }} aria-label="年間カテゴリ別サマリー">
+          <h2 className={styles.sectionTitle} style={{ marginBottom: "0.4rem" }}>
+            年間カテゴリ別サマリー（{yearCategorySummary.year}年）
+          </h2>
+          <p className={styles.sub} style={{ margin: "0 0 0.5rem", fontSize: "0.85rem" }}>
+            収入合計 {yen.format(numAmount(yearCategorySummary.incomeTotal as string | number))} / 支出合計{" "}
+            {yen.format(numAmount(yearCategorySummary.expenseTotal as string | number))}
+          </p>
+          <div className={styles.summaryApiGrid}>
+            <section className={styles.summaryApiCol} aria-label="年間・支出カテゴリ">
+              <h3 className={styles.sectionTitle} style={{ fontSize: "0.95rem", marginBottom: "0.25rem" }}>
+                支出カテゴリ（年間）
+              </h3>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>カテゴリ</th>
+                      <th>合計</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {yearCategorySummary.expensesByCategory.map((row, i) => (
+                      <tr key={`y-exp-${row.category_id ?? "x"}-${i}`}>
+                        <td>{row.category_name ?? "（未分類）"}</td>
+                        <td>{yen.format(numAmount(row.total as string | number))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            <section className={styles.summaryApiCol} aria-label="年間・収入カテゴリ">
+              <h3 className={styles.sectionTitle} style={{ fontSize: "0.95rem", marginBottom: "0.25rem" }}>
+                収入カテゴリ（年間）
+              </h3>
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>カテゴリ</th>
+                      <th>合計</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {yearCategorySummary.incomesByCategory.map((row, i) => (
+                      <tr key={`y-inc-${row.category_id ?? "y"}-${i}`}>
+                        <td>{row.category_name ?? "（未分類）"}</td>
+                        <td>{yen.format(numAmount(row.total as string | number))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
       ) : null}
 
       {!kidWatchOn ? <h2 className={styles.sectionTitle}>取引を追加</h2> : null}

@@ -1097,6 +1097,35 @@ export async function getMonthSummary(
   }>(res);
 }
 
+export async function getYearCategorySummary(
+  year: number,
+  options?: { scope?: "family" | "all"; ledgerView?: "kid_watch"; kidUserId?: number },
+) {
+  const q = new URLSearchParams({ year: String(year) });
+  if (options?.scope === "family") q.set("scope", "family");
+  appendLedgerKidWatchParams(q, options);
+  const res = await apiFetch(`${BASE}/summary/year-categories?${q.toString()}`, {
+    headers: buildHeaders(),
+  });
+  return parse<{
+    year: number;
+    from: string;
+    to: string;
+    expenseTotal: unknown;
+    incomeTotal: unknown;
+    expensesByCategory: Array<{
+      category_id: number | null;
+      category_name: string | null;
+      total: unknown;
+    }>;
+    incomesByCategory: Array<{
+      category_id: number | null;
+      category_name: string | null;
+      total: unknown;
+    }>;
+  }>(res);
+}
+
 export async function getBalanceSummary(
   to: string,
   options?: { scope?: "family" | "all"; ledgerView?: "kid_watch"; kidUserId?: number },
