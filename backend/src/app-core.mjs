@@ -3666,6 +3666,8 @@ export async function handleApiRequest(req, options = {}) {
             importFormats: "/settings/import-formats",
             stripeWebhook: "/webhooks/stripe",
             stripeWebhookApiPrefixed: "/api/webhooks/stripe",
+            /** Stripe ダッシュボードで誤設定されやすい別パス（同一ハンドラ） */
+            stripeWebhookAliasStripePath: "/api/stripe/webhook",
             billingCheckoutSession: "/billing/checkout-session",
             billingSubscriptionStatus: "/billing/subscription-status",
             billingStripeStatus: "/billing/stripe-status",
@@ -3800,7 +3802,11 @@ export async function handleApiRequest(req, options = {}) {
 
     {
       const rk = routeKey(method, path);
-      if (rk === "POST /webhooks/stripe" || rk === "POST /api/webhooks/stripe") {
+      if (
+        rk === "POST /webhooks/stripe" ||
+        rk === "POST /api/webhooks/stripe" ||
+        rk === "POST /api/stripe/webhook"
+      ) {
         const sigHeader =
           hdrs["stripe-signature"] ??
           hdrs["Stripe-Signature"] ??

@@ -1,7 +1,7 @@
 /**
  * Stripe Webhook: families（家族単位）の subscription_status / stripe_customer_id を同期
  *
- * エンドポイント: POST /webhooks/stripe, POST /api/webhooks/stripe
+ * エンドポイント: POST /webhooks/stripe, POST /api/webhooks/stripe, POST /api/stripe/webhook（別名）
  *
  * 処理イベント:
  * - customer.subscription.created / updated → Stripe Subscription.status を DB に反映
@@ -18,6 +18,12 @@ import { clearIsPremiumAfterSubscriptionEndedDb } from "./stripe-user-premium-sy
 import { applyEstimatedFeeIfZero } from "./stripe-sales-fee-estimate.mjs";
 
 const logger = createLogger("stripe-webhook");
+
+/** ECS の環境変数 STRIPE_WEBHOOK_DEBUG_LOG=1 で DB 更新の affectedRows 等を追加ログ */
+function webhookVerbose(payload) {
+  if (String(process.env.STRIPE_WEBHOOK_DEBUG_LOG ?? "").trim() !== "1") return;
+  logger.info("stripe.webhook_verbose", payload);
+}
 
 /**
  * @param {Buffer|string} payload
@@ -60,6 +66,12 @@ export async function processStripeWebhook(payload, sigHeader, pool) {
   }
 
   logger.info("stripe.event_received", {
+    type: event.type,
+    id: event.id,
+    livemode: event.livemode,
+  });
+  webhookVerbose({
+    step: "event_received",
     type: event.type,
     id: event.id,
     livemode: event.livemode,
@@ -604,6 +616,19 @@ async function syncCheckoutSessionSubscription(pool, opts) {
     session.mode === "subscription" &&
     String(session.status || "").trim() === "complete";
 
+  webhookVerbose({
+    step: "sync_checkout_subscription_enter",
+    target,
+    userId,
+    fid: fid ?? null,
+    sessionMode: session.mode,
+    sessionStatus: session.status,
+    paymentStatus: ps || null,
+    hasSubForSync,
+    paidComplete,
+    subscriptionIdPrefix: subIdStr ? String(subIdStr).slice(0, 18) : null,
+  });
+
   if (hasSubForSync) {
     try {
       const stripe = new Stripe(requireStripeSecretKey());
@@ -628,15 +653,25 @@ async function syncCheckoutSessionSubscription(pool, opts) {
 
   if (paidComplete) {
     if (target === "family" && fid) {
-      await pool.query(
+      const [rFam] = await pool.query(
         `UPDATE families SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
         [fid],
       );
+      webhookVerbose({
+        step: "checkout_fallback_active_family",
+        affectedRows: rFam?.affectedRows ?? null,
+        fid,
+      });
     } else if (target === "user" && userId) {
-      await pool.query(
+      const [rUsr] = await pool.query(
         `UPDATE users SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
         [userId],
       );
+      webhookVerbose({
+        step: "checkout_fallback_active_user",
+        affectedRows: rUsr?.affectedRows ?? null,
+        userId,
+      });
     }
   }
 }
@@ -678,11 +713,26 @@ async function linkStripeCustomerFromCheckout(pool, session) {
   );
   const fid = ur?.fid != null ? Number(ur.fid) : null;
 
+  webhookVerbose({
+    step: "checkout_link_resolve",
+    userId,
+    fid: fid && Number.isFinite(fid) && fid > 0 ? fid : null,
+    customerPrefix: customerId ? String(customerId).slice(0, 12) : null,
+    subIdPrefix: subIdStr ? String(subIdStr).slice(0, 18) : null,
+    sessionId: session.id ?? null,
+  });
+
   if (fid && Number.isFinite(fid) && fid > 0) {
-    await pool.query(
+    const [famUpd] = await pool.query(
       `UPDATE families SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE id = ?`,
       [customerId, subIdStr, fid],
     );
+    webhookVerbose({
+      step: "checkout_families_set_customer",
+      affectedRows: famUpd?.affectedRows ?? null,
+      fid,
+      userId,
+    });
 
     await syncCheckoutSessionSubscription(pool, {
       fid,
@@ -696,10 +746,15 @@ async function linkStripeCustomerFromCheckout(pool, session) {
 
   /** 家族未設定かつ users に Stripe 列が無い環境ではここは失敗する（通常は default_family あり） */
   try {
-    await pool.query(
+    const [usrUpd] = await pool.query(
       `UPDATE users SET stripe_customer_id = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE id = ?`,
       [customerId, subIdStr, userId],
     );
+    webhookVerbose({
+      step: "checkout_users_set_customer",
+      affectedRows: usrUpd?.affectedRows ?? null,
+      userId,
+    });
 
     await syncCheckoutSessionSubscription(pool, {
       fid: null,
