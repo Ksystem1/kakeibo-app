@@ -141,10 +141,13 @@ mountStripeWebhook(app, "/webhooks/stripe");
 mountStripeWebhook(app, "/api/webhooks/stripe");
 /** Stripe ダッシュボードで誤登録されやすいパス（dashboard の …/api/stripe/webhook と同等） */
 mountStripeWebhook(app, "/api/stripe/webhook");
+/** stripApiPathPrefix で `/api` を剥がした後のパス（環境変数 API_PATH_PREFIX=/api と …/api/stripe/webhook の組み合わせ） */
+mountStripeWebhook(app, "/stripe/webhook");
 /** 同一ドメインで `/kakeibo` 配下に API をプロキシしているとき（署名検証のため JSON より前に raw で取る） */
 mountStripeWebhook(app, "/kakeibo/webhooks/stripe");
 mountStripeWebhook(app, "/kakeibo/api/webhooks/stripe");
 mountStripeWebhook(app, "/kakeibo/api/stripe/webhook");
+mountStripeWebhook(app, "/kakeibo/stripe/webhook");
 
 app.use(express.json({ limit: "15mb" }));
 

@@ -3668,6 +3668,8 @@ export async function handleApiRequest(req, options = {}) {
             stripeWebhookApiPrefixed: "/api/webhooks/stripe",
             /** Stripe ダッシュボードで誤設定されやすい別パス（同一ハンドラ） */
             stripeWebhookAliasStripePath: "/api/stripe/webhook",
+            /** API_PATH_PREFIX=/api のとき `/api/stripe/webhook` が `/stripe/webhook` に正規化されるためこのパスでも受ける */
+            stripeWebhookAfterApiPrefixStrip: "/stripe/webhook",
             billingCheckoutSession: "/billing/checkout-session",
             billingSubscriptionStatus: "/billing/subscription-status",
             billingStripeStatus: "/billing/stripe-status",
@@ -3805,7 +3807,8 @@ export async function handleApiRequest(req, options = {}) {
       if (
         rk === "POST /webhooks/stripe" ||
         rk === "POST /api/webhooks/stripe" ||
-        rk === "POST /api/stripe/webhook"
+        rk === "POST /api/stripe/webhook" ||
+        rk === "POST /stripe/webhook"
       ) {
         const sigHeader =
           hdrs["stripe-signature"] ??
@@ -3817,7 +3820,9 @@ export async function handleApiRequest(req, options = {}) {
             : typeof req.body === "string"
               ? req.body
               : "";
-        const wh = await processStripeWebhook(rawPayload, sigHeader, pool);
+        const wh = await processStripeWebhook(rawPayload, sigHeader, pool, {
+          path,
+        });
         return json(wh.statusCode, wh.body, hdrs, skipCors);
       }
       if (rk === "GET /billing/stripe-status") {

@@ -1,7 +1,7 @@
 /**
  * Stripe Webhook: families（家族単位）の subscription_status / stripe_customer_id を同期
  *
- * エンドポイント: POST /webhooks/stripe, POST /api/webhooks/stripe, POST /api/stripe/webhook（別名）
+ * エンドポイント: POST /webhooks/stripe, /api/webhooks/stripe, /api/stripe/webhook, /stripe/webhook（API_PATH_PREFIX で /api 剥離後）, /kakeibo/... 配下の同名
  *
  * 処理イベント:
  * - customer.subscription.created / updated → Stripe Subscription.status を DB に反映
@@ -28,14 +28,32 @@ function webhookVerbose(payload) {
   logger.info("stripe.webhook_verbose", payload);
 }
 
+/** 検証のみスキップ（緊急デバッグ用）。STRIPE_WEBHOOK_SKIP_SIGNATURE_VERIFY=1 — 本番では短時間のみ */
+function isInsecureSkipSignatureVerify() {
+  const v = String(process.env.STRIPE_WEBHOOK_SKIP_SIGNATURE_VERIFY ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
 /**
  * @param {Buffer|string} payload
  * @param {string|undefined} sigHeader
  * @param {import("mysql2/promise").Pool} pool
+ * @param {{ path?: string }} [debugCtx]
  */
-export async function processStripeWebhook(payload, sigHeader, pool) {
+export async function processStripeWebhook(payload, sigHeader, pool, debugCtx = {}) {
+  const requestPath = typeof debugCtx.path === "string" ? debugCtx.path : "";
+  const buf = Buffer.isBuffer(payload) ? payload : Buffer.from(String(payload ?? ""), "utf8");
+  const skipVerify = isInsecureSkipSignatureVerify();
   const secret = getStripeWebhookSecret();
-  if (!secret) {
+
+  logger.info("stripe.webhook_entry", {
+    requestPath: requestPath || undefined,
+    payloadByteLength: buf.length,
+    hasStripeSignature: Boolean(sigHeader && String(sigHeader).trim()),
+    insecureSkipVerify: skipVerify,
+  });
+
+  if (!skipVerify && !secret) {
     return {
       ok: false,
       statusCode: 503,
@@ -47,25 +65,87 @@ export async function processStripeWebhook(payload, sigHeader, pool) {
     };
   }
 
-  if (!sigHeader || String(sigHeader).trim() === "") {
-    return {
-      ok: false,
-      statusCode: 400,
-      body: { error: "MissingStripeSignature" },
-    };
-  }
-
+  /** @type {import("stripe").Stripe.Event} */
   let event;
-  try {
-    const buf = Buffer.isBuffer(payload) ? payload : Buffer.from(String(payload), "utf8");
-    event = Stripe.webhooks.constructEvent(buf, sigHeader, secret);
-  } catch (e) {
-    logger.warn("stripe.signature_invalid", { message: String(e?.message || e) });
-    return {
-      ok: false,
-      statusCode: 400,
-      body: { error: "InvalidSignature" },
-    };
+
+  if (skipVerify) {
+    logger.warn("stripe.webhook_insecure_mode", {
+      detail:
+        "STRIPE_WEBHOOK_SKIP_SIGNATURE_VERIFY が有効です。トラフィック確認後すぐ無効化してください（誰でも偽イベントを送れる状態です）。",
+      requestPath: requestPath || undefined,
+    });
+    let text;
+    try {
+      text = buf.toString("utf8");
+    } catch (e) {
+      return {
+        ok: false,
+        statusCode: 400,
+        body: { error: "InvalidPayloadEncoding", detail: String(e?.message || e) },
+      };
+    }
+    const rawMax = Number(process.env.STRIPE_WEBHOOK_DEBUG_BODY_MAX_CHARS ?? "200000");
+    const maxLog =
+      Number.isFinite(rawMax) && rawMax >= 1000 ? Math.min(rawMax, 500_000) : 200_000;
+    const truncated = text.length > maxLog;
+    const loggedBody = truncated ? `${text.slice(0, maxLog)}\n...[truncated]` : text;
+    logger.info("stripe.webhook_insecure_full_payload", {
+      body: loggedBody,
+      truncated,
+      originalCharLength: text.length,
+      requestPath: requestPath || undefined,
+    });
+    try {
+      event = JSON.parse(text);
+    } catch (e) {
+      logger.warn("stripe.webhook_json_parse_failed", {
+        message: String(e?.message || e),
+        requestPath: requestPath || undefined,
+      });
+      return {
+        ok: false,
+        statusCode: 400,
+        body: { error: "InvalidJson", detail: String(e?.message || e) },
+      };
+    }
+    if (!event || typeof event !== "object" || typeof event.type !== "string" || !event.type) {
+      return {
+        ok: false,
+        statusCode: 400,
+        body: { error: "InvalidEventShape", detail: "event.type がありません" },
+      };
+    }
+  } else {
+    if (!sigHeader || String(sigHeader).trim() === "") {
+      return {
+        ok: false,
+        statusCode: 400,
+        body: { error: "MissingStripeSignature" },
+      };
+    }
+    try {
+      event = Stripe.webhooks.constructEvent(buf, sigHeader, secret);
+    } catch (e) {
+      logger.warn("stripe.signature_invalid", {
+        message: String(e?.message || e),
+        requestPath: requestPath || undefined,
+      });
+      const logPrev =
+        String(process.env.STRIPE_WEBHOOK_LOG_PAYLOAD_ON_SIG_FAIL ?? "").trim().toLowerCase();
+      if (logPrev === "1" || logPrev === "true" || logPrev === "yes") {
+        const preview = buf.toString("utf8").slice(0, 8000);
+        logger.warn("stripe.signature_invalid_payload_preview", {
+          preview,
+          previewTruncated: buf.length > 8000,
+          requestPath: requestPath || undefined,
+        });
+      }
+      return {
+        ok: false,
+        statusCode: 400,
+        body: { error: "InvalidSignature" },
+      };
+    }
   }
 
   logger.info("stripe.event_received", {
