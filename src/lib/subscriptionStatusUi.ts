@@ -96,3 +96,21 @@ export function formatSettingsSubscriptionSummary(user: {
   }
   return label;
 }
+
+/**
+ * 設定「ご契約・お支払い」で、主行（太字）と補足行が同じ内容を繰り返すか。
+ * 空白・句読点・Unicode 正規化の差を吸収する。
+ */
+export function isRedundantSubscriptionStatusSummary(
+  primaryLine: string,
+  summaryLine: string,
+): boolean {
+  const p0 = primaryLine.trim().normalize("NFC");
+  const s0 = summaryLine.trim().normalize("NFC");
+  if (!s0) return true;
+  if (!p0) return false;
+  if (p0 === s0) return true;
+  const collapse = (x: string) =>
+    x.replace(/\s+/g, "").replace(/[。．,.]/g, "");
+  return collapse(p0) === collapse(s0);
+}

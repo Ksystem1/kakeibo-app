@@ -29,6 +29,7 @@ import { isSubscriptionServiceSubscribedClient } from "../lib/subscriptionAccess
 import {
   formatPremiumSubscriptionPrimaryStatus,
   formatSettingsSubscriptionSummary,
+  isRedundantSubscriptionStatusSummary,
 } from "../lib/subscriptionStatusUi";
 import {
   formatSubscriptionPeriodEndJaLong,
@@ -327,6 +328,13 @@ export function SettingsPage() {
       effectiveUser ? formatSettingsSubscriptionSummary(effectiveUser).trim() : "",
     [effectiveUser],
   );
+  const shouldShowPremiumSummaryLine = useMemo(() => {
+    if (!premiumSubscriptionSummaryLine) return false;
+    return !isRedundantSubscriptionStatusSummary(
+      premiumSubscriptionPrimaryLine,
+      premiumSubscriptionSummaryLine,
+    );
+  }, [premiumSubscriptionPrimaryLine, premiumSubscriptionSummaryLine]);
   const cancelAtPeriodEndNote = useMemo(() => {
     if (!effectiveUser?.subscriptionCancelAtPeriodEnd) return null;
     const endLabel = formatSubscriptionPeriodEndJaLong(effectiveUser.subscriptionPeriodEndAt ?? null);
@@ -808,8 +816,11 @@ export function SettingsPage() {
                 </>
               ) : null}
             </div>
-            {premiumSubscriptionSummaryLine ? (
-              <p className={styles.reclassifyHint} style={{ margin: "0.35rem 0 0" }}>
+            {shouldShowPremiumSummaryLine ? (
+              <p
+                className={styles.sub}
+                style={{ margin: "0.35rem 0 0", fontSize: "0.88rem", lineHeight: 1.6 }}
+              >
                 {premiumSubscriptionSummaryLine}
               </p>
             ) : null}
