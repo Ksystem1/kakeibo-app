@@ -3,6 +3,7 @@
  */
 import crypto from "node:crypto";
 import { stripApiPathPrefix } from "./api-path.mjs";
+import { resolvePublicApiOriginForStripe } from "./public-api-origin.mjs";
 import {
   tryAuthRoutes,
   getDefaultFamilyId,
@@ -3651,12 +3652,30 @@ export async function handleApiRequest(req, options = {}) {
     if (authRes) return authRes;
 
     if (routeKey(method, path) === "GET /") {
+      const discoveredApiOrigin = resolvePublicApiOriginForStripe(hdrs);
+      const stripeWebhookRouting = {
+        summary:
+          "Stripe の Live Webhook はフロントのオリジン（トップドメインの CloudFront+S3 や /kakeibo/ 配下）へ登録しないでください。そこへ POST すると SPA の index.html が返り（HTTP 200）、イベントは処理されず決済状態も更新されません。",
+        typicalMisconfiguration:
+          "例: https://ksystemapp.com/kakeibo/api/stripe/webhook にイベントを送ると HTML が返る構成があります。Stripe ダッシュボードのエンドポイント URL を API ホストに変更してください。",
+        discoveredApiOrigin,
+        recommendedWebhookUrls: discoveredApiOrigin
+          ? [
+              `${discoveredApiOrigin}/api/stripe/webhook`,
+              `${discoveredApiOrigin}/webhooks/stripe`,
+              `${discoveredApiOrigin}/api/webhooks/stripe`,
+            ]
+          : [],
+        envOverride:
+          "リクエストの Host がローカル等のときは STRIPE_WEBHOOK_PUBLIC_API_ORIGIN（または PUBLIC_API_ORIGIN）で本番 API のベース URL を指定できます。",
+      };
       return json(
         200,
         {
           service: "kakeibo-api",
           message:
             "API は稼働中です。認証: POST /auth/login（JWT）。ヘルス: GET /health",
+          stripeWebhookRouting,
           endpoints: {
             health: "/health",
             auth: "/auth/login",
