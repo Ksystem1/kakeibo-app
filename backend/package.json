@@ -64,6 +64,7 @@
     "db:migrate-v44": "node scripts/run-migration-v44.mjs",
     "db:migrate-v45": "node scripts/run-migration-v45.mjs",
     "db:migrate-v46": "node scripts/run-migration-v46.mjs",
+    "db:migrate-v47": "node scripts/run-migration-v47.mjs",
     "db:migrate-v46-monitor-capacity": "node scripts/run-migration-v46-monitor-capacity.mjs",
     "db:backfill-v45": "node scripts/backfill-receipt-learning-catalog-v45.mjs"
   },

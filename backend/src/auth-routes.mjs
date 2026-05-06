@@ -38,6 +38,7 @@ import {
   mergeAuthMeSubscriptionWithPreferredFamily,
   userHasPremiumSubscriptionAccess,
 } from "./subscription-logic.mjs";
+import { maybeSyncStripeSubscriptionForUser } from "./stripe-session-subscription-sync.mjs";
 
 const accountDeleteLogger = createLogger("auth.delete-account");
 const FAM_JOIN_ON_U = sqlUserFamilyIdExpr("u");
@@ -617,6 +618,23 @@ async function getPreferredFamilySubscriptionRow(pool, userId) {
 }
 
 /**
+ * Stripe と families を必要時のみ同期し、マージ済みユーザー行を返す（ログイン・/auth/me）
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {Record<string, unknown>} userRow
+ * @param {number} userId
+ */
+async function mergeMeAfterOptionalStripeSync(pool, userRow, userId) {
+  const famSub = await getPreferredFamilySubscriptionRow(pool, userId);
+  const sync = await maybeSyncStripeSubscriptionForUser(pool, userId);
+  let merged = mergeAuthMeSubscriptionWithPreferredFamily(userRow, famSub);
+  if (!sync.skipped) {
+    const famSub2 = await getPreferredFamilySubscriptionRow(pool, userId);
+    merged = mergeAuthMeSubscriptionWithPreferredFamily(userRow, famSub2);
+  }
+  return merged;
+}
+
+/**
  * @returns {Promise<{ statusCode, headers, body }|null>}
  */
 export async function tryAuthRoutes(req, ctx) {
@@ -1015,8 +1033,7 @@ export async function tryAuthRoutes(req, ctx) {
       }
       const row = rows[0] || {};
       const familyId = await resolveFamilyIdWithChatFallback(pool, userId);
-      const famSub = await getPreferredFamilySubscriptionRow(pool, userId);
-      const merged = mergeAuthMeSubscriptionWithPreferredFamily(row, famSub);
+      const merged = await mergeMeAfterOptionalStripeSync(pool, row, userId);
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, userId);
       const kidTheme = await fetchUserKidTheme(pool, userId);
       await withDbRetry("auth.passkey.login.lastLogin", () =>
@@ -1315,8 +1332,7 @@ export async function tryAuthRoutes(req, ctx) {
       }
       const row = rows[0] || {};
       const familyId = await resolveFamilyIdWithChatFallback(pool, userId);
-      const famSub = await getPreferredFamilySubscriptionRow(pool, userId);
-      const merged = mergeAuthMeSubscriptionWithPreferredFamily(row, famSub);
+      const merged = await mergeMeAfterOptionalStripeSync(pool, row, userId);
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, userId);
       const kidTheme = await fetchUserKidTheme(pool, userId);
       const token = signUserToken(
@@ -1667,8 +1683,7 @@ export async function tryAuthRoutes(req, ctx) {
       const familyId = await resolveFamilyIdWithChatFallback(pool, u.id);
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, u.id);
       const kidTheme = await fetchUserKidTheme(pool, u.id);
-      const famSubLogin = await getPreferredFamilySubscriptionRow(pool, u.id);
-      const mergedLogin = mergeAuthMeSubscriptionWithPreferredFamily(u, famSubLogin);
+      const mergedLogin = await mergeMeAfterOptionalStripeSync(pool, u, u.id);
       return json(
         200,
         {
@@ -1820,8 +1835,7 @@ export async function tryAuthRoutes(req, ctx) {
       }
       const familyId = await resolveFamilyIdWithChatFallback(pool, uid);
       const row = rows[0] || {};
-      const famSub = await getPreferredFamilySubscriptionRow(pool, uid);
-      const mergedRow = mergeAuthMeSubscriptionWithPreferredFamily(row, famSub);
+      const mergedRow = await mergeMeAfterOptionalStripeSync(pool, row, uid);
       const {
         is_admin: isAdminRaw,
         subscription_status: _sub,

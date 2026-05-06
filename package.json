@@ -46,6 +46,7 @@
     "db:migrate-v41": "npm run db:migrate-v41 --prefix backend",
     "db:migrate-v42": "npm run db:migrate-v42 --prefix backend",
     "db:migrate-v43": "npm run db:migrate-v43 --prefix backend",
+    "db:migrate-v47": "npm run db:migrate-v47 --prefix backend",
     "verify:stripe-config": "node scripts/verify-stripe-config.mjs",
     "verify:stripe-webhook-routing": "node scripts/verify-stripe-webhook-routing.mjs",
     "verify:frontend-api": "node scripts/verify-frontend-api-fetch.mjs",

@@ -41,7 +41,6 @@ export function getEffectiveSubscriptionStatus(subscriptionStatus, userId) {
  */
 export function deriveSubscriptionStatusFromDbRow(row) {
   if (!row || typeof row !== "object") return "inactive";
-  if (row.is_premium != null && Number(row.is_premium) === 1) return "active";
   const st = row.subscription_status;
   if (st != null && String(st).trim() !== "") {
     const t = String(st).trim();
@@ -49,6 +48,7 @@ export function deriveSubscriptionStatusFromDbRow(row) {
     if (low === "admin_granted") return "admin_free";
     return t;
   }
+  if (row.is_premium != null && Number(row.is_premium) === 1) return "active";
   return "inactive";
 }
 

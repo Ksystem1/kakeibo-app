@@ -75,9 +75,22 @@ export function bestSubscriptionByCustomer(subs) {
   const best = new Map();
   for (const [cus, list] of byCus) {
     list.sort(subscriptionPrecedence);
-    best.set(cus, list[0]);
+    /** comparison は昇順（n が小さいほど先頭）→ 最有力は末尾 */
+    best.set(cus, list[list.length - 1]);
   }
   return best;
+}
+
+/**
+ * 同一顧客に複数 Subscription があるとき、優先度が最も高い 1 件（API のログイン同期など）
+ * @param {import("stripe").Stripe.Subscription[]} subs
+ * @returns {import("stripe").Stripe.Subscription | null}
+ */
+export function pickBestStripeSubscriptionForCustomer(subs) {
+  if (!Array.isArray(subs) || subs.length === 0) return null;
+  const list = [...subs];
+  list.sort(subscriptionPrecedence);
+  return list[list.length - 1] ?? null;
 }
 
 /**

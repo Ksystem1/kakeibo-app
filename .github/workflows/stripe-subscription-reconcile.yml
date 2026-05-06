@@ -1,0 +1,38 @@
+# Stripe の Subscription と DB（families / users.is_premium）を定期照合し、必要なら --fix で修正する。
+#
+# 前提: Repository Secrets に RDS_* と STRIPE_SECRET_KEY（sk_live_）を設定すること。
+# 手動のみにしたい場合は schedule を削除して workflow_dispatch のみにしてください。
+#
+name: Stripe subscription reconcile
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 18 * * 0"
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Reconcile Stripe ↔ DB (--fix)
+        env:
+          RDS_HOST: ${{ secrets.RDS_HOST }}
+          RDS_USER: ${{ secrets.RDS_USER }}
+          RDS_PASSWORD: ${{ secrets.RDS_PASSWORD }}
+          RDS_DATABASE: ${{ secrets.RDS_DATABASE }}
+          RDS_PORT: ${{ secrets.RDS_PORT }}
+          RDS_SSL: ${{ secrets.RDS_SSL }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+        run: node scripts/stripe-subscription-reconcile.mjs --fix
+        working-directory: backend
