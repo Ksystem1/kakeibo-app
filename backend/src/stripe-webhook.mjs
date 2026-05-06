@@ -9,9 +9,11 @@
  *   （users.is_premium=1 だけが derive で active 扱いになる不整合の防止。管理者付与 admin_free は触らない）
  * - checkout.session.completed / checkout.session.async_payment_succeeded → 同上（後者は遅延決済完了時）
  *   metadata / client_reference_id でユーザを特定し、その家族に cus_ を紐付け、Subscription を DB 同期
+ *   （家族 ID は /auth/me と同じ sqlUserFamilyIdExpr で解決。subscription.* が checkout より先に届いた場合は Subscription の metadata.kakeibo_user_id で families を更新）
  */
 import Stripe from "stripe";
 import { createLogger } from "./logger.mjs";
+import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { getStripeWebhookSecret, requireStripeSecretKey } from "./stripe-config.mjs";
 import { mapStripeSubscriptionStatusToDb } from "./subscription-logic.mjs";
 import { clearIsPremiumAfterSubscriptionEndedDb } from "./stripe-user-premium-sync.mjs";
@@ -541,6 +543,7 @@ async function syncSubscriptionToFamily(pool, subscription, deleted) {
 
   let familyIdTouched = null;
   let legacyUpdateRows = null;
+  let metadataFallbackRows = null;
   const [res] = await pool.query(
     `UPDATE families SET subscription_status = ?, subscription_period_end_at = ?, subscription_cancel_at_period_end = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE stripe_customer_id = ?`,
     [dbStatus, periodEndDate, cancelAtEnd, subId, customerId],
@@ -584,12 +587,58 @@ async function syncSubscriptionToFamily(pool, subscription, deleted) {
     }
   }
 
+  /** checkout より先に subscription.* が届いた場合、まだ families.stripe_customer_id が無いと上記は 0 行。Checkout が付ける metadata でユーザーを引き、請求対象の家族行を更新する */
+  if (!familyIdTouched) {
+    const meta =
+      subscription.metadata && typeof subscription.metadata === "object"
+        ? subscription.metadata
+        : {};
+    const rawUid = meta.kakeibo_user_id ?? meta.user_id;
+    const metaUid =
+      rawUid != null
+        ? Number(String(rawUid).trim())
+        : NaN;
+    if (Number.isFinite(metaUid) && metaUid > 0) {
+      const famExpr = sqlUserFamilyIdExpr("u");
+      const [[urow]] = await pool.query(
+        `SELECT (${famExpr}) AS fid FROM users u WHERE u.id = ? LIMIT 1`,
+        [Math.trunc(metaUid)],
+      );
+      const mfid = urow?.fid != null ? Number(urow.fid) : null;
+      if (mfid && Number.isFinite(mfid) && mfid > 0) {
+        const [metaUpd] = await pool.query(
+          `UPDATE families SET
+           subscription_status = ?,
+           subscription_period_end_at = ?,
+           subscription_cancel_at_period_end = ?,
+           stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+           stripe_customer_id = COALESCE(NULLIF(TRIM(COALESCE(stripe_customer_id, '')), ''), ?),
+           updated_at = NOW()
+           WHERE id = ?`,
+          [dbStatus, periodEndDate, cancelAtEnd, subId, customerId, mfid],
+        );
+        const mr = Number(metaUpd?.affectedRows ?? 0);
+        if (mr > 0) {
+          familyIdTouched = mfid;
+          metadataFallbackRows = mr;
+          logger.info("stripe.subscription_sync_via_subscription_metadata", {
+            userId: Math.trunc(metaUid),
+            familyId: mfid,
+            customerIdPrefix: String(customerId).slice(0, 14),
+            affectedRows: mr,
+          });
+        }
+      }
+    }
+  }
+
   logger.info("stripe.subscription_sync_db", {
     stripeSubscriptionId: subId,
     dbStatus,
     deleted,
     familiesFirstUpdateRows: Number(res?.affectedRows ?? 0),
     familiesLegacyUpdateRows: legacyUpdateRows,
+    familiesMetadataFallbackRows: metadataFallbackRows,
     familyIdTouched: familyIdTouched ?? null,
     customerIdPrefix: String(customerId).slice(0, 14),
   });
@@ -739,9 +788,10 @@ async function linkStripeCustomerFromCheckout(pool, session) {
   const subIdStr =
     subId != null && String(subId).trim() !== "" ? String(subId).trim() : null;
 
+  /** /auth/me と同じ「請求・契約の対象 family_id」（default_family_id 優先の COALESCE ではズレることがある） */
+  const famExpr = sqlUserFamilyIdExpr("u");
   const [[ur]] = await pool.query(
-    `SELECT COALESCE(u.default_family_id, (SELECT fm.family_id FROM family_members fm WHERE fm.user_id = u.id ORDER BY fm.id LIMIT 1)) AS fid
-     FROM users u WHERE u.id = ?`,
+    `SELECT (${famExpr}) AS fid FROM users u WHERE u.id = ? LIMIT 1`,
     [userId],
   );
   const fid = ur?.fid != null ? Number(ur.fid) : null;
