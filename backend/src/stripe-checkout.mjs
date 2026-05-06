@@ -113,13 +113,31 @@ export function getStripeCheckoutPublicConfig() {
  */
 export async function createBillingCheckoutSession(pool, userId, body) {
   const priceId = getSubscriptionPriceId();
+  const key = requireStripeSecretKey();
+  const keyMode = key.startsWith("sk_live_")
+    ? "live"
+    : key.startsWith("sk_test_")
+      ? "test"
+      : "unknown";
+  const debugLogOn = String(process.env.STRIPE_CHECKOUT_DEBUG_LOG ?? "").trim() === "1";
+  if (debugLogOn) {
+    const maskedPrice =
+      priceId && priceId.length > 8
+        ? `${priceId.slice(0, 8)}...${priceId.slice(-4)}`
+        : priceId || "";
+    console.log("[stripe-checkout] create session requested", {
+      userId: Number(userId),
+      keyMode,
+      hasPriceId: Boolean(priceId),
+      priceId: maskedPrice,
+    });
+  }
   if (!priceId) {
     throw new Error(
       "STRIPE_TEST_PRICE_ID または STRIPE_PRICE_ID を設定してください",
     );
   }
 
-  const key = requireStripeSecretKey();
   const requireTest =
     String(process.env.STRIPE_CHECKOUT_REQUIRE_TEST_KEY ?? "").trim() === "1";
   if (requireTest && !key.startsWith("sk_test_")) {
@@ -131,6 +149,20 @@ export async function createBillingCheckoutSession(pool, userId, body) {
   const allowedOrigins = parseAllowedOrigins();
   const successUrl = String(body?.successUrl ?? "").trim();
   const cancelUrl = String(body?.cancelUrl ?? "").trim();
+  if (debugLogOn) {
+    try {
+      const successOrigin = successUrl ? new URL(successUrl).origin : "";
+      const cancelOrigin = cancelUrl ? new URL(cancelUrl).origin : "";
+      console.log("[stripe-checkout] redirect origins", {
+        keyMode,
+        successOrigin,
+        cancelOrigin,
+        allowedOrigins,
+      });
+    } catch {
+      // URL バリデーションは後続の assertAllowedRedirectUrl でエラー化する
+    }
+  }
   if (!successUrl || !cancelUrl) {
     throw new Error("successUrl と cancelUrl が必要です");
   }

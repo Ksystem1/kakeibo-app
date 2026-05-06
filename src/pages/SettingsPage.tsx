@@ -732,6 +732,21 @@ export function SettingsPage() {
               {premiumSubscriptionPrimaryLine ? (
                 <span style={{ fontWeight: 600 }}>{premiumSubscriptionPrimaryLine}</span>
               ) : null}
+              {!isSubscriptionServiceSubscribedClient(effectiveUser) &&
+              stripeCheckoutEnabled &&
+              getApiBaseUrl() &&
+              canSendAuthenticatedRequest(token) ? (
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnPrimary}`}
+                  onClick={() => {
+                    setStripeCheckoutMessage(null);
+                    setPremiumContractOpen(true);
+                  }}
+                >
+                  お申し込み画面を開く
+                </button>
+              ) : null}
               {isSubscriptionServiceSubscribedClient(effectiveUser) &&
               getApiBaseUrl() &&
               canSendAuthenticatedRequest(token) ? (
