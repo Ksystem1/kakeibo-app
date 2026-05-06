@@ -23,6 +23,11 @@
   }
 }
 
+/* /legal はカード幅制限を外して横幅を活かす */
+.wrap.legalPageWrap .settingsPanel {
+  max-width: 100%;
+}
+
 /* レシート取込: 上記 min-height で余白だけが大きいモバイルを圧縮 */
 .receiptImportWrap {
   min-height: 0;
