@@ -624,14 +624,9 @@ async function getPreferredFamilySubscriptionRow(pool, userId) {
  */
 async function mergeMeAfterOptionalStripeSync(pool, userRow, userId, syncOpts = {}) {
   const bypassThrottle = syncOpts.forceStripeSync === true;
-  const famSub = await getPreferredFamilySubscriptionRow(pool, userId);
-  const sync = await maybeSyncStripeSubscriptionForUser(pool, userId, { bypassThrottle });
-  let merged = mergeAuthMeSubscriptionWithPreferredFamily(userRow, famSub);
-  if (!sync.skipped) {
-    const famSub2 = await getPreferredFamilySubscriptionRow(pool, userId);
-    merged = mergeAuthMeSubscriptionWithPreferredFamily(userRow, famSub2);
-  }
-  return merged;
+  await maybeSyncStripeSubscriptionForUser(pool, userId, { bypassThrottle });
+  const famFresh = await getPreferredFamilySubscriptionRow(pool, userId);
+  return mergeAuthMeSubscriptionWithPreferredFamily(userRow, famFresh);
 }
 
 /**

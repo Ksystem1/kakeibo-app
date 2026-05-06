@@ -620,8 +620,15 @@ export async function getBillingStripeStatus(): Promise<BillingStripeStatus> {
   return normalizeBillingStripeStatus(rawStripe);
 }
 
-export async function getBillingSubscriptionStatus(): Promise<BillingSubscriptionStatus> {
-  const res = await apiFetch(`${BASE}/billing/subscription-status?t=${Date.now()}`, {
+export async function getBillingSubscriptionStatus(options?: {
+  stripeSync?: boolean;
+}): Promise<BillingSubscriptionStatus> {
+  const qs = new URLSearchParams();
+  qs.set("t", String(Date.now()));
+  if (options?.stripeSync) {
+    qs.set("stripeSync", "1");
+  }
+  const res = await apiFetch(`${BASE}/billing/subscription-status?${qs.toString()}`, {
     cache: "no-store",
     headers: {
       ...buildHeaders(),

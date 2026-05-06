@@ -70,6 +70,7 @@ import {
   upsertPreferredCategoryForOcrKey,
 } from "./user-store-places.mjs";
 import {
+  coerceExpiredPaidSubscriptionRowForAuthMe,
   deriveSubscriptionStatusFromDbRow,
   getEffectiveSubscriptionStatus,
   isUserIdForcedPremiumByEnv,
@@ -77,6 +78,7 @@ import {
   bodyContainsSubscriptionMutationFields,
   userHasPremiumSubscriptionAccess,
 } from "./subscription-logic.mjs";
+import { maybeSyncStripeSubscriptionForUser } from "./stripe-session-subscription-sync.mjs";
 import { cancelUserSubscriptionAtPeriodEnd } from "./stripe-billing-cancel.mjs";
 import { fetchSubscriptionPeriodEndIsoFromStripeLive } from "./stripe-billing-subscription-period.mjs";
 import { createBillingPortalSession } from "./stripe-billing-portal.mjs";
@@ -6754,7 +6756,15 @@ export async function handleApiRequest(req, options = {}) {
       }
 
       case "GET /billing/subscription-status": {
-        const subRow = await loadUserSubscriptionRowFull(pool, userId);
+        const stripeSyncProbe = q.stripeSync ?? q.syncStripe;
+        const forceStripeSyncFromQuery =
+          stripeSyncProbe != null &&
+          ["1", "true", "yes"].includes(String(stripeSyncProbe).trim().toLowerCase());
+        await maybeSyncStripeSubscriptionForUser(pool, userId, {
+          bypassThrottle: forceStripeSyncFromQuery,
+        });
+        const subRowRaw = await loadUserSubscriptionRowFull(pool, userId);
+        const subRow = coerceExpiredPaidSubscriptionRowForAuthMe(subRowRaw, userId);
         let statusFromAdminMap = null;
         try {
           const subMap = await fetchAdminUsersSubscriptionStatusMap(pool);

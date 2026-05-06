@@ -209,7 +209,7 @@ export function SettingsPage() {
       try {
         const [meRes, subRes] = await Promise.all([
           getAuthMe({ force: true, stripeSync: true }),
-          getBillingSubscriptionStatus(),
+          getBillingSubscriptionStatus({ stripeSync: true }),
         ]);
         if (cancelled) return;
         const normalized = meRes?.user ? normalizeAuthContextUser(meRes.user) : null;
@@ -280,9 +280,11 @@ export function SettingsPage() {
     const startedAt = Date.now();
     const maxWaitMs = 45_000;
 
-    const run = async () => {
+    const run = async (attempt = 0) => {
       try {
-        const s = await getBillingSubscriptionStatus();
+        const s = await getBillingSubscriptionStatus({
+          stripeSync: attempt === 0,
+        });
         if (cancelled) return;
         setBillingStatus(s);
         if (isSubscriptionServiceSubscribedClient(s)) return;
@@ -290,12 +292,13 @@ export function SettingsPage() {
         if (cancelled) return;
       }
       if (Date.now() - startedAt >= maxWaitMs || cancelled) return;
+      const nextAttempt = attempt + 1;
       timer = setTimeout(() => {
-        void run();
+        void run(nextAttempt);
       }, 3000);
     };
 
-    void run();
+    void run(0);
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);

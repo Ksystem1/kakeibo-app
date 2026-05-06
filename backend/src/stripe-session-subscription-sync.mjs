@@ -8,6 +8,7 @@ import { requireStripeSecretKey } from "./stripe-config.mjs";
 import {
   pickBestStripeSubscriptionForCustomer,
 } from "./stripe-subscription-reconcile-core.mjs";
+import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import {
   familyDbFieldsFromStripeSubscription,
   isUserIdForcedPremiumByEnv,
@@ -95,15 +96,25 @@ export async function maybeSyncStripeSubscriptionForUser(pool, userId, options =
         return { didUpdate: false, skipped: true, reason: "throttled" };
       }
     } catch (e) {
-      if (isUnknownColumnError(e)) {
-        return { didUpdate: false, skipped: true, reason: "column_subscription_stripe_synced_at_missing" };
-      }
-      throw e;
+      /* 列未移行環境でも同期は続行（スロットルなし） */
+      if (!isUnknownColumnError(e)) throw e;
     }
   }
 
   const fam = await loadPreferredFamilyStripeBillingRow(pool, uid);
-  const cus = fam?.stripe_customer_id ? String(fam.stripe_customer_id).trim() : "";
+  let cus = fam?.stripe_customer_id ? String(fam.stripe_customer_id).trim() : "";
+  if (!cus.startsWith("cus_")) {
+    try {
+      const [[ur]] = await pool.query(
+        `SELECT TRIM(COALESCE(stripe_customer_id, '')) AS sc FROM users WHERE id = ? LIMIT 1`,
+        [uid],
+      );
+      const uc = ur?.sc ? String(ur.sc).trim() : "";
+      if (uc.startsWith("cus_")) cus = uc;
+    } catch (e) {
+      if (!isUnknownColumnError(e)) throw e;
+    }
+  }
   if (!cus.startsWith("cus_")) {
     try {
       await pool.query(`UPDATE users SET subscription_stripe_synced_at = NOW(3) WHERE id = ?`, [uid]);
@@ -123,6 +134,25 @@ export async function maybeSyncStripeSubscriptionForUser(pool, userId, options =
     return { didUpdate: false, skipped: true, reason: "admin_free" };
   }
 
+  let familyId =
+    fam?.family_id != null && Number.isFinite(Number(fam.family_id)) && Number(fam.family_id) > 0
+      ? Number(fam.family_id)
+      : null;
+  if (!familyId) {
+    const famExpr = sqlUserFamilyIdExpr("u");
+    const [[fr]] = await pool.query(`SELECT (${famExpr}) AS fid FROM users u WHERE u.id = ?`, [uid]);
+    const fid = fr?.fid != null ? Number(fr.fid) : null;
+    if (fid && Number.isFinite(fid) && fid > 0) familyId = fid;
+  }
+  if (!familyId) {
+    try {
+      await pool.query(`UPDATE users SET subscription_stripe_synced_at = NOW(3) WHERE id = ?`, [uid]);
+    } catch (e) {
+      if (!isUnknownColumnError(e)) throw e;
+    }
+    return { didUpdate: false, skipped: true, reason: "no_family_for_sync" };
+  }
+
   let stripe;
   try {
     stripe = new Stripe(requireStripeSecretKey());
@@ -130,7 +160,6 @@ export async function maybeSyncStripeSubscriptionForUser(pool, userId, options =
     return { didUpdate: false, skipped: true, reason: "no_stripe_key" };
   }
 
-  const familyId = Number(fam.family_id);
   let didUpdate = false;
 
   try {
@@ -150,6 +179,10 @@ export async function maybeSyncStripeSubscriptionForUser(pool, userId, options =
            subscription_period_end_at = ?,
            subscription_cancel_at_period_end = ?,
            stripe_subscription_id = ?,
+           stripe_customer_id = CASE
+             WHEN TRIM(COALESCE(stripe_customer_id, '')) = '' THEN ?
+             ELSE stripe_customer_id
+           END,
            updated_at = NOW(3)
          WHERE id = ?`,
         [
@@ -157,6 +190,7 @@ export async function maybeSyncStripeSubscriptionForUser(pool, userId, options =
           f.subscription_period_end_at,
           f.subscription_cancel_at_period_end,
           sid,
+          cus,
           familyId,
         ],
       );
@@ -191,7 +225,16 @@ export async function maybeSyncStripeSubscriptionForUser(pool, userId, options =
       );
     }
 
-    await pool.query(`UPDATE users SET subscription_stripe_synced_at = NOW(3) WHERE id = ?`, [uid]);
+    try {
+      await pool.query(`UPDATE users SET subscription_stripe_synced_at = NOW(3) WHERE id = ?`, [uid]);
+    } catch (e) {
+      if (!isUnknownColumnError(e)) {
+        logger.warn("stripe.session_sync_stamp_failed", {
+          userId: uid,
+          message: String(e?.message || e),
+        });
+      }
+    }
 
     logger.info("stripe.session_sync_done", {
       userId: uid,
