@@ -845,7 +845,7 @@ export function SettingsPage() {
               >
                 <p style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>有料プランのお申し込み</p>
                 <p className={styles.reclassifyHint} style={{ margin: "0 0 0.65rem" }}>
-                  お支払いサイトからお申し込みいただくと、レシート取込などの追加機能をご利用いただけます。解約はいつでも可能で、
+                  お支払いサイトからお申し込みいただくと、PayPay取込などの追加機能をご利用いただけます。解約はいつでも可能で、
                   <strong> 請求期間の終了日までは利用を継続</strong>できます。
                 </p>
                 {stripeCheckoutReady === null ? (
