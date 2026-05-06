@@ -510,26 +510,30 @@ export type AuthMeResponse = {
 
 /**
  * GET /auth/me。既定では同一セッション・同一トークンで短時間の再取得はキャッシュを返す（サーバ負荷と Stripe 同期の連発を抑制）。
- * Checkout 成功直後などは `{ force: true }`。
+ * - `{ force: true }` … クライアントキャッシュを読まずにサーバへ問い合わせ
+ * - `{ stripeSync: true }` … 上記に加え `?stripeSync=1` でサーバ側の Stripe 同期スロットルをバイパス（設定画面オープン時など）
  */
-export async function getAuthMe(opts?: { force?: boolean }): Promise<AuthMeResponse> {
+export async function getAuthMe(opts?: {
+  force?: boolean;
+  stripeSync?: boolean;
+}): Promise<AuthMeResponse> {
   const fp = fingerprintAuthToken(getStoredToken());
   const now = Date.now();
-  if (!opts?.force && fp) {
+  const skipClientThrottle = opts?.force === true || opts?.stripeSync === true;
+  if (!skipClientThrottle && fp) {
     const cached = readThrottledAuthMe(fp, now, AUTH_ME_MIN_INTERVAL_MS);
     if (cached != null) {
       return cached as AuthMeResponse;
     }
   }
 
-  const res = await apiFetch(`${BASE}/auth/me`, {
+  const qs = opts?.stripeSync === true ? "?stripeSync=1" : "";
+  const res = await apiFetch(`${BASE}/auth/me${qs}`, {
     headers: buildHeaders(),
     cache: "no-store",
   });
   const data = await parse<AuthMeResponse>(res);
-  if (fp && !opts?.force) {
-    writeThrottledAuthMe(fp, data, Date.now());
-  }
+  if (fp) writeThrottledAuthMe(fp, data, Date.now());
   return data;
 }
 

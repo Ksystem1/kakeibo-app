@@ -33,6 +33,7 @@ import { createLogger } from "./logger.mjs";
 import {
   bodyContainsSubscriptionMutationFields,
   buildUserSubscriptionApiFields,
+  coerceExpiredPaidSubscriptionRowForAuthMe,
   deriveSubscriptionStatusFromDbRow,
   getEffectiveSubscriptionStatus,
   mergeAuthMeSubscriptionWithPreferredFamily,
@@ -619,19 +620,26 @@ async function getPreferredFamilySubscriptionRow(pool, userId) {
 
 /**
  * Stripe と families を必要時のみ同期し、マージ済みユーザー行を返す（ログイン・/auth/me）
- * @param {import("mysql2/promise").Pool} pool
- * @param {Record<string, unknown>} userRow
- * @param {number} userId
+ * @param {{ forceStripeSync?: boolean }} syncOpts GET /auth/me?stripeSync=1 およびログイン成功時は true でスロットル無視
  */
-async function mergeMeAfterOptionalStripeSync(pool, userRow, userId) {
+async function mergeMeAfterOptionalStripeSync(pool, userRow, userId, syncOpts = {}) {
+  const bypassThrottle = syncOpts.forceStripeSync === true;
   const famSub = await getPreferredFamilySubscriptionRow(pool, userId);
-  const sync = await maybeSyncStripeSubscriptionForUser(pool, userId);
+  const sync = await maybeSyncStripeSubscriptionForUser(pool, userId, { bypassThrottle });
   let merged = mergeAuthMeSubscriptionWithPreferredFamily(userRow, famSub);
   if (!sync.skipped) {
     const famSub2 = await getPreferredFamilySubscriptionRow(pool, userId);
     merged = mergeAuthMeSubscriptionWithPreferredFamily(userRow, famSub2);
   }
   return merged;
+}
+
+/**
+ * Stripe 同期 → 請求終了の表示矯正（期限切れ active を inactive）
+ */
+async function finalizeAuthSubscriptionRow(pool, userRow, userId, syncOpts = {}) {
+  const mergedRaw = await mergeMeAfterOptionalStripeSync(pool, userRow, userId, syncOpts);
+  return coerceExpiredPaidSubscriptionRowForAuthMe(mergedRaw, userId);
 }
 
 /**
@@ -1033,7 +1041,9 @@ export async function tryAuthRoutes(req, ctx) {
       }
       const row = rows[0] || {};
       const familyId = await resolveFamilyIdWithChatFallback(pool, userId);
-      const merged = await mergeMeAfterOptionalStripeSync(pool, row, userId);
+      const merged = await finalizeAuthSubscriptionRow(pool, row, userId, {
+        forceStripeSync: true,
+      });
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, userId);
       const kidTheme = await fetchUserKidTheme(pool, userId);
       await withDbRetry("auth.passkey.login.lastLogin", () =>
@@ -1332,7 +1342,9 @@ export async function tryAuthRoutes(req, ctx) {
       }
       const row = rows[0] || {};
       const familyId = await resolveFamilyIdWithChatFallback(pool, userId);
-      const merged = await mergeMeAfterOptionalStripeSync(pool, row, userId);
+      const merged = await finalizeAuthSubscriptionRow(pool, row, userId, {
+        forceStripeSync: true,
+      });
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, userId);
       const kidTheme = await fetchUserKidTheme(pool, userId);
       const token = signUserToken(
@@ -1683,7 +1695,9 @@ export async function tryAuthRoutes(req, ctx) {
       const familyId = await resolveFamilyIdWithChatFallback(pool, u.id);
       const familyRole = await fetchUserFamilyRoleUpperForMe(pool, u.id);
       const kidTheme = await fetchUserKidTheme(pool, u.id);
-      const mergedLogin = await mergeMeAfterOptionalStripeSync(pool, u, u.id);
+      const mergedLogin = await finalizeAuthSubscriptionRow(pool, u, u.id, {
+        forceStripeSync: true,
+      });
       return json(
         200,
         {
@@ -1829,13 +1843,21 @@ export async function tryAuthRoutes(req, ctx) {
       if (!uid) {
         return json(401, { error: "認証が必要です" }, hdrs, skipCors);
       }
+      const qRaw = req.queryStringParameters ?? {};
+      const stripeSyncProbe = qRaw.stripeSync ?? qRaw.syncStripe;
+      const forceStripeSyncFromQuery =
+        stripeSyncProbe != null &&
+        ["1", "true", "yes"].includes(String(stripeSyncProbe).trim().toLowerCase());
+
       const { rows } = await queryMeUserRow(pool, uid);
       if (rows.length === 0) {
         return json(404, { error: "ユーザーが見つかりません" }, hdrs, skipCors);
       }
       const familyId = await resolveFamilyIdWithChatFallback(pool, uid);
       const row = rows[0] || {};
-      const mergedRow = await mergeMeAfterOptionalStripeSync(pool, row, uid);
+      const mergedRow = await finalizeAuthSubscriptionRow(pool, row, uid, {
+        forceStripeSync: forceStripeSyncFromQuery,
+      });
       const {
         is_admin: isAdminRaw,
         subscription_status: _sub,

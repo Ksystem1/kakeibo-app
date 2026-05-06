@@ -67,9 +67,11 @@ async function loadPreferredFamilyStripeBillingRow(pool, userId) {
 /**
  * @param {import("mysql2/promise").Pool} pool
  * @param {number} userId
+ * @param {{ bypassThrottle?: boolean }} [options]
  * @returns {Promise<{ didUpdate: boolean; skipped: boolean; reason?: string }>}
  */
-export async function maybeSyncStripeSubscriptionForUser(pool, userId) {
+export async function maybeSyncStripeSubscriptionForUser(pool, userId, options = {}) {
+  const bypassThrottle = options.bypassThrottle === true;
   const uid = Number(userId);
   if (!Number.isFinite(uid) || uid <= 0) {
     return { didUpdate: false, skipped: true, reason: "bad_user_id" };
@@ -82,20 +84,22 @@ export async function maybeSyncStripeSubscriptionForUser(pool, userId) {
   }
 
   const intervalSec = syncIntervalSeconds();
-  try {
-    const [[row]] = await pool.query(
-      `SELECT subscription_stripe_synced_at AS t FROM users WHERE id = ? LIMIT 1`,
-      [uid],
-    );
-    const lastMs = row?.t ? new Date(row.t).getTime() : 0;
-    if (lastMs && Number.isFinite(lastMs) && Date.now() - lastMs < intervalSec * 1000) {
-      return { didUpdate: false, skipped: true, reason: "throttled" };
+  if (!bypassThrottle) {
+    try {
+      const [[row]] = await pool.query(
+        `SELECT subscription_stripe_synced_at AS t FROM users WHERE id = ? LIMIT 1`,
+        [uid],
+      );
+      const lastMs = row?.t ? new Date(row.t).getTime() : 0;
+      if (lastMs && Number.isFinite(lastMs) && Date.now() - lastMs < intervalSec * 1000) {
+        return { didUpdate: false, skipped: true, reason: "throttled" };
+      }
+    } catch (e) {
+      if (isUnknownColumnError(e)) {
+        return { didUpdate: false, skipped: true, reason: "column_subscription_stripe_synced_at_missing" };
+      }
+      throw e;
     }
-  } catch (e) {
-    if (isUnknownColumnError(e)) {
-      return { didUpdate: false, skipped: true, reason: "column_subscription_stripe_synced_at_missing" };
-    }
-    throw e;
   }
 
   const fam = await loadPreferredFamilyStripeBillingRow(pool, uid);

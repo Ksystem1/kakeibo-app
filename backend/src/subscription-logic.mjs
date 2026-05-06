@@ -105,6 +105,30 @@ export function userHasPremiumSubscriptionAccess(row, userId) {
 }
 
 /**
+ * DB が古く「active のまま」でも subscription_period_end_at が現在より過去なら
+ * inactive 扱いの行に矯正（/auth/me・ログイン表示の確実な非活性化）
+ * @param {Record<string, unknown>} row merge 済み users + 優先家族の subscription 列
+ * @param {number} userId
+ * @param {number} [nowMs]
+ */
+export function coerceExpiredPaidSubscriptionRowForAuthMe(row, userId, nowMs = Date.now()) {
+  if (!row || typeof row !== "object") return row;
+  if (isUserIdForcedPremiumByEnv(userId)) return row;
+  const eff = String(
+    getEffectiveSubscriptionStatus(deriveSubscriptionStatusFromDbRow(row), userId),
+  )
+    .trim()
+    .toLowerCase();
+  if (eff === "admin_free" || eff === "admin_granted") return row;
+  const endMs = subscriptionPeriodEndMsFromRow(row);
+  if (endMs == null || endMs >= nowMs) return row;
+  if (eff === "active" || eff === "trialing" || eff === "past_due") {
+    return { ...row, subscription_status: "inactive", subscription_cancel_at_period_end: 0 };
+  }
+  return row;
+}
+
+/**
  * API 応答用: 期間終了・解約予定フラグ
  * @param {Record<string, unknown>} row
  */
