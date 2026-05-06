@@ -743,8 +743,10 @@ export function SettingsPage() {
           className={styles.sub}
           style={{ margin: "0.4rem 0 0.25rem", fontSize: "0.9rem", lineHeight: 1.65 }}
         >
-          本アプリのメイン導線は、テキスト中心のガラス風ミニマルナビ（スマートフォンは画面下部、PC
-          は上部）に統一しています。従来の画像によるアイコン着せ替えは廃止しました。レシート取込など一部の機能は、ご契約内容に応じてご利用いただけます。
+          操作はスマートフォンでは画面下部、PC では画面上のテキストメニューから行います。
+          <strong>プレミアム（有料プラン）にご加入いただいている間</strong>
+          は、PayPay取込やレシート取込などの追加機能をご利用いただけます。
+          未加入の場合は、家計の記録・集計・家族共有などの基本機能が中心です。ご契約の有無は下の「ご契約・お支払い」で確認できます。
         </p>
         {token && effectiveUser ? (
           <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
