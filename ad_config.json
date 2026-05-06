@@ -1,0 +1,60 @@
+{
+  "service_name": "かんたん家計簿",
+  "ad_template": "{hook}\n\n{service_name}なら、{benefit}\n{cta}",
+  "hooks": [
+    "1日3分、家計の不安を見える化しよう。",
+    "レシートを撮るだけ。続く家計管理、始めませんか？",
+    "節約は我慢じゃない。可視化から始まる。"
+  ],
+  "benefits": [
+    "入出金の流れを自動で整理して、ムダ遣いを見つけやすくなります。",
+    "月ごとの支出傾向がひと目で分かり、次月の予算が立てやすくなります。",
+    "家族で共有できるから、お金の話し合いがスムーズになります。"
+  ],
+  "ctas": [
+    "まずは無料で、今日から記録を始める。",
+    "プロフィールのリンクから今すぐチェック。",
+    "今月の支出を、今日から整える。"
+  ],
+  "hashtags": [
+    "#家計簿",
+    "#節約",
+    "#貯金",
+    "#家計管理",
+    "#お金の勉強",
+    "#暮らしを整える"
+  ],
+  "caption_emojis": [
+    "✨",
+    "📊",
+    "💰",
+    "📱",
+    "🧾",
+    "🌿"
+  ],
+  "caption_hashtags": [
+    "#家計簿アプリ",
+    "#節約術",
+    "#貯金生活",
+    "#お金管理",
+    "#家計見直し",
+    "#暮らしを整える"
+  ],
+  "caption_templates": [
+    "{emoji} {hook}\n{emoji2} {benefit}\n{cta}\n\n{hashtags_line}",
+    "{emoji} 今日の家計リセット\n{hook}\n\n{benefit}\n{cta}\n\n{hashtags_line}",
+    "{emoji} {service_name}で家計を見える化\n{hook}\n{emoji2} {benefit}\n{cta}\n\n{hashtags_line}"
+  ],
+  "caption_min_length": 80,
+  "caption_max_length": 140,
+  "image_prompt_templates": [
+    "{service_name}のInstagram広告画像。明るく清潔感のある配色、スマホ画面に支出グラフ、家計管理アプリのUI、親しみやすい人物イラスト。訴求: {hook}",
+    "{service_name}向けの正方形SNSバナー。背景はミニマル、中央にスマホとレシートアイコン、節約を連想する色。メインコピー: {hook}",
+    "家計管理アプリの広告クリエイティブ。日本語テキストが映えるレイアウト、月間レポートUI、ポジティブで安心感。ベネフィット: {benefit}"
+  ],
+  "ad_output_file": "ad_output.txt",
+  "caption_output_file": "caption_output.txt",
+  "prompt_output_file": "image_prompt.txt",
+  "meta_output_file": "ad_meta.json"
+}
+

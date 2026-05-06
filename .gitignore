@@ -29,3 +29,4 @@ infra/terraform-ecs-express/rds-credentials.auto.tfvars
 
 # AWS SAM（ローカル build 成果物のみ除外）
 lambda/.aws-sam/
+automation_output/

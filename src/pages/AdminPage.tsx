@@ -226,6 +226,7 @@ const FAMILY_ROLE_LABELS: Record<string, string> = {
   KID: "子ども（本人のみ）",
 };
 const ADMIN_FAMILY_ROLES = ["ADMIN", "MEMBER", "KID"] as const;
+const SALES_LOGS_COLLAPSE_COUNT = 5;
 
 function formatAdminApiError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e ?? "");
@@ -336,6 +337,7 @@ export function AdminPage() {
   const [paypayMonitorError, setPaypayMonitorError] = useState<string | null>(null);
   const [salesMonthlySummary, setSalesMonthlySummary] = useState<AdminSalesMonthlySummaryRow[]>([]);
   const [salesLogs, setSalesLogs] = useState<AdminSalesLogRow[]>([]);
+  const [salesLogsExpanded, setSalesLogsExpanded] = useState(false);
   const [deletingSalesLogId, setDeletingSalesLogId] = useState<number | null>(null);
   const [salesError, setSalesError] = useState<string | null>(null);
   const [salesFilterYm, setSalesFilterYm] = useState("");
@@ -940,6 +942,14 @@ export function AdminPage() {
       }
     },
     [load],
+  );
+
+  const visibleSalesLogs = useMemo(
+    () =>
+      salesLogsExpanded
+        ? salesLogs
+        : salesLogs.slice(0, SALES_LOGS_COLLAPSE_COUNT),
+    [salesLogs, salesLogsExpanded],
   );
 
   return (
@@ -1977,7 +1987,7 @@ export function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {salesLogs.map((r) => {
+              {visibleSalesLogs.map((r) => {
                 const netL = Number(r.net_amount ?? 0);
                 return (
                   <tr
@@ -2035,6 +2045,19 @@ export function AdminPage() {
             </tbody>
           </table>
         </div>
+        {salesLogs.length > SALES_LOGS_COLLAPSE_COUNT ? (
+          <div style={{ margin: "-0.35rem 0 0.75rem", display: "flex", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => setSalesLogsExpanded((prev) => !prev)}
+              style={{ ...adminTableBtn, minWidth: "8rem" }}
+            >
+              {salesLogsExpanded
+                ? "折りたたむ"
+                : `もっと見る（残り${Math.max(0, salesLogs.length - SALES_LOGS_COLLAPSE_COUNT)}件）`}
+            </button>
+          </div>
+        ) : null}
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "end" }}>
           <label style={{ display: "grid", gap: "0.2rem" }}>
             <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>CSV開始日</span>
