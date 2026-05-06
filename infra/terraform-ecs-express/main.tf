@@ -49,6 +49,9 @@ resource "aws_iam_openid_connect_provider" "github" {
   tags            = local.tags
 }
 
+# ECS タスクの標準出力・標準エラーは awslogs で CloudWatch に送られる（コンテナ定義 logConfiguration）。
+# コンソールでログが見えないときはリージョンを確認する: 既定は var.aws_region（例: ap-northeast-1）。
+# ロググループ名は "/ecs/${local.app_name}"（name_prefix 既定なら /ecs/kakeibo-api）。us-east-1 を開いていると一覧が空になる。
 resource "aws_cloudwatch_log_group" "ecs" {
   name              = "/ecs/${local.app_name}"
   retention_in_days = 30

@@ -19,9 +19,10 @@ import { applyEstimatedFeeIfZero } from "./stripe-sales-fee-estimate.mjs";
 
 const logger = createLogger("stripe-webhook");
 
-/** ECS の環境変数 STRIPE_WEBHOOK_DEBUG_LOG=1 で DB 更新の affectedRows 等を追加ログ */
+/** ECS の環境変数 STRIPE_WEBHOOK_DEBUG_LOG=1 または true で DB 更新の affectedRows 等を追加ログ */
 function webhookVerbose(payload) {
-  if (String(process.env.STRIPE_WEBHOOK_DEBUG_LOG ?? "").trim() !== "1") return;
+  const v = String(process.env.STRIPE_WEBHOOK_DEBUG_LOG ?? "").trim().toLowerCase();
+  if (v !== "1" && v !== "true" && v !== "yes") return;
   logger.info("stripe.webhook_verbose", payload);
 }
 
@@ -539,6 +540,7 @@ async function syncSubscriptionToFamily(pool, subscription, deleted) {
         : null;
 
   let familyIdTouched = null;
+  let legacyUpdateRows = null;
   const [res] = await pool.query(
     `UPDATE families SET subscription_status = ?, subscription_period_end_at = ?, subscription_cancel_at_period_end = ?, stripe_subscription_id = COALESCE(?, stripe_subscription_id), updated_at = NOW() WHERE stripe_customer_id = ?`,
     [dbStatus, periodEndDate, cancelAtEnd, subId, customerId],
@@ -566,7 +568,7 @@ async function syncSubscriptionToFamily(pool, subscription, deleted) {
       if (code !== "ER_BAD_FIELD_ERROR" && errno !== 1054) throw e;
     }
     if (fid && Number.isFinite(fid) && fid > 0) {
-      await pool.query(
+      const [legacyUpd] = await pool.query(
         `UPDATE families SET
          subscription_status = ?,
          subscription_period_end_at = ?,
@@ -577,9 +579,20 @@ async function syncSubscriptionToFamily(pool, subscription, deleted) {
          WHERE id = ?`,
         [dbStatus, periodEndDate, cancelAtEnd, subId, customerId, fid],
       );
+      legacyUpdateRows = Number(legacyUpd?.affectedRows ?? 0);
       familyIdTouched = fid;
     }
   }
+
+  logger.info("stripe.subscription_sync_db", {
+    stripeSubscriptionId: subId,
+    dbStatus,
+    deleted,
+    familiesFirstUpdateRows: Number(res?.affectedRows ?? 0),
+    familiesLegacyUpdateRows: legacyUpdateRows,
+    familyIdTouched: familyIdTouched ?? null,
+    customerIdPrefix: String(customerId).slice(0, 14),
+  });
 
   if (!familyIdTouched) {
     logger.warn("stripe.subscription_no_family_for_customer", {
@@ -657,9 +670,17 @@ async function syncCheckoutSessionSubscription(pool, opts) {
         `UPDATE families SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
         [fid],
       );
+      const rows = Number(rFam?.affectedRows ?? 0);
+      logger.info("stripe.checkout_fallback_active", {
+        target: "family",
+        fid,
+        userId,
+        affectedRows: rows,
+        paymentStatus: ps || null,
+      });
       webhookVerbose({
         step: "checkout_fallback_active_family",
-        affectedRows: rFam?.affectedRows ?? null,
+        affectedRows: rows,
         fid,
       });
     } else if (target === "user" && userId) {
@@ -667,9 +688,16 @@ async function syncCheckoutSessionSubscription(pool, opts) {
         `UPDATE users SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
         [userId],
       );
+      const rows = Number(rUsr?.affectedRows ?? 0);
+      logger.info("stripe.checkout_fallback_active", {
+        target: "user",
+        userId,
+        affectedRows: rows,
+        paymentStatus: ps || null,
+      });
       webhookVerbose({
         step: "checkout_fallback_active_user",
-        affectedRows: rUsr?.affectedRows ?? null,
+        affectedRows: rows,
         userId,
       });
     }
@@ -693,6 +721,11 @@ async function linkStripeCustomerFromCheckout(pool, session) {
       sessionId: session.id,
       hasCustomer: Boolean(customerId),
       rawUserId: rawId ?? null,
+    });
+    logger.info("stripe.checkout_link_summary", {
+      outcome: "skipped_missing_user_or_customer",
+      sessionId: session.id ?? null,
+      mode: session.mode ?? null,
     });
     return;
   }
@@ -741,6 +774,15 @@ async function linkStripeCustomerFromCheckout(pool, session) {
       session,
       target: "family",
     });
+    logger.info("stripe.checkout_link_summary", {
+      outcome: "family_row_updated",
+      sessionId: session.id ?? null,
+      userId,
+      fid,
+      familiesStripeColumnsRows: Number(famUpd?.affectedRows ?? 0),
+      mode: session.mode ?? null,
+      paymentStatus: session.payment_status ?? null,
+    });
     return;
   }
 
@@ -763,6 +805,14 @@ async function linkStripeCustomerFromCheckout(pool, session) {
       session,
       target: "user",
     });
+    logger.info("stripe.checkout_link_summary", {
+      outcome: "user_row_updated",
+      sessionId: session.id ?? null,
+      userId,
+      usersStripeColumnsRows: Number(usrUpd?.affectedRows ?? 0),
+      mode: session.mode ?? null,
+      paymentStatus: session.payment_status ?? null,
+    });
   } catch (e) {
     const errno = Number(e?.errno);
     if (errno === 1054) {
@@ -770,6 +820,11 @@ async function linkStripeCustomerFromCheckout(pool, session) {
         userId,
         detail:
           "所属家族が無いか、users から Stripe 列を削除済みです。families への紐付けを確認してください。",
+      });
+      logger.info("stripe.checkout_link_summary", {
+        outcome: "skipped_schema_or_no_family",
+        sessionId: session.id ?? null,
+        userId,
       });
       return;
     }

@@ -54,6 +54,8 @@
     "verify:auth-login": "node scripts/verify-auth-login-simulation.mjs",
     "verify:receipt:vendor": "node scripts/verify-resolve-suggested-vendor.mjs",
     "stripe:listen": "stripe listen --forward-to http://127.0.0.1:3456/api/webhooks/stripe",
+    "stripe:listen:alias": "stripe listen --forward-to http://127.0.0.1:3456/api/stripe/webhook",
+    "stripe:webhook:selftest": "node scripts/stripe-webhook-local-post.mjs",
     "db:migrate-v39": "node scripts/run-migration-v39.mjs",
     "db:migrate-v40": "node scripts/run-migration-v40.mjs",
     "db:migrate-v41": "node scripts/run-migration-v41.mjs",
