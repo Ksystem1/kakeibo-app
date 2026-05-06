@@ -1555,6 +1555,9 @@ export function AdminPage() {
         }}
       >
         <h2 style={{ margin: "0 0 0.5rem", fontSize: "1.02rem" }}>ヘッダーお知らせ</h2>
+        <p style={{ margin: "0 0 0.45rem", fontSize: "0.82rem", color: "var(--text-muted)" }}>
+          管理者メモ: 販売事業者連絡先の電話番号（公開ページ非表示） = 048-400-2253
+        </p>
         <p style={{ margin: "0 0 0.65rem", fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
           ログイン後ヘッダー（Kakeibo とログアウトの間）に 1 行で表示されます。空にすると非表示です。最大 512 文字・改行は空白にまとめられます。
         </p>
