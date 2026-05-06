@@ -207,12 +207,22 @@ export function SettingsPage() {
 
     const run = async () => {
       try {
-        const res = await getAuthMe();
-        const normalized = res?.user ? normalizeAuthContextUser(res.user) : null;
+        const [meRes, subRes] = await Promise.all([
+          getAuthMe(),
+          getBillingSubscriptionStatus(),
+        ]);
         if (cancelled) return;
+        const normalized = meRes?.user ? normalizeAuthContextUser(meRes.user) : null;
         if (normalized) setUser(normalized);
+        setBillingStatus(subRes);
         setPremiumContractOpen(false);
-        if (isSubscriptionServiceSubscribedClient(normalized)) return;
+        const subscribed =
+          isSubscriptionServiceSubscribedClient(normalized) ||
+          isSubscriptionServiceSubscribedClient({
+            subscriptionStatus: subRes.subscriptionStatus,
+            subscriptionPeriodEndAt: subRes.subscriptionPeriodEndAt,
+          });
+        if (subscribed) return;
       } catch {
         if (cancelled) return;
       }
