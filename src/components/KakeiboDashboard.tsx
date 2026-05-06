@@ -1362,6 +1362,9 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                   固定費設定（全月共通）へ
                 </Link>
               </div>
+              {summaryApiThreeUp ? (
+                <div className={styles.summaryApiLead} aria-hidden="true" />
+              ) : null}
               <div className={styles.tableWrap}>
                 <table className={styles.table}>
                   <thead>
