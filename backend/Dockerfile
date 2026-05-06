@@ -13,4 +13,5 @@ COPY src ./src
 COPY scripts ./scripts
 
 EXPOSE 3456
-CMD ["npm", "start"]
+# npm を挟まず Node を PID 1 に近づけ、クラッシュ時のスタックと SIGTERM の伝播を分かりやすくする
+CMD ["node", "src/index.js"]

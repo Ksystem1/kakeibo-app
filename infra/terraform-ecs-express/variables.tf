@@ -77,6 +77,12 @@ variable "desired_count" {
   default     = 1
 }
 
+variable "ecs_health_check_grace_period_seconds" {
+  description = "Seconds to ignore failing ALB health checks after a task starts (cold start / large JS import)"
+  type        = number
+  default     = 120
+}
+
 variable "health_check_path" {
   description = "ALB target group health check path"
   type        = string

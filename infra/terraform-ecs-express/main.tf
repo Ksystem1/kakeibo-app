@@ -461,6 +461,8 @@ resource "aws_ecs_service" "this" {
   task_definition = aws_ecs_task_definition.this.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
+  # 巨大ルータ（app-core）の import・初回ヘルス応答までの猶予。0 のままだとデプロイ直後に ALB が連続失敗しやすい
+  health_check_grace_period_seconds = var.ecs_health_check_grace_period_seconds
 
   network_configuration {
     # NAT Gateway 廃止後も外部APIへ到達できるよう、Public Subnet + Public IP で実行
