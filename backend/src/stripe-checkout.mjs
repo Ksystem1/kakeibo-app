@@ -92,6 +92,14 @@ export function isStripeCheckoutConfigured() {
   return Boolean(getStripeSecretKey());
 }
 
+/** 秘密鍵本体は返さない。GET /config で本番がテスト鍵かどうかの確認用 */
+export function getStripeSecretKeyMode() {
+  const k = String(getStripeSecretKey() ?? "").trim();
+  if (k.startsWith("sk_live_")) return "live";
+  if (k.startsWith("sk_test_")) return "test";
+  return "unknown";
+}
+
 /** GET /config 用。秘密鍵は含めない。stripeTestPriceId は検証用（本番では ECS の env で確認後に返却をやめることも可） */
 export function getStripeCheckoutPublicConfig() {
   const testRaw = String(process.env.STRIPE_TEST_PRICE_ID ?? "").trim();
@@ -100,6 +108,8 @@ export function getStripeCheckoutPublicConfig() {
     priceIdConfigured: Boolean(getSubscriptionPriceId()),
     secretKeyConfigured: Boolean(getStripeSecretKey()),
     webhookConfigured: Boolean(getStripeWebhookSecret()),
+    /** sk_live_ / sk_test_ / unknown（キー文字列は返さない） */
+    secretKeyMode: getStripeSecretKeyMode(),
     /** process.env の STRIPE_TEST_PRICE_ID をそのまま返す（未設定は空文字） */
     stripeTestPriceId: testRaw,
   };

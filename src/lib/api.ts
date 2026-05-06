@@ -509,6 +509,8 @@ export type BillingStripeStatus = {
   checkoutReady: boolean;
   priceIdConfigured: boolean;
   secretKeyConfigured: boolean;
+  /** API が返す Stripe 秘密鍵モード（キー文字列は返さない） */
+  secretKeyMode?: "live" | "test" | "unknown";
   stripeTestPriceId?: string;
 };
 
@@ -538,10 +540,14 @@ export function normalizeBillingStripeStatus(
   const secretKeyConfigured = Boolean(raw?.secretKeyConfigured);
   const checkoutReady =
     Boolean(raw?.checkoutReady) || (priceIdConfigured && secretKeyConfigured);
+  const m = raw?.secretKeyMode;
+  const secretKeyMode =
+    m === "live" || m === "test" || m === "unknown" ? m : undefined;
   return {
     checkoutReady,
     priceIdConfigured,
     secretKeyConfigured,
+    secretKeyMode,
     stripeTestPriceId,
   };
 }

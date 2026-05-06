@@ -69,6 +69,7 @@ app_env_vars = {
 # 値本体は GitHub Secrets（Repository secrets）で注入する:
 #   STRIPE_PRICE_ID（本番の price_... → ECS の STRIPE_PRICE_ID）, STRIPE_TEST_PRICE_ID（→ STRIPE_TEST_PRICE_ID）,
 #   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
-# Live 本番では sk_live_ と上記 Price ID を GitHub に揃える。
+# Checkout がテスト画面（cs_test_）になるのは ECS の STRIPE_SECRET_KEY が sk_test_ のとき。
+# 本番決済では GitHub の STRIPE_SECRET_KEY を必ず sk_live_... にし、STRIPE_WEBHOOK_SECRET は Live ダッシュボードの whsec_... に揃える。
 # コードは sk_live_ のとき STRIPE_PRICE_ID を優先、sk_test_ のとき STRIPE_TEST_PRICE_ID を優先。
 # この tfvars に平文で置く必要はない。

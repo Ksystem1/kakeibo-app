@@ -127,6 +127,10 @@ export function SettingsPage() {
   const [stripeCheckoutMessage, setStripeCheckoutMessage] = useState<string | null>(null);
   /** null: 未確認 / true: サーバーで Price ID と秘密鍵が揃っている */
   const [stripeCheckoutReady, setStripeCheckoutReady] = useState<boolean | null>(null);
+  /** GET /config の secretKeyMode（本番で sk_test のとき警告表示） */
+  const [stripeSecretKeyMode, setStripeSecretKeyMode] = useState<
+    "live" | "test" | "unknown" | null
+  >(null);
   const [billingStatus, setBillingStatus] = useState<{
     subscriptionStatus: string;
     subscriptionPeriodEndAt: string | null;
@@ -371,6 +375,24 @@ export function SettingsPage() {
     if (!end) return null;
     return `ℹ 有効期限：${end} まで`;
   }, [effectiveUser?.subscriptionPeriodEndAt]);
+
+  useEffect(() => {
+    if (!token || !getApiBaseUrl() || !canSendAuthenticatedRequest(token)) {
+      setStripeSecretKeyMode(null);
+      return;
+    }
+    let cancelled = false;
+    void getBillingStripeStatus()
+      .then((r) => {
+        if (!cancelled) setStripeSecretKeyMode(r.secretKeyMode ?? "unknown");
+      })
+      .catch(() => {
+        if (!cancelled) setStripeSecretKeyMode(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!premiumContractOpen || !getApiBaseUrl()) return;
@@ -727,6 +749,26 @@ export function SettingsPage() {
         {token && effectiveUser ? (
           <div className={styles.sub} style={{ margin: "0.65rem 0 0", fontSize: "0.85rem" }}>
             <p style={{ margin: 0, fontWeight: 600 }}>ご契約・お支払い</p>
+            {!import.meta.env.DEV && getApiBaseUrl() && stripeSecretKeyMode === "test" ? (
+              <p
+                className={styles.reclassifyHint}
+                style={{
+                  margin: "0.45rem 0 0",
+                  borderColor: "color-mix(in oklab, #d97706 55%, var(--border) 45%)",
+                  color: "#92400e",
+                  fontSize: "0.88rem",
+                }}
+              >
+                現在、API は Stripe の<strong>テストモード</strong>
+                （秘密鍵が sk_test_）で動作しています。本番のカードでは決済できません。GitHub
+                Repository secret の{" "}
+                <code style={{ fontSize: "0.86em" }}>STRIPE_SECRET_KEY</code> を本番の{" "}
+                <code style={{ fontSize: "0.86em" }}>sk_live_...</code> に、
+                <code style={{ fontSize: "0.86em" }}>STRIPE_WEBHOOK_SECRET</code>{" "}
+                を Live ダッシュボードの <code style={{ fontSize: "0.86em" }}>whsec_...</code>{" "}
+                に揃え、デプロイ後に再度お試しください。
+              </p>
+            ) : null}
             <div
               className={styles.modeRow}
               style={{
