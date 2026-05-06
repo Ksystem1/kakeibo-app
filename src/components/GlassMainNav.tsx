@@ -318,6 +318,7 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                   <ul className="app-glass-nav-step__list" aria-label="振り返る手順">
                     <li>今月の残り予算と前月比を見て、支出ペースを把握する</li>
                     <li>カテゴリ別の金額を確認し、増えている項目を優先して見直す</li>
+                    <li>毎月同額のものは設定の固定費へ。取引には変動分だけを登録する</li>
                     <li>翌月の固定費・目標金額を設定して、次月の計画につなげる</li>
                   </ul>
                 </div>
