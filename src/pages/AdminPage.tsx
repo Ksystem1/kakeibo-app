@@ -1787,8 +1787,11 @@ export function AdminPage() {
             <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>明細表示月（YYYY-MM）</span>
             <input
               type="month"
+              required
               value={salesFilterYm}
-              onChange={(e) => setSalesFilterYm(e.target.value)}
+              onChange={(e) => {
+                if (e.target.value) setSalesFilterYm(e.target.value);
+              }}
               style={{ font: "inherit", padding: "0.25rem 0.4rem" }}
             />
           </label>

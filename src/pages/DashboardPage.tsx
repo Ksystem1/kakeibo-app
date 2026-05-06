@@ -246,9 +246,12 @@ export function DashboardPage() {
           <input
             id="dashboard-month"
             type="month"
+            required
             className="rounded-lg border border-slate-300/90 bg-white px-2.5 py-1.5 text-sm shadow-sm"
             value={ym}
-            onChange={(ev) => setYm(ev.target.value)}
+            onChange={(ev) => {
+              if (ev.target.value) setYm(ev.target.value);
+            }}
           />
         </div>
       </header>

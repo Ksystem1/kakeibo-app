@@ -48,6 +48,22 @@ type Transaction = {
   medical_patient_name?: string | null;
 };
 
+type YearCategorySummary = {
+  year: number;
+  expenseTotal: number;
+  incomeTotal: number;
+  expensesByCategory: Array<{
+    category_id: number | null;
+    category_name: string | null;
+    total: number;
+  }>;
+  incomesByCategory: Array<{
+    category_id: number | null;
+    category_name: string | null;
+    total: number;
+  }>;
+};
+
 const MEDICAL_TYPE_LABELS: Record<MedicalType, string> = {
   treatment: "診療・治療",
   medicine: "医薬品",
@@ -145,6 +161,52 @@ function yearOptions() {
   const out: number[] = [];
   for (let yy = cy - 5; yy <= cy + 2; yy += 1) out.push(yy);
   return out;
+}
+
+function buildYearCategorySummaryFromTransactions(
+  year: number,
+  txItems: Transaction[],
+  categoryItems: Category[],
+): YearCategorySummary {
+  const catById = new Map<number, Category>();
+  for (const c of categoryItems) {
+    if (Number.isFinite(Number(c.id))) catById.set(Number(c.id), c);
+  }
+  const expMap = new Map<string, { category_id: number | null; category_name: string | null; total: number }>();
+  const incMap = new Map<string, { category_id: number | null; category_name: string | null; total: number }>();
+  let expTotal = 0;
+  let incTotal = 0;
+
+  for (const tx of txItems) {
+    const amount = numAmount(tx.amount);
+    const catId = tx.category_id != null && Number.isFinite(Number(tx.category_id)) ? Number(tx.category_id) : null;
+    const cat = catId != null ? catById.get(catId) : null;
+    const catName = cat?.name?.trim() || null;
+
+    if (tx.kind === "expense") {
+      if (isReservedLedgerFixedCostCategoryName(catName)) continue;
+      expTotal += amount;
+      const key = catId != null ? `id:${catId}` : "null";
+      const current = expMap.get(key) ?? { category_id: catId, category_name: catName, total: 0 };
+      current.total += amount;
+      expMap.set(key, current);
+    } else if (tx.kind === "income") {
+      incTotal += amount;
+      const key = catId != null ? `id:${catId}` : "null";
+      const current = incMap.get(key) ?? { category_id: catId, category_name: catName, total: 0 };
+      current.total += amount;
+      incMap.set(key, current);
+    }
+  }
+
+  const desc = (a: { total: number }, b: { total: number }) => b.total - a.total;
+  return {
+    year,
+    expenseTotal: expTotal,
+    incomeTotal: incTotal,
+    expensesByCategory: Array.from(expMap.values()).sort(desc),
+    incomesByCategory: Array.from(incMap.values()).sort(desc),
+  };
 }
 
 export type KakeiboLedgerMode = "default" | "kidAllowance";
@@ -259,21 +321,7 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
       total: unknown;
     }>;
   } | null>(null);
-  const [yearCategorySummary, setYearCategorySummary] = useState<{
-    year: number;
-    expenseTotal: unknown;
-    incomeTotal: unknown;
-    expensesByCategory: Array<{
-      category_id: number | null;
-      category_name: string | null;
-      total: unknown;
-    }>;
-    incomesByCategory: Array<{
-      category_id: number | null;
-      category_name: string | null;
-      total: unknown;
-    }>;
-  } | null>(null);
+  const [yearCategorySummary, setYearCategorySummary] = useState<YearCategorySummary | null>(null);
 
   const { from, to } = useMemo(() => ymToRange(ym), [ym]);
 
@@ -403,12 +451,14 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         ...(kidLedgerOpts ?? {}),
       };
       const summaryYear = Number(String(ym).slice(0, 4));
-      const [txRes, sumRes, yearRes, memRes] = await Promise.all([
+      const yearFrom = `${summaryYear}-01-01`;
+      const yearTo = `${summaryYear}-12-31`;
+      const [txRes, sumRes, yearTxRes, memRes] = await Promise.all([
         getTransactions(from, to, familyFetchOpts),
         getMonthSummary(ym, familyFetchOpts),
         Number.isFinite(summaryYear) && summaryYear >= 2000 && summaryYear <= 2100
-          ? getYearCategorySummary(summaryYear, familyFetchOpts)
-          : Promise.resolve(null),
+          ? getTransactions(yearFrom, yearTo, familyFetchOpts)
+          : Promise.resolve({ items: [] as Transaction[] }),
         isParentForKidWatch ? getFamilyMembers() : Promise.resolve(null),
       ]);
       if (seq !== loadSeqRef.current) return;
@@ -425,21 +475,31 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
         setTransactions(fetchedTransactions);
       }
       setSummary(sumRes);
-      setYearCategorySummary(
-        yearRes
-          ? {
-              year: Number(yearRes.year),
-              expenseTotal: yearRes.expenseTotal,
-              incomeTotal: yearRes.incomeTotal,
-              expensesByCategory: Array.isArray(yearRes.expensesByCategory)
-                ? yearRes.expensesByCategory
-                : [],
-              incomesByCategory: Array.isArray(yearRes.incomesByCategory)
-                ? yearRes.incomesByCategory
-                : [],
-            }
-          : null,
-      );
+      let yearSummary: YearCategorySummary | null = null;
+      if (Number.isFinite(summaryYear) && summaryYear >= 2000 && summaryYear <= 2100) {
+        try {
+          const yearRes = await getYearCategorySummary(summaryYear, familyFetchOpts);
+          yearSummary = {
+            year: Number(yearRes.year),
+            expenseTotal: numAmount(yearRes.expenseTotal as string | number),
+            incomeTotal: numAmount(yearRes.incomeTotal as string | number),
+            expensesByCategory: (Array.isArray(yearRes.expensesByCategory) ? yearRes.expensesByCategory : []).map((r) => ({
+              category_id: r.category_id,
+              category_name: r.category_name,
+              total: numAmount(r.total as string | number),
+            })),
+            incomesByCategory: (Array.isArray(yearRes.incomesByCategory) ? yearRes.incomesByCategory : []).map((r) => ({
+              category_id: r.category_id,
+              category_name: r.category_name,
+              total: numAmount(r.total as string | number),
+            })),
+          };
+        } catch {
+          const yearTxItems = (yearTxRes.items ?? []) as Transaction[];
+          yearSummary = buildYearCategorySummaryFromTransactions(summaryYear, yearTxItems, normalizeCategoryRows(items));
+        }
+      }
+      setYearCategorySummary(yearSummary);
       if (memRes && isParentForKidWatch) {
         const memItems = (memRes.items ?? []) as FamilyMemberRow[];
         setKidMemberRows(pickKidMemberRowsForWatch(memItems, user?.id));
@@ -1161,8 +1221,11 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                 id="kb-month"
                 className={styles.monthInput}
                 type="month"
+                required
                 value={ym}
-                onChange={(ev) => handleMonthChange(ev.target.value)}
+                onChange={(ev) => {
+                  if (ev.target.value) handleMonthChange(ev.target.value);
+                }}
                 onInput={(ev) => {
                   const v = (ev.target as HTMLInputElement).value;
                   if (/^\d{4}-\d{2}$/.test(v)) handleMonthChange(v);

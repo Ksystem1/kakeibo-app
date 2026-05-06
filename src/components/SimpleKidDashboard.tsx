@@ -448,8 +448,11 @@ export function SimpleKidDashboard() {
             id="kid-month"
             className={styles.monthInput}
             type="month"
+            required
             value={ym}
-            onChange={(ev) => setYm(ev.target.value)}
+            onChange={(ev) => {
+              if (ev.target.value) setYm(ev.target.value);
+            }}
           />
         </label>
         <button type="button" className={styles.reloadBtn} disabled={loading} onClick={() => void load()}>
