@@ -5,7 +5,12 @@ import { useAuth } from "../context/AuthContext";
 import { MetricCard } from "../components/demo/MetricCard";
 import { RecentTransactions } from "../components/demo/RecentTransactions";
 import { SpendingChart } from "../components/demo/SpendingChart";
-import { getMonthSummary, getTransactions, normalizeFamilyRole } from "../lib/api";
+import {
+  getMonthSummary,
+  getTransactions,
+  getYearCategorySummary,
+  normalizeFamilyRole,
+} from "../lib/api";
 
 type TxRow = {
   id: number;
@@ -95,6 +100,13 @@ export function DashboardPage() {
   const [previousYear, setPreviousYear] = useState<{
     expensesByCategory: Array<{ category_name: string | null; total: unknown }>;
   } | null>(null);
+  const [yearCategorySummary, setYearCategorySummary] = useState<{
+    year: number;
+    expenseTotal: number;
+    incomeTotal: number;
+    expensesByCategory: Array<{ category_name: string | null; total: number }>;
+    incomesByCategory: Array<{ category_name: string | null; total: number }>;
+  } | null>(null);
   /** 対象月の一つ前のさらに前月（トレンド用の2ヶ月窓） */
   const [previous2, setPrevious2] = useState<MonthSummaryLike | null>(null);
 
@@ -107,12 +119,16 @@ export function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [sum, prev, prev2, prevYear, tx] = await Promise.all([
+      const summaryYear = Number(String(ym).slice(0, 4));
+      const [sum, prev, prev2, prevYear, tx, yearSummary] = await Promise.all([
         getMonthSummary(ym, { scope: "family" }),
         getMonthSummary(prevYmStr, { scope: "family" }),
         getMonthSummary(prev2YmStr, { scope: "family" }),
         getMonthSummary(prevYearYmStr, { scope: "family" }),
         getTransactions(from, to, { scope: "family" }),
+        Number.isFinite(summaryYear) && summaryYear >= 2000 && summaryYear <= 2100
+          ? getYearCategorySummary(summaryYear, { scope: "family" }).catch(() => null)
+          : Promise.resolve(null),
       ]);
       setSummary({
         incomeTotal: sum.incomeTotal,
@@ -138,6 +154,23 @@ export function DashboardPage() {
       });
       const monthTx = (tx.items ?? []) as TxRow[];
       setTransactions(monthTx);
+      setYearCategorySummary(
+        yearSummary
+          ? {
+              year: Number(yearSummary.year),
+              expenseTotal: num(yearSummary.expenseTotal),
+              incomeTotal: num(yearSummary.incomeTotal),
+              expensesByCategory: (yearSummary.expensesByCategory ?? []).map((r) => ({
+                category_name: r.category_name,
+                total: num(r.total),
+              })),
+              incomesByCategory: (yearSummary.incomesByCategory ?? []).map((r) => ({
+                category_name: r.category_name,
+                total: num(r.total),
+              })),
+            }
+          : null,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "ダッシュボードの読込に失敗しました");
       setSummary(null);
@@ -145,6 +178,7 @@ export function DashboardPage() {
       setPrevious2(null);
       setPreviousYear(null);
       setTransactions([]);
+      setYearCategorySummary(null);
     } finally {
       setLoading(false);
     }
@@ -290,6 +324,53 @@ export function DashboardPage() {
         <SpendingChart data={chartData} />
         <RecentTransactions items={recentItems} />
       </div>
+      {yearCategorySummary ? (
+        <section className="mt-5 rounded-xl border border-slate-300/70 bg-white/85 p-3 shadow-sm">
+          <h2 className="text-base font-semibold">年間カテゴリ別サマリー（{yearCategorySummary.year}年）</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            年間の <strong>収入合計 {yen(yearCategorySummary.incomeTotal)}</strong> /{" "}
+            <strong>支出合計 {yen(yearCategorySummary.expenseTotal)}</strong>
+          </p>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-600">
+                    <th className="px-3 py-2 text-left">支出カテゴリ（年間）</th>
+                    <th className="px-3 py-2 text-right">合計</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {yearCategorySummary.expensesByCategory.map((r, i) => (
+                    <tr key={`year-exp-${i}`} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5">{r.category_name ?? "未分類"}</td>
+                      <td className="px-3 py-1.5 text-right">{yen(r.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-600">
+                    <th className="px-3 py-2 text-left">収入カテゴリ（年間）</th>
+                    <th className="px-3 py-2 text-right">合計</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {yearCategorySummary.incomesByCategory.map((r, i) => (
+                    <tr key={`year-inc-${i}`} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5">{r.category_name ?? "未分類"}</td>
+                      <td className="px-3 py-1.5 text-right">{yen(r.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      ) : null}
       <section className="mt-5 rounded-xl border border-slate-300/70 bg-white/80 p-3 shadow-sm">
         <h2 className="text-base font-semibold">カテゴリ別 前年同月差異（{ym} vs {prevYearYmStr}）</h2>
         {categoryYoYRows.length === 0 ? (

@@ -393,6 +393,19 @@ export function AdminPage() {
   > | null>(null);
   const [accessStatsError, setAccessStatsError] = useState<string | null>(null);
 
+  const refreshAccessStats = useCallback(async () => {
+    try {
+      const stats = await getAdminAccessStats();
+      setAccessStats(stats);
+      setAccessStatsError(null);
+    } catch (e) {
+      setAccessStats(null);
+      setAccessStatsError(
+        e instanceof Error ? e.message : "アクセス指標の取得に失敗しました。",
+      );
+    }
+  }, []);
+
   /** 管理画面「機能」列: i18n 辞書を優先し、未定義キーは DB の label_ja にフォールバック */
   const featurePermSummaryItems = useMemo((): FeaturePermissionSummaryItem[] => {
     return featurePermRows.map((r) => ({
@@ -413,16 +426,7 @@ export function AdminPage() {
         getAdminUsers(),
         getAdminAnnouncement().catch(() => ({ text: "" })),
       ]);
-      try {
-        const stats = await getAdminAccessStats();
-        setAccessStats(stats);
-        setAccessStatsError(null);
-      } catch (e) {
-        setAccessStats(null);
-        setAccessStatsError(
-          e instanceof Error ? e.message : "アクセス指標の取得に失敗しました。",
-        );
-      }
+      await refreshAccessStats();
       try {
         const rec = await getAdminSubscriptionReconcile();
         setReconcileData(rec);
@@ -557,12 +561,19 @@ export function AdminPage() {
       setLoading(false);
     }
   },
-  [salesFilterYm],
+  [salesFilterYm, refreshAccessStats],
 );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void refreshAccessStats();
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [refreshAccessStats]);
 
   useEffect(() => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(salesCsvFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(salesCsvTo)) {
@@ -965,6 +976,25 @@ export function AdminPage() {
         }}
       >
         <h2 style={{ margin: "0 0 0.4rem", fontSize: "1.02rem" }}>アクセス指標</h2>
+        {accessStats && !accessStats.migration_missing_last_accessed_at ? (
+          <div
+            style={{
+              margin: "0 0 0.55rem",
+              padding: "0.55rem 0.65rem",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background:
+                Number(accessStats.active_5m ?? 0) > 0
+                  ? "color-mix(in srgb, #f59e0b 18%, var(--bg-card))"
+                  : "color-mix(in srgb, #22c55e 16%, var(--bg-card))",
+            }}
+          >
+            <strong>現在利用中（直近5分）: {formatAccessCount(accessStats.active_5m)} 人</strong>
+            <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+              0人なら改修・再起動の影響が最小です（この数値は1分ごとに自動更新）。
+            </div>
+          </div>
+        ) : null}
         <p
           style={{
             margin: "0 0 0.55rem",
@@ -1036,6 +1066,51 @@ export function AdminPage() {
                 <strong>{formatAccessCount(accessStats.users_with_access_timestamp)}</strong>
               </div>
             </div>
+            {!accessStats.migration_missing_last_accessed_at ? (
+              <div
+                style={{
+                  marginTop: "0.75rem",
+                  padding: "0.7rem",
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  background: "color-mix(in srgb, var(--bg-card) 86%, #dbeafe)",
+                }}
+              >
+                <h3 style={{ margin: "0 0 0.45rem", fontSize: "0.94rem" }}>
+                  利用中ユーザー一覧（直近5分）
+                </h3>
+                {Array.isArray(accessStats.active_users_5m) && accessStats.active_users_5m.length > 0 ? (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                          <th style={adminTableTh}>ユーザーID</th>
+                          <th style={adminTableTh}>表示名</th>
+                          <th style={adminTableTh}>メール</th>
+                          <th style={adminTableTh}>ログインID</th>
+                          <th style={adminTableTh}>最終アクセス</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {accessStats.active_users_5m.map((u) => (
+                          <tr key={`active-user-${u.id}`} style={{ borderTop: "1px solid var(--border)" }}>
+                            <td style={adminTableTd}>{u.id}</td>
+                            <td style={adminTableTd}>{u.display_name?.trim() || "—"}</td>
+                            <td style={adminTableTd}>{u.email || "—"}</td>
+                            <td style={adminTableTd}>{u.login_name?.trim() || "—"}</td>
+                            <td style={adminTableTd}>{formatDateTime(u.last_accessed_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                    現在、直近5分の利用ユーザーはいません。
+                  </p>
+                )}
+              </div>
+            ) : null}
           </>
         ) : (
           <p style={{ margin: 0, fontSize: "0.86rem", color: "var(--text-muted)" }}>

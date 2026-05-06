@@ -2154,6 +2154,13 @@ export async function getAdminAccessStats() {
     active_7d: number | null;
     active_30d: number | null;
     users_with_access_timestamp: number | null;
+    active_users_5m: Array<{
+      id: number;
+      email: string;
+      login_name: string | null;
+      display_name: string | null;
+      last_accessed_at: string | null;
+    }>;
     migration_missing_last_accessed_at?: boolean;
   }>(res);
 }
