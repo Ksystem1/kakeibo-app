@@ -108,6 +108,13 @@ variable "stripe_test_price_id" {
   sensitive   = true
 }
 
+variable "stripe_price_id" {
+  description = "GitHub Secrets から注入する Stripe live Price ID（ECS の STRIPE_PRICE_ID。sk_live_ 利用時に Checkout で優先）"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "stripe_secret_key" {
   description = "GitHub Secrets から注入する Stripe secret key（未設定なら app_env_vars 側のみ）"
   type        = string
