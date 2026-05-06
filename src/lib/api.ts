@@ -1,4 +1,13 @@
 import { getStoredToken } from "../context/AuthContext";
+import {
+  AUTH_ME_MIN_INTERVAL_MS,
+  fingerprintAuthToken,
+  readThrottledAuthMe,
+  writeThrottledAuthMe,
+} from "./authMeFetchThrottle";
+
+export { clearAuthMeFetchThrottle } from "./authMeFetchThrottle";
+export { AUTH_ME_MIN_INTERVAL_MS } from "./authMeFetchThrottle";
 import { isSubscriptionServiceSubscribedClient } from "./subscriptionAccess";
 import {
   aggregateAdminSalesLogsByDay,
@@ -478,30 +487,50 @@ export async function postDeleteAccount(body: { password?: string; acknowledge?:
   }>(res);
 }
 
-export async function getAuthMe() {
+export type AuthMeResponse = {
+  user: {
+    id: number;
+    email: string;
+    login_name?: string | null;
+    display_name?: string | null;
+    familyId?: number | null;
+    familyRole?: string;
+    isAdmin?: boolean;
+    isChild?: boolean;
+    parentId?: number | null;
+    gradeGroup?: string | null;
+    is_admin?: number | boolean;
+    subscriptionStatus?: string;
+    subscriptionPeriodEndAt?: string | null;
+    subscriptionCancelAtPeriodEnd?: boolean;
+    /** サーバ計算のプレミアム可否（admin_free 含む） */
+    isPremium?: boolean;
+  };
+};
+
+/**
+ * GET /auth/me。既定では同一セッション・同一トークンで短時間の再取得はキャッシュを返す（サーバ負荷と Stripe 同期の連発を抑制）。
+ * Checkout 成功直後などは `{ force: true }`。
+ */
+export async function getAuthMe(opts?: { force?: boolean }): Promise<AuthMeResponse> {
+  const fp = fingerprintAuthToken(getStoredToken());
+  const now = Date.now();
+  if (!opts?.force && fp) {
+    const cached = readThrottledAuthMe(fp, now, AUTH_ME_MIN_INTERVAL_MS);
+    if (cached != null) {
+      return cached as AuthMeResponse;
+    }
+  }
+
   const res = await apiFetch(`${BASE}/auth/me`, {
     headers: buildHeaders(),
+    cache: "no-store",
   });
-  return parse<{
-    user: {
-      id: number;
-      email: string;
-      login_name?: string | null;
-      display_name?: string | null;
-      familyId?: number | null;
-      familyRole?: string;
-      isAdmin?: boolean;
-      isChild?: boolean;
-      parentId?: number | null;
-      gradeGroup?: string | null;
-      is_admin?: number | boolean;
-      subscriptionStatus?: string;
-      subscriptionPeriodEndAt?: string | null;
-      subscriptionCancelAtPeriodEnd?: boolean;
-      /** サーバ計算のプレミアム可否（admin_free 含む） */
-      isPremium?: boolean;
-    };
-  }>(res);
+  const data = await parse<AuthMeResponse>(res);
+  if (fp && !opts?.force) {
+    writeThrottledAuthMe(fp, data, Date.now());
+  }
+  return data;
 }
 
 /** GET /config の stripe オブジェクト（正規化前） */

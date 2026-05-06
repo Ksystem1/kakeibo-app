@@ -208,7 +208,7 @@ export function SettingsPage() {
     const run = async () => {
       try {
         const [meRes, subRes] = await Promise.all([
-          getAuthMe(),
+          getAuthMe({ force: true }),
           getBillingSubscriptionStatus(),
         ]);
         if (cancelled) return;

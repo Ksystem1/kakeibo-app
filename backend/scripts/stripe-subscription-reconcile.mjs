@@ -16,7 +16,7 @@ import { sendStripeReconcileAlertEmailIfNeeded } from "../src/admin-email-notify
 import { getPool } from "../src/db.mjs";
 import { requireStripeSecretKey } from "../src/stripe-config.mjs";
 import { analyzeStripeDbSubscriptionReconcile } from "../src/stripe-subscription-reconcile-core.mjs";
-import { mapStripeSubscriptionStatusToDb } from "../src/subscription-logic.mjs";
+import { familyDbFieldsFromStripeSubscription } from "../src/subscription-logic.mjs";
 import { clearIsPremiumAfterSubscriptionEndedDb } from "../src/stripe-user-premium-sync.mjs";
 
 const fix = process.argv.includes("--fix");
@@ -42,11 +42,7 @@ async function run(stripe, pool) {
       const cus = m.stripeCustomerId;
       const sub = cus ? byCustomer.get(cus) : null;
       if (sub) {
-        const pe = sub.current_period_end
-          ? new Date(Number(sub.current_period_end) * 1000)
-          : null;
-        const cAtEnd = sub.cancel_at_period_end ? 1 : 0;
-        const dbS = mapStripeSubscriptionStatusToDb(sub.status);
+        const f = familyDbFieldsFromStripeSubscription(sub, Date.now());
         const sid = String(sub.id);
         await pool.query(
           `UPDATE families SET
@@ -56,7 +52,13 @@ async function run(stripe, pool) {
              stripe_subscription_id = ?,
              updated_at = NOW()
            WHERE id = ?`,
-          [dbS, pe, cAtEnd, sid, m.familyId],
+          [
+            f.subscription_status,
+            f.subscription_period_end_at,
+            f.subscription_cancel_at_period_end,
+            sid,
+            m.familyId,
+          ],
         );
         await clearIsPremiumAfterSubscriptionEndedDb(
           pool,

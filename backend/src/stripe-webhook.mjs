@@ -15,7 +15,10 @@ import Stripe from "stripe";
 import { createLogger } from "./logger.mjs";
 import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { getStripeWebhookSecret, requireStripeSecretKey } from "./stripe-config.mjs";
-import { mapStripeSubscriptionStatusToDb } from "./subscription-logic.mjs";
+import {
+  familyDbFieldsFromStripeSubscription,
+  mapStripeSubscriptionStatusToDb,
+} from "./subscription-logic.mjs";
 import { clearIsPremiumAfterSubscriptionEndedDb } from "./stripe-user-premium-sync.mjs";
 import { applyEstimatedFeeIfZero } from "./stripe-sales-fee-estimate.mjs";
 
@@ -602,18 +605,30 @@ async function syncSubscriptionToFamily(pool, subscription, deleted) {
     return;
   }
 
-  const dbStatus = deleted
-    ? "canceled"
-    : mapStripeSubscriptionStatusToDb(subscription.status);
-
-  const periodEndUnix = deleted
-    ? Number(subscription.ended_at ?? subscription.current_period_end ?? 0) || null
-    : Number(subscription.current_period_end ?? 0) || null;
-  const periodEndDate =
-    periodEndUnix != null && periodEndUnix > 0
-      ? new Date(periodEndUnix * 1000)
-      : null;
-  const cancelAtEnd = deleted ? 0 : subscription.cancel_at_period_end ? 1 : 0;
+  let dbStatus;
+  let periodEndDate;
+  let cancelAtEnd;
+  if (deleted) {
+    dbStatus = "canceled";
+    const periodEndUnix =
+      Number(subscription.ended_at ?? subscription.current_period_end ?? 0) || null;
+    periodEndDate =
+      periodEndUnix != null && periodEndUnix > 0
+        ? new Date(periodEndUnix * 1000)
+        : null;
+    cancelAtEnd = 0;
+  } else {
+    const f = familyDbFieldsFromStripeSubscription(subscription, Date.now());
+    dbStatus = f.subscription_status;
+    periodEndDate = f.subscription_period_end_at;
+    cancelAtEnd = f.subscription_cancel_at_period_end;
+    if (f.periodExpiredDemoted) {
+      logger.info("stripe.subscription_period_expired_demoted", {
+        subscriptionId: subscription.id,
+        stripeStatus: subscription.status,
+      });
+    }
+  }
   const subId =
     typeof subscription.id === "string"
       ? subscription.id

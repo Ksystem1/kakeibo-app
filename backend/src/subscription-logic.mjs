@@ -199,6 +199,46 @@ export function mapStripeSubscriptionStatusToDb(stripeStatus) {
   return "inactive";
 }
 
+/**
+ * Stripe Subscription → families 同期用の列値。
+ * current_period_end が現在より過去なのに active/trialing/past_due のまま返るケースでは DB を inactive に落とし、解約済みが再度 active と書き込まれるのを防ぐ。
+ * @param {Record<string, unknown>} sub
+ * @param {number} [nowMs]
+ * @returns {{
+ *   subscription_status: string;
+ *   subscription_period_end_at: Date | null;
+ *   subscription_cancel_at_period_end: number;
+ *   periodExpiredDemoted: boolean;
+ * }}
+ */
+export function familyDbFieldsFromStripeSubscription(sub, nowMs = Date.now()) {
+  const statusLow = String(sub?.status ?? "").trim().toLowerCase();
+  const periodEndUnix = Number(sub?.current_period_end ?? 0) || 0;
+  const periodEndMs = periodEndUnix > 0 ? periodEndUnix * 1000 : null;
+  const pe = periodEndUnix > 0 ? new Date(periodEndUnix * 1000) : null;
+  const cancelAtEnd = sub?.cancel_at_period_end ? 1 : 0;
+  const raw = mapStripeSubscriptionStatusToDb(sub.status);
+
+  let subscription_status = raw;
+  let subscription_cancel_at_period_end = cancelAtEnd;
+  let periodExpiredDemoted = false;
+
+  if (periodEndMs != null && periodEndMs < nowMs) {
+    if (statusLow === "active" || statusLow === "trialing" || statusLow === "past_due") {
+      subscription_status = "inactive";
+      subscription_cancel_at_period_end = 0;
+      periodExpiredDemoted = true;
+    }
+  }
+
+  return {
+    subscription_status,
+    subscription_period_end_at: pe,
+    subscription_cancel_at_period_end,
+    periodExpiredDemoted,
+  };
+}
+
 /** 管理者が PATCH /admin/users/:id で設定可能（Stripe と整合） */
 export const ADMIN_SETTABLE_SUBSCRIPTION_STATUSES = new Set([
   "inactive",

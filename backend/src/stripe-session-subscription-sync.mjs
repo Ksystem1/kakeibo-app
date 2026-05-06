@@ -8,7 +8,10 @@ import { requireStripeSecretKey } from "./stripe-config.mjs";
 import {
   pickBestStripeSubscriptionForCustomer,
 } from "./stripe-subscription-reconcile-core.mjs";
-import { mapStripeSubscriptionStatusToDb, isUserIdForcedPremiumByEnv } from "./subscription-logic.mjs";
+import {
+  familyDbFieldsFromStripeSubscription,
+  isUserIdForcedPremiumByEnv,
+} from "./subscription-logic.mjs";
 import { clearIsPremiumAfterSubscriptionEndedDb } from "./stripe-user-premium-sync.mjs";
 
 const logger = createLogger("stripe-session-sync");
@@ -135,11 +138,7 @@ export async function maybeSyncStripeSubscriptionForUser(pool, userId) {
     const best = pickBestStripeSubscriptionForCustomer(list.data);
 
     if (best) {
-      const pe = best.current_period_end
-        ? new Date(Number(best.current_period_end) * 1000)
-        : null;
-      const cAtEnd = best.cancel_at_period_end ? 1 : 0;
-      const dbS = mapStripeSubscriptionStatusToDb(best.status);
+      const f = familyDbFieldsFromStripeSubscription(best, Date.now());
       const sid = String(best.id);
       const [up] = await pool.query(
         `UPDATE families SET
@@ -149,9 +148,22 @@ export async function maybeSyncStripeSubscriptionForUser(pool, userId) {
            stripe_subscription_id = ?,
            updated_at = NOW(3)
          WHERE id = ?`,
-        [dbS, pe, cAtEnd, sid, familyId],
+        [
+          f.subscription_status,
+          f.subscription_period_end_at,
+          f.subscription_cancel_at_period_end,
+          sid,
+          familyId,
+        ],
       );
       didUpdate = Number(up?.affectedRows ?? 0) > 0;
+      if (f.periodExpiredDemoted) {
+        logger.info("stripe.session_sync_period_expired_demoted", {
+          userId: uid,
+          familyId,
+          stripeStatus: best.status,
+        });
+      }
       await clearIsPremiumAfterSubscriptionEndedDb(
         pool,
         { familyId, customerId: cus },

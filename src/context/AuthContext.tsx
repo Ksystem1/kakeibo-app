@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { FamilyRole, GradeGroup, KidTheme } from "../lib/api";
+import { clearAuthMeFetchThrottle } from "../lib/authMeFetchThrottle";
 
 const STORAGE_KEY = "kakeibo_token";
 
@@ -67,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
+    clearAuthMeFetchThrottle();
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {

@@ -4,9 +4,9 @@
  * API: GET /admin/subscription-reconcile
  */
 import {
+  familyDbFieldsFromStripeSubscription,
   isSubscriptionServiceSubscribed,
   isUserIdForcedPremiumByEnv,
-  mapStripeSubscriptionStatusToDb,
 } from "./subscription-logic.mjs";
 import { clearIsPremiumAfterSubscriptionEndedDb } from "./stripe-user-premium-sync.mjs";
 
@@ -147,7 +147,7 @@ export async function analyzeStripeDbSubscriptionReconcile(stripe, pool) {
     if (isAdminFreeFamilyStatus(dbSt)) continue;
     const win = byCustomer.get(cus) || null;
     const expected = win
-      ? mapStripeSubscriptionStatusToDb(win.status)
+      ? familyDbFieldsFromStripeSubscription(win, Date.now()).subscription_status
       : "inactive";
     if (!sameSubscriptionStatusForReconcile(dbSt, expected)) {
       familyMismatches.push({
@@ -251,11 +251,7 @@ export async function applyOneFamilyMismatch(stripe, pool, familyId) {
   const cus = m.stripeCustomerId;
   const sub = cus ? byCustomer.get(cus) : null;
   if (sub) {
-    const pe = sub.current_period_end
-      ? new Date(Number(sub.current_period_end) * 1000)
-      : null;
-    const cAtEnd = sub.cancel_at_period_end ? 1 : 0;
-    const dbS = mapStripeSubscriptionStatusToDb(sub.status);
+    const f = familyDbFieldsFromStripeSubscription(sub, Date.now());
     const sid = String(sub.id);
     await pool.query(
       `UPDATE families SET
@@ -265,7 +261,13 @@ export async function applyOneFamilyMismatch(stripe, pool, familyId) {
          stripe_subscription_id = ?,
          updated_at = NOW()
        WHERE id = ?`,
-      [dbS, pe, cAtEnd, sid, m.familyId],
+      [
+        f.subscription_status,
+        f.subscription_period_end_at,
+        f.subscription_cancel_at_period_end,
+        sid,
+        m.familyId,
+      ],
     );
     await clearIsPremiumAfterSubscriptionEndedDb(
       pool,
