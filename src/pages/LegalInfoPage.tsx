@@ -33,7 +33,10 @@ export function LegalInfoPage() {
     }) as const;
 
   return (
-    <div className={`${styles.wrap} ${styles.legalPageWrap}`}>
+    <div
+      className={`${styles.wrap} ${styles.legalPageWrap}`}
+      style={{ maxWidth: "min(1200px, 96vw)" }}
+    >
       <header className={styles.header}>
         <h1 className={styles.title}>特商法の表記・利用規約・よくある質問</h1>
         <p className={styles.sub}>
@@ -72,7 +75,7 @@ export function LegalInfoPage() {
           特定商取引法に基づく表記
         </h2>
         <div style={{ overflowX: "auto", margin: "0.55rem 0 0.85rem", WebkitOverflowScrolling: "touch" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "min(100%, 42rem)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "76rem" }}>
             <tbody>
               {[
                 ["販売価格", "各プランのページに表示"],
@@ -90,7 +93,7 @@ export function LegalInfoPage() {
                       textAlign: "left",
                       verticalAlign: "top",
                       whiteSpace: "nowrap",
-                      width: "13rem",
+                      width: "20rem",
                       padding: "0.52rem 0.65rem",
                       background: "var(--bg-card)",
                     }}
