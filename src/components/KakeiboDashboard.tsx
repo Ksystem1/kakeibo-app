@@ -1362,9 +1362,6 @@ export function KakeiboDashboard(props?: KakeiboDashboardProps) {
                   固定費設定（全月共通）へ
                 </Link>
               </div>
-              <p className={`${styles.sub} ${styles.summaryApiLeadText}`}>
-                毎月同額のものは設定の固定費へ。取引には変動分だけを登録する運用です。
-              </p>
               <div className={styles.tableWrap}>
                 <table className={styles.table}>
                   <thead>
