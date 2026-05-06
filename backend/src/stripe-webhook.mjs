@@ -783,6 +783,45 @@ async function syncCheckoutSessionSubscription(pool, opts) {
         stripeStatus: sub.status,
         paymentStatus: ps || null,
       });
+      /**
+       * Checkout は完了・課金済みでも、Stripe API 上の Subscription が一瞬 `incomplete` のことがある。
+       * mapStripeSubscriptionStatusToDb は incomplete → inactive のため families が未契約になり、
+       * ここで early return すると下の paidComplete フォールバックが実行されず UI が「未契約」のままになる。
+       */
+      if (paidComplete) {
+        const mapped = mapStripeSubscriptionStatusToDb(sub.status);
+        const stripeLow = String(sub.status ?? "").trim().toLowerCase();
+        if (
+          mapped === "inactive" ||
+          stripeLow === "incomplete" ||
+          stripeLow === "incomplete_expired"
+        ) {
+          if (target === "family" && fid) {
+            const [rOv] = await pool.query(
+              `UPDATE families SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
+              [fid],
+            );
+            logger.info("stripe.checkout_subscription_active_override", {
+              reason: "paid_session_but_stripe_subscription_not_active_yet",
+              fid,
+              userId,
+              stripeStatus: sub.status,
+              affectedRows: Number(rOv?.affectedRows ?? 0),
+            });
+          } else if (target === "user" && userId) {
+            const [rUs] = await pool.query(
+              `UPDATE users SET subscription_status = 'active', updated_at = NOW() WHERE id = ?`,
+              [userId],
+            );
+            logger.info("stripe.checkout_subscription_active_override", {
+              reason: "paid_session_but_stripe_subscription_not_active_yet",
+              userId,
+              stripeStatus: sub.status,
+              affectedRows: Number(rUs?.affectedRows ?? 0),
+            });
+          }
+        }
+      }
       return;
     } catch (e) {
       logger.warn("stripe.checkout_subscription_sync_failed", {
