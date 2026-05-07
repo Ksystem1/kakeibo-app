@@ -260,18 +260,41 @@ function pickReceiptMemo(params: {
   items?: Array<{ name: string; amount: number | null; confidence?: number }>;
 }): string {
   const store = String(params.suggestedStoreName ?? "").trim();
-  if (store && !looksGarbledAutoMemo(store)) return store;
+  if (store && !looksGarbledAutoMemo(store) && !looksSymbolOnlyText(store)) return store;
   const rawVendor = String(params.rawVendorName ?? "").trim();
-  if (rawVendor && !isGenericPaymentMemo(rawVendor) && !looksGarbledAutoMemo(rawVendor)) return rawVendor;
+  if (
+    rawVendor &&
+    !isGenericPaymentMemo(rawVendor) &&
+    !looksGarbledAutoMemo(rawVendor) &&
+    !looksSymbolOnlyText(rawVendor)
+  ) {
+    return rawVendor;
+  }
   const vendor = String(params.vendorName ?? "").trim();
-  if (vendor && !isGenericPaymentMemo(vendor) && !looksGarbledAutoMemo(vendor)) return vendor;
+  if (
+    vendor &&
+    !isGenericPaymentMemo(vendor) &&
+    !looksGarbledAutoMemo(vendor) &&
+    !looksSymbolOnlyText(vendor)
+  ) {
+    return vendor;
+  }
   const items = Array.isArray(params.items) ? params.items : [];
   const itemName = items
     .map((it) => String(it?.name ?? "").trim())
-    .find((n) => n && !looksGarbledAutoMemo(n) && !looksUninformativeAutoMemo(n) && !isGenericPaymentMemo(n));
+    .find(
+      (n) =>
+        n &&
+        !looksGarbledAutoMemo(n) &&
+        !looksUninformativeAutoMemo(n) &&
+        !isGenericPaymentMemo(n) &&
+        !looksSymbolOnlyText(n),
+    );
   if (itemName) return itemName;
   const memo = String(params.suggestedMemo ?? "").trim();
-  if (memo && !isGenericPaymentMemo(memo) && !looksGarbledAutoMemo(memo)) return memo;
+  if (memo && !isGenericPaymentMemo(memo) && !looksGarbledAutoMemo(memo) && !looksSymbolOnlyText(memo)) {
+    return memo;
+  }
   return "";
 }
 
@@ -328,6 +351,14 @@ function looksUninformativeAutoMemo(raw: string): boolean {
   const s = String(raw ?? "").trim();
   if (!s) return true;
   return /^(内容|明細|商品|品目|レシート|購入|お買上|お会計|なし|不明)$/i.test(s);
+}
+
+function looksSymbolOnlyText(raw: string): boolean {
+  const s = String(raw ?? "").trim();
+  if (!s) return true;
+  const core = s.replace(/[()（）［］\[\]{}｛｝<>＜＞「」『』【】\s]/g, "");
+  if (!core) return true;
+  return /^[\W_]+$/u.test(core);
 }
 
 function suggestedStoreNameFromHint(hint: string | null): string {
@@ -734,7 +765,8 @@ export function ReceiptPage() {
           r.suggestedCategoryId ??
           spNow?.preferredCategoryId ??
           aiNameMatchedId ??
-          localSuggested,
+          localSuggested ??
+          pickPreferredDiningCategoryId(categories),
       );
       setDraftCategoryId(initialCategoryId);
       setSuggestedCategoryLowConfidence(Boolean(r.suggestedCategoryLowConfidence));
@@ -1288,6 +1320,9 @@ export function ReceiptPage() {
         const foodLike = categories.find((c) => /食費|外食|食|飲食/i.test(String(c.name)));
         next = normalizeReceiptCategoryId(foodLike?.id);
       }
+    }
+    if (next == null) {
+      next = pickPreferredDiningCategoryId(categories);
     }
     if (next != null) setDraftCategoryId(normalizeReceiptCategoryId(next));
   }, [categories, draftCategoryId, suggestedVendorHint, draftMemo, ocrVendor, items]);
