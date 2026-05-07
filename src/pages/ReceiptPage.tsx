@@ -1319,7 +1319,8 @@ export function ReceiptPage() {
   useEffect(() => {
     if (memoTouchedByUserRef.current) return;
     const memo = String(draftMemo ?? "").trim();
-    if (!memo || (!looksGarbledAutoMemo(memo) && !looksUninformativeAutoMemo(memo))) return;
+    // メモが空のときも、推定店名やOCR店名で補完する
+    if (memo && !looksGarbledAutoMemo(memo) && !looksUninformativeAutoMemo(memo)) return;
     const hintedStore = suggestedStoreNameFromHint(suggestedVendorHint);
     if (hintedStore) {
       setDraftMemo(hintedStore);
