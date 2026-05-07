@@ -5,6 +5,7 @@ import {
   BookOpen,
   ClipboardCheck,
   FolderSync,
+  HeartPulse,
   Lightbulb,
   LayoutDashboard,
   Rocket,
@@ -219,6 +220,15 @@ export function GlassMainNav({ isAdminUser, adminSupportNeedsReply }: Props) {
                 <h4 className="app-glass-nav-feature-card__title">高度な分析</h4>
                 <p className="app-glass-nav-feature-card__desc">
                   美しいグラフで支出傾向を可視化。改善ポイントを即把握。
+                </p>
+              </article>
+              <article className="app-glass-nav-feature-card">
+                <span className="app-glass-nav-feature-card__icon" aria-hidden>
+                  <HeartPulse strokeWidth={1.95} />
+                </span>
+                <h4 className="app-glass-nav-feature-card__title">医療費控除</h4>
+                <p className="app-glass-nav-feature-card__desc">
+                  対象フラグや3区分・対象者名を取引に保存。確定申告にそのまま活かせる。
                 </p>
               </article>
             </div>
