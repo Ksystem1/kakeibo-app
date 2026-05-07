@@ -215,6 +215,36 @@ test("analyzeReceiptImageBytes: LINE Blocks から店名ヘッダを補完", asy
   assert.equal(out.summary.vendorName, "うなぎ割烹 竹江");
 });
 
+test("analyzeReceiptImageBytes: 代表Docに店名がなくても他Docから店名を補完", async () => {
+  const analyze = createReceiptAnalyzer({
+    useS3Mode: false,
+    makeClient: () => ({
+      send: async () => ({
+        ExpenseDocuments: [
+          {
+            ExpenseIndex: 2,
+            SummaryFields: [
+              { Type: { Text: "TOTAL" }, LabelDetection: { Text: "合計" }, ValueDetection: { Text: "16610" } },
+              { Type: { Text: "DATE" }, LabelDetection: { Text: "日付" }, ValueDetection: { Text: "2026/04/29" } },
+            ],
+            LineItemGroups: [],
+          },
+          {
+            ExpenseIndex: 1,
+            SummaryFields: [
+              { Type: { Text: "VENDOR_NAME" }, ValueDetection: { Text: "うなぎ割烹 竹江", Confidence: 97 } },
+            ],
+            LineItemGroups: [],
+          },
+        ],
+      }),
+    }),
+  });
+
+  const out = await analyze(Buffer.from("dummy"));
+  assert.equal(out.summary.vendorName, "うなぎ割烹 竹江");
+});
+
 test("applyOcrDoubleTaxTotalCorrection: ハイブリッド後の誤合計を OCR 小計・税で矯正", () => {
   const ocrLines = ["小計", "15100", "外税 10%", "1510", "合計", "18120"];
   assert.equal(applyOcrDoubleTaxTotalCorrection(18120, ocrLines), 16610);

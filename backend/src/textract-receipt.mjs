@@ -1147,6 +1147,20 @@ function fallbackVendorNameFromOcrBlocks(ocrTextBlocks) {
   return topBlocks[0]?.text ?? null;
 }
 
+function pickBestVendorNameAcrossExpenseDocs(expenseDocs, responseBlocks = []) {
+  if (!Array.isArray(expenseDocs) || expenseDocs.length === 0) return null;
+  for (const d of expenseDocs) {
+    const fromSummary = String(summaryFromFields(d?.SummaryFields)?.vendorName ?? "").trim();
+    if (fromSummary) return fromSummary;
+  }
+  for (const d of expenseDocs) {
+    const blocks = collectOcrTextBlocksFromExpenseDoc(d, responseBlocks);
+    const fromOcr = String(fallbackVendorNameFromOcrBlocks(blocks) ?? "").trim();
+    if (fromOcr) return fromOcr;
+  }
+  return null;
+}
+
 export function decodeImageBuffer(imageBase64) {
   let s = String(imageBase64 ?? "").trim();
   const dataUrl = /^data:image\/[a-z0-9.+-]+;base64,(.+)$/is.exec(s);
@@ -1312,8 +1326,12 @@ export function createReceiptAnalyzer(ctx = {}) {
     const ocrTextBlocks = collectOcrTextBlocksFromExpenseDoc(doc, response?.Blocks);
     const ocrLines = ocrTextBlocks.map((x) => x.text).slice(0, 180);
     const vendorFallback = fallbackVendorNameFromOcrBlocks(ocrTextBlocks);
+    const vendorAcrossDocsFallback = pickBestVendorNameAcrossExpenseDocs(docs, response?.Blocks);
     const effectiveVendorName =
-      String(summary.vendorName ?? "").trim() || String(vendorFallback ?? "").trim() || null;
+      String(summary.vendorName ?? "").trim() ||
+      String(vendorFallback ?? "").trim() ||
+      String(vendorAcrossDocsFallback ?? "").trim() ||
+      null;
     let notice = null;
     let totalAmount = summary.totalAmount;
     let fieldConfidence = { ...summary.fieldConfidence };
