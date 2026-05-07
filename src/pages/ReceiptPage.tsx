@@ -70,6 +70,7 @@ const RECEIPT_ITEM_CATEGORIES: ReceiptItemCategory[] = [
 
 const CATEGORY_TAGS = {
   food: ["食費", "食品", "食料品", "飲食", "スーパー", "グロサリー", "grocery", "food"],
+  dining: ["外食", "レストラン", "飲食店", "食事", "カフェ", "喫茶"],
   daily: ["日用品", "雑貨", "生活用品", "ドラッグ", "ドラッグストア"],
   transport: ["交通", "交通費", "電車", "バス", "タクシー", "ガソリン", "駐車場"],
   utility: ["水道", "光熱費", "電気", "ガス", "通信", "ネット", "携帯"],
@@ -93,6 +94,19 @@ const TAG_KEYWORDS = {
     "ジュース",
     "スーパー",
     "コンビニ",
+  ],
+  dining: [
+    "うなぎ",
+    "寿司",
+    "すし",
+    "ラーメン",
+    "焼肉",
+    "居酒屋",
+    "食堂",
+    "レストラン",
+    "カフェ",
+    "喫茶",
+    "定食",
   ],
   daily: ["ティッシュ", "洗剤", "シャンプー", "歯ブラシ", "トイレットペーパー", "日用品"],
   transport: ["電車", "バス", "タクシー", "駐車", "ガソリン", "高速", "ic"],
@@ -132,6 +146,22 @@ const VENDOR_TAG_HINTS: Record<string, readonly string[]> = {
     "はま寿司",
     "スシロー",
     "くら寿司",
+  ],
+  dining: [
+    "すき家",
+    "吉野家",
+    "はま寿司",
+    "スシロー",
+    "くら寿司",
+    "サイゼリヤ",
+    "ガスト",
+    "ココス",
+    "デニーズ",
+    "ジョナサン",
+    "びっくりドンキー",
+    "コメダ",
+    "星乃",
+    "ドトール",
   ],
   daily: ["ダイソー", "セリア", "キャンドゥ", "無印"],
   transport: ["jr", "地下鉄", "メトロ", "モバイルsuica", "pasmo"],
@@ -182,12 +212,21 @@ function suggestExpenseCategoryId(
   const ranked = categories
     .map((c) => {
       const tag = tagFromCategoryName(c.name);
+      const normalizedName = normalizeJa(c.name);
       return {
         id: c.id,
         score: tag ? (tagScore[tag] ?? 0) : 0,
+        categoryPriority:
+          normalizedName.includes("外食")
+            ? 3
+            : normalizedName.includes("食費")
+              ? 2
+              : normalizedName.includes("娯楽")
+                ? 1
+                : 0,
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.score - a.score || b.categoryPriority - a.categoryPriority);
   if (!ranked[0] || ranked[0].score <= 0) return null;
   return ranked[0].id;
 }
