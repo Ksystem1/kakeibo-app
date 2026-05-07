@@ -1086,6 +1086,55 @@ function collectOcrTextBlocksFromExpenseDoc(doc) {
   return out.slice(0, 220);
 }
 
+function normalizeVendorCandidateText(raw) {
+  return String(raw ?? "")
+    .replace(/[　]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function looksVendorCandidateNoise(raw) {
+  const s = normalizeVendorCandidateText(raw);
+  if (!s) return true;
+  if (s.length > 40) return true;
+  if (/^(tel|電話|登録番号|レシート|伝票|端末|担当|日時|発行|税率|対象額|小計|合計|内消費税)/i.test(s)) {
+    return true;
+  }
+  if (/^[\d０-９\s#＃,，.\-ー/:;*＊+()（）]+$/.test(s)) return true;
+  // 店名らしさ（漢字かな英字）がない断片は除外
+  if (!/[A-Za-z\u3040-\u30ff\u3400-\u9fff]/.test(s)) return true;
+  return false;
+}
+
+/**
+ * SummaryFields に店名が無いとき、OCR ブロック上部から店名候補を補完する。
+ * レシート上端の比較的大きい文字を優先し、住所・電話・番号行を除外する。
+ */
+function fallbackVendorNameFromOcrBlocks(ocrTextBlocks) {
+  if (!Array.isArray(ocrTextBlocks) || ocrTextBlocks.length === 0) return null;
+  const topBlocks = ocrTextBlocks
+    .filter((b) => b && typeof b.text === "string" && b.text.trim())
+    .map((b) => ({
+      text: normalizeVendorCandidateText(b.text),
+      top: Number(b?.bbox?.top),
+      height: Number(b?.bbox?.height),
+      width: Number(b?.bbox?.width),
+    }))
+    .filter((b) => Number.isFinite(b.top) && b.top <= 0.28)
+    .filter((b) => !looksVendorCandidateNoise(b.text));
+  if (topBlocks.length === 0) return null;
+  topBlocks.sort((a, b) => {
+    const ah = Number.isFinite(a.height) ? a.height : 0;
+    const bh = Number.isFinite(b.height) ? b.height : 0;
+    if (Math.abs(bh - ah) > 0.0001) return bh - ah;
+    if (Math.abs(a.top - b.top) > 0.0001) return a.top - b.top;
+    const aw = Number.isFinite(a.width) ? a.width : 0;
+    const bw = Number.isFinite(b.width) ? b.width : 0;
+    return bw - aw;
+  });
+  return topBlocks[0]?.text ?? null;
+}
+
 export function decodeImageBuffer(imageBase64) {
   let s = String(imageBase64 ?? "").trim();
   const dataUrl = /^data:image\/[a-z0-9.+-]+;base64,(.+)$/is.exec(s);
@@ -1250,6 +1299,9 @@ export function createReceiptAnalyzer(ctx = {}) {
     items = filterSummaryFooterLineItems(items);
     const ocrTextBlocks = collectOcrTextBlocksFromExpenseDoc(doc);
     const ocrLines = ocrTextBlocks.map((x) => x.text).slice(0, 180);
+    const vendorFallback = fallbackVendorNameFromOcrBlocks(ocrTextBlocks);
+    const effectiveVendorName =
+      String(summary.vendorName ?? "").trim() || String(vendorFallback ?? "").trim() || null;
     let notice = null;
     let totalAmount = summary.totalAmount;
     let fieldConfidence = { ...summary.fieldConfidence };
@@ -1341,7 +1393,7 @@ export function createReceiptAnalyzer(ctx = {}) {
     }
     return {
       summary: {
-        vendorName: summary.vendorName,
+        vendorName: effectiveVendorName,
         totalAmount,
         date: dateVal,
         fieldConfidence,
