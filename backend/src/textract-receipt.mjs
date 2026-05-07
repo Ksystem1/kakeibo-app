@@ -1056,7 +1056,7 @@ function geometryFromAny(node) {
   return { left, top, width, height };
 }
 
-function collectOcrTextBlocksFromExpenseDoc(doc) {
+function collectOcrTextBlocksFromExpenseDoc(doc, rawBlocks = []) {
   /** @type {Array<{ text: string; bbox: { left: number; top: number; width: number; height: number } | null }>} */
   const out = [];
   const pushUnique = (textRaw, geomCandidate) => {
@@ -1082,6 +1082,18 @@ function collectOcrTextBlocksFromExpenseDoc(doc) {
         if (f?.ValueDetection?.Text) pushUnique(f.ValueDetection.Text, f.ValueDetection);
       }
     }
+  }
+  // AnalyzeExpense の補助 Blocks（LINE）に店名ヘッダが入るケースを補完する
+  const blockCandidates = [
+    ...(Array.isArray(doc?.Blocks) ? doc.Blocks : []),
+    ...(Array.isArray(rawBlocks) ? rawBlocks : []),
+  ];
+  for (const b of blockCandidates) {
+    const bt = String(b?.BlockType ?? "").toUpperCase();
+    if (bt !== "LINE" && bt !== "WORD") continue;
+    const txt = String(b?.Text ?? "").trim();
+    if (!txt) continue;
+    pushUnique(txt, b);
   }
   return out.slice(0, 220);
 }
@@ -1297,7 +1309,7 @@ export function createReceiptAnalyzer(ctx = {}) {
     let items = lineItemsFromExpenseDoc(doc);
     items = dedupeJunkSymbolDuplicateLineItems(items);
     items = filterSummaryFooterLineItems(items);
-    const ocrTextBlocks = collectOcrTextBlocksFromExpenseDoc(doc);
+    const ocrTextBlocks = collectOcrTextBlocksFromExpenseDoc(doc, response?.Blocks);
     const ocrLines = ocrTextBlocks.map((x) => x.text).slice(0, 180);
     const vendorFallback = fallbackVendorNameFromOcrBlocks(ocrTextBlocks);
     const effectiveVendorName =
