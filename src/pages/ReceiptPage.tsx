@@ -256,11 +256,20 @@ function pickReceiptMemo(params: {
   suggestedMemo?: string | null;
   suggestedStoreName?: string | null;
   vendorName?: string | null;
+  rawVendorName?: string | null;
+  items?: Array<{ name: string; amount: number | null; confidence?: number }>;
 }): string {
   const store = String(params.suggestedStoreName ?? "").trim();
   if (store && !looksGarbledAutoMemo(store)) return store;
+  const rawVendor = String(params.rawVendorName ?? "").trim();
+  if (rawVendor && !isGenericPaymentMemo(rawVendor) && !looksGarbledAutoMemo(rawVendor)) return rawVendor;
   const vendor = String(params.vendorName ?? "").trim();
   if (vendor && !isGenericPaymentMemo(vendor) && !looksGarbledAutoMemo(vendor)) return vendor;
+  const items = Array.isArray(params.items) ? params.items : [];
+  const itemName = items
+    .map((it) => String(it?.name ?? "").trim())
+    .find((n) => n && !looksGarbledAutoMemo(n) && !looksUninformativeAutoMemo(n) && !isGenericPaymentMemo(n));
+  if (itemName) return itemName;
   const memo = String(params.suggestedMemo ?? "").trim();
   if (memo && !isGenericPaymentMemo(memo) && !looksGarbledAutoMemo(memo)) return memo;
   return "";
@@ -325,6 +334,13 @@ function suggestedStoreNameFromHint(hint: string | null): string {
   const h = String(hint ?? "").trim();
   if (!h) return "";
   return h.split("/")[0]?.trim() ?? "";
+}
+
+function pickPreferredDiningCategoryId(categories: ExpenseCategory[]): number | null {
+  const exact = categories.find((c) => normalizeJa(c.name) === normalizeJa("外食"));
+  if (exact) return exact.id;
+  const partial = categories.find((c) => /外食|飲食/.test(String(c.name)));
+  return partial ? partial.id : null;
 }
 
 /** API 等から来る id を number | null に揃え、比較で学習が取りこぼされないようにする */
@@ -670,6 +686,8 @@ export function ReceiptPage() {
         suggestedStoreName:
           spNow && !spNow.deferred ? String(spNow.suggestedStoreName ?? "").trim() : "",
         vendorName: vendorTrim,
+        rawVendorName: spNow?.rawVendorName,
+        items: Array.isArray(r.items) ? r.items : [],
       });
       setDraftMemo(initialMemo);
       setDraftTotal(
@@ -695,12 +713,28 @@ export function ReceiptPage() {
         s?.vendorName?.trim() ?? "",
         r.items ?? [],
       );
+      const vendorAndItemCorpus = normalizeJa(
+        [
+          s?.vendorName?.trim() ?? "",
+          spNow?.rawVendorName ?? "",
+          ...((r.items ?? []).map((it) => String(it?.name ?? "").trim()) as string[]),
+        ].join(" "),
+      );
+      const wantsDining =
+        /うなぎ|寿司|すし|ラーメン|焼肉|居酒屋|食堂|レストラン|カフェ|喫茶|定食|飲食/.test(
+          vendorAndItemCorpus,
+        );
+      const diningSuggested = wantsDining ? pickPreferredDiningCategoryId(categories) : null;
       const aiNameMatchedId =
         r.suggestedCategoryId == null
           ? pickCategoryIdByName(categories, r.suggestedCategoryName)
           : null;
       const initialCategoryId = normalizeReceiptCategoryId(
-        r.suggestedCategoryId ?? spNow?.preferredCategoryId ?? aiNameMatchedId ?? localSuggested,
+        diningSuggested ??
+          r.suggestedCategoryId ??
+          spNow?.preferredCategoryId ??
+          aiNameMatchedId ??
+          localSuggested,
       );
       setDraftCategoryId(initialCategoryId);
       setSuggestedCategoryLowConfidence(Boolean(r.suggestedCategoryLowConfidence));
@@ -1248,9 +1282,12 @@ export function ReceiptPage() {
       namesFromItems;
     if (!vendorCandidate) return;
     let next = suggestExpenseCategoryId(categories, vendorCandidate, items);
-    if (next == null && /うなぎ|寿司|すし|ラーメン|焼肉|居酒屋|食堂|レストラン|カフェ|喫茶/i.test(vendorCandidate)) {
-      const foodLike = categories.find((c) => /食費|外食|食|飲食/i.test(String(c.name)));
-      next = normalizeReceiptCategoryId(foodLike?.id);
+    if (next == null && /うなぎ|寿司|すし|ラーメン|焼肉|居酒屋|食堂|レストラン|カフェ|喫茶|定食/i.test(vendorCandidate)) {
+      next = pickPreferredDiningCategoryId(categories);
+      if (next == null) {
+        const foodLike = categories.find((c) => /食費|外食|食|飲食/i.test(String(c.name)));
+        next = normalizeReceiptCategoryId(foodLike?.id);
+      }
     }
     if (next != null) setDraftCategoryId(normalizeReceiptCategoryId(next));
   }, [categories, draftCategoryId, suggestedVendorHint, draftMemo, ocrVendor, items]);
