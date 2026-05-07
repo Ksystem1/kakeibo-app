@@ -260,13 +260,21 @@ function pickReceiptMemo(params: {
   items?: Array<{ name: string; amount: number | null; confidence?: number }>;
 }): string {
   const store = String(params.suggestedStoreName ?? "").trim();
-  if (store && !looksGarbledAutoMemo(store) && !looksSymbolOnlyText(store)) return store;
+  if (
+    store &&
+    !looksGarbledAutoMemo(store) &&
+    !looksSymbolOnlyText(store) &&
+    !looksNumericNoiseText(store)
+  ) {
+    return store;
+  }
   const rawVendor = String(params.rawVendorName ?? "").trim();
   if (
     rawVendor &&
     !isGenericPaymentMemo(rawVendor) &&
     !looksGarbledAutoMemo(rawVendor) &&
-    !looksSymbolOnlyText(rawVendor)
+    !looksSymbolOnlyText(rawVendor) &&
+    !looksNumericNoiseText(rawVendor)
   ) {
     return rawVendor;
   }
@@ -275,7 +283,8 @@ function pickReceiptMemo(params: {
     vendor &&
     !isGenericPaymentMemo(vendor) &&
     !looksGarbledAutoMemo(vendor) &&
-    !looksSymbolOnlyText(vendor)
+    !looksSymbolOnlyText(vendor) &&
+    !looksNumericNoiseText(vendor)
   ) {
     return vendor;
   }
@@ -288,11 +297,18 @@ function pickReceiptMemo(params: {
         !looksGarbledAutoMemo(n) &&
         !looksUninformativeAutoMemo(n) &&
         !isGenericPaymentMemo(n) &&
-        !looksSymbolOnlyText(n),
+        !looksSymbolOnlyText(n) &&
+        !looksNumericNoiseText(n),
     );
   if (itemName) return itemName;
   const memo = String(params.suggestedMemo ?? "").trim();
-  if (memo && !isGenericPaymentMemo(memo) && !looksGarbledAutoMemo(memo) && !looksSymbolOnlyText(memo)) {
+  if (
+    memo &&
+    !isGenericPaymentMemo(memo) &&
+    !looksGarbledAutoMemo(memo) &&
+    !looksSymbolOnlyText(memo) &&
+    !looksNumericNoiseText(memo)
+  ) {
     return memo;
   }
   return "";
@@ -359,6 +375,19 @@ function looksSymbolOnlyText(raw: string): boolean {
   const core = s.replace(/[()（）［］\[\]{}｛｝<>＜＞「」『』【】\s]/g, "");
   if (!core) return true;
   return /^[\W_]+$/u.test(core);
+}
+
+function hasReadableStoreChars(raw: string): boolean {
+  const s = String(raw ?? "").trim();
+  if (!s) return false;
+  return /[A-Za-z\u3040-\u30ff\u3400-\u9fff]/.test(s);
+}
+
+function looksNumericNoiseText(raw: string): boolean {
+  const s = String(raw ?? "").trim();
+  if (!s) return true;
+  if (/^[\d０-９\s#＃,，.\-ー_/:;*＊+]+$/.test(s)) return true;
+  return !hasReadableStoreChars(s);
 }
 
 function suggestedStoreNameFromHint(hint: string | null): string {
