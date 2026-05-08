@@ -40,7 +40,7 @@ import {
   userHasPremiumSubscriptionAccess,
 } from "./subscription-logic.mjs";
 import { maybeSyncStripeSubscriptionForUser } from "./stripe-session-subscription-sync.mjs";
-import { sendSesTextEmail } from "./admin-email-notify.mjs";
+import { resolveSesRegion, sendSesTextEmail } from "./admin-email-notify.mjs";
 
 const accountDeleteLogger = createLogger("auth.delete-account");
 const FAM_JOIN_ON_U = sqlUserFamilyIdExpr("u");
@@ -277,9 +277,7 @@ function redactEmailForLog(rawEmail) {
 }
 
 async function sendPasswordResetEmail(toEmail, resetRawToken) {
-  const region =
-    String(process.env.SES_REGION || process.env.AWS_REGION || "ap-northeast-1").trim() ||
-    "ap-northeast-1";
+  const region = resolveSesRegion();
   const from = String(
     process.env.PASSWORD_RESET_EMAIL_FROM ||
       process.env.SES_SOURCE_EMAIL ||

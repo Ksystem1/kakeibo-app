@@ -11,10 +11,10 @@ const logger = createLogger("admin-email-notify");
 
 const INTERNAL_EMAIL_RE = /@users\.kakeibo\.internal$/i;
 
-function resolveSesRegion() {
+/** SES は検証済みアイデンティティが属するリージョンで叩く必要がある。ECS の AWS_REGION はタスク配置（例: ap-northeast-2）なので SES には使わない。 */
+export function resolveSesRegion() {
   return (
-    String(process.env.SES_REGION || process.env.AWS_REGION || "ap-northeast-1").trim() ||
-    "ap-northeast-1"
+    String(process.env.SES_REGION || "ap-northeast-1").trim() || "ap-northeast-1"
   );
 }
 
