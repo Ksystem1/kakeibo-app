@@ -8115,7 +8115,7 @@ export async function handleApiRequest(req, options = {}) {
                MAX(CASE WHEN ml.action_type = 'preview' THEN ml.created_at ELSE NULL END) AS last_preview_at,
                MAX(u.email) AS user_email
              FROM monitor_logs ml
-             LEFT JOIN users u ON u.id = ml.user_id
+             INNER JOIN users u ON u.id = ml.user_id
              WHERE ml.log_type = 'paypay_import'
              GROUP BY ml.user_id
              ORDER BY last_import_at DESC`,
