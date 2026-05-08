@@ -31,9 +31,9 @@ export function formatPremiumSubscriptionPrimaryStatus(user: {
     const endRaw = user.subscriptionPeriodEndAt;
     if (endRaw != null && String(endRaw).trim() !== "") {
       const num = formatPeriodEndNumericJa(String(endRaw));
-      if (num) return `${num}に終了予定`;
+      if (num) return `解約予定日 ${num}（請求期間の終了まで追加機能をご利用いただけます）`;
     }
-    return `終了予定（${SUBSCRIPTION_PERIOD_END_PENDING_JA}）`;
+    return `解約予定（${SUBSCRIPTION_PERIOD_END_PENDING_JA}）`;
   }
 
   if (status === "trialing") return subscriptionStatusLabelJa("trialing");
@@ -81,9 +81,9 @@ export function formatSettingsSubscriptionSummary(user: {
   }
   if ((status === "active" || status === "trialing" || status === "past_due") && user.subscriptionCancelAtPeriodEnd) {
     if (endStr && endNum) {
-      return `解約が予約されています。${endNum}まで追加機能をご利用いただけます（請求期間の終了日: ${endStr}）。`;
+      return `解約が予約されています。解約予定日は ${endNum} です（請求期間の終了：${endStr}）。それまでは追加機能をご利用いただけます。`;
     }
-    return `解約が予約されています。有効期限の日付は${SUBSCRIPTION_PERIOD_END_PENDING_JA}です。表示が追いつかない場合は、お支払いの管理画面で終了日をご確認ください。`;
+    return `解約が予約されています。解約予定日は${SUBSCRIPTION_PERIOD_END_PENDING_JA}です。表示が追いつかない場合は、お支払いの管理画面で終了日をご確認ください。`;
   }
   if ((status === "active" || status === "trialing" || status === "past_due") && !user.subscriptionCancelAtPeriodEnd) {
     if (status === "active") {

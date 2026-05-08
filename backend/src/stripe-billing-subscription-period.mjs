@@ -1,10 +1,12 @@
 /**
- * DB の subscription_period_end_at が空でも、Stripe 上のサブスク current_period_end を使って
- * 請求期間終了日（ISO 8601 文字列）を返す。設定画面の「有効期限」表示用。
+ * DB の subscription_period_end_at が空でも、Stripe 上のサブスクの終了／解約予定日を ISO 8601 で返す。
+ * 設定画面の「有効期限・解約予定日」表示用。
  */
 import Stripe from "stripe";
 import { sqlUserFamilyIdExpr } from "./family-billing-scope.mjs";
 import { requireStripeSecretKey } from "./stripe-config.mjs";
+import { pickBestStripeSubscriptionForCustomer } from "./stripe-subscription-reconcile-core.mjs";
+import { effectiveSubscriptionPeriodEndUnixFromStripe } from "./subscription-logic.mjs";
 
 const FAM_JOIN_U = sqlUserFamilyIdExpr("u");
 
@@ -33,33 +35,27 @@ export async function fetchSubscriptionPeriodEndIsoFromStripeLive(pool, userId) 
   const cus = r.cus != null ? String(r.cus).trim() : "";
   if (!cus.startsWith("cus_")) return null;
 
-  let subId = r.sub != null ? String(r.sub).trim() : "";
-  if (!subId.startsWith("sub_")) {
+  let sub = null;
+  const subIdStored = r.sub != null ? String(r.sub).trim() : "";
+  if (subIdStored.startsWith("sub_")) {
+    try {
+      sub = await stripe.subscriptions.retrieve(subIdStored);
+    } catch {
+      sub = null;
+    }
+  }
+
+  if (!sub) {
     const list = await stripe.subscriptions.list({
       customer: cus,
       status: "all",
-      limit: 20,
+      limit: 30,
     });
-    const byPref = (s) => {
-      const st = String(s?.status || "").toLowerCase();
-      if (st === "active" || st === "trialing" || st === "past_due") return 0;
-      if (s?.cancel_at_period_end) return 1;
-      return 2;
-    };
-    const sorted = [...(list.data || [])].sort(
-      (a, b) => byPref(a) - byPref(b) || 0,
-    );
-    const usable = sorted.find((s) => {
-      const st = String(s?.status || "").toLowerCase();
-      if (st === "active" || st === "trialing" || st === "past_due") return true;
-      return Boolean(s?.cancel_at_period_end);
-    });
-    if (!usable) return null;
-    subId = String(usable.id);
+    sub = pickBestStripeSubscriptionForCustomer(list.data || []);
   }
 
-  const sub = await stripe.subscriptions.retrieve(subId);
-  const pe = Number(sub.current_period_end ?? 0);
+  if (!sub) return null;
+  const pe = effectiveSubscriptionPeriodEndUnixFromStripe(sub);
   if (!pe || !Number.isFinite(pe) || pe <= 0) return null;
   return new Date(pe * 1000).toISOString();
 }

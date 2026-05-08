@@ -381,9 +381,9 @@ export function SettingsPage() {
       return `ℹ 解約済み（有効期限：${periodEnd} まで引き続き利用可能でした）`;
     }
     if (cancelReserved && !periodEnd) {
-      return `ℹ 解約手続き済み（有効期限：${SUBSCRIPTION_PERIOD_END_PENDING_JA}。反映まで数分かかる場合があります）`;
+      return `ℹ 解約手続き済み（解約予定日：${SUBSCRIPTION_PERIOD_END_PENDING_JA}。反映まで数分かかる場合があります）`;
     }
-    return `ℹ 解約手続き済み（有効期限：${periodEnd} まで）`;
+    return `ℹ 解約手続き済み（解約予定日／有効期限：${periodEnd} まで追加機能をご利用いただけます）`;
   }, [effectiveUser]);
 
   const premiumPeriodInfo = useMemo(() => {

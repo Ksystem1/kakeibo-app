@@ -129,19 +129,45 @@ export function coerceExpiredPaidSubscriptionRowForAuthMe(row, userId, nowMs = D
 }
 
 /**
- * API 応答用: 期間終了・解約予定フラグ
- * @param {Record<string, unknown>} row
+ * DATETIME / ISO / unix 秒文字列などを API 用の UTC ISO に揃える。
+ * @param {unknown} raw
+ * @returns {string | null}
  */
+export function normalizeSubscriptionPeriodEndToIsoUtc(raw) {
+  if (raw == null) return null;
+  if (typeof raw === "string" && raw.trim() === "") return null;
+  const d = raw instanceof Date ? raw : new Date(raw);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.toISOString();
+}
+
+/** API 応答用: 期間終了・解約予定フラグ（subscriptionPeriodEndAt は ISO UTC） */
 export function buildUserSubscriptionApiFields(row) {
   const raw = row?.subscription_period_end_at;
-  let subscriptionPeriodEndAt = null;
-  if (raw != null && raw !== "") {
-    const d = raw instanceof Date ? raw : new Date(raw);
-    if (Number.isFinite(d.getTime())) subscriptionPeriodEndAt = d.toISOString();
-  }
+  const subscriptionPeriodEndAt =
+    raw != null && raw !== ""
+      ? normalizeSubscriptionPeriodEndToIsoUtc(raw)
+      : null;
   const subscriptionCancelAtPeriodEnd =
     Number(row?.subscription_cancel_at_period_end) === 1;
   return { subscriptionPeriodEndAt, subscriptionCancelAtPeriodEnd };
+}
+
+/**
+ * Stripe 上の「請求期間終了 / 解約予定日」（ダッシュボードの cancel 日付と揃える）。
+ * cancel_at_period_end かつ cancel_at が取れるときは cancel_at を優先する。
+ * @param {Record<string, unknown> | null | undefined} sub
+ * @returns {number | null} unix 秒
+ */
+export function effectiveSubscriptionPeriodEndUnixFromStripe(sub) {
+  if (!sub || typeof sub !== "object") return null;
+  const cpe = Number(sub.current_period_end ?? 0);
+  const cat = Number(sub.cancel_at ?? 0);
+  const atEnd = Boolean(sub.cancel_at_period_end);
+  if (atEnd && cat > 0) return cat;
+  if (cpe > 0) return cpe;
+  if (cat > 0) return cat;
+  return null;
 }
 
 /**
@@ -237,7 +263,7 @@ export function mapStripeSubscriptionStatusToDb(stripeStatus) {
  */
 export function familyDbFieldsFromStripeSubscription(sub, nowMs = Date.now()) {
   const statusLow = String(sub?.status ?? "").trim().toLowerCase();
-  const periodEndUnix = Number(sub?.current_period_end ?? 0) || 0;
+  const periodEndUnix = effectiveSubscriptionPeriodEndUnixFromStripe(sub) ?? 0;
   const periodEndMs = periodEndUnix > 0 ? periodEndUnix * 1000 : null;
   const pe = periodEndUnix > 0 ? new Date(periodEndUnix * 1000) : null;
   const cancelAtEnd = sub?.cancel_at_period_end ? 1 : 0;

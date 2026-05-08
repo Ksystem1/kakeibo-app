@@ -75,6 +75,7 @@ import {
   getEffectiveSubscriptionStatus,
   isUserIdForcedPremiumByEnv,
   normalizeAdminSettableSubscriptionStatus,
+  normalizeSubscriptionPeriodEndToIsoUtc,
   bodyContainsSubscriptionMutationFields,
   userHasPremiumSubscriptionAccess,
 } from "./subscription-logic.mjs";
@@ -6815,11 +6816,9 @@ export async function handleApiRequest(req, options = {}) {
               deriveSubscriptionStatusFromDbRow(subRow),
               userId,
             );
-        let periodEndAt =
-          subRow?.subscription_period_end_at != null &&
-          String(subRow.subscription_period_end_at).trim() !== ""
-            ? String(subRow.subscription_period_end_at)
-            : null;
+        let periodEndAt = normalizeSubscriptionPeriodEndToIsoUtc(
+          subRow?.subscription_period_end_at,
+        );
         if (!periodEndAt) {
           try {
             const st = String(subscriptionStatus ?? "").trim().toLowerCase();
@@ -6833,7 +6832,7 @@ export async function handleApiRequest(req, options = {}) {
             ) {
               const fromStripe = await fetchSubscriptionPeriodEndIsoFromStripeLive(pool, userId);
               if (fromStripe) {
-                periodEndAt = fromStripe;
+                periodEndAt = normalizeSubscriptionPeriodEndToIsoUtc(fromStripe) ?? fromStripe;
               }
             }
           } catch (e) {
