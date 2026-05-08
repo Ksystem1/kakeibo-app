@@ -269,6 +269,13 @@ function buildResetPasswordUrl(resetRawToken) {
   return `${appOrigin}/kakeibo/reset-password?token=${encodeURIComponent(resetRawToken)}`;
 }
 
+function redactEmailForLog(rawEmail) {
+  const e = String(rawEmail || "").trim().toLowerCase();
+  const i = e.indexOf("@");
+  if (i <= 1) return "(invalid)";
+  return `${e.slice(0, 2)}***${e.slice(i)}`;
+}
+
 async function sendPasswordResetEmail(toEmail, resetRawToken) {
   const from = String(
     process.env.PASSWORD_RESET_EMAIL_FROM ||
@@ -1783,6 +1790,13 @@ export async function tryAuthRoutes(req, ctx) {
       const email = String(b.email || "")
         .trim()
         .toLowerCase();
+      console.info(
+        JSON.stringify({
+          level: "info",
+          event: "auth.forgot_password.request_received",
+          emailMasked: redactEmailForLog(email),
+        }),
+      );
       if (!email) {
         return json(400, { error: "メールアドレスを入力してください" }, hdrs, skipCors);
       }
@@ -1797,6 +1811,13 @@ export async function tryAuthRoutes(req, ctx) {
       };
 
       if (rows.length === 0) {
+        console.info(
+          JSON.stringify({
+            level: "info",
+            event: "auth.forgot_password.user_not_found",
+            emailMasked: redactEmailForLog(email),
+          }),
+        );
         return json(200, genericOk, hdrs, skipCors);
       }
 
@@ -1816,6 +1837,17 @@ export async function tryAuthRoutes(req, ctx) {
       );
 
       const emailSendResult = await sendPasswordResetEmail(email, raw);
+      console.info(
+        JSON.stringify({
+          level: "info",
+          event: "auth.forgot_password.mail_result",
+          userId,
+          emailMasked: redactEmailForLog(email),
+          sent: emailSendResult?.sent === true,
+          reason: emailSendResult?.reason ?? null,
+          region: emailSendResult?.region ?? null,
+        }),
+      );
       if (!emailSendResult?.sent) {
         logError(
           "auth.forgotPassword.email_send_skipped_or_failed",
