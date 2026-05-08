@@ -11,6 +11,13 @@ const logger = createLogger("admin-email-notify");
 
 const INTERNAL_EMAIL_RE = /@users\.kakeibo\.internal$/i;
 
+function resolveSesRegion() {
+  return (
+    String(process.env.SES_REGION || process.env.AWS_REGION || "ap-northeast-1").trim() ||
+    "ap-northeast-1"
+  );
+}
+
 /**
  * @param {import("mysql2/promise").Pool} pool
  * @returns {Promise<string[]>}
@@ -50,7 +57,7 @@ export async function sendSesTextEmail({ from, to, subject, textBody }) {
   if (!to.length) {
     return { sent: false, reason: "no_recipients" };
   }
-  const region = String(process.env.AWS_REGION || "ap-northeast-1").trim() || "ap-northeast-1";
+  const region = resolveSesRegion();
   const client = new SESClient({ region });
   const cmd = new SendEmailCommand({
     Source: from,
@@ -60,8 +67,14 @@ export async function sendSesTextEmail({ from, to, subject, textBody }) {
       Body: { Text: { Data: textBody, Charset: "UTF-8" } },
     },
   });
-  const res = await client.send(cmd);
-  return { sent: true, messageId: res.MessageId ?? null, toCount: to.length };
+  try {
+    const res = await client.send(cmd);
+    return { sent: true, messageId: res.MessageId ?? null, toCount: to.length };
+  } catch (error) {
+    // CloudWatch に必ず残したい詳細ログ
+    console.error("SES Send Error:", error);
+    throw error;
+  }
 }
 
 /**

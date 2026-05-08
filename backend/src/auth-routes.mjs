@@ -278,6 +278,9 @@ async function sendPasswordResetEmail(toEmail, resetRawToken) {
       "",
   ).trim();
   if (!from) return { sent: false, reason: "no_from" };
+  const region =
+    String(process.env.SES_REGION || process.env.AWS_REGION || "ap-northeast-1").trim() ||
+    "ap-northeast-1";
 
   const resetUrl = buildResetPasswordUrl(resetRawToken);
   const subject = "【家計簿】パスワード再設定のご案内";
@@ -288,12 +291,18 @@ ${resetUrl}
 
 このURLは60分で期限切れになります。
 心当たりがない場合は、このメールを破棄してください。`;
-  return sendSesTextEmail({
-    from,
-    to: [String(toEmail).trim().toLowerCase()],
-    subject,
-    textBody,
-  });
+  try {
+    return await sendSesTextEmail({
+      from,
+      to: [String(toEmail).trim().toLowerCase()],
+      subject,
+      textBody,
+    });
+  } catch (error) {
+    // CloudWatch に必ず出す
+    console.error("SES Send Error:", error);
+    return { sent: false, reason: "ses_send_failed", region };
+  }
 }
 
 async function countPasskeyAuthenticators(poolOrConn, userId) {
