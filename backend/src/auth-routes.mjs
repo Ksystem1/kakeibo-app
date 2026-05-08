@@ -277,6 +277,9 @@ function redactEmailForLog(rawEmail) {
 }
 
 async function sendPasswordResetEmail(toEmail, resetRawToken) {
+  const region =
+    String(process.env.SES_REGION || process.env.AWS_REGION || "ap-northeast-1").trim() ||
+    "ap-northeast-1";
   const from = String(
     process.env.PASSWORD_RESET_EMAIL_FROM ||
       process.env.SES_SOURCE_EMAIL ||
@@ -284,10 +287,8 @@ async function sendPasswordResetEmail(toEmail, resetRawToken) {
       process.env.ADMIN_EMAIL_FROM ||
       "",
   ).trim();
-  if (!from) return { sent: false, reason: "no_from" };
-  const region =
-    String(process.env.SES_REGION || process.env.AWS_REGION || "ap-northeast-1").trim() ||
-    "ap-northeast-1";
+  /** From 未設定でも region をログに載せられるようにする（no_from でも東京リージョン意図が分かる） */
+  if (!from) return { sent: false, reason: "no_from", region };
 
   const resetUrl = buildResetPasswordUrl(resetRawToken);
   const subject = "【家計簿】パスワード再設定のご案内";
