@@ -803,14 +803,14 @@
   animation: app-route-fade-in 0.2s ease both;
 }
 
+/* opacity のみ（終了後も transform を残さない）。translateY だとアニメ後も transform が残り、
+   子の position:fixed がビューポートではなくこのラッパー基準になりモーダルが画面外に寄る。 */
 @keyframes app-route-fade-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
