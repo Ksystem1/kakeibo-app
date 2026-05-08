@@ -80,8 +80,9 @@ export function formatSettingsSubscriptionSummary(user: {
     return "追加機能をご利用いただけます。";
   }
   if ((status === "active" || status === "trialing" || status === "past_due") && user.subscriptionCancelAtPeriodEnd) {
+    /** 日付が取れているときは太字行・ℹ 行で足りるのでここでは出さない（重複防止） */
     if (endStr && endNum) {
-      return `解約が予約されています。解約予定日は ${endNum} です（請求期間の終了：${endStr}）。それまでは追加機能をご利用いただけます。`;
+      return "";
     }
     return `解約が予約されています。解約予定日は${SUBSCRIPTION_PERIOD_END_PENDING_JA}です。表示が追いつかない場合は、お支払いの管理画面で終了日をご確認ください。`;
   }
