@@ -1749,8 +1749,7 @@ export async function tryAuthRoutes(req, ctx) {
       );
       const genericOk = {
         ok: true,
-        message:
-          "登録がある場合、パスワード再設定用の案内を送信します（メール連携未設定時は開発用レスポンスを参照）。",
+        message: "送信しました。",
       };
 
       if (rows.length === 0) {
