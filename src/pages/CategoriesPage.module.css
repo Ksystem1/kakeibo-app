@@ -83,18 +83,19 @@
   box-sizing: border-box;
 }
 
-/** モバイル専用: 名前欄をセル全幅 */
+/** モバイル専用: 名前欄をラベル横で全幅まで伸ばす */
 .categoryNameInputMobile {
   max-width: none;
   min-width: 0;
-  width: 100%;
+  flex: 1 1 auto;
+  width: auto;
   font-size: 1rem;
   line-height: 1.35;
 }
 
 /* ---- カテゴリ行（モバイル1カード）---- */
 .categoryRowMobileCell {
-  padding: 0.55rem 0.1rem 0.65rem;
+  padding: 0.42rem 0.08rem 0.48rem;
   vertical-align: top;
   border: none;
 }
@@ -102,23 +103,25 @@
 .categoryRowMobile {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.34rem;
   min-width: 0;
 }
 
 .categoryRowMobileNameRow {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.28rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.42rem;
   min-width: 0;
 }
 
 .categoryRowMobileFieldLabel {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 700;
   color: var(--text-muted, #94a3b8);
   letter-spacing: 0.02em;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .categoryRowMobileFieldLabelSub {
@@ -133,7 +136,7 @@
   flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem 0.55rem;
+  gap: 0.3rem 0.42rem;
   min-width: 0;
 }
 
@@ -173,9 +176,9 @@
 .categoryRowMobileMedical {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.4rem 0.15rem 0;
-  margin: 0 -0.1rem;
+  gap: 0.28rem;
+  padding: 0.28rem 0.08rem 0;
+  margin: 0 -0.08rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   min-width: 0;
 }
@@ -184,7 +187,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem 0.5rem;
+  gap: 0.28rem 0.42rem;
   min-width: 0;
 }
 
@@ -196,9 +199,9 @@
 
 .categoryRowMobilePatientRow {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.2rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.32rem;
   min-width: 0;
   width: 100%;
 }
@@ -206,30 +209,30 @@
 .categoryMedicalPatientMobile {
   max-width: none;
   min-width: 0;
-  width: 100%;
-  flex: none;
-  font-size: 0.95rem;
-  min-height: 2.3rem;
-  height: 2.3rem;
-  padding-top: 0.24rem;
-  padding-bottom: 0.24rem;
+  flex: 1 1 auto;
+  width: auto;
+  min-height: 0;
+  height: auto;
+  font-size: 1rem;
+  line-height: 1.25;
+  padding: 0.22rem 0.48rem;
 }
 
 .categoryMedicalPatient.categoryMedicalPatientMobile {
-  min-height: 2.15rem !important;
-  height: 2.15rem !important;
-  padding-top: 0.18rem !important;
-  padding-bottom: 0.18rem !important;
-  line-height: 1.2;
+  min-height: 0 !important;
+  height: auto !important;
+  padding-top: 0.22rem !important;
+  padding-bottom: 0.22rem !important;
+  line-height: 1.25;
 }
 
 .categoryRowMobileActions {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: 0.4rem 0.5rem;
+  gap: 0.32rem 0.42rem;
   align-items: center;
-  padding-top: 0.15rem;
+  padding-top: 0.08rem;
 }
 
 /** 新規カテゴリ名（一覧の名前欄と同程度の幅） */
@@ -393,9 +396,18 @@
     min-width: 0;
   }
 
+  .addMedicalRow {
+    margin-top: 0.38rem;
+    gap: 0.28rem 0.45rem;
+  }
+
   .addMedicalRow input.addMedicalPatient {
     flex: 1 1 100%;
     max-width: none;
+    min-height: 0;
+    padding: 0.22rem 0.48rem;
+    line-height: 1.25;
+    font-size: 1rem;
   }
 
   .addMedicalSubmit {

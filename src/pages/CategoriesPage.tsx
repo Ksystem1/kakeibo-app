@@ -173,7 +173,7 @@ export function CategoriesPage({ embedded = false }: { embedded?: boolean }) {
 
       <form
         className={styles.settingsPanel}
-        style={{ maxWidth: 520, marginBottom: "1.25rem" }}
+        style={{ maxWidth: 520, marginBottom: mobile ? "0.78rem" : "1.25rem" }}
         onSubmit={onAdd}
       >
         <h2 className={styles.sectionTitle}>カテゴリを追加</h2>
@@ -429,7 +429,13 @@ function CategoryTable({
   }
 
   return (
-    <div className={styles.settingsPanel} style={{ maxWidth: 900, marginBottom: "1rem" }}>
+    <div
+      className={styles.settingsPanel}
+      style={{
+        maxWidth: 900,
+        marginBottom: isMobile ? "0.62rem" : "1rem",
+      }}
+    >
       <h2 className={styles.sectionTitle}>{title}</h2>
       {allowReorder ? (
         <p className={catStyles.hint}>
