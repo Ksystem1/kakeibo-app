@@ -40,6 +40,7 @@ import {
   userHasPremiumSubscriptionAccess,
 } from "./subscription-logic.mjs";
 import { maybeSyncStripeSubscriptionForUser } from "./stripe-session-subscription-sync.mjs";
+import { sendSesTextEmail } from "./admin-email-notify.mjs";
 
 const accountDeleteLogger = createLogger("auth.delete-account");
 const FAM_JOIN_ON_U = sqlUserFamilyIdExpr("u");
@@ -259,6 +260,40 @@ function buildInviteUrl(inviteRawToken) {
     process.env.PUBLIC_APP_ORIGIN || process.env.APP_ORIGIN || "https://ksystemapp.com",
   ).replace(/\/$/, "");
   return `${appOrigin}/kakeibo/register?token=${encodeURIComponent(inviteRawToken)}`;
+}
+
+function buildResetPasswordUrl(resetRawToken) {
+  const appOrigin = String(
+    process.env.PUBLIC_APP_ORIGIN || process.env.APP_ORIGIN || "https://ksystemapp.com",
+  ).replace(/\/$/, "");
+  return `${appOrigin}/kakeibo/reset-password?token=${encodeURIComponent(resetRawToken)}`;
+}
+
+async function sendPasswordResetEmail(toEmail, resetRawToken) {
+  const from = String(
+    process.env.PASSWORD_RESET_EMAIL_FROM ||
+      process.env.SES_SOURCE_EMAIL ||
+      process.env.SES_FROM ||
+      process.env.ADMIN_EMAIL_FROM ||
+      "",
+  ).trim();
+  if (!from) return { sent: false, reason: "no_from" };
+
+  const resetUrl = buildResetPasswordUrl(resetRawToken);
+  const subject = "【家計簿】パスワード再設定のご案内";
+  const textBody = `パスワード再設定のリクエストを受け付けました。
+
+以下のURLを開き、新しいパスワードを設定してください。
+${resetUrl}
+
+このURLは60分で期限切れになります。
+心当たりがない場合は、このメールを破棄してください。`;
+  return sendSesTextEmail({
+    from,
+    to: [String(toEmail).trim().toLowerCase()],
+    subject,
+    textBody,
+  });
 }
 
 async function countPasskeyAuthenticators(poolOrConn, userId) {
@@ -1771,11 +1806,21 @@ export async function tryAuthRoutes(req, ctx) {
         ),
       );
 
+      const emailSendResult = await sendPasswordResetEmail(email, raw);
+      if (!emailSendResult?.sent) {
+        logError(
+          "auth.forgotPassword.email_send_skipped_or_failed",
+          new Error(String(emailSendResult?.reason || "unknown")),
+          { userId, email, detail: emailSendResult },
+        );
+      }
+
       const out = { ...genericOk };
       if (process.env.AUTH_DEBUG_TOKEN === "true") {
         out.debug_reset_token = raw;
         out.hint =
-          "本番では SES 等でメール送信し URL に token を載せます。AUTH_DEBUG_TOKEN=true のときのみ token を返します。";
+          "AUTH_DEBUG_TOKEN=true のため開発用に token を返しています。通常はメール内URLから再設定してください。";
+        out.debug_mail = emailSendResult;
       }
       return json(200, out, hdrs, skipCors);
     }
