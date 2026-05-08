@@ -153,6 +153,32 @@ export async function performUserAccountDeletion(pool, userId) {
 }
 
 /**
+ * Stripe API を呼ばずに {@link deleteUserAccountCompletely} だけを実行する。
+ * 本番キーでテストモードの cus_ を解約できない・顧客は Stripe 側で既に消えている、など
+ * 運用例外向け。通常の退会・管理画面削除は {@link performUserAccountDeletion} を使う。
+ *
+ * @param {import("mysql2/promise").Pool} pool
+ * @param {number} userId
+ */
+export async function performUserAccountDeletionDbOnly(pool, userId) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await deleteUserAccountCompletely(conn, userId);
+    await conn.commit();
+  } catch (de) {
+    try {
+      await conn.rollback();
+    } catch {
+      /* */
+    }
+    throw de;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
  * 子ユーザ → 本人の順に物理 DELETE（FK CASCADE 前提。親より先に子を消す）
  *
  * 通常は {@link performUserAccountDeletion} 経由で呼び、Stripe 解約完了後のトランザクション内でのみ実行する。
